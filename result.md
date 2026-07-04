@@ -13,6 +13,23 @@
   - ...
 -->
 
+## QA Mobile toàn hệ thống ✅ (xen giữa Phase 7)
+- **Ngày hoàn thành**: 2026-07-04
+- **Bối cảnh**: user yêu cầu tối ưu mobile, không chấp nhận vỡ chữ / font sai. Duyệt toàn bộ 18+ màn ở viewport 375px.
+- **🐛 Lỗi thật tìm được & đã sửa**:
+  1. **CHẶN: không có menu trên mobile** — nav dùng `hidden md:flex` mà thiếu hamburger → điện thoại không vào được màn nào ngoài dropdown avatar. Thêm nút hamburger + drawer menu (Alpine) liệt kê đủ mục theo quyền; gom `navItems` dùng chung desktop/mobile.
+  2. **Bảng tràn cả trang** ở 7 chỗ thiếu wrapper `overflow-x-auto` (quản lý nhân viên, trường tùy biến, cấu hình rule, sổ thu tiền + công nợ, danh mục dịch vụ, báo cáo marketing + hiệu suất, lịch sử import) → cả body cuộn ngang. Bọc từng bảng trong `overflow-x-auto` + `min-w-[...]` để chỉ bảng cuộn.
+  3. **Thanh tab khu Tổ chức vỡ chữ** — 4 tab bóp thành 3-4 dòng/tab trên mobile. Đổi sang cuộn ngang 1 dòng (`overflow-x-auto` + `whitespace-nowrap`).
+  4. **Checkbox màu xanh mặc định trình duyệt** thay vì vàng đồng — lệch theme toàn hệ thống. Thêm `accent-color: #8B5E14` global cho mọi checkbox/radio.
+  5. Giảm padding navbar + main trên mobile (`px-6`→`px-4`), logo + user info thu gọn responsive.
+- **Kết quả QA**:
+  - Quét tràn ngang bằng script (bounding-box) trên **18 màn**: login, dashboard, danh sách/chi tiết/thêm/import/lead-lỗi KH, 4 tab tổ chức, chia số (rule + kho), dịch vụ, thu tiền, báo cáo, kết nối nguồn, quản lý phiên → **tất cả scrollWidth = 375px, 0 phần tử tràn**.
+  - Font Be Vietnam Pro đúng trên mọi màn (kiểm bằng screenshot).
+  - Checkbox vàng đồng, tab cuộn 1 dòng — verify bằng screenshot màn vai trò.
+  - Regression desktop: nav hiện đủ 8 mục, bảng bình thường, không hỏng bản rộng.
+  - 88/88 test vẫn pass (chỉ sửa view, không đụng logic).
+- **Ghi chú**: bảng dữ liệu dày (list KH, báo cáo) trên mobile dùng chiến lược cuộn ngang nội bộ (`min-w` + `overflow-x-auto`) — chuẩn cho bảng nhiều cột; không ép xuống card layout để giữ nhất quán desktop/mobile.
+
 ## Phase 6 — Báo cáo & Dashboard ✅
 - **Ngày hoàn thành**: 2026-07-04
 - **Đã làm**:

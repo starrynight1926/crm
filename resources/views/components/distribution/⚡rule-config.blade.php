@@ -201,7 +201,8 @@ new class extends Component
                 <h2 class="text-lg font-bold">{{ $section['title'] }}</h2>
                 <button wire:click="openCreate('{{ $section['level'] }}')" class="text-sm font-semibold text-gold-700 border border-gold-300 hover:bg-gold-50 px-4 py-2 rounded-md">+ Thêm rule</button>
             </div>
-            <table class="w-full text-sm">
+            <div class="overflow-x-auto">
+            <table class="w-full text-sm min-w-[720px]">
                 <thead>
                     <tr class="text-left text-xs uppercase tracking-wider text-ink/50 bg-gold-50/60">
                         <th class="px-5 py-3 font-semibold w-20">Ưu tiên</th>
@@ -247,6 +248,7 @@ new class extends Component
                     @endforelse
                 </tbody>
             </table>
+            </div>
         </div>
     @endforeach
 

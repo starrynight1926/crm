@@ -210,7 +210,8 @@ new class extends Component
             </select>
         </div>
 
-        <table class="w-full text-sm">
+        <div class="overflow-x-auto">
+        <table class="w-full text-sm min-w-[640px]">
             <thead>
                 <tr class="text-left text-xs uppercase tracking-wider text-ink/50 bg-gold-50/60">
                     <th class="px-5 py-3 font-semibold">Tên trường</th>
@@ -255,6 +256,7 @@ new class extends Component
                 @endforelse
             </tbody>
         </table>
+        </div>
     </div>
 
     {{-- Modal thêm/sửa field --}}

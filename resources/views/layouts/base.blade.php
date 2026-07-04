@@ -30,7 +30,13 @@
             },
         };
     </script>
-    <style>[x-cloak] { display: none !important; }</style>
+    <style>
+        [x-cloak] { display: none !important; }
+        /* Checkbox/radio theo màu vàng đồng thay vì xanh mặc định của trình duyệt */
+        input[type=checkbox], input[type=radio] { accent-color: #8B5E14; }
+        /* Cuộn ngang bảng/tab mượt, ẩn thanh cuộn thô trên mobile */
+        .overflow-x-auto { -webkit-overflow-scrolling: touch; }
+    </style>
     {{-- Alpine.js KHÔNG nạp riêng: Livewire đã bundle sẵn Alpine, nạp 2 instance sẽ làm wire:click chập chờn --}}
     @livewireStyles
 </head>

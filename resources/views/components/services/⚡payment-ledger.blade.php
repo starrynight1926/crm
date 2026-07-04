@@ -93,7 +93,8 @@ new class extends Component
                 <label class="text-xs font-semibold text-ink/50">Đến</label>
                 <input type="date" wire:model.live="fDateTo" class="border border-gold-200 rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:border-gold-500">
             </div>
-            <table class="w-full text-sm">
+            <div class="overflow-x-auto">
+            <table class="w-full text-sm min-w-[720px]">
                 <thead>
                     <tr class="text-left text-xs uppercase tracking-wider text-ink/50 bg-gold-50/60">
                         <th class="px-5 py-3 font-semibold">Ngày</th>
@@ -122,11 +123,13 @@ new class extends Component
                     @endforelse
                 </tbody>
             </table>
+            </div>
             <div class="px-5 py-4 border-t border-gold-100">{{ $payments->links() }}</div>
         </div>
     @else
         <div class="bg-white border border-gold-200 rounded-xl shadow-card">
-            <table class="w-full text-sm">
+            <div class="overflow-x-auto">
+            <table class="w-full text-sm min-w-[560px]">
                 <thead>
                     <tr class="text-left text-xs uppercase tracking-wider text-ink/50 bg-gold-50/60">
                         <th class="px-5 py-3 font-semibold">Khách hàng</th>
@@ -154,6 +157,7 @@ new class extends Component
                     @endforelse
                 </tbody>
             </table>
+            </div>
         </div>
     @endif
 </div>

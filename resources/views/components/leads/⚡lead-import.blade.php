@@ -219,7 +219,8 @@ new class extends Component
             <h2 class="text-lg font-bold">Lịch sử import</h2>
             <span class="text-xs text-ink/40">Tự cập nhật mỗi 5 giây</span>
         </div>
-        <table class="w-full text-sm">
+        <div class="overflow-x-auto">
+        <table class="w-full text-sm min-w-[720px]">
             <thead>
                 <tr class="text-left text-xs uppercase tracking-wider text-ink/50 bg-gold-50/60">
                     <th class="px-5 py-3 font-semibold">#</th>
@@ -254,5 +255,6 @@ new class extends Component
                 @endforelse
             </tbody>
         </table>
+        </div>
     </div>
 </div>

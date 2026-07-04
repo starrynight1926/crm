@@ -235,7 +235,8 @@ new class extends Component
                             class="text-xs font-semibold px-3 py-1.5 rounded-md {{ $groupBy === $key ? 'bg-gold-100 text-gold-800 border border-gold-300' : 'text-ink/50 hover:bg-gold-50' }}">{{ $label }}</button>
                 @endforeach
             </div>
-            <table class="w-full text-sm">
+            <div class="overflow-x-auto">
+            <table class="w-full text-sm min-w-[560px]">
                 <thead>
                     <tr class="text-left text-xs uppercase tracking-wider text-ink/50 bg-gold-50/60">
                         <th class="px-5 py-3 font-semibold">{{ ['camp' => 'Camp', 'ad_source' => 'Nguồn', 'page' => 'Page'][$groupBy] }}</th>
@@ -259,12 +260,13 @@ new class extends Component
                     @endforelse
                 </tbody>
             </table>
+            </div>
         </div>
     @endif
 
     @if ($tab === 'performance')
-        <div class="bg-white border border-gold-200 rounded-xl shadow-card">
-            <table class="w-full text-sm">
+        <div class="bg-white border border-gold-200 rounded-xl shadow-card overflow-x-auto">
+            <table class="w-full text-sm min-w-[720px]">
                 <thead>
                     <tr class="text-left text-xs uppercase tracking-wider text-ink/50 bg-gold-50/60">
                         <th class="px-5 py-3 font-semibold w-14">#</th>

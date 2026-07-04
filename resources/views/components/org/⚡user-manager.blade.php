@@ -259,7 +259,8 @@ new class extends Component
         </div>
 
         {{-- Table --}}
-        <table class="w-full text-sm">
+        <div class="overflow-x-auto">
+        <table class="w-full text-sm min-w-[640px]">
             <thead>
                 <tr class="text-left text-xs uppercase tracking-wider text-ink/50 bg-gold-50/60">
                     <th class="px-5 py-3 font-semibold">Nhân viên</th>
@@ -313,8 +314,9 @@ new class extends Component
                 @endforelse
             </tbody>
         </table>
+        </div>
 
-        <div class="px-5 py-4 border-t border-gold-100 flex items-center justify-between text-sm text-ink/60">
+        <div class="px-5 py-4 border-t border-gold-100 flex flex-wrap gap-2 items-center justify-between text-sm text-ink/60">
             <span>Hiển thị {{ $users->count() }} trong tổng số {{ $users->total() }} nhân viên</span>
             {{ $users->links() }}
         </div>

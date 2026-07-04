@@ -224,8 +224,8 @@ new class extends Component
         <button wire:click="openCreate" class="bg-gold-600 hover:bg-gold-700 text-white font-semibold px-5 py-2.5 rounded-md text-sm">+ Thêm dịch vụ</button>
     </div>
 
-    <div class="bg-white border border-gold-200 rounded-xl shadow-card mb-8">
-        <table class="w-full text-sm">
+    <div class="bg-white border border-gold-200 rounded-xl shadow-card mb-8 overflow-x-auto">
+        <table class="w-full text-sm min-w-[680px]">
             <thead>
                 <tr class="text-left text-xs uppercase tracking-wider text-ink/50 bg-gold-50/60">
                     <th class="px-5 py-3 font-semibold">Dịch vụ</th>
