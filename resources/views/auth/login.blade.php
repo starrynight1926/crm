@@ -66,6 +66,14 @@
             </button>
         </form>
 
+        <a href="{{ route('demo.login') }}"
+           class="mt-6 w-full flex items-center justify-center gap-2 border border-gold-300 text-gold-700 hover:bg-gold-50 font-semibold py-3 rounded-md transition-colors">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.5 20.25a8.25 8.25 0 0115 0"/>
+            </svg>
+            Login demo
+        </a>
+
         <div class="border-t border-gold-100 mt-8 pt-5 text-center text-sm text-ink/60">
             Bạn gặp sự cố khi đăng nhập? <span class="text-gold-600 font-medium">Liên hệ quản trị viên</span>
         </div>

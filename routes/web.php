@@ -1,11 +1,24 @@
 <?php
 
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\DemoStagingController;
 use App\Http\Controllers\WebhookController;
 use Illuminate\Support\Facades\Route;
 
 // Webhook nhận lead từ landing page — không auth, xác thực bằng token, miễn CSRF (bootstrap/app.php)
 Route::post('/webhook/lead/{token}', [WebhookController::class, 'store'])->name('webhook.lead');
+
+// Demo staging — công cụ standalone, độc lập pipeline/phân quyền. Dễ reset.
+Route::prefix('demo')->group(function () {
+    Route::get('/login', [DemoStagingController::class, 'loginPage'])->name('demo.login');
+    Route::get('/login/{who}', [DemoStagingController::class, 'loginAs'])->name('demo.loginAs');
+    Route::post('/logout', [DemoStagingController::class, 'logout'])->name('demo.logout');
+    Route::get('/', [DemoStagingController::class, 'upload'])->name('demo.upload');
+    Route::post('/upload', [DemoStagingController::class, 'store'])->name('demo.store');
+    Route::get('/leads', [DemoStagingController::class, 'leads'])->name('demo.leads');
+    Route::get('/report', [DemoStagingController::class, 'report'])->name('demo.report');
+    Route::post('/reset', [DemoStagingController::class, 'reset'])->name('demo.reset');
+});
 
 Route::get('/', fn () => redirect()->route('dashboard'));
 
