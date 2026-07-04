@@ -91,6 +91,11 @@ Nhật ký webhook/API call: id, source_type, connection_id (logic), http_status
 
 Index: (`org_unit_id`,`classification`), (`owner_id`,`classification`), (`received_date`), (`camp`), (`ad_source`), (`pool_level`).
 
+Bổ sung 2026-07-03 (mã KH + trường tùy biến, xem scope.md 4.1–4.2):
+- **leads** thêm cột: `code` varchar unique (VD `KH-00123-MKT-FB`, sinh sau khi có id), `type_code` varchar(10) (`MKT`/`C`/`BDM`/`SI`/`N`), `source_code` varchar(10) nullable.
+- **custom_fields** — id, org_unit_id FK nullable (null = mức công ty), `key` (unique trong org), label, field_type (`text`/`number`/`date`/`select`), options JSON (cho select), required bool, position, active, timestamps. Quyền `field.manage`.
+- **lead_custom_values** — lead_id FK + custom_field_id FK (PK kép), value text. Bộ trường áp theo org_unit đang giữ lead + tổ tiên (path) + mức công ty.
+
 **lead_status_logs** — id, lead_id FK, user_id FK, field (`classification`/`status_1`/`status_2`/`note`), old_value, new_value, created_at. Nguồn cho lịch sử chăm sóc + audit.
 
 **lead_distribution_logs** — id, lead_id FK, action (`distribute`/`recall`/`pull`/`manual_assign`), from_pool_level, to_pool_level, from_owner_id, to_owner_id, org_unit_id, rule_id nullable, actor_id nullable (null = hệ thống), created_at.

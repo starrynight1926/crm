@@ -33,6 +33,29 @@ Thiết kế UI tham khảo: Figma "[Longevity] Phần mềm" — 4 màn hình: 
 
 Ngày, PAGE, Tên, SĐT, Camp, Insight, Link, Nguồn quảng cáo, Người nhận LEAD, CHIA CHO, Ghi nhận tình trạng lần 1, Ghi nhận tình trạng lần 2, NOTE, KHU VỰC, PHÂN LOẠI KẾT QUẢ.
 
+### 4.1 Mã khách hàng (bổ sung 2026-07-03, theo whiteboard)
+
+- Định dạng: `KH-{số}-{loại}[-{nguồn}]` — VD `KH-00123-MKT-FB`, `KH-00045-C-A`.
+- **Số**: tăng dần toàn hệ thống, là định danh duy nhất của khách.
+- **Loại data** (5 loại): `MKT` (Data Marketing), `C` (Data lạnh/telesale), `BDM`, `SI` (Tự giới thiệu — sale), `N` (Tự đến).
+- **Nguồn** (tùy chọn, nối thêm khi cần tag/tracking): FB, GG, TT... — sinh tự động từ nguồn quảng cáo, sửa được.
+- Mã sinh tự động khi lead vào hệ thống.
+
+### 4.2 Trường tùy biến theo phòng ban (bổ sung 2026-07-03)
+
+- Mỗi phòng ban có bộ trường tùy biến riêng (đánh dấu riêng), do **admin của phòng đó** định nghĩa (quyền `field.manage` gán qua assignment tại phòng); admin công ty quản lý được tất cả.
+- Trường mức **công ty** (không gắn phòng nào): mọi bộ phận đều thấy; trường bắt buộc mức công ty thì ai cũng phải điền.
+- Trường **bắt buộc theo rule từng phòng**: phòng MKT cần 5 trường, phòng khác cần 10 trường đều cấu hình được.
+- Bộ trường áp vào lead theo **phòng ban đang giữ lead** (org_unit) + các phòng cha; lead chuyển phòng thì bộ trường đổi theo.
+- Kiểu trường: text, số, ngày, select (danh sách chọn).
+
+### 4.3 Backlog sau Phase 8 (chưa làm, cần bàn thêm)
+
+- Quy định sửa theo role từng trường + **quy trình tuần tự** (người A cập nhật xong mới tới người B) — whiteboard note "cần làm rõ hơn".
+- Báo cáo tùy chỉnh cho từng phòng ban.
+- **Loại data cấu hình được**: 5 loại (MKT/C/BDM/SI/N) đang là hằng số trong code — nếu admin cần tự thêm/sửa loại thì chuyển thành bảng cấu hình.
+- **Kho data Ebiz / PMDK** (2 nhánh trong whiteboard): hệ thống ngoài, chưa rõ là gì và có cần đồng bộ không — chờ user mô tả thêm.
+
 **Trạng thái phân loại lead**: Lead, Follow, Nét, Tài chính yếu, Quan tâm, Tham khảo, Tìm hiểu, Gọi lại sau, KLLD, Missed, Booking, Show, Close.
 
 **Số liệu tổng hợp theo tháng** (hệ thống tự tính, không nhập tay): Total, Lead, Follow, Nét, Booking, Show, Close.

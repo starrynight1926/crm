@@ -14,10 +14,13 @@
 
 ## Quy trình mỗi phase
 1. Đọc lại phase tương ứng trong `plan.md` trước khi bắt đầu.
-2. Làm xong → chạy test/kiểm tra, báo kết quả trung thực (fail thì nói fail).
+2. Làm xong → **test + QA của chính phase đó**: viết unit/feature test cho logic quan trọng + test tay qua browser các màn vừa làm. Báo kết quả trung thực (fail thì nói fail).
 3. Ghi kết quả vào `result.md` rồi mới chuyển phase tiếp theo.
+4. Cuối dự án có **Phase 8 — Test tổng thể & QA** toàn hệ thống (E2E, phân quyền, dữ liệu lớn, race condition, bug bash) — xem chi tiết trong `plan.md`.
 
 ## Ghi chú kỹ thuật
-- Stack: Laravel + Sanctum, Blade + Livewire + Alpine.js (CDN, không npm), Laravel Reverb.
+- Stack: Laravel + Sanctum, Blade + Livewire + Alpine.js (không npm), Laravel Reverb.
+- **KHÔNG nạp Alpine.js qua CDN riêng** — Livewire đã bundle sẵn Alpine; nạp 2 instance làm `wire:click` chập chờn (bug thật đã gặp Phase 3, fix trong `layouts/base.blade.php`).
+- Pipeline raw→clean chạy queue database: dev cần `php artisan queue:work` (hoặc `--stop-when-empty` từng đợt).
 - 2 connection: `mysql` (clean, default) + `pgsql` (raw).
 - 2 chỗ phải test dày nhất: data scope resolve (Phase 1) và engine chia số (Phase 4).
