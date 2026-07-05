@@ -13,6 +13,24 @@
   - ...
 -->
 
+## Trường tùy biến đa cấp + Duyệt + Mã phân loại 🔶 (bổ sung, xen Phase 7 — đang làm)
+- **Ngày**: 2026-07-05
+- **Bối cảnh**: user yêu cầu mở rộng trường tùy biến (Phase 2.5) thành hệ thống đa cấp có duyệt + mã phân loại nối vào mã KH. Làm theo 5 lớp.
+- **Chốt thiết kế với user trước khi làm**:
+  - Mã KH: **cố định chỉ `KH-{id}`** (zero-pad ≥3 số, id lớn dài tự nhiên). Mọi đoạn sau do **classification field** cấu hình sinh, theo cây công ty→phòng→nhóm. VD `KH-001-2026-MKT-FB`.
+  - **Xóa hẳn `type_code`/`source_code` cứng** (user: "cái gì thừa xóa đi, toàn demo"). Vai trò chuyển sang classification field.
+  - Định danh core = `leads.id` (bigint), không UUID (phân mảnh index ở quy mô 300k). `code` chỉ là mã hiển thị, đổi format an toàn (không FK nào bám `code`).
+  - Trường bắt buộc **cấp công ty**: áp ngay, không duyệt. **Cấp phòng/nhóm**: chờ cấp trên (`field.approve` ở node cha) duyệt mới áp. Trường pending **ẩn** với người đề xuất tới khi duyệt.
+  - Toggle báo cáo tắt = chỉ trường hệ thống + mức công ty.
+- **Đã làm (Lớp 1–4, verify OK)**:
+  - **L1 data+engine**: migration mở rộng `custom_fields` (`rules` json, `affects_code`, `status`/`requested_by`/`reviewed_by`/`reviewed_at`/`reject_reason`; trường cũ backfill `active`); drop `type_code`/`source_code` khỏi `leads` + `default_type_code` khỏi `source_connections`; dọn 14 file. `CustomField` 6 kiểu (text/number/date/**email**/select/**code**), `applicableTo()` lọc `status=active` + sắp theo cây (sort key gộp), `codeSegmentsFor()`. `Lead::generateCode()` viết lại. Verify: `KH-002-2026-MKT-FB`, đổi giá trị→mã đổi, pending bị loại.
+  - **L2 field manager + duyệt**: component field-manager nâng cấp (kiểu mới + ràng buộc min/max/maxlength/options/mã cố định-chọn-nhập + cờ nối mã; bắt buộc cấp dưới→pending). Component **duyệt** mới (`field.approve`, node cha duyệt/từ chối kèm lý do). Màn **"Thiết lập"** trong dropdown user, chia tab (Trường tùy biến / Duyệt trường). Quyền `field.approve` đã seed.
+  - **L3 lead-form**: render + validate email/code + ràng buộc số(min/max)/text(maxlength); mã cố định tự động (bỏ khỏi input); gỡ "Loại data" cứng; `generateCode()` gọi **sau** khi lưu custom values.
+  - **L4 báo cáo**: thêm tab **"Chi tiết lead"** + toggle **"Hiện đầy đủ trường tùy biến"** (tắt = chỉ trường mức công ty), áp cả bảng web lẫn Export Excel.
+- **Test**: **87/87 pass** (thêm 2 test duyệt: pending/rejected không áp; 4 test sinh mã đa cấp thay 4 test type_code cũ). Blade compile sạch; `/settings` + `/reports` (tab mới) render 200 với admin.
+- **Còn lại**: rà QA tay đầy đủ luồng duyệt trên UI thật (tạo field cấp nhóm bằng tài khoản trưởng nhóm → trưởng phòng duyệt); cập nhật `ERD.md` chi tiết bảng custom_fields mới.
+- **Ghi chú môi trường**: máy thiếu `pdo_sqlite`+`pdo_pgsql` → đã bật trong `php.ini`. Laragon MySQL hay tắt → start `mysqld --defaults-file=...\my.ini` (datadir `F:/Laragon/data/mysql-8`).
+
 ## QA Mobile toàn hệ thống ✅ (xen giữa Phase 7)
 - **Ngày hoàn thành**: 2026-07-04
 - **Bối cảnh**: user yêu cầu tối ưu mobile, không chấp nhận vỡ chữ / font sai. Duyệt toàn bộ 18+ màn ở viewport 375px.

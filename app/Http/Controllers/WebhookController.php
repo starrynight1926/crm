@@ -40,10 +40,9 @@ class WebhookController extends Controller
         foreach ($connection->field_mapping ?: [] as $target => $sourceKey) {
             $payload[$target] = data_get($input, $sourceKey);
         }
-        foreach (['name', 'phone', 'received_date', 'page', 'camp', 'insight', 'link', 'ad_source', 'region', 'note', 'type_code'] as $field) {
+        foreach (['name', 'phone', 'received_date', 'page', 'camp', 'insight', 'link', 'ad_source', 'region', 'note'] as $field) {
             $payload[$field] ??= $input[$field] ?? null;
         }
-        $payload['type_code'] = $payload['type_code'] ?? $connection->default_type_code;
 
         $raw = RawLead::create([
             'source_type' => RawLead::SOURCE_WEBHOOK,

@@ -146,9 +146,7 @@ new class extends Component
             </div>
             <h1 class="text-3xl font-bold">{{ $lead->name }}</h1>
             @if ($lead->code)
-                <div class="font-mono text-sm text-gold-700 mt-1">{{ $lead->code }}
-                    <span class="font-sans text-xs text-ink/40">({{ \App\Models\Lead::TYPE_CODES[$lead->type_code] ?? $lead->type_code }})</span>
-                </div>
+                <div class="font-mono text-sm text-gold-700 mt-1">{{ $lead->code }}</div>
             @endif
         </div>
         @if ($canEdit)

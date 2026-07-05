@@ -76,12 +76,6 @@ class ProcessRawLead implements ShouldQueue
         }
 
         // --- Tạo lead sạch ---
-        $typeCode = array_key_exists($payload['type_code'] ?? '', Lead::TYPE_CODES)
-            ? $payload['type_code']
-            : 'MKT'; // lead từ nguồn tự động mặc định là data marketing
-
-        $adSource = $payload['ad_source'] ?? null;
-
         $lead = Lead::create([
             'raw_lead_id' => $raw->id,
             'received_date' => $this->parseDate($payload['received_date'] ?? null) ?? $raw->created_at?->toDateString() ?? now()->toDateString(),
@@ -91,11 +85,9 @@ class ProcessRawLead implements ShouldQueue
             'camp' => $payload['camp'] ?? null,
             'insight' => $payload['insight'] ?? null,
             'link' => $payload['link'] ?? null,
-            'ad_source' => $adSource,
+            'ad_source' => $payload['ad_source'] ?? null,
             'region' => $payload['region'] ?? null,
             'note' => $payload['note'] ?? null,
-            'type_code' => $typeCode,
-            'source_code' => $payload['source_code'] ?? Lead::sourceCodeFor($adSource),
             'classification' => 'new',
             'pool_level' => Lead::POOL_COMMON, // vào kho chung, chờ engine chia số (Phase 4)
         ]);

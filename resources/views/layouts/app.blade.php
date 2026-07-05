@@ -64,6 +64,9 @@
                             <div class="text-xs text-ink/50 truncate">{{ auth()->user()->email }}</div>
                         </div>
                         <a href="{{ route('sessions.index') }}" class="block px-4 py-2 hover:bg-gold-50">Quản lý phiên đăng nhập</a>
+                        @if (auth()->user()->hasPermission('field.manage') || auth()->user()->hasPermission('field.approve'))
+                            <a href="{{ route('settings.index') }}" class="block px-4 py-2 hover:bg-gold-50">Thiết lập</a>
+                        @endif
                         @if (auth()->user()->hasPermission('connection.manage'))
                             <a href="{{ route('sources.index') }}" class="block px-4 py-2 hover:bg-gold-50">Kết nối nguồn lead</a>
                         @endif

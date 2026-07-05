@@ -20,6 +20,32 @@ new class extends Component
 
     public string $groupBy = 'camp'; // cho tab marketing: camp / ad_source / page
 
+    /** Tab "Chi tiết lead": bật = hiện đủ trường tùy biến mọi cấp; tắt = chỉ trường mức công ty. */
+    public bool $showAllCustomFields = false;
+
+    /** Trường tùy biến hiện làm cột báo cáo, theo toggle. */
+    private function reportCustomFields()
+    {
+        return \App\Models\CustomField::query()
+            ->where('active', true)
+            ->where('status', \App\Models\CustomField::STATUS_ACTIVE)
+            ->when(! $this->showAllCustomFields, fn ($q) => $q->whereNull('org_unit_id'))
+            ->orderBy('org_unit_id')
+            ->orderBy('position')
+            ->get();
+    }
+
+    /** Danh sách lead trong phạm vi + kỳ, kèm giá trị trường tùy biến. */
+    private function leadDetailData()
+    {
+        return Lead::visibleTo(auth()->user())
+            ->whereBetween('received_date', [$this->from, $this->to])
+            ->with('customValues')
+            ->orderByDesc('received_date')
+            ->limit(500)
+            ->get();
+    }
+
     public function mount(): void
     {
         $this->from = now()->startOfMonth()->toDateString();
@@ -119,6 +145,17 @@ new class extends Component
             $rows = $this->performanceData()->map(fn ($r) => [$users[$r->user_id] ?? $r->user_id, (int) $r->total, (int) $r->bookings, (int) $r->closes,
                 $r->total > 0 ? round($r->closes / $r->total * 100, 1) . '%' : '0%', (int) $r->revenue])->all();
             $sheet->fromArray([['Sale', 'Số nhận', 'Booking', 'Close', 'Tỉ lệ close', 'Doanh thu'], ...$rows]);
+        } elseif ($this->tab === 'leads') {
+            $cfs = $this->reportCustomFields();
+            $header = array_merge(['Mã KH', 'Tên', 'SĐT', 'Ngày', 'Phân loại'], $cfs->pluck('label')->all());
+            $rows = $this->leadDetailData()->map(function ($lead) use ($cfs) {
+                $vals = $lead->customValues->pluck('value', 'custom_field_id');
+                return array_merge(
+                    [$lead->code, $lead->name, $lead->phone, (string) $lead->received_date?->toDateString(), $lead->classificationLabel()],
+                    $cfs->map(fn ($f) => (string) ($vals[$f->id] ?? ''))->all()
+                );
+            })->all();
+            $sheet->fromArray([$header, ...$rows]);
         } else {
             $d = $this->distributionData();
             $sheet->fromArray([['Hành động', 'Số lượt'],
@@ -148,6 +185,8 @@ new class extends Component
             'performance' => $this->tab === 'performance' ? $this->performanceData() : collect(),
             'userNames' => User::pluck('name', 'id'),
             'distribution' => $this->tab === 'distribution' ? $this->distributionData() : null,
+            'leadRows' => $this->tab === 'leads' ? $this->leadDetailData() : collect(),
+            'leadCustomFields' => $this->tab === 'leads' ? $this->reportCustomFields() : collect(),
             'canExport' => auth()->user()->hasPermission('lead.export'),
         ];
     }
@@ -175,7 +214,7 @@ new class extends Component
         <label class="text-xs font-semibold text-ink/50">Đến</label>
         <input type="date" wire:model.live="to" class="border border-gold-200 rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:border-gold-500">
         <div class="flex-1"></div>
-        @foreach (['funnel' => 'Funnel theo kỳ', 'marketing' => 'Hiệu quả marketing', 'performance' => 'Hiệu suất sale', 'distribution' => 'Chia số & tồn kho'] as $key => $label)
+        @foreach (['funnel' => 'Funnel theo kỳ', 'marketing' => 'Hiệu quả marketing', 'performance' => 'Hiệu suất sale', 'distribution' => 'Chia số & tồn kho', 'leads' => 'Chi tiết lead'] as $key => $label)
             <button wire:click="$set('tab', '{{ $key }}')"
                     class="text-sm font-semibold px-4 py-2 rounded-md {{ $tab === $key ? 'bg-gold-600 text-white' : 'text-ink/60 border border-gold-200 hover:bg-gold-50' }}">
                 {{ $label }}
@@ -322,6 +361,55 @@ new class extends Component
                         </div>
                     @endforeach
                 </div>
+            </div>
+        </div>
+    @endif
+
+    @if ($tab === 'leads')
+        <div class="bg-white border border-gold-200 rounded-xl shadow-card">
+            <div class="px-5 py-4 border-b border-gold-100 flex flex-wrap items-center justify-between gap-3">
+                <h2 class="font-bold">Chi tiết lead <span class="text-xs font-normal text-ink/40">(tối đa 500 dòng trong kỳ)</span></h2>
+                <label class="flex items-center gap-2 text-sm cursor-pointer select-none">
+                    <input type="checkbox" wire:model.live="showAllCustomFields" class="rounded border-gold-300 text-gold-600 focus:ring-gold-500 w-4 h-4">
+                    Hiện đầy đủ trường tùy biến
+                    <span class="text-xs text-ink/40">(tắt = chỉ trường mặc định + mức công ty)</span>
+                </label>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm min-w-[700px]">
+                    <thead>
+                        <tr class="text-left text-xs uppercase tracking-wider text-ink/50 bg-gold-50/60">
+                            <th class="px-4 py-3 font-semibold">Mã KH</th>
+                            <th class="px-4 py-3 font-semibold">Tên</th>
+                            <th class="px-4 py-3 font-semibold">SĐT</th>
+                            <th class="px-4 py-3 font-semibold">Ngày</th>
+                            <th class="px-4 py-3 font-semibold">Phân loại</th>
+                            @foreach ($leadCustomFields as $cf)
+                                <th class="px-4 py-3 font-semibold whitespace-nowrap">
+                                    {{ $cf->label }}
+                                    @if ($cf->org_unit_id === null)<span class="text-[10px] text-ink/30">(cty)</span>@endif
+                                </th>
+                            @endforeach
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gold-100">
+                        @forelse ($leadRows as $lead)
+                            @php $vals = $lead->customValues->pluck('value', 'custom_field_id'); @endphp
+                            <tr class="hover:bg-gold-50/40">
+                                <td class="px-4 py-2.5 font-mono text-xs text-gold-700">{{ $lead->code }}</td>
+                                <td class="px-4 py-2.5 font-medium">{{ $lead->name }}</td>
+                                <td class="px-4 py-2.5">{{ $lead->phoneFor(auth()->user()) }}</td>
+                                <td class="px-4 py-2.5">{{ $lead->received_date?->format('d/m/Y') }}</td>
+                                <td class="px-4 py-2.5">{{ $lead->classificationLabel() }}</td>
+                                @foreach ($leadCustomFields as $cf)
+                                    <td class="px-4 py-2.5">{{ $vals[$cf->id] ?? '—' }}</td>
+                                @endforeach
+                            </tr>
+                        @empty
+                            <tr><td colspan="{{ 5 + $leadCustomFields->count() }}" class="px-5 py-8 text-center text-ink/40">Không có lead trong kỳ.</td></tr>
+                        @endforelse
+                    </tbody>
+                </table>
             </div>
         </div>
     @endif

@@ -31,6 +31,9 @@ Route::middleware('auth')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
     Route::view('/dashboard', 'dashboard')->name('dashboard');
     Route::view('/settings/sessions', 'settings.sessions')->name('sessions.index');
+    Route::view('/settings', 'settings.index')->name('settings.index');
+    Route::view('/settings/fields', 'settings.fields')->middleware('permission:field.manage')->name('settings.fields');
+    Route::view('/settings/field-approvals', 'settings.field-approvals')->middleware('permission:field.approve')->name('settings.field-approvals');
 
     Route::view('/org/users', 'org.users')->middleware('permission:user.manage')->name('org.users');
     Route::view('/org/roles', 'org.roles')->middleware('permission:role.manage')->name('org.roles');

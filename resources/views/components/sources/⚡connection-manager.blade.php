@@ -17,8 +17,6 @@ new class extends Component
 
     public string $name = '';
 
-    public string $defaultTypeCode = 'MKT';
-
     /** @var array<int, array{target: string, source: string}> */
     public array $mappingRows = [];
 
@@ -31,7 +29,6 @@ new class extends Component
     {
         $this->reset('editingId', 'name', 'credToken', 'credFormId');
         $this->type = 'webhook';
-        $this->defaultTypeCode = 'MKT';
         $this->mappingRows = [['target' => '', 'source' => '']];
         $this->resetErrorBag();
         $this->showModal = true;
@@ -43,7 +40,6 @@ new class extends Component
         $this->editingId = $connection->id;
         $this->type = $connection->type;
         $this->name = $connection->name;
-        $this->defaultTypeCode = $connection->default_type_code;
         $this->mappingRows = collect($connection->field_mapping ?: [])
             ->map(fn ($source, $target) => ['target' => $target, 'source' => $source])
             ->values()->all() ?: [['target' => '', 'source' => '']];
@@ -70,7 +66,6 @@ new class extends Component
         $this->validate([
             'name' => 'required|string|max:100',
             'type' => 'required|in:webhook,facebook_ads,tiktok_ads,google_ads',
-            'defaultTypeCode' => 'required|in:' . implode(',', array_keys(Lead::TYPE_CODES)),
         ], [], ['name' => 'tên kết nối']);
 
         $mapping = collect($this->mappingRows)
@@ -81,7 +76,6 @@ new class extends Component
         $attributes = [
             'type' => $this->type,
             'name' => $this->name,
-            'default_type_code' => $this->defaultTypeCode,
             'field_mapping' => $mapping ?: null,
         ];
 
@@ -173,7 +167,7 @@ new class extends Component
                     <div class="flex-1">
                         <div class="font-bold">{{ $connection->name }}</div>
                         <div class="text-xs text-ink/50">
-                            {{ $typeLabels[$connection->type] }} · loại data mặc định: {{ $connection->default_type_code }}
+                            {{ $typeLabels[$connection->type] }}
                             @if ($connection->last_synced_at) · sync cuối {{ $connection->last_synced_at->diffForHumans() }} @endif
                         </div>
                     </div>
@@ -233,14 +227,6 @@ new class extends Component
                             @endforeach
                         </select>
                     </div>
-                    <div>
-                        <label class="block text-xs font-semibold uppercase tracking-widest text-ink/60 mb-1.5">Loại data mặc định</label>
-                        <select wire:model="defaultTypeCode" class="w-full border border-gold-200 rounded-md px-3 py-2 text-sm bg-white focus:outline-none focus:border-gold-500">
-                            @foreach (\App\Models\Lead::TYPE_CODES as $key => $label)
-                                <option value="{{ $key }}">{{ $key }} — {{ $label }}</option>
-                            @endforeach
-                        </select>
-                    </div>
                 </div>
                 <div class="mb-4">
                     <label class="block text-xs font-semibold uppercase tracking-widest text-ink/60 mb-1.5">Tên kết nối</label>
@@ -283,7 +269,7 @@ new class extends Component
                             <div class="flex items-center gap-2" wire:key="map-{{ $index }}">
                                 <select wire:model="mappingRows.{{ $index }}.target" class="flex-1 border border-gold-200 rounded-md px-2.5 py-1.5 text-sm bg-white focus:outline-none focus:border-gold-500">
                                     <option value="">— field chuẩn —</option>
-                                    @foreach (['name', 'phone', 'received_date', 'page', 'camp', 'insight', 'link', 'ad_source', 'region', 'note', 'type_code'] as $field)
+                                    @foreach (['name', 'phone', 'received_date', 'page', 'camp', 'insight', 'link', 'ad_source', 'region', 'note'] as $field)
                                         <option value="{{ $field }}">{{ $field }}</option>
                                     @endforeach
                                 </select>

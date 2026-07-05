@@ -1,0 +1,33 @@
+Giờ tao cần mày làm một thứ "nhỏ" hơn nhiều
+
+
+
+Tạo cho tao 3 trang
+	- Một trang upload: tao sẽ upload các file excel theo mẫu vào -> kiểm tra đúng điều kiện + các trường -> lưu tạm lại
+	- Một trang danh sách: có thông tin khách đã up từ các nguồn "lọc nguồn"
+	- Một trang báo cáo dữ liệu đó
+
+
+
+
+
+------------------------------------------------------------------------------------------	
+
+
+chưa, giờ tao muốn phase chính có thêm cái này
+
+* Tổng công ty: Đặt yêu cầu các trường bắt buộc có. File chỉ tính hợp lệ khi có đủ các trường đó
+* Cấp phòng ban: Trưởng bộ phận đặt các trường bắt buộc thêm - Trường công ty được kế thừa xuống
+* Cấp đội nhóm: Trưởng nhóm, đội đặt thêm trường yêu cầu - Kế thừa cấp công ty, phòng v....v....
+
+Khâu này sẽ khá lớn và quan trọng. Đặc biệt dựa rất nhiều vào Sơ đồ tổ chức công ty. Nên kiểm tra kỹ nhé
+
+Một trường khi thêm vào bắt buộc sẽ có: Tên trường - Kiểu dữ liệu (mã phân loại - dạng ký tự, sẽ nối dài vào sau mã khách hàng ví dụ KH03-MKT thì MKT là mã nối dài, sau người dùng phòng đó phải nhập chữ MKT vào trường phân loại, số - có giới hạn hoặc giới hạn từ bao nhiêu tới bao nhiêu, text - tối đa bao nhiêu kí tự, email, option - điền các option khi nhập phải điền đúng). Và bước đặt thêm trường bắt buộc này sẽ được trưởng bộ phận cấp cao hơn duyệt mới áp dụng (ví dụ trưởng phòng thêm trường, giám đốc duyệt, trưởng nhóm thêm trường, trưởng phòng duyệt)
+
+
+Trong mục báo cáo của công ty, sẽ có một trường (Hiện đầy đủ trường tùy biến) nếu không tick sẽ chỉ hiện các trường bắt buộc và mặc định, không hiện các trường bắt buộc linh tinh của các cấp dưới tự thêm.
+
+Thắc mắc gì hỏi luôn
+
+
+------------------------------------------------------------------------------------------	

@@ -31,6 +31,7 @@ class PermissionSeeder extends Seeder
             'role.manage' => 'Quản lý vai trò',
             'org.manage' => 'Quản lý sơ đồ tổ chức',
             'field.manage' => 'Quản lý trường tùy biến của phòng ban',
+            'field.approve' => 'Duyệt trường bắt buộc của cấp dưới',
         ],
         'service' => [
             'service.manage' => 'Quản lý danh mục dịch vụ',

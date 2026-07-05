@@ -48,8 +48,8 @@ class ProcessRawLeadTest extends TestCase
         $this->assertSame('0912345678', $lead->phone); // đã chuẩn hóa
         $this->assertSame('2026-07-01', $lead->received_date->toDateString()); // parse d/m/Y
         $this->assertSame($raw->id, $lead->raw_lead_id); // truy vết ngược
-        $this->assertSame('MKT', $lead->type_code);
-        $this->assertSame(sprintf('KH-%05d-MKT-FB', $lead->id), $lead->code);
+        // Không có classification field cấu hình → mã core trần KH-{id}
+        $this->assertSame('KH-' . str_pad((string) $lead->id, 3, '0', STR_PAD_LEFT), $lead->code);
         $this->assertSame(Lead::POOL_COMMON, $lead->pool_level); // vào kho chung
         $this->assertTrue(LeadStatusLog::where('lead_id', $lead->id)->where('field', 'created')->exists());
     }
@@ -116,19 +116,5 @@ class ProcessRawLeadTest extends TestCase
 
         $this->assertSame(RawLead::STATUS_FAILED, $raw->status);
         $this->assertSame(0, Lead::count());
-    }
-
-    public function test_type_code_from_payload_respected(): void
-    {
-        $raw = $this->process($this->makeRaw(['name' => 'A', 'phone' => '0901234567', 'type_code' => 'C']));
-
-        $this->assertSame('C', Lead::find($raw->clean_lead_id)->type_code);
-    }
-
-    public function test_invalid_type_code_falls_back_to_mkt(): void
-    {
-        $raw = $this->process($this->makeRaw(['name' => 'A', 'phone' => '0901234567', 'type_code' => 'XYZ']));
-
-        $this->assertSame('MKT', Lead::find($raw->clean_lead_id)->type_code);
     }
 }

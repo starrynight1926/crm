@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 #[Fillable([
-    'raw_lead_id', 'code', 'type_code', 'source_code', 'received_date', 'page', 'camp',
+    'raw_lead_id', 'code', 'received_date', 'page', 'camp',
     'insight', 'link', 'ad_source', 'name', 'phone', 'region', 'classification',
     'status_1', 'status_2', 'note',
     'pool_level', 'owner_id', 'receiver_id', 'org_unit_id', 'assigned_at', 'last_care_at',
@@ -40,25 +40,6 @@ class Lead extends Model
     public const POOL_COMMON = 'common';
     public const POOL_TEAM = 'team';
     public const POOL_PERSONAL = 'personal';
-
-    // Loại data theo whiteboard (scope.md 4.1)
-    public const TYPE_CODES = [
-        'MKT' => 'Data Marketing',
-        'C' => 'Data lạnh (telesale)',
-        'BDM' => 'Data BDM',
-        'SI' => 'Tự giới thiệu (sale)',
-        'N' => 'Tự đến',
-    ];
-
-    // Map nguồn quảng cáo → mã nguồn gắn vào mã KH
-    public const SOURCE_CODES = [
-        'Facebook Ads' => 'FB',
-        'Google Ads' => 'GG',
-        'TikTok Ads' => 'TT',
-        'Zalo' => 'ZL',
-        'Website' => 'WEB',
-        'Giới thiệu' => 'GT',
-    ];
 
     protected function casts(): array
     {
@@ -110,14 +91,15 @@ class Lead extends Model
     }
 
     /**
-     * Sinh mã KH-{số}-{loại}[-{nguồn}] từ id (số tăng dần toàn hệ thống).
-     * Gọi sau khi lead đã có id; idempotent.
+     * Mã KH = KH-{id} (core cố định, pad tối thiểu 3 số) + các đoạn "mã phân loại"
+     * do classification field của công ty→phòng→nhóm sinh ra (xem CustomField).
+     * Gọi sau khi lead có id; idempotent; gọi lại khi đổi giá trị/đổi phòng.
      */
     public function generateCode(): string
     {
-        $code = sprintf('KH-%05d-%s', $this->id, $this->type_code ?: 'N');
-        if ($this->source_code) {
-            $code .= '-' . strtoupper($this->source_code);
+        $code = 'KH-' . str_pad((string) $this->id, 3, '0', STR_PAD_LEFT);
+        foreach (CustomField::codeSegmentsFor($this) as $segment) {
+            $code .= '-' . $segment;
         }
 
         if ($this->code !== $code) {
@@ -125,11 +107,6 @@ class Lead extends Model
         }
 
         return $code;
-    }
-
-    public static function sourceCodeFor(?string $adSource): ?string
-    {
-        return $adSource ? (self::SOURCE_CODES[$adSource] ?? null) : null;
     }
 
     public function classificationLabel(): string

@@ -40,7 +40,6 @@ new class extends Component
         'ad_source' => 'Nguồn quảng cáo',
         'region' => 'Khu vực',
         'note' => 'NOTE',
-        'type_code' => 'Loại data (MKT/C/BDM/SI/N)',
     ];
 
     public function updatedFile(): void
@@ -67,7 +66,6 @@ new class extends Component
             'ad_source' => ['nguồn', 'nguon', 'source'],
             'region' => ['khu vực', 'khu vuc', 'region'],
             'note' => ['note', 'ghi chú'],
-            'type_code' => ['loại', 'loai', 'type'],
         ];
 
         $this->mapping = array_fill_keys(array_keys(self::TARGETS), '');

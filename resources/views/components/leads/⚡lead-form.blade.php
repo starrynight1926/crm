@@ -42,8 +42,6 @@ new class extends Component
 
     public string $classification = 'new';
 
-    public string $type_code = 'N';
-
     /** @var array<int, string> custom_field_id => value */
     public array $custom = [];
 
@@ -76,7 +74,6 @@ new class extends Component
         $this->status_2 = $lead->status_2 ?? '';
         $this->note = $lead->note ?? '';
         $this->classification = $lead->classification;
-        $this->type_code = $lead->type_code ?? 'N';
         $this->custom = $lead->customValues->pluck('value', 'custom_field_id')
             ->map(fn ($v) => (string) $v)->all();
     }
@@ -103,6 +100,11 @@ new class extends Component
         $hasError = false;
 
         foreach ($fields as $field) {
+            // Mã cố định: giá trị tự động, người dùng không nhập → bỏ qua
+            if ($field->field_type === 'code' && ($field->rules['code_kind'] ?? '') === 'fixed') {
+                continue;
+            }
+
             $value = trim((string) ($this->custom[$field->id] ?? ''));
 
             if ($value === '') {
@@ -113,15 +115,60 @@ new class extends Component
                 continue;
             }
 
-            if ($field->field_type === 'number' && ! is_numeric(str_replace(',', '.', $value))) {
-                $this->addError("custom.{$field->id}", "\"{$field->label}\" phải là số.");
-                $hasError = true;
-                continue;
-            }
-            if ($field->field_type === 'select' && ! in_array($value, $field->options ?? [], true)) {
-                $this->addError("custom.{$field->id}", "Giá trị không nằm trong danh sách chọn của \"{$field->label}\".");
-                $hasError = true;
-                continue;
+            $rules = $field->rules ?? [];
+
+            if ($field->field_type === 'number') {
+                $num = str_replace(',', '.', $value);
+                if (! is_numeric($num)) {
+                    $this->addError("custom.{$field->id}", "\"{$field->label}\" phải là số.");
+                    $hasError = true;
+                    continue;
+                }
+                $num = (float) $num;
+                if (isset($rules['min']) && $num < $rules['min']) {
+                    $this->addError("custom.{$field->id}", "\"{$field->label}\" phải ≥ {$rules['min']}.");
+                    $hasError = true;
+                    continue;
+                }
+                if (isset($rules['max']) && $num > $rules['max']) {
+                    $this->addError("custom.{$field->id}", "\"{$field->label}\" phải ≤ {$rules['max']}.");
+                    $hasError = true;
+                    continue;
+                }
+            } elseif ($field->field_type === 'text') {
+                if (isset($rules['maxlength']) && mb_strlen($value) > $rules['maxlength']) {
+                    $this->addError("custom.{$field->id}", "\"{$field->label}\" tối đa {$rules['maxlength']} ký tự.");
+                    $hasError = true;
+                    continue;
+                }
+            } elseif ($field->field_type === 'email') {
+                if (! filter_var($value, FILTER_VALIDATE_EMAIL)) {
+                    $this->addError("custom.{$field->id}", "\"{$field->label}\" phải là email hợp lệ.");
+                    $hasError = true;
+                    continue;
+                }
+            } elseif ($field->field_type === 'select') {
+                if (! in_array($value, $field->options ?? [], true)) {
+                    $this->addError("custom.{$field->id}", "Giá trị không nằm trong danh sách của \"{$field->label}\".");
+                    $hasError = true;
+                    continue;
+                }
+            } elseif ($field->field_type === 'code') {
+                $kind = $rules['code_kind'] ?? 'input';
+                if ($kind === 'fixed') {
+                    continue; // cố định — không lấy từ input
+                }
+                $value = CustomField::normalizeCode($value);
+                if ($value === '') {
+                    $this->addError("custom.{$field->id}", "\"{$field->label}\" cần chữ/số.");
+                    $hasError = true;
+                    continue;
+                }
+                if ($kind === 'select' && ! in_array($value, array_map([CustomField::class, 'normalizeCode'], $field->options ?? []), true)) {
+                    $this->addError("custom.{$field->id}", "Mã không nằm trong danh sách của \"{$field->label}\".");
+                    $hasError = true;
+                    continue;
+                }
             }
 
             $clean[$field->id] = $value;
@@ -149,10 +196,9 @@ new class extends Component
             'phone' => 'required|string',
             'received_date' => 'required|date',
             'classification' => 'required|in:' . implode(',', array_keys(Lead::CLASSIFICATIONS)),
-            'type_code' => 'required|in:' . implode(',', array_keys(Lead::TYPE_CODES)),
             'owner_id' => 'nullable|exists:users,id',
             'link' => 'nullable|string|max:500',
-        ], [], ['name' => 'tên khách hàng', 'phone' => 'SĐT', 'received_date' => 'ngày', 'type_code' => 'loại data']);
+        ], [], ['name' => 'tên khách hàng', 'phone' => 'SĐT', 'received_date' => 'ngày']);
 
         $cleanCustom = $this->validateCustomFields();
         if ($cleanCustom === null) {
@@ -189,7 +235,6 @@ new class extends Component
             'status_2' => $this->status_2 ?: null,
             'note' => $this->note ?: null,
             'classification' => $this->classification,
-            'type_code' => $this->type_code,
         ];
 
         if ($this->lead) {
@@ -206,7 +251,6 @@ new class extends Component
 
         $attributes['receiver_id'] = $user->id; // người nhập là người nhận lead
         $attributes['owner_id'] = $ownerId;
-        $attributes['source_code'] = Lead::sourceCodeFor($attributes['ad_source']);
 
         if ($ownerId) {
             $ownerOrg = Assignment::where('user_id', $ownerId)->effective()->first()?->org_unit_id;
@@ -218,8 +262,9 @@ new class extends Component
         }
 
         $lead = Lead::create($attributes);
-        $lead->generateCode();
         $this->syncCustomValues($lead, $cleanCustom);
+        $lead->load('customValues');
+        $lead->generateCode();
 
         LeadStatusLog::record($lead, 'created', null, 'Nhập tay bởi ' . $user->name, $user->id);
         AuditLog::record('create', $lead);
@@ -252,9 +297,9 @@ new class extends Component
         }
 
         $lead->update($attributes);
-        $lead->source_code ??= Lead::sourceCodeFor($lead->ad_source);
-        $lead->generateCode(); // type/source đổi thì mã cập nhật theo
         $this->syncCustomValues($lead, $cleanCustom);
+        $lead->load('customValues');
+        $lead->generateCode(); // classification đổi/đổi phòng → mã cập nhật theo
         AuditLog::record('update', $lead);
 
         session()->flash('status', 'Đã cập nhật thông tin khách hàng.');
@@ -365,18 +410,13 @@ new class extends Component
                             @endforeach
                         </select>
                     </div>
+                    @if ($lead?->code)
                     <div>
-                        <label class="block text-sm font-medium mb-1.5">Loại data <span class="text-red-500">*</span></label>
-                        <select wire:model="type_code" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-gold-500">
-                            @foreach (\App\Models\Lead::TYPE_CODES as $key => $label)
-                                <option value="{{ $key }}">{{ $key }} — {{ $label }}</option>
-                            @endforeach
-                        </select>
-                        @error('type_code')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
-                        @if ($lead?->code)
-                            <p class="text-xs text-ink/50 mt-1.5">Mã hiện tại: <code class="font-mono text-gold-700">{{ $lead->code }}</code></p>
-                        @endif
+                        <label class="block text-sm font-medium mb-1.5">Mã khách hàng</label>
+                        <p class="text-sm mt-2"><code class="font-mono text-gold-700">{{ $lead->code }}</code></p>
+                        <p class="text-xs text-ink/50 mt-1.5">Mã tự sinh theo trường phân loại của phòng.</p>
                     </div>
+                    @endif
                     <div>
                         <label class="block text-sm font-medium mb-1.5">LEAD CHIA CHO</label>
                         <select wire:model.live="owner_id" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-gold-500">
@@ -431,15 +471,19 @@ new class extends Component
                     <p class="text-xs text-ink/50 mb-5">Bộ trường do phòng ban đang giữ lead quy định.</p>
                     <div class="space-y-4">
                         @foreach ($customFields as $field)
+                            @php $ck = $field->rules['code_kind'] ?? null; @endphp
+                            {{-- Mã cố định: tự động, không cần nhập --}}
+                            @continue($field->field_type === 'code' && $ck === 'fixed')
                             <div wire:key="cf-{{ $field->id }}">
                                 <label class="block text-sm font-medium mb-1.5">
                                     {{ $field->label }}
                                     @if ($field->required)<span class="text-red-500">*</span>@endif
+                                    @if ($field->affects_code)<span class="text-[10px] text-gold-700 ml-1">#mã KH</span>@endif
                                     @if ($field->org_unit_id === null)
                                         <span class="text-[10px] uppercase tracking-wider text-ink/40 border border-gold-100 rounded px-1.5 py-0.5 ml-1">Công ty</span>
                                     @endif
                                 </label>
-                                @if ($field->field_type === 'select')
+                                @if ($field->field_type === 'select' || ($field->field_type === 'code' && $ck === 'select'))
                                     <select wire:model="custom.{{ $field->id }}" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-gold-500">
                                         <option value="">— chọn —</option>
                                         @foreach ($field->options ?? [] as $option)
@@ -450,8 +494,10 @@ new class extends Component
                                     <input type="date" wire:model="custom.{{ $field->id }}" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
                                 @elseif ($field->field_type === 'number')
                                     <input type="number" step="any" wire:model="custom.{{ $field->id }}" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
+                                @elseif ($field->field_type === 'email')
+                                    <input type="email" wire:model="custom.{{ $field->id }}" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
                                 @else
-                                    <input type="text" wire:model="custom.{{ $field->id }}" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
+                                    <input type="text" wire:model="custom.{{ $field->id }}" @if($field->field_type==='code') style="text-transform:uppercase" @endif class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
                                 @endif
                                 @error('custom.' . $field->id)<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
                             </div>

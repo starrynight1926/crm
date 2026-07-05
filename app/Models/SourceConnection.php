@@ -5,7 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 
-#[Fillable(['type', 'name', 'credentials', 'webhook_token', 'field_mapping', 'default_type_code', 'active', 'last_synced_at'])]
+#[Fillable(['type', 'name', 'credentials', 'webhook_token', 'field_mapping', 'active', 'last_synced_at'])]
 class SourceConnection extends Model
 {
     protected function casts(): array
