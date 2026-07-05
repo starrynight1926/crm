@@ -31,3 +31,21 @@ Thắc mắc gì hỏi luôn
 
 
 ------------------------------------------------------------------------------------------	
+Kiểu "mã phân loại" nối vào mã KH — quan hệ với mã loại data đang có (KH-00123-MKT-FB, MKT=type_code)?
+
+Thay type_code hiện tại
+
+Trường BẮT BUỘC mức công ty (admin/giám đốc thêm) có cần ai duyệt không?
+
+Không cần duyệt
+
+Toggle "Hiện đầy đủ trường tùy biến" trong báo cáo — khi TẮT thì hiện gì?
+
+Chỉ hiện trường bắt buộc + mặc định cấp công ty
+
+Nếu mã KH đổi format (thêm đoạn phân loại của phòng), áp cho lead cũ thế nào?
+
+Có cách nào thêm 1 trường để sau nếu đổi mã thì vẫn bám theo trường đó tương tác được không? nghĩa là về cơ bản hệ thống sẽ lấy mã core (dạng UUID) còn người dùng sẽ hiểu là mã KH của công ty là tổng, điều này dễ cho người vận hành hơn. Tuy nhiên UUID dùng lâu dài sợ sẽ chậm, lag... nên tao nghĩ bước raw chưa có UUID, sang bước data real mới sinh nhỉ? đoạn này cần tư vấn rồi mới thực hiện
+
+
+------------------------------------------------------------------------------------------	

@@ -13,6 +13,16 @@
   - ...
 -->
 
+## Import chính rule-based (template + mặc định + trường tùy biến) ✅ (bổ sung, xen Phase 7)
+- **Ngày**: 2026-07-06
+- **Bối cảnh**: sau khi làm khu demo rule-based, user chốt nâng **màn import chính** lên tương tự (thay vì 2 luồng song song). Scope: template dùng chung toàn công ty + giá trị mặc định + map cả trường tùy biến; giữ nguyên pipeline `raw_leads` → `ProcessRawLead` (async, dedup, sinh mã, chia số).
+- **Đã làm**:
+  - Bảng `import_templates` (MySQL) + model `ImportTemplate` — tên + config `[{target, header, default}]`, dùng chung. `target` = field lead chuẩn hoặc `cf_<id>`.
+  - Màn import (`⚡lead-import`): chọn/áp/lưu/xóa **template**; cột **"Mặc định"** cho từng trường (điền khi ô trống); danh sách target giờ gồm **trường tùy biến đang áp** (cf_) — auto-đoán theo nhãn; bỏ dòng Tên+SĐT đều trống.
+  - `ProcessRawLead`: đọc payload `cf_<id>` → ghi `LeadCustomValue` (lưu mọi cf hợp lệ, không lọc org vì org chỉ quyết định lúc hiển thị) → `generateCode()` (nối mã từ classification mức công ty). Dedup/sinh mã/chia số giữ nguyên.
+- **Test**: **88/88 pass** (thêm test pipeline ghi custom value + nối mã `KH-{id}-2026`). Màn `/leads/import` render 200 với UI template.
+- **Ghi chú**: default value áp lúc import (trong component), không đụng job. Trường tùy biến của phòng vẫn map/ghi được dù lead mới vào kho chung (org null) — khi lead chuyển phòng sẽ có sẵn dữ liệu. Demo cũ giữ nguyên làm sân tập; gỡ sau nếu cần.
+
 ## Trường tùy biến đa cấp + Duyệt + Mã phân loại 🔶 (bổ sung, xen Phase 7 — đang làm)
 - **Ngày**: 2026-07-05
 - **Bối cảnh**: user yêu cầu mở rộng trường tùy biến (Phase 2.5) thành hệ thống đa cấp có duyệt + mã phân loại nối vào mã KH. Làm theo 5 lớp.

@@ -19,7 +19,8 @@
             }},
         };
     </script>
-    <style>input[type=checkbox],input[type=radio]{accent-color:#8B5E14}</style>
+    <style>input[type=checkbox],input[type=radio]{accent-color:#8B5E14}[x-cloak]{display:none!important}</style>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
 </head>
 <body class="bg-cream text-ink font-sans antialiased min-h-screen">
     <header class="bg-white border-b border-gold-400/30 shadow-sm">
@@ -27,7 +28,8 @@
             <span class="font-bold text-gold-700 text-lg">Demo Staging</span>
             <nav class="flex items-center gap-1 text-sm">
                 @php $r = request()->route()->getName(); @endphp
-                <a href="{{ route('demo.upload') }}" class="px-3 py-1.5 rounded-lg {{ $r==='demo.upload'?'bg-gold-600 text-white':'hover:bg-gold-400/10' }}">Upload</a>
+                <a href="{{ route('demo.rules') }}" class="px-3 py-1.5 rounded-lg {{ $r==='demo.rules'?'bg-gold-600 text-white':'hover:bg-gold-400/10' }}">1. Quy tắc trường</a>
+                <a href="{{ route('demo.upload') }}" class="px-3 py-1.5 rounded-lg {{ in_array($r,['demo.upload','demo.map'])?'bg-gold-600 text-white':'hover:bg-gold-400/10' }}">2. Nhập file</a>
                 <a href="{{ route('demo.leads') }}"  class="px-3 py-1.5 rounded-lg {{ $r==='demo.leads'?'bg-gold-600 text-white':'hover:bg-gold-400/10' }}">Danh sách</a>
                 <a href="{{ route('demo.report') }}" class="px-3 py-1.5 rounded-lg {{ $r==='demo.report'?'bg-gold-600 text-white':'hover:bg-gold-400/10' }}">Báo cáo</a>
             </nav>

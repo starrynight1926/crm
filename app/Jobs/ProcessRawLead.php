@@ -2,7 +2,9 @@
 
 namespace App\Jobs;
 
+use App\Models\CustomField;
 use App\Models\Lead;
+use App\Models\LeadCustomValue;
 use App\Models\LeadStatusLog;
 use App\Models\RawLead;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -91,6 +93,9 @@ class ProcessRawLead implements ShouldQueue
             'classification' => 'new',
             'pool_level' => Lead::POOL_COMMON, // vào kho chung, chờ engine chia số (Phase 4)
         ]);
+        // Trường tùy biến map từ file (payload key 'cf_<id>') — ghi trước khi sinh mã
+        $this->writeCustomValues($lead, $payload);
+        $lead->load('customValues');
         $lead->generateCode();
 
         LeadStatusLog::record($lead, 'created', null, 'Pipeline từ nguồn ' . $raw->source_type . ($raw->source_ref ? " ({$raw->source_ref})" : ''), null);
@@ -103,6 +108,31 @@ class ProcessRawLead implements ShouldQueue
 
         // Lead sạch vào kho chung → engine chia số chạy ngay (không phụ thuộc giờ làm việc)
         app(\App\Services\DistributionEngine::class)->distribute($lead);
+    }
+
+    /**
+     * Ghi giá trị trường tùy biến từ payload (key 'cf_<id>' => value) vào lead.
+     * Lưu mọi cf hợp lệ (không lọc theo org — org quyết định lúc HIỂN THỊ, không cản LƯU),
+     * để lead chuyển phòng sau vẫn có sẵn dữ liệu.
+     */
+    private function writeCustomValues(Lead $lead, array $payload): void
+    {
+        foreach ($payload as $key => $value) {
+            if (! is_string($key) || ! str_starts_with($key, 'cf_')) {
+                continue;
+            }
+            $value = trim((string) $value);
+            if ($value === '') {
+                continue;
+            }
+            $cfId = (int) substr($key, 3);
+            if ($cfId > 0 && CustomField::whereKey($cfId)->exists()) {
+                LeadCustomValue::updateOrCreate(
+                    ['lead_id' => $lead->id, 'custom_field_id' => $cfId],
+                    ['value' => $value]
+                );
+            }
+        }
     }
 
     /** Gộp thông tin mới vào lead cũ: chỉ điền field còn trống, log lại. */

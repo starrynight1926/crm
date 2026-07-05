@@ -3,7 +3,9 @@
 namespace Tests\Feature;
 
 use App\Jobs\ProcessRawLead;
+use App\Models\CustomField;
 use App\Models\Lead;
+use App\Models\LeadCustomValue;
 use App\Models\LeadStatusLog;
 use App\Models\RawLead;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -116,5 +118,32 @@ class ProcessRawLeadTest extends TestCase
 
         $this->assertSame(RawLead::STATUS_FAILED, $raw->status);
         $this->assertSame(0, Lead::count());
+    }
+
+    public function test_pipeline_writes_custom_field_values_and_code(): void
+    {
+        // Trường tùy biến mức công ty: 1 thường + 1 mã phân loại cố định (nối mã)
+        $need = CustomField::create([
+            'org_unit_id' => null, 'key' => 'nhu_cau', 'label' => 'Nhu cầu',
+            'field_type' => 'text', 'required' => false, 'status' => 'active', 'active' => true,
+        ]);
+        $year = CustomField::create([
+            'org_unit_id' => null, 'key' => 'nam', 'label' => 'Năm',
+            'field_type' => 'code', 'affects_code' => true,
+            'rules' => ['code_kind' => 'fixed', 'fixed_value' => '2026'],
+            'required' => false, 'status' => 'active', 'active' => true,
+        ]);
+
+        $raw = $this->process($this->makeRaw([
+            'name' => 'A', 'phone' => '0901234567',
+            'cf_' . $need->id => 'Gói cao cấp',
+        ]));
+
+        $lead = Lead::find($raw->clean_lead_id);
+        $this->assertNotNull($lead);
+        // giá trị custom được ghi
+        $this->assertSame('Gói cao cấp', LeadCustomValue::where('lead_id', $lead->id)->where('custom_field_id', $need->id)->value('value'));
+        // mã nối đoạn cố định mức công ty
+        $this->assertSame('KH-' . str_pad((string) $lead->id, 3, '0', STR_PAD_LEFT) . '-2026', $lead->code);
     }
 }

@@ -1,7 +1,9 @@
 <?php
 
 use App\Jobs\ProcessRawLead;
+use App\Models\CustomField;
 use App\Models\ImportBatch;
+use App\Models\ImportTemplate;
 use App\Models\RawLead;
 use App\Support\SpreadsheetReader;
 use Livewire\Component;
@@ -23,12 +25,19 @@ new class extends Component
 
     public string $storedName = '';
 
-    /** @var array<string, string> target field => cột file (index dạng string, '' = bỏ qua) */
+    /** @var array<string, string> target => cột file (index dạng string, '' = bỏ qua) */
     public array $mapping = [];
+
+    /** @var array<string, string> target => giá trị mặc định nếu ô trống */
+    public array $defaults = [];
+
+    public string $selectedTemplateId = '';
+
+    public string $templateName = '';
 
     public ?int $lastBatchId = null;
 
-    // Field chuẩn có thể map (scope.md mục 4)
+    // Field lead chuẩn (scope.md mục 4)
     public const TARGETS = [
         'name' => 'Tên khách hàng *',
         'phone' => 'SĐT *',
@@ -42,6 +51,46 @@ new class extends Component
         'note' => 'NOTE',
     ];
 
+    private const GUESS = [
+        'name' => ['tên', 'ten', 'name', 'họ tên', 'khách hàng'],
+        'phone' => ['sđt', 'sdt', 'phone', 'điện thoại', 'so dien thoai'],
+        'received_date' => ['ngày', 'ngay', 'date'],
+        'page' => ['page'],
+        'camp' => ['camp', 'chiến dịch'],
+        'insight' => ['insight'],
+        'link' => ['link'],
+        'ad_source' => ['nguồn', 'nguon', 'source'],
+        'region' => ['khu vực', 'khu vuc', 'region'],
+        'note' => ['note', 'ghi chú'],
+    ];
+
+    /** Trường tùy biến đang áp (active) → ['cf_<id>' => 'Nhãn (Phòng)']. */
+    private function customTargets(): array
+    {
+        $out = [];
+        $fields = CustomField::query()
+            ->where('active', true)
+            ->where('status', CustomField::STATUS_ACTIVE)
+            ->with('orgUnit')
+            ->orderBy('org_unit_id')->orderBy('position')->get();
+        foreach ($fields as $f) {
+            $scope = $f->org_unit_id === null ? 'Công ty' : ($f->orgUnit?->name ?? 'Phòng');
+            $out['cf_' . $f->id] = $f->label . ' (' . $scope . ')';
+        }
+        return $out;
+    }
+
+    /** Toàn bộ target: field chuẩn + trường tùy biến. */
+    private function allTargets(): array
+    {
+        return array_merge(self::TARGETS, $this->customTargets());
+    }
+
+    private function norm(string $s): string
+    {
+        return mb_strtolower(trim(preg_replace('/\s+/u', ' ', $s)));
+    }
+
     public function updatedFile(): void
     {
         $this->validate(['file' => 'required|file|mimes:csv,txt,xlsx,xls|max:20480']);
@@ -54,29 +103,106 @@ new class extends Component
         $this->headers = $data['headers'];
         $this->preview = array_slice($data['rows'], 0, 5);
 
-        // Tự đoán mapping theo tên cột
-        $guesses = [
-            'name' => ['tên', 'ten', 'name', 'họ tên', 'khách hàng'],
-            'phone' => ['sđt', 'sdt', 'phone', 'điện thoại', 'so dien thoai'],
-            'received_date' => ['ngày', 'ngay', 'date'],
-            'page' => ['page'],
-            'camp' => ['camp', 'chiến dịch'],
-            'insight' => ['insight'],
-            'link' => ['link'],
-            'ad_source' => ['nguồn', 'nguon', 'source'],
-            'region' => ['khu vực', 'khu vuc', 'region'],
-            'note' => ['note', 'ghi chú'],
-        ];
+        $this->initMappingDefaults();
+        $this->autoGuess();
+    }
 
-        $this->mapping = array_fill_keys(array_keys(self::TARGETS), '');
+    private function initMappingDefaults(): void
+    {
+        $keys = array_keys($this->allTargets());
+        $this->mapping = array_fill_keys($keys, '');
+        $this->defaults = array_fill_keys($keys, '');
+    }
+
+    /** Tự đoán mapping theo tên cột: field chuẩn theo từ khóa, custom theo nhãn. */
+    private function autoGuess(): void
+    {
+        $custom = $this->customTargets();
         foreach ($this->headers as $index => $header) {
-            $h = mb_strtolower(trim($header));
-            foreach ($guesses as $target => $keywords) {
+            $h = $this->norm((string) $header);
+            if ($h === '') {
+                continue;
+            }
+            foreach (self::GUESS as $target => $keywords) {
                 if ($this->mapping[$target] === '' && array_filter($keywords, fn ($k) => str_contains($h, $k))) {
                     $this->mapping[$target] = (string) $index;
                     break;
                 }
             }
+            foreach ($custom as $target => $label) {
+                // nhãn custom bỏ phần " (Phòng)" để so
+                $base = $this->norm(preg_replace('/\s*\(.*\)\s*$/', '', $label));
+                if (($this->mapping[$target] ?? '') === '' && $base !== '' && $h === $base) {
+                    $this->mapping[$target] = (string) $index;
+                }
+            }
+        }
+    }
+
+    public function applyTemplate(): void
+    {
+        if ($this->selectedTemplateId === '' || ! $this->headers) {
+            return;
+        }
+        $tpl = ImportTemplate::find($this->selectedTemplateId);
+        if (! $tpl) {
+            return;
+        }
+
+        $this->initMappingDefaults();
+        // index theo header đã chuẩn hóa
+        $byHeader = [];
+        foreach ($this->headers as $i => $h) {
+            $byHeader[$this->norm((string) $h)] = (string) $i;
+        }
+        foreach ($tpl->config ?? [] as $entry) {
+            $target = $entry['target'] ?? null;
+            if (! $target || ! array_key_exists($target, $this->mapping)) {
+                continue;
+            }
+            $header = $this->norm((string) ($entry['header'] ?? ''));
+            if ($header !== '' && isset($byHeader[$header])) {
+                $this->mapping[$target] = $byHeader[$header];
+            }
+            $this->defaults[$target] = (string) ($entry['default'] ?? '');
+        }
+        session()->flash('status', "Đã áp template \"{$tpl->name}\".");
+    }
+
+    public function saveTemplate(): void
+    {
+        abort_unless(auth()->user()->hasPermission('lead.import'), 403);
+        $this->validate(['templateName' => 'required|string|max:100'], [], ['templateName' => 'tên template']);
+
+        $labels = $this->allTargets();
+        $config = [];
+        foreach ($this->mapping as $target => $colIndex) {
+            $default = trim((string) ($this->defaults[$target] ?? ''));
+            if ($colIndex === '' && $default === '') {
+                continue; // target không map + không mặc định → bỏ
+            }
+            $config[] = [
+                'target' => $target,
+                'header' => $colIndex !== '' ? (string) ($this->headers[(int) $colIndex] ?? '') : '',
+                'default' => $default,
+            ];
+        }
+
+        ImportTemplate::create([
+            'name' => $this->templateName,
+            'config' => $config,
+            'created_by' => auth()->id(),
+        ]);
+        $this->templateName = '';
+        session()->flash('status', 'Đã lưu template.');
+    }
+
+    public function deleteTemplate(int $id): void
+    {
+        abort_unless(auth()->user()->hasPermission('lead.import'), 403);
+        ImportTemplate::whereKey($id)->delete();
+        if ($this->selectedTemplateId === (string) $id) {
+            $this->selectedTemplateId = '';
         }
     }
 
@@ -88,7 +214,7 @@ new class extends Component
             $this->addError('file', 'Chưa chọn file.');
             return;
         }
-        if ($this->mapping['name'] === '' || $this->mapping['phone'] === '') {
+        if (($this->mapping['name'] ?? '') === '' || ($this->mapping['phone'] ?? '') === '') {
             $this->addError('mapping', 'Bắt buộc map cột Tên và SĐT.');
             return;
         }
@@ -103,12 +229,26 @@ new class extends Component
             'created_at' => now(),
         ]);
 
+        $nameCol = (int) $this->mapping['name'];
+        $phoneCol = (int) $this->mapping['phone'];
+
+        $count = 0;
         foreach ($data['rows'] as $row) {
+            // Bỏ dòng mà Tên và SĐT đều trống (rác/dòng đệm)
+            $nameV = trim((string) ($row[$nameCol] ?? ''));
+            $phoneV = trim((string) ($row[$phoneCol] ?? ''));
+            if ($nameV === '' && $phoneV === '') {
+                continue;
+            }
+
             $payload = [];
             foreach ($this->mapping as $target => $columnIndex) {
-                if ($columnIndex !== '') {
-                    $value = $row[(int) $columnIndex] ?? null;
-                    $payload[$target] = $value !== null ? trim((string) $value) : null;
+                $val = $columnIndex !== '' ? trim((string) ($row[(int) $columnIndex] ?? '')) : '';
+                if ($val === '' && ($this->defaults[$target] ?? '') !== '') {
+                    $val = trim((string) $this->defaults[$target]);
+                }
+                if ($val !== '') {
+                    $payload[$target] = $val;
                 }
             }
 
@@ -120,13 +260,15 @@ new class extends Component
                 'status' => RawLead::STATUS_PENDING,
                 'created_at' => now(),
             ]);
-
             ProcessRawLead::dispatch($raw->id);
+            $count++;
         }
 
+        $batch->update(['total' => $count]);
+
         $this->lastBatchId = $batch->id;
-        $this->reset('file', 'headers', 'preview', 'storedPath', 'storedName', 'mapping');
-        session()->flash('status', "Đã nhận {$batch->total} dòng — pipeline đang chuẩn hóa nền (batch #{$batch->id}).");
+        $this->reset('file', 'headers', 'preview', 'storedPath', 'storedName', 'mapping', 'defaults', 'selectedTemplateId');
+        session()->flash('status', "Đã nhận {$count} dòng — pipeline đang chuẩn hóa nền (batch #{$batch->id}).");
     }
 
     public function with(): array
@@ -134,7 +276,11 @@ new class extends Component
         $batches = ImportBatch::orderByDesc('id')->limit(10)->get();
         $batches->each->refreshStats();
 
-        return ['batches' => $batches];
+        return [
+            'batches' => $batches,
+            'targets' => $this->allTargets(),
+            'templates' => ImportTemplate::orderByDesc('id')->get(),
+        ];
     }
 };
 ?>
@@ -142,7 +288,7 @@ new class extends Component
 <div wire:poll.5s>
     <div class="mb-6">
         <h1 class="text-3xl font-bold mb-1">Import dữ liệu khách hàng</h1>
-        <p class="text-sm text-ink/60">Upload Excel/CSV → map cột → pipeline tự chuẩn hóa SĐT, chống trùng và đưa lead sạch vào kho chung.</p>
+        <p class="text-sm text-ink/60">Upload Excel/CSV → chọn/tạo template → map cột (kèm giá trị mặc định) → pipeline chuẩn hóa, chống trùng, đưa lead sạch vào kho chung.</p>
     </div>
 
     @if (session('status'))
@@ -159,19 +305,53 @@ new class extends Component
             <div wire:loading wire:target="file" class="text-sm text-gold-600 mt-2">Đang đọc file...</div>
 
             @if ($headers)
-                <h2 class="font-bold text-gold-700 mt-6 mb-1">2. Map cột file → trường chuẩn</h2>
-                <p class="text-xs text-ink/50 mb-4">Hệ thống đã tự đoán theo tên cột, kiểm tra lại trước khi import.</p>
+                {{-- Template --}}
+                <div class="mt-5 border border-gold-100 rounded-lg p-3 bg-gold-50/40">
+                    <div class="flex items-end gap-2 flex-wrap">
+                        <div class="flex-1 min-w-[160px]">
+                            <label class="block text-xs font-semibold text-ink/60 mb-1">Template (tái dùng)</label>
+                            <select wire:model="selectedTemplateId" class="w-full border border-gold-200 rounded-md px-2.5 py-1.5 text-sm bg-white">
+                                <option value="">— chọn template —</option>
+                                @foreach ($templates as $tpl)
+                                    <option value="{{ $tpl->id }}">{{ $tpl->name }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <button wire:click="applyTemplate" class="text-xs font-semibold text-white bg-gold-600 hover:bg-gold-700 px-3 py-2 rounded-md">Áp dụng</button>
+                        @if ($selectedTemplateId)
+                            <button wire:click="deleteTemplate({{ (int) $selectedTemplateId }})" wire:confirm="Xóa template này?" class="text-xs font-semibold text-red-600 border border-red-200 hover:bg-red-50 px-3 py-2 rounded-md">Xóa</button>
+                        @endif
+                    </div>
+                    <div class="flex items-end gap-2 mt-2">
+                        <div class="flex-1">
+                            <label class="block text-xs font-semibold text-ink/60 mb-1">Lưu map hiện tại thành template</label>
+                            <input type="text" wire:model="templateName" placeholder="VD: Mẫu FB Lead Form" class="w-full border border-gold-200 rounded-md px-2.5 py-1.5 text-sm">
+                            @error('templateName')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
+                        </div>
+                        <button wire:click="saveTemplate" class="text-xs font-semibold text-gold-700 border border-gold-300 hover:bg-gold-100 px-3 py-2 rounded-md">Lưu template</button>
+                    </div>
+                </div>
+
+                <h2 class="font-bold text-gold-700 mt-6 mb-1">2. Map cột file → trường</h2>
+                <p class="text-xs text-ink/50 mb-3">Tự đoán theo tên cột; đặt "Mặc định" cho ô trống. Trường tùy biến theo phòng nằm cuối danh sách.</p>
                 @error('mapping')<p class="text-xs text-red-600 mb-2">{{ $message }}</p>@enderror
-                <div class="space-y-2.5">
-                    @foreach (self::TARGETS as $target => $label)
-                        <div class="grid grid-cols-2 gap-3 items-center">
-                            <label class="text-sm font-medium">{{ $label }}</label>
-                            <select wire:model="mapping.{{ $target }}" class="border border-gold-200 rounded-md px-2.5 py-1.5 text-sm bg-white focus:outline-none focus:border-gold-500">
+
+                <div class="grid grid-cols-[1fr_1fr_0.9fr] gap-2 mb-1 px-0.5">
+                    <span class="text-[11px] font-semibold uppercase tracking-wider text-ink/40">Trường</span>
+                    <span class="text-[11px] font-semibold uppercase tracking-wider text-ink/40">Cột file</span>
+                    <span class="text-[11px] font-semibold uppercase tracking-wider text-ink/40">Mặc định</span>
+                </div>
+                <div class="space-y-2">
+                    @foreach ($targets as $target => $label)
+                        <div class="grid grid-cols-[1fr_1fr_0.9fr] gap-2 items-center">
+                            <label class="text-sm font-medium {{ str_starts_with($target, 'cf_') ? 'text-ink/70' : '' }}">{{ $label }}</label>
+                            <select wire:model="mapping.{{ $target }}" class="border border-gold-200 rounded-md px-2 py-1.5 text-sm bg-white focus:outline-none focus:border-gold-500">
                                 <option value="">— bỏ qua —</option>
                                 @foreach ($headers as $index => $header)
                                     <option value="{{ $index }}">{{ $header ?: "Cột " . ($index + 1) }}</option>
                                 @endforeach
                             </select>
+                            <input type="text" wire:model="defaults.{{ $target }}" placeholder="—" class="border border-gold-200 rounded-md px-2 py-1.5 text-sm focus:outline-none focus:border-gold-500">
                         </div>
                     @endforeach
                 </div>

@@ -13,8 +13,12 @@ Route::prefix('demo')->group(function () {
     Route::get('/login', [DemoStagingController::class, 'loginPage'])->name('demo.login');
     Route::get('/login/{who}', [DemoStagingController::class, 'loginAs'])->name('demo.loginAs');
     Route::post('/logout', [DemoStagingController::class, 'logout'])->name('demo.logout');
+    Route::get('/rules', [DemoStagingController::class, 'rules'])->name('demo.rules');
+    Route::post('/rules', [DemoStagingController::class, 'ruleStore'])->name('demo.ruleStore');
+    Route::delete('/rules/{id}', [DemoStagingController::class, 'ruleDelete'])->name('demo.ruleDelete');
     Route::get('/', [DemoStagingController::class, 'upload'])->name('demo.upload');
-    Route::post('/upload', [DemoStagingController::class, 'store'])->name('demo.store');
+    Route::post('/preview', [DemoStagingController::class, 'preview'])->name('demo.preview');
+    Route::post('/import', [DemoStagingController::class, 'import'])->name('demo.import');
     Route::get('/leads', [DemoStagingController::class, 'leads'])->name('demo.leads');
     Route::get('/report', [DemoStagingController::class, 'report'])->name('demo.report');
     Route::post('/reset', [DemoStagingController::class, 'reset'])->name('demo.reset');

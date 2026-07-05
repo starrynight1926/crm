@@ -28,11 +28,11 @@
             </select>
         </div>
         <div>
-            <label class="block text-xs text-ink/50 mb-1">Nguồn (mẫu)</label>
+            <label class="block text-xs text-ink/50 mb-1">Quy tắc</label>
             <select name="source_key" class="w-full rounded-lg border border-gold-400/40 px-2 py-1.5 text-sm">
                 <option value="">Tất cả</option>
-                @foreach ($sources as $key => $src)
-                    <option value="{{ $key }}" @selected(($filters['source_key']??'')===$key)>{{ $src['name'] }}</option>
+                @foreach ($rules as $rule)
+                    <option value="rule_{{ $rule->id }}" @selected(($filters['source_key']??'')==='rule_'.$rule->id)>{{ $rule->name }}</option>
                 @endforeach
             </select>
         </div>

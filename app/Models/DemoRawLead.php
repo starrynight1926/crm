@@ -21,21 +21,4 @@ class DemoRawLead extends Model
         'payload' => 'array',
         'ngay'    => 'date',
     ];
-
-    /**
-     * Danh sách các nguồn cấu hình (config/demo_sources.php), keyed theo 'key'.
-     */
-    public static function sources(): array
-    {
-        $out = [];
-        foreach (config('demo_sources', []) as $src) {
-            $out[$src['key']] = $src;
-        }
-        return $out;
-    }
-
-    public static function source(string $key): ?array
-    {
-        return static::sources()[$key] ?? null;
-    }
 }
