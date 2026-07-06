@@ -9,7 +9,7 @@
                 <path stroke-linecap="round" stroke-linejoin="round" d="M12 3l9 5.25v1.5H3v-1.5L12 3zM4.5 11.25h2v7.5h-2v-7.5zm6.5 0h2v7.5h-2v-7.5zm6.5 0h2v7.5h-2v-7.5zM3 20.25h18v1.5H3v-1.5z"/>
             </svg>
         </div>
-        <h1 class="text-2xl font-bold text-gold-700 tracking-wide uppercase">Aureum CRM</h1>
+        <h1 class="text-2xl font-bold text-gold-700 tracking-wide uppercase">Longevity CRM</h1>
         <p class="text-xs tracking-[0.2em] text-ink/50 uppercase mt-1">Executive Wealth Management Portal</p>
     </div>
 

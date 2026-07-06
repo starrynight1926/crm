@@ -60,6 +60,10 @@ new class extends Component
 ?>
 
 <div>
+    @if (session('status'))
+        <p class="mb-4 text-sm text-green-700 bg-green-50 border border-green-200 rounded-md px-4 py-2">{{ session('status') }}</p>
+    @endif
+
     <div class="flex flex-wrap items-start justify-between gap-4 mb-6">
         <div>
             <h1 class="text-3xl font-bold mb-1">Danh sách khách hàng</h1>

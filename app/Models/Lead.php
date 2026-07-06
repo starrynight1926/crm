@@ -124,11 +124,12 @@ class Lead extends Model
             $orgIds = $user->visibleOrgUnitIds();
             if ($orgIds !== []) {
                 $q->orWhereIn('org_unit_id', $orgIds);
+                // Lead kho chung (chưa chia) cũng visible cho user có scope tổ chức
+                $q->orWhere(fn (Builder $sub) => $sub->whereNull('org_unit_id')->where('pool_level', self::POOL_COMMON));
             }
             if ($user->hasSelfScope()) {
                 $q->orWhere('owner_id', $user->id)->orWhere('receiver_id', $user->id);
             }
-            // User không có assignment nào còn hiệu lực → không thấy gì
             if ($orgIds === [] && ! $user->hasSelfScope()) {
                 $q->whereRaw('1 = 0');
             }

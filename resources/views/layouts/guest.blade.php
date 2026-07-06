@@ -7,7 +7,7 @@
             @yield('content')
         </main>
         <footer class="py-6 text-center text-xs tracking-widest text-gold-400 uppercase">
-            © {{ date('Y') }} Aureum CRM Enterprise. All rights reserved.
+            © {{ date('Y') }} Longevity CRM Enterprise. All rights reserved.
         </footer>
     </div>
 @endsection

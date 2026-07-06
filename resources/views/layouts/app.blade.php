@@ -29,7 +29,7 @@
                     <svg class="w-7 h-7 text-gold-600" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M12 3l9 5.25v1.5H3v-1.5L12 3zM4.5 11.25h2v7.5h-2v-7.5zm6.5 0h2v7.5h-2v-7.5zm6.5 0h2v7.5h-2v-7.5zM3 20.25h18v1.5H3v-1.5z"/>
                     </svg>
-                    <span class="text-lg md:text-xl font-bold text-gold-700 tracking-tight">Aureum CRM</span>
+                    <span class="text-lg md:text-xl font-bold text-gold-700 tracking-tight">Longevity CRM</span>
                 </a>
 
                 <nav class="hidden md:flex items-center gap-0.5 lg:gap-1 text-sm font-medium">
@@ -101,7 +101,7 @@
         </main>
 
         <footer class="py-6 text-center text-xs tracking-widest text-gold-400 uppercase border-t border-gold-100">
-            Aureum CRM · Quản lý quan hệ khách hàng
+            Longevity CRM · Quản lý quan hệ khách hàng
         </footer>
 
         {{-- Toast realtime (Reverb) --}}

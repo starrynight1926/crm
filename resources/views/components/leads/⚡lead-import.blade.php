@@ -104,7 +104,12 @@ new class extends Component
         $this->preview = array_slice($data['rows'], 0, 5);
 
         $this->initMappingDefaults();
-        $this->autoGuess();
+
+        if ($this->selectedTemplateId !== '') {
+            $this->applyTemplate();
+        } else {
+            $this->autoGuess();
+        }
     }
 
     private function initMappingDefaults(): void
@@ -206,7 +211,37 @@ new class extends Component
         }
     }
 
-    public function import(): void
+    public function downloadSample(int $id)
+    {
+        $tpl = ImportTemplate::findOrFail($id);
+        $headers = collect($tpl->config ?? [])
+            ->pluck('header')
+            ->filter(fn ($h) => trim((string) $h) !== '')
+            ->values()
+            ->all();
+
+        if (empty($headers)) {
+            session()->flash('status', 'Template chưa có cột nào để tạo file mẫu.');
+            return;
+        }
+
+        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        foreach ($headers as $i => $header) {
+            $col = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($i + 1);
+            $sheet->setCellValue($col . '1', $header);
+            $sheet->getColumnDimension($col)->setAutoSize(true);
+            $sheet->getStyle($col . '1')->getFont()->setBold(true);
+        }
+
+        $filename = 'mau-import-' . \Illuminate\Support\Str::slug($tpl->name) . '.xlsx';
+
+        return response()->streamDownload(function () use ($spreadsheet) {
+            (new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet))->save('php://output');
+        }, $filename);
+    }
+
+    public function import()
     {
         abort_unless(auth()->user()->hasPermission('lead.import'), 403);
 
@@ -266,9 +301,8 @@ new class extends Component
 
         $batch->update(['total' => $count]);
 
-        $this->lastBatchId = $batch->id;
-        $this->reset('file', 'headers', 'preview', 'storedPath', 'storedName', 'mapping', 'defaults', 'selectedTemplateId');
-        session()->flash('status', "Đã nhận {$count} dòng — pipeline đang chuẩn hóa nền (batch #{$batch->id}).");
+        session()->flash('status', "Đã import {$count} khách hàng (batch #{$batch->id}).");
+        return $this->redirect(route('leads.index'), navigate: true);
     }
 
     public function with(): array
@@ -295,6 +329,58 @@ new class extends Component
         <p class="mb-4 text-sm text-green-700 bg-green-50 border border-green-200 rounded-md px-4 py-2">{{ session('status') }}</p>
     @endif
 
+    {{-- Chọn mẫu import --}}
+    @if ($templates->isNotEmpty())
+        <div class="grid grid-cols-1 lg:grid-cols-[auto_1fr] gap-6 mb-6 items-start">
+            <div class="flex items-end gap-3 flex-wrap">
+                <div class="min-w-[200px]">
+                    <label class="block text-xs font-semibold text-ink/60 mb-1">Mẫu import</label>
+                    <select wire:model.live="selectedTemplateId" class="w-full border border-gold-200 rounded-md px-3 py-2 text-sm bg-white">
+                        <option value="">— chọn mẫu —</option>
+                        @foreach ($templates as $tpl)
+                            <option value="{{ $tpl->id }}">{{ $tpl->name }} ({{ count($tpl->config ?? []) }} cột)</option>
+                        @endforeach
+                    </select>
+                </div>
+                @if ($selectedTemplateId)
+                    <button wire:click="downloadSample({{ (int) $selectedTemplateId }})"
+                            class="inline-flex items-center gap-1.5 text-sm font-semibold text-gold-700 border border-gold-300 hover:bg-gold-50 px-4 py-2 rounded-md">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/>
+                        </svg>
+                        Tải mẫu
+                    </button>
+                @endif
+            </div>
+
+            @if ($selectedTemplateId && ($selectedTpl = $templates->firstWhere('id', (int) $selectedTemplateId)))
+                <div class="bg-white border border-gold-200 rounded-xl shadow-card p-4">
+                    <div class="text-sm font-bold text-ink/70 mb-2">Trường của mẫu "{{ $selectedTpl->name }}"</div>
+                    <table class="w-full text-xs">
+                        <thead>
+                            <tr class="text-left text-ink/50 border-b border-gold-200">
+                                <th class="py-1.5 pr-4 font-semibold">Cột file</th>
+                                <th class="py-1.5 pr-4 font-semibold">Trường hệ thống</th>
+                                <th class="py-1.5 font-semibold">Mặc định</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach ($selectedTpl->config ?? [] as $entry)
+                                <tr class="border-b border-gold-100">
+                                    <td class="py-1.5 pr-4 font-medium">{{ $entry['header'] ?: '—' }}</td>
+                                    <td class="py-1.5 pr-4">
+                                        <span class="px-1.5 py-0.5 rounded bg-gold-50 text-gold-700 border border-gold-200">{{ $targets[$entry['target']] ?? $entry['target'] }}</span>
+                                    </td>
+                                    <td class="py-1.5 text-ink/50">{{ $entry['default'] ?: '—' }}</td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            @endif
+        </div>
+    @endif
+
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start mb-6">
         {{-- Upload + mapping --}}
         <div class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
@@ -305,30 +391,15 @@ new class extends Component
             <div wire:loading wire:target="file" class="text-sm text-gold-600 mt-2">Đang đọc file...</div>
 
             @if ($headers)
-                {{-- Template --}}
+                {{-- Lưu template mới --}}
                 <div class="mt-5 border border-gold-100 rounded-lg p-3 bg-gold-50/40">
-                    <div class="flex items-end gap-2 flex-wrap">
-                        <div class="flex-1 min-w-[160px]">
-                            <label class="block text-xs font-semibold text-ink/60 mb-1">Template (tái dùng)</label>
-                            <select wire:model="selectedTemplateId" class="w-full border border-gold-200 rounded-md px-2.5 py-1.5 text-sm bg-white">
-                                <option value="">— chọn template —</option>
-                                @foreach ($templates as $tpl)
-                                    <option value="{{ $tpl->id }}">{{ $tpl->name }}</option>
-                                @endforeach
-                            </select>
-                        </div>
-                        <button wire:click="applyTemplate" class="text-xs font-semibold text-white bg-gold-600 hover:bg-gold-700 px-3 py-2 rounded-md">Áp dụng</button>
-                        @if ($selectedTemplateId)
-                            <button wire:click="deleteTemplate({{ (int) $selectedTemplateId }})" wire:confirm="Xóa template này?" class="text-xs font-semibold text-red-600 border border-red-200 hover:bg-red-50 px-3 py-2 rounded-md">Xóa</button>
-                        @endif
-                    </div>
-                    <div class="flex items-end gap-2 mt-2">
+                    <div class="flex items-end gap-2">
                         <div class="flex-1">
-                            <label class="block text-xs font-semibold text-ink/60 mb-1">Lưu map hiện tại thành template</label>
+                            <label class="block text-xs font-semibold text-ink/60 mb-1">Lưu mapping hiện tại thành mẫu mới</label>
                             <input type="text" wire:model="templateName" placeholder="VD: Mẫu FB Lead Form" class="w-full border border-gold-200 rounded-md px-2.5 py-1.5 text-sm">
                             @error('templateName')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
                         </div>
-                        <button wire:click="saveTemplate" class="text-xs font-semibold text-gold-700 border border-gold-300 hover:bg-gold-100 px-3 py-2 rounded-md">Lưu template</button>
+                        <button wire:click="saveTemplate" class="text-xs font-semibold text-gold-700 border border-gold-300 hover:bg-gold-100 px-3 py-2 rounded-md">Lưu mẫu</button>
                     </div>
                 </div>
 
