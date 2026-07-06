@@ -38,7 +38,7 @@ class OrgAndRoleSeeder extends Seeder
         Role::updateOrCreate(['name' => 'Sale'], ['description' => 'Khai thác & chăm sóc khách hàng']);
 
         // Gán admin: role Admin tại gốc công ty, scope custom = thấy toàn bộ cây
-        $adminUser = User::firstWhere('email', 'admin@lara-scrm.local');
+        $adminUser = User::firstWhere('email', 'admin@sweetsica.com');
         if ($adminUser && ! Assignment::where('user_id', $adminUser->id)->exists()) {
             $assignment = Assignment::create([
                 'user_id' => $adminUser->id,

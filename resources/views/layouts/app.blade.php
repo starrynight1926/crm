@@ -115,7 +115,7 @@
         (function () {
             if (typeof Echo === 'undefined' || typeof Pusher === 'undefined') return;
 
-            window.EchoClient = new Echo({
+            window.EchoClient = window.Echo = new Echo({
                 broadcaster: 'reverb',
                 key: '{{ config('broadcasting.connections.reverb.key') }}',
                 wsHost: '{{ config('broadcasting.connections.reverb.options.host') }}',
