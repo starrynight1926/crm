@@ -50,6 +50,18 @@ trait HasAccessControl
         return in_array($key, $this->permissionKeysCache, true);
     }
 
+    /** Có ít nhất một trong các quyền. */
+    public function hasAnyPermission(array $keys): bool
+    {
+        foreach ($keys as $key) {
+            if ($this->hasPermission($key)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /**
      * Id các org_unit user được thấy dữ liệu (đã bung subtree).
      * Không bao gồm scope self — dữ liệu bản thân check riêng bằng owner.

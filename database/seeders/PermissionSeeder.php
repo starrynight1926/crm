@@ -39,7 +39,8 @@ class PermissionSeeder extends Seeder
             'contribution.set' => 'Đánh % đóng góp khi Close',
         ],
         'report' => [
-            'report.view' => 'Xem báo cáo & dashboard',
+            'report.view' => 'Xem báo cáo cá nhân / phòng ban',
+            'report.view_all' => 'Xem báo cáo toàn bộ hệ thống',
         ],
         'system' => [
             'connection.manage' => 'Quản lý kết nối nguồn lead (Ads API, webhook)',

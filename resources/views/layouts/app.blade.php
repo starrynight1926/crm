@@ -9,8 +9,7 @@
             ['label' => 'Chia số', 'route' => auth()->user()->hasPermission('rule.manage') ? 'distribution.rules' : (auth()->user()->hasPermission('lead.view') ? 'distribution.pools' : null), 'match' => 'distribution.*'],
             ['label' => 'Dịch vụ', 'route' => auth()->user()->hasPermission('service.manage') ? 'services.catalog' : null, 'match' => 'services.*'],
             ['label' => 'Thu tiền', 'route' => auth()->user()->hasPermission('payment.record') ? 'payments.index' : null, 'match' => 'payments.*'],
-            ['label' => 'Báo cáo', 'route' => auth()->user()->hasPermission('report.view') ? 'reports.index' : null, 'match' => 'reports.*'],
-            ['label' => 'Cài đặt', 'route' => 'sessions.index', 'match' => 'sessions.*'],
+            ['label' => 'Báo cáo', 'route' => auth()->user()->hasAnyPermission(['report.view', 'report.view_all']) ? 'reports.index' : null, 'match' => 'reports.*'],
         ];
     @endphp
     <div class="min-h-screen flex flex-col" x-data="{ mobileMenu: false }">
@@ -63,10 +62,8 @@
                             <div class="font-semibold truncate">{{ auth()->user()->name }}</div>
                             <div class="text-xs text-ink/50 truncate">{{ auth()->user()->email }}</div>
                         </div>
+                        <a href="{{ route('settings.index') }}" class="block px-4 py-2 hover:bg-gold-50">Cài đặt</a>
                         <a href="{{ route('sessions.index') }}" class="block px-4 py-2 hover:bg-gold-50">Quản lý phiên đăng nhập</a>
-                        @if (auth()->user()->hasPermission('field.manage') || auth()->user()->hasPermission('field.approve'))
-                            <a href="{{ route('settings.index') }}" class="block px-4 py-2 hover:bg-gold-50">Thiết lập</a>
-                        @endif
                         @if (auth()->user()->hasPermission('connection.manage'))
                             <a href="{{ route('sources.index') }}" class="block px-4 py-2 hover:bg-gold-50">Kết nối nguồn lead</a>
                         @endif

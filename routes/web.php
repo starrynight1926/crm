@@ -49,7 +49,7 @@ Route::middleware('auth')->group(function () {
 
     Route::view('/services', 'services.catalog')->middleware('permission:service.manage')->name('services.catalog');
     Route::view('/payments', 'services.payments')->middleware('permission:payment.record')->name('payments.index');
-    Route::view('/reports', 'reports.index')->middleware('permission:report.view')->name('reports.index');
+    Route::view('/reports', 'reports.index')->middleware('permission:report.view,report.view_all')->name('reports.index');
     Route::view('/sources', 'sources.connections')->middleware('permission:connection.manage')->name('sources.index');
 
     Route::prefix('leads')->middleware('permission:lead.view')->group(function () {

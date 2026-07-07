@@ -327,7 +327,7 @@ new class extends Component
 };
 ?>
 
-<div class="max-w-5xl">
+<div>
     <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
         <div>
             <h1 class="text-3xl font-bold mb-1">{{ $lead ? 'Cập nhật Khách Hàng' : 'Thêm Mới Khách Hàng' }}</h1>
@@ -469,6 +469,7 @@ new class extends Component
                         <span class="text-xs font-normal text-ink/50">({{ $lead?->orgUnit?->name ?? $this->targetOrgUnit()?->name ?? 'mức công ty' }})</span>
                     </h2>
                     <p class="text-xs text-ink/50 mb-5">Bộ trường do phòng ban đang giữ lead quy định.</p>
+                    @php $cfLabels = \App\Models\CustomField::labelMap($customFields); @endphp
                     <div class="space-y-4">
                         @foreach ($customFields as $field)
                             @php $ck = $field->rules['code_kind'] ?? null; @endphp
@@ -476,7 +477,7 @@ new class extends Component
                             @continue($field->field_type === 'code' && $ck === 'fixed')
                             <div wire:key="cf-{{ $field->id }}">
                                 <label class="block text-sm font-medium mb-1.5">
-                                    {{ $field->label }}
+                                    {{ $cfLabels[$field->id] ?? $field->label }}
                                     @if ($field->required)<span class="text-red-500">*</span>@endif
                                     @if ($field->affects_code)<span class="text-[10px] text-gold-700 ml-1">#mã KH</span>@endif
                                     @if ($field->org_unit_id === null)
@@ -487,7 +488,7 @@ new class extends Component
                                     <select wire:model="custom.{{ $field->id }}" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-gold-500">
                                         <option value="">— chọn —</option>
                                         @foreach ($field->options ?? [] as $option)
-                                            <option value="{{ $option }}">{{ $option }}</option>
+                                            <option value="{{ $option }}">{{ $field->optionLabel($option) }}</option>
                                         @endforeach
                                     </select>
                                 @elseif ($field->field_type === 'date')

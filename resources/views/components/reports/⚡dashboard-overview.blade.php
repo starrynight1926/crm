@@ -8,18 +8,30 @@ use Livewire\Component;
 
 new class extends Component
 {
-    /** Lọc stats_daily theo data scope: org trong phạm vi HOẶC dòng của chính mình. */
+    /** Quyền xem báo cáo toàn hệ thống → bỏ qua giới hạn phạm vi dữ liệu. */
+    private function seesAllReports(): bool
+    {
+        return auth()->user()->hasPermission('report.view_all');
+    }
+
+    private function reportLeadQuery()
+    {
+        return $this->seesAllReports() ? Lead::query() : Lead::visibleTo(auth()->user());
+    }
+
+    /** Lọc stats_daily theo data scope: org trong phạm vi HOẶC dòng của chính mình (toàn bộ nếu report.view_all). */
     private function scopedStats()
     {
         $user = auth()->user();
         $orgIds = $user->visibleOrgUnitIds();
 
-        return DB::table('stats_daily')->where(function ($q) use ($orgIds, $user) {
-            if ($orgIds !== []) {
-                $q->orWhereIn('org_unit_id', $orgIds);
-            }
-            $q->orWhere('user_id', $user->id);
-        });
+        return DB::table('stats_daily')
+            ->when(! $this->seesAllReports(), fn ($query) => $query->where(function ($q) use ($orgIds, $user) {
+                if ($orgIds !== []) {
+                    $q->orWhereIn('org_unit_id', $orgIds);
+                }
+                $q->orWhere('user_id', $user->id);
+            }));
     }
 
     public function with(): array
@@ -47,7 +59,7 @@ new class extends Component
         // Lead quá SLA / chưa chăm (live)
         $defaultPolicy = SlaPolicy::whereNull('org_unit_id')->first();
         $hours = $defaultPolicy?->recall_after_hours ?? 24;
-        $overdue = Lead::visibleTo($user)
+        $overdue = $this->reportLeadQuery()
             ->where('pool_level', Lead::POOL_PERSONAL)
             ->whereNotNull('assigned_at')
             ->where('assigned_at', '<=', now()->subHours($hours))
@@ -58,12 +70,12 @@ new class extends Component
             ->get();
 
         return [
-            'todayCount' => Lead::visibleTo($user)->whereDate('received_date', today())->count(),
+            'todayCount' => $this->reportLeadQuery()->whereDate('received_date', today())->count(),
             'funnel' => $funnel,
             'topSales' => $topSales,
             'topSaleUsers' => $topSaleUsers,
             'overdue' => $overdue,
-            'recentLeads' => Lead::visibleTo($user)->with('owner')->orderByDesc('id')->limit(6)->get(),
+            'recentLeads' => $this->reportLeadQuery()->with('owner')->orderByDesc('id')->limit(6)->get(),
         ];
     }
 };
@@ -75,7 +87,7 @@ new class extends Component
             <h1 class="text-3xl font-bold mb-1">Executive Dashboard</h1>
             <p class="text-sm text-ink/60">Số liệu tháng {{ now()->format('m/Y') }} — tự cập nhật mỗi phút.</p>
         </div>
-        @if (auth()->user()->hasPermission('report.view'))
+        @if (auth()->user()->hasAnyPermission(['report.view', 'report.view_all']))
             <a href="{{ route('reports.index') }}" class="text-sm font-semibold text-gold-700 border border-gold-300 hover:bg-gold-50 px-4 py-2.5 rounded-md">Xem báo cáo chi tiết →</a>
         @endif
     </div>

@@ -226,3 +226,16 @@
   - DB dùng qua **DBngin** (không phải MySQL của MAMP): MySQL 8.0.33 port 3306, PostgreSQL 17.0 port 5432 (user `postgres`, không mật khẩu). Postgres đang được start thủ công bằng `pg_ctl` — nếu restart máy thì bật lại instance Postgres trong DBngin.
   - Màn quản lý phiên hiển thị **2 nguồn**: phiên web từ bảng `sessions` (SESSION_DRIVER=database — xóa row là đá văng ngay) + token Sanctum cho API/thiết bị ngoài (đúng ERD). 
   - Chạy dev: `php artisan serve --port=8000` (có sẵn `.claude/launch.json`).
+
+## Bổ sung (2026-07-07) — Trường select có nhãn Hiển thị + mã KH + báo cáo
+- **Đã làm**:
+  - Trường "Danh sách chọn" giờ nhập theo cặp **Giá trị + Hiển thị** (form từng dòng, có nút xóa) thay cho textarea; nhãn lưu ở `rules.option_labels` (map value→label, tương thích ngược). Thêm ô tick **"Nối Giá trị vào mã KH"** cho select (`affects_code`). Form lead + báo cáo hiển thị nhãn, lưu giá trị.
+  - `CustomField::codeSegmentsFor($lead, $onlyRequired)` + helper `optionLabel()`.
+  - Trang **settings/fields**: thêm tab **"Quy tắc đã tạo"** — tổng quan mỗi cấp tổ chức là 1 bộ trường (chip label·kiểu, #mã, *bắt buộc).
+  - **Seed** (`DemoDataSeeder`): user `nvkd@sweetsica.com` (Phòng Kinh doanh) + `nvmkt@sweetsica.com` (Phòng Marketing), mật khẩu `123456`, role Sale (scope self); 5 khách `Khách test1..5` (0915588001..005) vào **kho chung**; quy tắc trường: KD = Mã phân loại(KD cố định) + Phân loại(C/BDM/BDM_BIDV/BDM_BIDV_GT nối mã), MKT = Mã phân loại(MKT) + Phân loại(FB/GG/TT/Zalo). Role Sale được cấp quyền cơ bản nếu chưa có.
+  - Trang **reports** tab Chi tiết lead: 3 nút **Hiển thị full mã / mã bắt buộc / đơn giản** (đổi cách dựng cột Mã KH), cột **Họ tên · Nguồn · Người thu thập · Người phụ trách · Ngày thu thập**, và **bộ tick chọn cột** trường tùy biến. Lựa chọn (code_mode + lead_fields) **lưu theo user** ở `users.report_prefs` (json, migration mới). Export Excel khớp cột & kiểu mã.
+- **Quyết định**:
+  - Mã KH giữ chuẩn hóa cũ (bỏ gạch dưới): `KH-007-KD-BDMBIDV`.
+  - Cấp công ty trong "quy tắc trường" (Tên/SĐT/Ngày/Người thu thập) là **field core** của lead → không seed thành custom_field để tránh trùng input.
+- **Test**: blade compile OK cả 3 view; `php artisan test` (CustomField/Lead...) 15 passed; test tay generateCode: full=`KH-007-KD-BDMBIDV`, required=`KH-007`, simple=`KH-007`, optionLabel=`Nguồn BDM BIDV`.
+- **Chưa làm / lưu ý**: chưa test tay qua browser (server 8000 do user giữ) — cần QA tay lại UI select/report.

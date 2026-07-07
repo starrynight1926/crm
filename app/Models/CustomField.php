@@ -101,9 +101,12 @@ class CustomField extends Model
      * Các đoạn mã (uppercase) nối vào mã KH cho $lead, theo thứ tự cây.
      * Giá trị: code_kind=fixed → rules.fixed_value; còn lại lấy từ lead_custom_values.
      */
-    public static function codeSegmentsFor(Lead $lead): array
+    public static function codeSegmentsFor(Lead $lead, bool $onlyRequired = false): array
     {
         $fields = static::applicableTo($lead->orgUnit)->where('affects_code', true);
+        if ($onlyRequired) {
+            $fields = $fields->where('required', true);
+        }
         if ($fields->isEmpty()) {
             return [];
         }
@@ -125,6 +128,37 @@ class CustomField extends Model
         }
 
         return $segments;
+    }
+
+    /**
+     * Map [field_id => nhãn hiển thị] cho một BỘ trường: nhãn nào trùng nhau giữa các
+     * cấp thì gắn thêm hậu tố phạm vi để phân biệt, VD "Nguồn (Công ty)" / "Nguồn (Kinh doanh)".
+     */
+    public static function labelMap(Collection $fields): array
+    {
+        $dupLabels = $fields->groupBy('label')->filter(fn ($g) => $g->count() > 1)->keys()->all();
+
+        $map = [];
+        foreach ($fields as $f) {
+            $label = $f->label;
+            if (in_array($f->label, $dupLabels, true)) {
+                $scope = $f->org_unit_id === null ? 'Công ty' : ($f->orgUnit?->name ?? 'Phòng');
+                $label .= ' (' . $scope . ')';
+            }
+            $map[$f->id] = $label;
+        }
+
+        return $map;
+    }
+
+    /** Nhãn hiển thị của một giá trị select (rules.option_labels); fallback = chính giá trị. */
+    public function optionLabel(?string $value): string
+    {
+        if ($value === null || $value === '') {
+            return '';
+        }
+
+        return (string) ($this->rules['option_labels'][$value] ?? $value);
     }
 
     /** Chuẩn hóa 1 đoạn mã: bỏ khoảng trắng, hoa hết, chỉ giữ chữ/số. */

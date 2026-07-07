@@ -20,27 +20,74 @@ new class extends Component
 
     public string $groupBy = 'camp'; // cho tab marketing: camp / ad_source / page
 
-    /** Tab "Chi tiết lead": bật = hiện đủ trường tùy biến mọi cấp; tắt = chỉ trường mức công ty. */
-    public bool $showAllCustomFields = false;
+    /** Kiểu hiển thị mã KH ở tab Chi tiết lead. */
+    public string $codeMode = 'full'; // full | required | simple
 
-    /** Trường tùy biến hiện làm cột báo cáo, theo toggle. */
-    private function reportCustomFields()
+    /** Id các trường tùy biến người dùng chọn hiện làm cột (lưu theo user). */
+    public array $selectedFieldIds = [];
+
+    public const CODE_MODES = [
+        'full' => 'Hiển thị full mã',
+        'required' => 'Hiển thị mã bắt buộc',
+        'simple' => 'Hiển thị đơn giản',
+    ];
+
+    /** Trường tùy biến ứng viên làm cột: active + thuộc phạm vi (công ty + phòng thấy được). */
+    private function availableReportFields()
     {
+        $orgIds = auth()->user()->visibleOrgUnitIds();
+
         return \App\Models\CustomField::query()
             ->where('active', true)
             ->where('status', \App\Models\CustomField::STATUS_ACTIVE)
-            ->when(! $this->showAllCustomFields, fn ($q) => $q->whereNull('org_unit_id'))
+            ->where(fn ($q) => $q->whereNull('org_unit_id')
+                ->when($orgIds !== [], fn ($qq) => $qq->orWhereIn('org_unit_id', $orgIds)))
             ->orderBy('org_unit_id')
             ->orderBy('position')
             ->get();
     }
 
-    /** Danh sách lead trong phạm vi + kỳ, kèm giá trị trường tùy biến. */
+    /** Trường thực sự render (giao của lựa chọn user và ứng viên hợp lệ). */
+    private function reportCustomFields()
+    {
+        return $this->availableReportFields()
+            ->whereIn('id', $this->selectedFieldIds)
+            ->values();
+    }
+
+    /** Mã KH theo kiểu hiển thị: full = mã đầy đủ, required = chỉ đoạn bắt buộc, simple = mã cấp công ty. */
+    public function leadCode(Lead $lead): string
+    {
+        $core = 'KH-' . str_pad((string) $lead->id, 3, '0', STR_PAD_LEFT);
+        if ($this->codeMode === 'simple') {
+            return $core;
+        }
+        if ($this->codeMode === 'required') {
+            $segs = \App\Models\CustomField::codeSegmentsFor($lead, true);
+            return $segs ? $core . '-' . implode('-', $segs) : $core;
+        }
+
+        return $lead->code ?: $core; // full
+    }
+
+    /** Danh sách lead trong phạm vi + kỳ, kèm giá trị trường tùy biến + người liên quan. */
+    /** Quyền xem báo cáo toàn hệ thống → bỏ qua giới hạn phạm vi dữ liệu. */
+    private function seesAllReports(): bool
+    {
+        return auth()->user()->hasPermission('report.view_all');
+    }
+
+    /** Query lead cho báo cáo: toàn hệ thống nếu có report.view_all, ngược lại theo phạm vi. */
+    private function reportLeadQuery()
+    {
+        return $this->seesAllReports() ? Lead::query() : Lead::visibleTo(auth()->user());
+    }
+
     private function leadDetailData()
     {
-        return Lead::visibleTo(auth()->user())
+        return $this->reportLeadQuery()
             ->whereBetween('received_date', [$this->from, $this->to])
-            ->with('customValues')
+            ->with(['customValues', 'owner', 'receiver'])
             ->orderByDesc('received_date')
             ->limit(500)
             ->get();
@@ -50,6 +97,32 @@ new class extends Component
     {
         $this->from = now()->startOfMonth()->toDateString();
         $this->to = now()->toDateString();
+
+        $prefs = auth()->user()->report_prefs ?? [];
+        $this->codeMode = in_array($prefs['code_mode'] ?? null, array_keys(self::CODE_MODES), true)
+            ? $prefs['code_mode'] : 'full';
+        // Mặc định lần đầu: hiện mọi trường ứng viên
+        $this->selectedFieldIds = array_map('intval', $prefs['lead_fields']
+            ?? $this->availableReportFields()->pluck('id')->all());
+    }
+
+    private function persistReportPrefs(): void
+    {
+        $user = auth()->user();
+        $user->update(['report_prefs' => array_merge($user->report_prefs ?? [], [
+            'code_mode' => $this->codeMode,
+            'lead_fields' => array_values(array_map('intval', $this->selectedFieldIds)),
+        ])]);
+    }
+
+    public function updatedCodeMode(): void
+    {
+        $this->persistReportPrefs();
+    }
+
+    public function updatedSelectedFieldIds(): void
+    {
+        $this->persistReportPrefs();
     }
 
     private function scopedStats()
@@ -59,12 +132,12 @@ new class extends Component
 
         return DB::table('stats_daily')
             ->whereBetween('date', [$this->from, $this->to])
-            ->where(function ($q) use ($orgIds, $user) {
+            ->when(! $this->seesAllReports(), fn ($query) => $query->where(function ($q) use ($orgIds, $user) {
                 if ($orgIds !== []) {
                     $q->orWhereIn('org_unit_id', $orgIds);
                 }
                 $q->orWhere('user_id', $user->id);
-            });
+            }));
     }
 
     private function funnelData(): object
@@ -77,9 +150,7 @@ new class extends Component
     /** Tab marketing: group theo camp/nguồn/page — page không có trong stats_daily nên query leads trực tiếp. */
     private function marketingData()
     {
-        $user = auth()->user();
-
-        return Lead::visibleTo($user)
+        return $this->reportLeadQuery()
             ->whereBetween('received_date', [$this->from, $this->to])
             ->selectRaw("COALESCE({$this->groupBy}, '(trống)') as dim, count(*) total, sum(classification = 'close') closes, sum(classification = 'booking') bookings")
             ->groupBy('dim')
@@ -103,10 +174,11 @@ new class extends Component
     {
         $user = auth()->user();
         $orgIds = $user->visibleOrgUnitIds();
+        $all = $this->seesAllReports();
 
         $logs = LeadDistributionLog::query()
             ->whereBetween('created_at', [$this->from . ' 00:00:00', $this->to . ' 23:59:59'])
-            ->when($orgIds !== [], fn ($q) => $q->where(fn ($qq) => $qq->whereIn('org_unit_id', $orgIds)->orWhereNull('org_unit_id')))
+            ->when(! $all && $orgIds !== [], fn ($q) => $q->where(fn ($qq) => $qq->whereIn('org_unit_id', $orgIds)->orWhereNull('org_unit_id')))
             ->selectRaw('action, count(*) c')
             ->groupBy('action')
             ->pluck('c', 'action');
@@ -115,8 +187,8 @@ new class extends Component
             'logs' => $logs,
             'pools' => [
                 'common' => Lead::where('pool_level', 'common')->count(),
-                'team' => Lead::visibleTo($user)->where('pool_level', 'team')->count(),
-                'personal' => Lead::visibleTo($user)->where('pool_level', 'personal')->count(),
+                'team' => $this->reportLeadQuery()->where('pool_level', 'team')->count(),
+                'personal' => $this->reportLeadQuery()->where('pool_level', 'personal')->count(),
             ],
         ];
     }
@@ -147,12 +219,22 @@ new class extends Component
             $sheet->fromArray([['Sale', 'Số nhận', 'Booking', 'Close', 'Tỉ lệ close', 'Doanh thu'], ...$rows]);
         } elseif ($this->tab === 'leads') {
             $cfs = $this->reportCustomFields();
-            $header = array_merge(['Mã KH', 'Tên', 'SĐT', 'Ngày', 'Phân loại'], $cfs->pluck('label')->all());
+            $cfLabels = \App\Models\CustomField::labelMap($cfs);
+            $header = array_merge(
+                ['Mã KH', 'Họ tên khách', 'Nguồn', 'Người thu thập', 'Người phụ trách', 'Ngày thu thập'],
+                $cfs->map(fn ($f) => $cfLabels[$f->id] ?? $f->label)->all()
+            );
             $rows = $this->leadDetailData()->map(function ($lead) use ($cfs) {
                 $vals = $lead->customValues->pluck('value', 'custom_field_id');
                 return array_merge(
-                    [$lead->code, $lead->name, $lead->phone, (string) $lead->received_date?->toDateString(), $lead->classificationLabel()],
-                    $cfs->map(fn ($f) => (string) ($vals[$f->id] ?? ''))->all()
+                    [
+                        $this->leadCode($lead), $lead->name, (string) $lead->ad_source,
+                        (string) $lead->receiver?->name, (string) $lead->owner?->name,
+                        (string) $lead->received_date?->toDateString(),
+                    ],
+                    $cfs->map(fn ($f) => $f->field_type === 'select'
+                        ? $f->optionLabel((string) ($vals[$f->id] ?? ''))
+                        : (string) ($vals[$f->id] ?? ''))->all()
                 );
             })->all();
             $sheet->fromArray([$header, ...$rows]);
@@ -187,6 +269,7 @@ new class extends Component
             'distribution' => $this->tab === 'distribution' ? $this->distributionData() : null,
             'leadRows' => $this->tab === 'leads' ? $this->leadDetailData() : collect(),
             'leadCustomFields' => $this->tab === 'leads' ? $this->reportCustomFields() : collect(),
+            'availableFields' => $this->tab === 'leads' ? $this->availableReportFields() : collect(),
             'canExport' => auth()->user()->hasPermission('lead.export'),
         ];
     }
@@ -367,27 +450,51 @@ new class extends Component
 
     @if ($tab === 'leads')
         <div class="bg-white border border-gold-200 rounded-xl shadow-card">
-            <div class="px-5 py-4 border-b border-gold-100 flex flex-wrap items-center justify-between gap-3">
-                <h2 class="font-bold">Chi tiết lead <span class="text-xs font-normal text-ink/40">(tối đa 500 dòng trong kỳ)</span></h2>
-                <label class="flex items-center gap-2 text-sm cursor-pointer select-none">
-                    <input type="checkbox" wire:model.live="showAllCustomFields" class="rounded border-gold-300 text-gold-600 focus:ring-gold-500 w-4 h-4">
-                    Hiện đầy đủ trường tùy biến
-                    <span class="text-xs text-ink/40">(tắt = chỉ trường mặc định + mức công ty)</span>
-                </label>
+            <div class="px-5 py-4 border-b border-gold-100 space-y-3">
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                    <h2 class="font-bold">Chi tiết lead <span class="text-xs font-normal text-ink/40">(tối đa 500 dòng trong kỳ)</span></h2>
+                    {{-- Kiểu hiển thị mã KH --}}
+                    <div class="flex items-center gap-1">
+                        @foreach (['full' => 'Hiển thị full mã', 'required' => 'Hiển thị mã bắt buộc', 'simple' => 'Hiển thị đơn giản'] as $mode => $mlabel)
+                            <button wire:click="$set('codeMode', '{{ $mode }}')"
+                                    class="text-xs font-semibold px-3 py-1.5 rounded-md {{ $codeMode === $mode ? 'bg-gold-600 text-white' : 'text-ink/60 border border-gold-200 hover:bg-gold-50' }}">{{ $mlabel }}</button>
+                        @endforeach
+                    </div>
+                </div>
+                {{-- Bộ tick chọn cột trường tùy biến --}}
+                <div x-data="{ open: false }" class="relative">
+                    <button @click="open = !open" class="text-sm font-semibold text-gold-700 border border-gold-200 rounded-md px-3 py-1.5 hover:bg-gold-50">
+                        Cột hiển thị ({{ $leadCustomFields->count() }}/{{ $availableFields->count() }}) ▾
+                    </button>
+                    <div x-show="open" @click.outside="open = false" x-cloak
+                         class="absolute z-20 mt-2 w-72 max-h-72 overflow-y-auto bg-white border border-gold-200 rounded-lg shadow-card p-3 space-y-1.5">
+                        @forelse ($availableFields as $cf)
+                            <label class="flex items-center gap-2 text-sm cursor-pointer hover:bg-gold-50 rounded px-2 py-1">
+                                <input type="checkbox" wire:model.live="selectedFieldIds" value="{{ $cf->id }}" class="rounded border-gold-300 text-gold-600 focus:ring-gold-500 w-4 h-4">
+                                {{ $cf->label }}
+                                <span class="text-[10px] text-ink/40">{{ $cf->org_unit_id === null ? '(cty)' : ($cf->orgUnit?->name) }}</span>
+                            </label>
+                        @empty
+                            <p class="text-sm text-ink/40 px-2 py-1">Chưa có trường tùy biến nào.</p>
+                        @endforelse
+                    </div>
+                </div>
             </div>
+            @php $cfLabels = \App\Models\CustomField::labelMap($leadCustomFields); @endphp
             <div class="overflow-x-auto">
-                <table class="w-full text-sm min-w-[700px]">
+                <table class="w-full text-sm min-w-[800px]">
                     <thead>
                         <tr class="text-left text-xs uppercase tracking-wider text-ink/50 bg-gold-50/60">
                             <th class="px-4 py-3 font-semibold">Mã KH</th>
-                            <th class="px-4 py-3 font-semibold">Tên</th>
-                            <th class="px-4 py-3 font-semibold">SĐT</th>
-                            <th class="px-4 py-3 font-semibold">Ngày</th>
-                            <th class="px-4 py-3 font-semibold">Phân loại</th>
+                            <th class="px-4 py-3 font-semibold">Họ tên khách</th>
+                            <th class="px-4 py-3 font-semibold">Nguồn</th>
+                            <th class="px-4 py-3 font-semibold">Người thu thập</th>
+                            <th class="px-4 py-3 font-semibold">Người phụ trách</th>
+                            <th class="px-4 py-3 font-semibold">Ngày thu thập</th>
                             @foreach ($leadCustomFields as $cf)
                                 <th class="px-4 py-3 font-semibold whitespace-nowrap">
-                                    {{ $cf->label }}
-                                    @if ($cf->org_unit_id === null)<span class="text-[10px] text-ink/30">(cty)</span>@endif
+                                    {{ $cfLabels[$cf->id] ?? $cf->label }}
+                                    @if ($cf->org_unit_id === null && ($cfLabels[$cf->id] ?? $cf->label) === $cf->label)<span class="text-[10px] text-ink/30">(cty)</span>@endif
                                 </th>
                             @endforeach
                         </tr>
@@ -396,17 +503,20 @@ new class extends Component
                         @forelse ($leadRows as $lead)
                             @php $vals = $lead->customValues->pluck('value', 'custom_field_id'); @endphp
                             <tr class="hover:bg-gold-50/40">
-                                <td class="px-4 py-2.5 font-mono text-xs text-gold-700">{{ $lead->code }}</td>
+                                <td class="px-4 py-2.5 font-mono text-xs text-gold-700">{{ $this->leadCode($lead) }}</td>
                                 <td class="px-4 py-2.5 font-medium">{{ $lead->name }}</td>
-                                <td class="px-4 py-2.5">{{ $lead->phoneFor(auth()->user()) }}</td>
+                                <td class="px-4 py-2.5">{{ $lead->ad_source ?: '—' }}</td>
+                                <td class="px-4 py-2.5">{{ $lead->receiver?->name ?? '—' }}</td>
+                                <td class="px-4 py-2.5">{{ $lead->owner?->name ?? '—' }}</td>
                                 <td class="px-4 py-2.5">{{ $lead->received_date?->format('d/m/Y') }}</td>
-                                <td class="px-4 py-2.5">{{ $lead->classificationLabel() }}</td>
                                 @foreach ($leadCustomFields as $cf)
-                                    <td class="px-4 py-2.5">{{ $vals[$cf->id] ?? '—' }}</td>
+                                    <td class="px-4 py-2.5">
+                                        {{ $cf->field_type === 'select' ? ($cf->optionLabel($vals[$cf->id] ?? '') ?: '—') : ($vals[$cf->id] ?? '—') }}
+                                    </td>
                                 @endforeach
                             </tr>
                         @empty
-                            <tr><td colspan="{{ 5 + $leadCustomFields->count() }}" class="px-5 py-8 text-center text-ink/40">Không có lead trong kỳ.</td></tr>
+                            <tr><td colspan="{{ 6 + $leadCustomFields->count() }}" class="px-5 py-8 text-center text-ink/40">Không có lead trong kỳ.</td></tr>
                         @endforelse
                     </tbody>
                 </table>

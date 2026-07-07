@@ -29,7 +29,7 @@
         ['label'=>'Rule chia số','desc'=>'Cấu hình luật phân bổ lead + SLA thu hồi.','route'=>'distribution.rules','perm'=>'rule.manage','scope'=>'org','icon'=>'split'],
         ['label'=>'Dịch vụ','desc'=>'Danh mục dịch vụ, phase & mẫu % đóng góp.','route'=>'services.catalog','perm'=>'service.manage','scope'=>'system','icon'=>'box'],
         ['label'=>'Kết nối nguồn','desc'=>'Webhook & Ads API đổ lead về hệ thống.','route'=>'sources.index','perm'=>'connection.manage','scope'=>'system','icon'=>'plug'],
-        ['label'=>'Báo cáo','desc'=>'Funnel, marketing, hiệu suất, chi tiết lead — xuất Excel.','route'=>'reports.index','perm'=>'report.view','scope'=>'org','icon'=>'chart'],
+        ['label'=>'Báo cáo','desc'=>'Funnel, marketing, hiệu suất, chi tiết lead — xuất Excel.','route'=>'reports.index','perm'=>['report.view','report.view_all'],'scope'=>'org','icon'=>'chart'],
         ['label'=>'Quản lý phiên','desc'=>'Thiết bị đăng nhập & thu hồi phiên từ xa.','route'=>'sessions.index','perm'=>null,'scope'=>'me','icon'=>'device'],
     ];
 
@@ -39,7 +39,7 @@
         'me'     => ['CÁ NHÂN', 'bg-ink/5 text-ink/50'],
     ];
 
-    $visible = array_filter($modules, fn ($m) => $m['perm'] === null || $u->hasPermission($m['perm']));
+    $visible = array_filter($modules, fn ($m) => $m['perm'] === null || $u->hasAnyPermission((array) $m['perm']));
 @endphp
 
 @section('content')
