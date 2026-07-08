@@ -31,8 +31,15 @@ new class extends Component
         $this->phoneRevealed = true;
     }
 
+    /** Chỉ sửa/chăm được lead trong phạm vi mình (không phải lead đang nằm kho chung/ngoài scope). */
+    private function canEditLead(): bool
+    {
+        return auth()->user()->hasPermission('lead.update') && $this->lead->isVisibleTo(auth()->user());
+    }
+
     public function addNote(): void
     {
+        abort_unless($this->canEditLead(), 403);
         $this->validate(['newNote' => 'required|string|max:2000'], [], ['newNote' => 'ghi chú']);
 
         LeadStatusLog::record($this->lead, 'note', $this->lead->note, $this->newNote, auth()->id());
@@ -44,6 +51,7 @@ new class extends Component
 
     public function updateClassification(string $value): void
     {
+        abort_unless($this->canEditLead(), 403);
         abort_unless(array_key_exists($value, Lead::CLASSIFICATIONS), 422);
 
         if ($value === $this->lead->classification) {
@@ -126,7 +134,7 @@ new class extends Component
 
         return [
             'logs' => $this->lead->statusLogs()->with('user')->limit(50)->get(),
-            'canEdit' => auth()->user()->hasPermission('lead.update'),
+            'canEdit' => $this->canEditLead(),
             'customFields' => $customFields,
             'customValues' => $customValues,
             'contributions' => Contribution::with('user')->where('lead_id', $this->lead->id)->orderByDesc('percent')->get(),

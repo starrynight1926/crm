@@ -32,7 +32,14 @@ new class extends Component
 
     public string $region = '';
 
-    public string $owner_id = '';
+    /** Kho: '' = kho chung công ty | 'org:{id}' = kho chung phòng/team. */
+    public string $poolTarget = '';
+
+    /** Chia trực tiếp cho cá nhân (ưu tiên hơn kho nếu có). */
+    public ?int $personId = null;
+
+    /** Ô search tên khi chia cá nhân. */
+    public string $personSearch = '';
 
     public string $status_1 = '';
 
@@ -69,7 +76,14 @@ new class extends Component
         $this->link = $lead->link ?? '';
         $this->ad_source = $lead->ad_source ?? '';
         $this->region = $lead->region ?? '';
-        $this->owner_id = (string) ($lead->owner_id ?? '');
+        $this->personId = $lead->owner_id;
+        if ($lead->owner_id) {
+            $this->poolTarget = '';
+        } elseif ($lead->pool_level === Lead::POOL_TEAM && $lead->org_unit_id) {
+            $this->poolTarget = 'org:' . $lead->org_unit_id;
+        } else {
+            $this->poolTarget = 'company'; // đang ở kho chung công ty
+        }
         $this->status_1 = $lead->status_1 ?? '';
         $this->status_2 = $lead->status_2 ?? '';
         $this->note = $lead->note ?? '';
@@ -78,18 +92,46 @@ new class extends Component
             ->map(fn ($v) => (string) $v)->all();
     }
 
-    /** Org quyết định bộ trường tùy biến: org lead đang giữ (sửa) / org của owner được chọn (tạo mới). */
+    /** Chọn cá nhân → lead rời kho chung, chuyển hẳn sang kho cá nhân. */
+    public function selectPerson(int $id): void
+    {
+        if ($this->assignableUserIds()->contains($id)) {
+            $this->personId = $id;
+            $this->personSearch = '';
+            $this->poolTarget = ''; // không còn thuộc kho chung nào
+        }
+    }
+
+    public function clearPerson(): void
+    {
+        $this->personId = null;
+    }
+
+    /** Chọn kho (dù là kho chung công ty) thì bỏ chia cá nhân. */
+    public function updatedPoolTarget(): void
+    {
+        $this->personId = null;
+    }
+
+    /** Org của một user theo assignment hiệu lực. */
+    private function userOrgId(int $userId): ?int
+    {
+        return Assignment::where('user_id', $userId)->effective()->first()?->org_unit_id;
+    }
+
+    /** Org quyết định bộ trường tùy biến theo đích chia đang chọn. */
     private function targetOrgUnit(): ?OrgUnit
     {
-        if ($this->lead?->org_unit_id) {
-            return $this->lead->orgUnit;
-        }
-        if ($this->owner_id) {
-            $orgId = Assignment::where('user_id', (int) $this->owner_id)->effective()->first()?->org_unit_id;
+        if ($this->personId) {
+            $orgId = $this->userOrgId($this->personId);
             return $orgId ? OrgUnit::find($orgId) : null;
         }
+        if (str_starts_with($this->poolTarget, 'org:')) {
+            return OrgUnit::find((int) substr($this->poolTarget, 4));
+        }
 
-        return null;
+        // Kho chung: khi sửa lead đã có phòng thì vẫn theo phòng đó
+        return $this->lead?->org_unit_id ? $this->lead->orgUnit : null;
     }
 
     /** Validate + trả về [field_id => value] chỉ gồm các trường áp dụng. Trả null nếu có lỗi. */
@@ -196,9 +238,19 @@ new class extends Component
             'phone' => 'required|string',
             'received_date' => 'required|date',
             'classification' => 'required|in:' . implode(',', array_keys(Lead::CLASSIFICATIONS)),
-            'owner_id' => 'nullable|exists:users,id',
             'link' => 'nullable|string|max:500',
         ], [], ['name' => 'tên khách hàng', 'phone' => 'SĐT', 'received_date' => 'ngày']);
+
+        // Kiểm tra đích chia hợp lệ trong phạm vi cho phép
+        if ($this->personId && ! $this->assignableUserIds()->contains($this->personId)) {
+            $this->addError('personId', 'Không thể chia cho nhân sự này.');
+            return;
+        }
+        if (! $this->personId && str_starts_with($this->poolTarget, 'org:')
+            && ! in_array((int) substr($this->poolTarget, 4), auth()->user()->visibleOrgUnitIds(), true)) {
+            $this->addError('poolTarget', 'Phòng/team không nằm trong phạm vi của bạn.');
+            return;
+        }
 
         $cleanCustom = $this->validateCustomFields();
         if ($cleanCustom === null) {
@@ -247,19 +299,8 @@ new class extends Component
     private function createLead(array $attributes, array $cleanCustom): void
     {
         $user = auth()->user();
-        $ownerId = $this->owner_id ? (int) $this->owner_id : null;
-
         $attributes['receiver_id'] = $user->id; // người nhập là người nhận lead
-        $attributes['owner_id'] = $ownerId;
-
-        if ($ownerId) {
-            $ownerOrg = Assignment::where('user_id', $ownerId)->effective()->first()?->org_unit_id;
-            $attributes['pool_level'] = Lead::POOL_PERSONAL;
-            $attributes['org_unit_id'] = $ownerOrg;
-            $attributes['assigned_at'] = now();
-        } else {
-            $attributes['pool_level'] = Lead::POOL_COMMON;
-        }
+        $attributes = array_merge($attributes, $this->poolAttributes());
 
         $lead = Lead::create($attributes);
         $this->syncCustomValues($lead, $cleanCustom);
@@ -287,10 +328,8 @@ new class extends Component
             }
         }
 
-        $newOwnerId = $this->owner_id ? (int) $this->owner_id : null;
-        if ($newOwnerId !== $lead->owner_id) {
-            $attributes['owner_id'] = $newOwnerId;
-        }
+        // Cập nhật đích chia (kho chung công ty / phòng-team / cá nhân)
+        $attributes = array_merge($attributes, $this->poolAttributes($lead));
 
         if (in_array('classification', array_keys($attributes)) && $attributes['classification'] !== $lead->classification) {
             $attributes['last_care_at'] = now();
@@ -306,21 +345,64 @@ new class extends Component
         $this->redirectRoute('leads.show', $lead);
     }
 
-    public function with(): array
+    /** Thuộc tính owner/org/pool theo đích chia; $existing để giữ assigned_at khi owner không đổi. */
+    private function poolAttributes(?Lead $existing = null): array
     {
-        // Chỉ gán lead cho user nằm trong phạm vi của người thao tác
+        if ($this->personId) {
+            return [
+                'owner_id' => $this->personId,
+                'org_unit_id' => $this->userOrgId($this->personId),
+                'pool_level' => Lead::POOL_PERSONAL,
+                'assigned_at' => ($existing && $existing->owner_id === $this->personId) ? $existing->assigned_at : now(),
+            ];
+        }
+        if (str_starts_with($this->poolTarget, 'org:')) {
+            return ['owner_id' => null, 'org_unit_id' => (int) substr($this->poolTarget, 4), 'pool_level' => Lead::POOL_TEAM, 'assigned_at' => null];
+        }
+
+        return ['owner_id' => null, 'org_unit_id' => null, 'pool_level' => Lead::POOL_COMMON, 'assigned_at' => null];
+    }
+
+    /** Nhân sự có thể chia trực tiếp: trong phạm vi của người thao tác + chính mình. */
+    private function assignableUsers()
+    {
         $visibleOrgIds = auth()->user()->visibleOrgUnitIds();
 
+        return User::where('status', User::STATUS_ACTIVE)
+            ->where(fn ($q) => $q
+                ->whereHas('assignments', fn ($qq) => $qq->effective()->when(
+                    $visibleOrgIds !== [],
+                    fn ($qqq) => $qqq->whereIn('org_unit_id', $visibleOrgIds)
+                ))
+                ->orWhere('id', auth()->id()))
+            ->orderBy('name')
+            ->get();
+    }
+
+    private function assignableUserIds()
+    {
+        return $this->assignableUsers()->pluck('id');
+    }
+
+    /** Phòng/team có thể đưa vào kho chung: các org trong phạm vi của người thao tác. */
+    private function assignableOrgs()
+    {
+        $ids = auth()->user()->visibleOrgUnitIds();
+
+        return $ids === [] ? collect() : OrgUnit::whereIn('id', $ids)->orderBy('path')->get();
+    }
+
+    public function with(): array
+    {
+        $users = $this->assignableUsers();
+        $q = trim($this->personSearch);
+        $results = ($q === '' ? $users : $users->filter(fn ($u) => str_contains(mb_strtolower($u->name), mb_strtolower($q))))
+            ->take(15)->values();
+
         return [
-            'assignableUsers' => User::where('status', User::STATUS_ACTIVE)
-                ->where(fn ($q) => $q
-                    ->whereHas('assignments', fn ($qq) => $qq->effective()->when(
-                        $visibleOrgIds !== [],
-                        fn ($qqq) => $qqq->whereIn('org_unit_id', $visibleOrgIds)
-                    ))
-                    ->orWhere('id', auth()->id()))
-                ->orderBy('name')
-                ->get(),
+            'assignableOrgs' => $this->assignableOrgs(),
+            'personResults' => $results,
+            'selectedPerson' => $this->personId ? $users->firstWhere('id', $this->personId) : null,
             'customFields' => CustomField::applicableTo($this->targetOrgUnit()),
         ];
     }
@@ -401,15 +483,6 @@ new class extends Component
                     Phân phối & Nguồn
                 </h2>
                 <div class="space-y-4">
-                    <div>
-                        <label class="block text-sm font-medium mb-1.5">Nguồn quảng cáo</label>
-                        <select wire:model="ad_source" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-gold-500">
-                            <option value="">Chọn nguồn quảng cáo</option>
-                            @foreach (['Facebook Ads', 'Google Ads', 'TikTok Ads', 'Zalo', 'Website', 'Giới thiệu', 'Khác'] as $source)
-                                <option value="{{ $source }}">{{ $source }}</option>
-                            @endforeach
-                        </select>
-                    </div>
                     @if ($lead?->code)
                     <div>
                         <label class="block text-sm font-medium mb-1.5">Mã khách hàng</label>
@@ -417,15 +490,57 @@ new class extends Component
                         <p class="text-xs text-ink/50 mt-1.5">Mã tự sinh theo trường phân loại của phòng.</p>
                     </div>
                     @endif
+                    {{-- Chia vào kho --}}
                     <div>
-                        <label class="block text-sm font-medium mb-1.5">LEAD CHIA CHO</label>
-                        <select wire:model.live="owner_id" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-gold-500">
-                            <option value="">— Chưa chia (vào kho chung) —</option>
-                            @foreach ($assignableUsers as $u)
-                                <option value="{{ $u->id }}">{{ $u->name }}</option>
-                            @endforeach
+                        <label class="block text-sm font-medium mb-1.5">CHIA VÀO KHO</label>
+                        <select wire:model.live="poolTarget" @disabled($selectedPerson) @class(['w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-gold-500', 'opacity-50 cursor-not-allowed' => $selectedPerson])>
+                            <option value="">— Chọn —</option>
+                            <option value="company">Kho chung công ty</option>
+                            @if ($assignableOrgs->isNotEmpty())
+                                <optgroup label="Kho chung phòng / team">
+                                    @foreach ($assignableOrgs as $o)
+                                        <option value="org:{{ $o->id }}">{{ str_repeat('— ', $o->depth) }}Kho chung {{ $o->name }}</option>
+                                    @endforeach
+                                </optgroup>
+                            @endif
                         </select>
-                        @error('owner_id')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
+                        <p class="text-xs text-ink/50 mt-1.5">
+                            @if ($selectedPerson)
+                                Đã chia cho cá nhân → lead không nằm trong kho chung.
+                            @else
+                                Kho chung phòng/team: chỉ người trong phòng/team đó thấy được.
+                            @endif
+                        </p>
+                        @error('poolTarget')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
+                    </div>
+
+                    {{-- Chia trực tiếp cho cá nhân (có search) --}}
+                    <div x-data="{ open: false }" @click.outside="open = false">
+                        <label class="block text-sm font-medium mb-1.5">CHIA CHO CÁ NHÂN</label>
+                        @if ($selectedPerson)
+                            <div class="flex items-center justify-between gap-2 border border-gold-300 bg-gold-50 rounded-md px-3 py-2.5">
+                                <span class="text-sm font-semibold text-gold-800">{{ $selectedPerson->name }}</span>
+                                <button type="button" wire:click="clearPerson" class="text-xs font-semibold text-ink/50 hover:text-red-600">Bỏ chọn ✕</button>
+                            </div>
+                            <p class="text-xs text-ink/50 mt-1.5">Lead rời kho chung, chuyển hẳn vào kho cá nhân của người này.</p>
+                        @else
+                            <div class="relative">
+                                <input type="text" wire:model.live.debounce.250ms="personSearch" @focus="open = true" placeholder="Gõ tên để tìm nhân sự..."
+                                       class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
+                                <div x-show="open" x-cloak class="absolute z-20 mt-1 w-full max-h-56 overflow-y-auto bg-white border border-gold-200 rounded-lg shadow-card">
+                                    @forelse ($personResults as $u)
+                                        <button type="button" wire:click="selectPerson({{ $u->id }})" @click="open = false"
+                                                class="block w-full text-left px-3 py-2 text-sm hover:bg-gold-50">
+                                            {{ $u->name }}
+                                            <span class="text-xs text-ink/40">{{ $u->email }}</span>
+                                        </button>
+                                    @empty
+                                        <p class="px-3 py-2 text-sm text-ink/40">Không tìm thấy nhân sự phù hợp.</p>
+                                    @endforelse
+                                </div>
+                            </div>
+                            @error('personId')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
+                        @endif
                     </div>
                     <div>
                         <label class="block text-sm font-medium mb-1.5">KHU VỰC</label>
@@ -468,7 +583,7 @@ new class extends Component
                         Trường bổ sung
                         <span class="text-xs font-normal text-ink/50">({{ $lead?->orgUnit?->name ?? $this->targetOrgUnit()?->name ?? 'mức công ty' }})</span>
                     </h2>
-                    <p class="text-xs text-ink/50 mb-5">Bộ trường do phòng ban đang giữ lead quy định.</p>
+                    <p class="text-xs text-ink/50 mb-5">Bộ trường buộc khai theo quy định hiện hành.</p>
                     @php $cfLabels = \App\Models\CustomField::labelMap($customFields); @endphp
                     <div class="space-y-4">
                         @foreach ($customFields as $field)
@@ -488,9 +603,15 @@ new class extends Component
                                     <select wire:model="custom.{{ $field->id }}" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-gold-500">
                                         <option value="">— chọn —</option>
                                         @foreach ($field->options ?? [] as $option)
-                                            <option value="{{ $option }}">{{ $field->optionLabel($option) }}</option>
+                                            @php $ol = $field->optionLabel($option); @endphp
+                                            <option value="{{ $option }}">{{ ($ol !== '' && $ol !== $option) ? "$ol ($option)" : $option }}</option>
                                         @endforeach
                                     </select>
+                                @elseif ($field->field_type === 'tick')
+                                    <label class="inline-flex items-center gap-2 text-sm cursor-pointer select-none">
+                                        <input type="checkbox" wire:model="custom.{{ $field->id }}" class="rounded border-gold-300 text-gold-600 focus:ring-gold-500 w-5 h-5">
+                                        Có
+                                    </label>
                                 @elseif ($field->field_type === 'date')
                                     <input type="date" wire:model="custom.{{ $field->id }}" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
                                 @elseif ($field->field_type === 'number')

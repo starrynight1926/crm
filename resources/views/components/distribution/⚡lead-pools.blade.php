@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\CustomField;
 use App\Models\Lead;
 use App\Models\OrgUnit;
 use App\Models\User;
@@ -15,23 +16,102 @@ new class extends Component
 
     public string $fOrgUnit = '';
 
+    public int $perPage = 20;
+
+    /** @var array<int> id các lead được tick để thao tác hàng loạt */
+    public array $selected = [];
+
+    // Chia tay 1 lead
     public ?int $assigningLeadId = null;
 
     public string $assignUserId = '';
+
+    // Chia về kho phòng/team 1 lead
+    public ?int $poolingLeadId = null;
+
+    public string $poolOrgId = '';
+
+    // Thao tác hàng loạt
+    public string $bulkMode = ''; // '' | 'assign' | 'pool'
+
+    public string $bulkUserId = '';
+
+    public string $bulkOrgId = '';
+
+    // Popup chi tiết
+    public ?int $detailLeadId = null;
 
     public function switchTab(string $tab): void
     {
         abort_unless(in_array($tab, [Lead::POOL_COMMON, Lead::POOL_TEAM, Lead::POOL_PERSONAL]), 422);
         $this->tab = $tab;
         $this->assigningLeadId = null;
+        $this->poolingLeadId = null;
+        $this->bulkMode = '';
+        $this->selected = [];
         $this->resetPage();
     }
 
-    /** Chạy engine chia tự động cho 1 lead đang nằm kho. */
+    public function updatedPerPage(): void
+    {
+        $this->resetPage();
+    }
+
+    /** Query kho theo tab + filter, chưa phân trang. */
+    private function filtered()
+    {
+        $user = auth()->user();
+
+        return Lead::query()
+            ->where('pool_level', $this->tab)
+            ->with(['owner', 'orgUnit'])
+            ->when($this->tab !== Lead::POOL_COMMON, fn ($q) => $q->visibleTo($user))
+            ->when($this->tab === Lead::POOL_TEAM && $this->fOrgUnit, fn ($q) => $q->where('org_unit_id', $this->fOrgUnit))
+            ->orderByDesc('id');
+    }
+
+    private function currentPageIds(): array
+    {
+        return $this->filtered()->paginate($this->perPage)->pluck('id')->all();
+    }
+
+    public function toggleAllOnPage(): void
+    {
+        $pageIds = $this->currentPageIds();
+        $allSelected = $pageIds !== [] && count(array_intersect($pageIds, $this->selected)) === count($pageIds);
+        $this->selected = $allSelected
+            ? array_values(array_diff($this->selected, $pageIds))
+            : array_values(array_unique(array_merge($this->selected, $pageIds)));
+    }
+
+    /** Phòng/team (loại node gốc công ty) được phép đưa lead vào kho, theo phạm vi. */
+    private function poolOrgs()
+    {
+        $ids = auth()->user()->visibleOrgUnitIds();
+
+        return OrgUnit::where('active', true)
+            ->where('depth', '>', 0) // node gốc "Công ty" = kho chung, dùng option riêng
+            ->when($ids !== [], fn ($q) => $q->whereIn('id', $ids))
+            ->orderBy('path')
+            ->get();
+    }
+
+    /** Chuyển 1 lead về đích kho theo lựa chọn: 'common' = kho chung công ty, còn lại = org id (kho team). */
+    private function moveOne(Lead $lead, string $target, int $actorId): void
+    {
+        $engine = app(DistributionEngine::class);
+        if ($target === 'common') {
+            $engine->recall($lead, Lead::POOL_COMMON, $actorId);
+        } else {
+            $engine->moveToTeam($lead, (int) $target, $actorId);
+        }
+    }
+
+    // ---------- Thao tác đơn ----------
+
     public function autoDistribute(int $leadId): void
     {
         abort_unless(auth()->user()->hasPermission('lead.distribute'), 403);
-
         $lead = Lead::findOrFail($leadId);
         app(DistributionEngine::class)->distribute($lead);
 
@@ -47,6 +127,7 @@ new class extends Component
     {
         abort_unless(auth()->user()->hasPermission('lead.distribute'), 403);
         $this->assigningLeadId = $leadId;
+        $this->poolingLeadId = null;
         $this->assignUserId = '';
     }
 
@@ -63,55 +144,124 @@ new class extends Component
         session()->flash('status', "Đã chia tay {$lead->name} cho {$user->name}.");
     }
 
+    public function startPool(int $leadId): void
+    {
+        abort_unless(auth()->user()->hasPermission('lead.distribute'), 403);
+        $this->poolingLeadId = $leadId;
+        $this->assigningLeadId = null;
+        $this->poolOrgId = '';
+    }
+
+    public function confirmPool(): void
+    {
+        abort_unless(auth()->user()->hasPermission('lead.distribute'), 403);
+        if ($this->poolOrgId === '') {
+            $this->addError('poolOrgId', 'Chọn kho để chuyển.');
+            return;
+        }
+
+        $lead = Lead::findOrFail($this->poolingLeadId);
+        $this->moveOne($lead, $this->poolOrgId, auth()->id());
+
+        $this->poolingLeadId = null;
+        session()->flash('status', "Đã chuyển {$lead->name} về "
+            . ($this->poolOrgId === 'common' ? 'kho chung công ty.' : 'kho phòng/team.'));
+    }
+
     public function recall(int $leadId): void
     {
         abort_unless(auth()->user()->hasPermission('lead.recall'), 403);
-
         $lead = Lead::findOrFail($leadId);
         app(DistributionEngine::class)->recall($lead, Lead::POOL_TEAM, auth()->id());
-
         session()->flash('status', "Đã thu hồi {$lead->name} về kho team.");
     }
 
-    public function pullLead(int $leadId): void // không đặt tên pull() — đụng Livewire\Component::pull()
+    public function pullLead(int $leadId): void
     {
         abort_unless(auth()->user()->hasPermission('lead.pull_pool'), 403);
-
         $lead = Lead::findOrFail($leadId);
         if ($lead->pool_level === Lead::POOL_PERSONAL) {
             session()->flash('error', 'Lead đã có người giữ.');
             return;
         }
-
         app(DistributionEngine::class)->pull($lead, auth()->user());
         session()->flash('status', "Đã kéo {$lead->name} về kho của bạn.");
+    }
+
+    // ---------- Thao tác hàng loạt ----------
+
+    /** Lead hợp lệ trong lựa chọn, thuộc đúng tab hiện tại. */
+    private function selectedLeads()
+    {
+        return Lead::whereIn('id', $this->selected)->where('pool_level', $this->tab)->get();
+    }
+
+    public function bulkAssign(): void
+    {
+        abort_unless(auth()->user()->hasPermission('lead.distribute'), 403);
+        $this->validate(['bulkUserId' => 'required|exists:users,id'], [], ['bulkUserId' => 'sale nhận']);
+
+        $user = User::findOrFail((int) $this->bulkUserId);
+        $engine = app(DistributionEngine::class);
+        $n = 0;
+        foreach ($this->selectedLeads() as $lead) {
+            $engine->manualAssign($lead, $user, auth()->id());
+            $n++;
+        }
+        $this->bulkMode = '';
+        $this->selected = [];
+        session()->flash('status', "Đã chia tay {$n} lead cho {$user->name}.");
+    }
+
+    public function bulkPool(): void
+    {
+        abort_unless(auth()->user()->hasPermission('lead.distribute'), 403);
+        if ($this->bulkOrgId === '') {
+            $this->addError('bulkOrgId', 'Chọn kho để chuyển.');
+            return;
+        }
+
+        $n = 0;
+        foreach ($this->selectedLeads() as $lead) {
+            $this->moveOne($lead, $this->bulkOrgId, auth()->id());
+            $n++;
+        }
+        $this->bulkMode = '';
+        $this->selected = [];
+        session()->flash('status', "Đã chuyển {$n} lead về "
+            . ($this->bulkOrgId === 'common' ? 'kho chung công ty.' : 'kho phòng/team.'));
+    }
+
+    public function showDetail(int $leadId): void
+    {
+        $lead = Lead::findOrFail($leadId);
+        abort_unless($this->tab === Lead::POOL_COMMON || $lead->isVisibleTo(auth()->user()), 403);
+        $this->detailLeadId = $leadId;
     }
 
     public function with(): array
     {
         $user = auth()->user();
-
-        $leads = Lead::query()
-            ->where('pool_level', $this->tab)
-            ->with(['owner', 'orgUnit'])
-            // Kho team/cá nhân: giới hạn theo data scope; kho chung ai có quyền vào màn này đều thấy (SĐT vẫn mask)
-            ->when($this->tab !== Lead::POOL_COMMON, fn ($q) => $q->visibleTo($user))
-            ->when($this->tab === Lead::POOL_TEAM && $this->fOrgUnit, fn ($q) => $q->where('org_unit_id', $this->fOrgUnit))
-            ->orderByDesc('id')
-            ->paginate(15);
+        $leads = $this->filtered()->paginate($this->perPage);
+        $pageIds = $leads->pluck('id')->all();
 
         return [
             'leads' => $leads,
+            'allPageSelected' => $pageIds !== [] && count(array_intersect($pageIds, $this->selected)) === count($pageIds),
             'counts' => [
                 Lead::POOL_COMMON => Lead::where('pool_level', Lead::POOL_COMMON)->count(),
                 Lead::POOL_TEAM => Lead::where('pool_level', Lead::POOL_TEAM)->visibleTo($user)->count(),
                 Lead::POOL_PERSONAL => Lead::where('pool_level', Lead::POOL_PERSONAL)->visibleTo($user)->count(),
             ],
             'teamOptions' => OrgUnit::where('active', true)->orderBy('path')->get(),
+            'poolOrgs' => $this->poolOrgs(),
             'assignableUsers' => User::where('status', 'active')->orderBy('name')->get(),
             'canDistribute' => $user->hasPermission('lead.distribute'),
             'canRecall' => $user->hasPermission('lead.recall'),
             'canPull' => $user->hasPermission('lead.pull_pool'),
+            'detailLead' => $this->detailLeadId
+                ? Lead::with(['owner', 'receiver', 'orgUnit', 'customValues.field'])->find($this->detailLeadId)
+                : null,
         ];
     }
 };
@@ -150,10 +300,43 @@ new class extends Component
         @endif
     </div>
 
+    {{-- Thanh thao tác hàng loạt --}}
+    @if ($tab !== 'personal' && $canDistribute && count($selected) > 0)
+        <div class="mb-3 bg-gold-50 border border-gold-200 rounded-lg px-4 py-3 flex flex-wrap items-center gap-3">
+            <span class="text-sm font-semibold text-gold-800">Đã chọn {{ count($selected) }} lead</span>
+            <div class="flex-1"></div>
+            @if ($bulkMode === 'assign')
+                <select wire:model="bulkUserId" class="border border-gold-200 rounded-md px-2.5 py-1.5 text-sm bg-white">
+                    <option value="">— chọn sale —</option>
+                    @foreach ($assignableUsers as $u)<option value="{{ $u->id }}">{{ $u->name }}</option>@endforeach
+                </select>
+                <button wire:click="bulkAssign" class="text-sm font-semibold bg-gold-600 text-white px-4 py-1.5 rounded-md">Xác nhận chia tay</button>
+                <button wire:click="$set('bulkMode', '')" class="text-sm text-ink/50">Hủy</button>
+                @error('bulkUserId')<p class="w-full text-xs text-red-600">{{ $message }}</p>@enderror
+            @elseif ($bulkMode === 'pool')
+                <select wire:model="bulkOrgId" class="border border-gold-200 rounded-md px-2.5 py-1.5 text-sm bg-white">
+                    <option value="">— chọn kho —</option>
+                    <option value="common">Kho chung công ty</option>
+                    @foreach ($poolOrgs as $o)<option value="{{ $o->id }}">Kho {{ str_repeat('— ', $o->depth) }}{{ $o->name }}</option>@endforeach
+                </select>
+                <button wire:click="bulkPool" class="text-sm font-semibold bg-gold-600 text-white px-4 py-1.5 rounded-md">Xác nhận chuyển kho</button>
+                <button wire:click="$set('bulkMode', '')" class="text-sm text-ink/50">Hủy</button>
+                @error('bulkOrgId')<p class="w-full text-xs text-red-600">{{ $message }}</p>@enderror
+            @else
+                <button wire:click="$set('bulkMode', 'assign')" class="text-sm font-semibold text-gold-700 border border-gold-300 hover:bg-white px-4 py-1.5 rounded-md">Chia tay hàng loạt</button>
+                <button wire:click="$set('bulkMode', 'pool')" class="text-sm font-semibold text-gold-700 border border-gold-300 hover:bg-white px-4 py-1.5 rounded-md">Chia về kho hàng loạt</button>
+                <button wire:click="$set('selected', [])" class="text-sm text-ink/50">Bỏ chọn</button>
+            @endif
+        </div>
+    @endif
+
     <div class="bg-white border border-gold-200 rounded-xl shadow-card overflow-x-auto">
         <table class="w-full text-sm whitespace-nowrap">
             <thead>
                 <tr class="text-left text-xs uppercase tracking-wider text-ink/50 bg-gold-50/60">
+                    @if ($tab !== 'personal' && $canDistribute)
+                        <th class="px-4 py-3 w-10"><input type="checkbox" wire:click="toggleAllOnPage" @checked($allPageSelected) class="rounded border-gold-300 text-gold-600 focus:ring-gold-500 w-4 h-4"></th>
+                    @endif
                     <th class="px-4 py-3 font-semibold">Mã KH</th>
                     <th class="px-4 py-3 font-semibold">Tên</th>
                     <th class="px-4 py-3 font-semibold">SĐT</th>
@@ -166,10 +349,15 @@ new class extends Component
             <tbody class="divide-y divide-gold-100">
                 @forelse ($leads as $lead)
                     <tr class="hover:bg-gold-50/40">
+                        @if ($tab !== 'personal' && $canDistribute)
+                            <td class="px-4 py-3"><input type="checkbox" value="{{ $lead->id }}" wire:model.live="selected" class="rounded border-gold-300 text-gold-600 focus:ring-gold-500 w-4 h-4"></td>
+                        @endif
                         <td class="px-4 py-3 font-mono text-xs text-gold-700">
                             <a href="{{ route('leads.show', $lead) }}" class="hover:underline">{{ $lead->code ?: '#' . $lead->id }}</a>
                         </td>
-                        <td class="px-4 py-3 font-semibold">{{ $lead->name }}</td>
+                        <td class="px-4 py-3">
+                            <button wire:click="showDetail({{ $lead->id }})" class="font-semibold text-gold-700 hover:underline">{{ $lead->name }}</button>
+                        </td>
                         <td class="px-4 py-3 font-mono">{{ $lead->phoneFor(auth()->user()) }}</td>
                         <td class="px-4 py-3 text-ink/60">{{ $lead->region ?: '—' }} · {{ $lead->ad_source ?: '—' }}</td>
                         @if ($tab !== 'common')<td class="px-4 py-3">{{ $lead->orgUnit?->name ?: '—' }}</td>@endif
@@ -182,18 +370,28 @@ new class extends Component
                                 <span class="inline-flex items-center gap-2">
                                     <select wire:model="assignUserId" class="border border-gold-200 rounded-md px-2 py-1.5 text-xs bg-white focus:outline-none focus:border-gold-500">
                                         <option value="">— chọn sale —</option>
-                                        @foreach ($assignableUsers as $u)
-                                            <option value="{{ $u->id }}">{{ $u->name }}</option>
-                                        @endforeach
+                                        @foreach ($assignableUsers as $u)<option value="{{ $u->id }}">{{ $u->name }}</option>@endforeach
                                     </select>
                                     <button wire:click="confirmAssign" class="text-xs font-semibold bg-gold-600 text-white px-3 py-1.5 rounded-md">OK</button>
                                     <button wire:click="$set('assigningLeadId', null)" class="text-xs text-ink/50">Hủy</button>
                                 </span>
                                 @error('assignUserId')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
+                            @elseif ($poolingLeadId === $lead->id)
+                                <span class="inline-flex items-center gap-2">
+                                    <select wire:model="poolOrgId" class="border border-gold-200 rounded-md px-2 py-1.5 text-xs bg-white focus:outline-none focus:border-gold-500">
+                                        <option value="">— chọn kho —</option>
+                                        <option value="common">Kho chung công ty</option>
+                                        @foreach ($poolOrgs as $o)<option value="{{ $o->id }}">Kho {{ str_repeat('— ', $o->depth) }}{{ $o->name }}</option>@endforeach
+                                    </select>
+                                    <button wire:click="confirmPool" class="text-xs font-semibold bg-gold-600 text-white px-3 py-1.5 rounded-md">OK</button>
+                                    <button wire:click="$set('poolingLeadId', null)" class="text-xs text-ink/50">Hủy</button>
+                                </span>
+                                @error('poolOrgId')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
                             @else
                                 @if ($tab !== 'personal' && $canDistribute)
                                     <button wire:click="autoDistribute({{ $lead->id }})" class="text-xs font-semibold text-gold-700 border border-gold-300 hover:bg-gold-50 px-3 py-1.5 rounded-md" title="Chạy engine theo rule">Chia tự động</button>
                                     <button wire:click="startAssign({{ $lead->id }})" class="text-xs font-semibold text-ink/60 border border-gold-200 hover:bg-gold-50 px-3 py-1.5 rounded-md">Chia tay</button>
+                                    <button wire:click="startPool({{ $lead->id }})" class="text-xs font-semibold text-ink/60 border border-gold-200 hover:bg-gold-50 px-3 py-1.5 rounded-md">Chia về kho</button>
                                 @endif
                                 @if ($tab !== 'personal' && $canPull)
                                     <button wire:click="pullLead({{ $lead->id }})" class="text-xs font-semibold text-green-700 border border-green-200 hover:bg-green-50 px-3 py-1.5 rounded-md">Kéo về tôi</button>
@@ -208,10 +406,71 @@ new class extends Component
                         </td>
                     </tr>
                 @empty
-                    <tr><td colspan="8" class="px-4 py-10 text-center text-ink/40">Kho trống.</td></tr>
+                    <tr><td colspan="9" class="px-4 py-10 text-center text-ink/40">Kho trống.</td></tr>
                 @endforelse
             </tbody>
         </table>
-        <div class="px-5 py-4 border-t border-gold-100">{{ $leads->links() }}</div>
+        <div class="px-5 py-4 border-t border-gold-100 flex flex-wrap items-center justify-between gap-3">
+            <div class="flex items-center gap-2 text-sm text-ink/60">
+                <span>Hiển thị</span>
+                <select wire:model.live="perPage" class="border border-gold-200 rounded-md px-2 py-1.5 text-sm bg-white focus:outline-none focus:border-gold-500">
+                    @foreach ([20, 50, 100, 200] as $n)<option value="{{ $n }}">{{ $n }}</option>@endforeach
+                </select>
+                <span>/ trang</span>
+            </div>
+            {{ $leads->links() }}
+        </div>
     </div>
+
+    {{-- Popup chi tiết khách --}}
+    @if ($detailLead)
+        <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div class="absolute inset-0 bg-ink/40" wire:click="$set('detailLeadId', null)"></div>
+            <div class="relative bg-white rounded-xl shadow-xl border border-gold-200 w-full max-w-2xl p-7 max-h-[90vh] overflow-y-auto">
+                <div class="flex items-start justify-between gap-3 mb-4">
+                    <div>
+                        <h3 class="text-xl font-bold">{{ $detailLead->name }}</h3>
+                        <p class="text-sm text-ink/50 font-mono">{{ $detailLead->code ?: '#' . $detailLead->id }}</p>
+                    </div>
+                    <a href="{{ route('leads.show', $detailLead) }}" class="text-sm font-semibold text-gold-700 hover:underline shrink-0">Mở trang đầy đủ →</a>
+                </div>
+                <table class="w-full text-sm">
+                    <tbody class="divide-y divide-gold-100">
+                        @php
+                            $rows = [
+                                'SĐT' => $detailLead->phoneFor(auth()->user()),
+                                'Ngày thu thập' => $detailLead->received_date?->format('d/m/Y'),
+                                'Nguồn' => $detailLead->ad_source ?: '—',
+                                'Khu vực' => $detailLead->region ?: '—',
+                                'Camp' => $detailLead->camp ?: '—',
+                                'Phân loại' => $detailLead->classificationLabel(),
+                                'Kho' => ucfirst($detailLead->pool_level) . ($detailLead->orgUnit ? ' · ' . $detailLead->orgUnit->name : ''),
+                                'Người thu thập' => $detailLead->receiver?->name ?? '—',
+                                'Người phụ trách' => $detailLead->owner?->name ?? '— (chưa chia)',
+                                'Ghi chú' => $detailLead->note ?: '—',
+                            ];
+                        @endphp
+                        @foreach ($rows as $label => $val)
+                            <tr>
+                                <td class="py-2 pr-4 text-ink/50 w-40 align-top">{{ $label }}</td>
+                                <td class="py-2 font-medium">{{ $val }}</td>
+                            </tr>
+                        @endforeach
+                        @foreach ($detailLead->customValues as $cv)
+                            @php $cf = $cv->field; @endphp
+                            @if ($cf)
+                                <tr>
+                                    <td class="py-2 pr-4 text-ink/50 align-top">{{ $cf->label }}</td>
+                                    <td class="py-2 font-medium">{{ $cf->field_type === 'select' ? $cf->optionLabel((string) $cv->value) : ($cf->field_type === 'tick' ? ((string) $cv->value !== '' ? '✓' : '—') : $cv->value) }}</td>
+                                </tr>
+                            @endif
+                        @endforeach
+                    </tbody>
+                </table>
+                <div class="flex justify-end mt-6">
+                    <button wire:click="$set('detailLeadId', null)" class="text-sm text-ink/60 px-4 py-2">Đóng</button>
+                </div>
+            </div>
+        </div>
+    @endif
 </div>

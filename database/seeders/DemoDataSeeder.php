@@ -83,15 +83,21 @@ class DemoDataSeeder extends Seeder
                 'gói khám đột quỵ', 'gói khám tiểu đường', 'gói khám gan', 'gói khám cổ vai gáy',
                 'quà tặng', 'TBG nhật-sing',
             ]), 3);
-            // PHÂN LOẠI (chăm sóc) + KẾT QUẢ là 2 dropdown riêng trong mẫu
-            $this->selectField($marketing->id, 'phan_loai_cs', 'Phân loại (chăm sóc)', $this->flat([
-                'Nét', 'Quan tâm', 'Tài chính yếu', 'Không nhu cầu', 'KLLD', 'Tìm hiểu', 'Gọi lại sau',
-            ]), 4);
-            $this->selectField($marketing->id, 'ket_qua', 'Kết quả', $this->flat([
-                'Close', 'Show', 'Follow', 'Booking', 'Missed',
-            ]), 5);
-            // Bỏ field phan_loai funnel seed cũ (nếu có) — đã đổi key thành phan_loai_cs
-            CustomField::where('org_unit_id', $marketing->id)->where('key', 'phan_loai')->get()->each->delete();
+            // Các trạng thái funnel là TỪNG Ô TÍCH riêng (đúng như các cột trong mẫu)
+            $stages = [
+                'follow' => 'Follow', 'net' => 'Nét', 'tai_chinh_yeu' => 'Tài chính yếu',
+                'quan_tam' => 'Quan tâm', 'tham_khao' => 'Tham khảo', 'tim_hieu' => 'Tìm hiểu',
+                'goi_lai_sau' => 'Gọi lại sau', 'klld' => 'KLLD', 'missed' => 'Missed',
+                'booking' => 'Booking', 'show' => 'Show', 'close' => 'Close',
+            ];
+            $pos = 4;
+            foreach ($stages as $key => $label) {
+                $this->tickField($marketing->id, 'tick_' . $key, $label, $pos++);
+            }
+            // Bỏ các field seed cũ đã gộp nhầm thành dropdown
+            CustomField::where('org_unit_id', $marketing->id)
+                ->whereIn('key', ['phan_loai', 'phan_loai_cs', 'ket_qua'])
+                ->get()->each->delete();
         }
     }
 
@@ -99,6 +105,25 @@ class DemoDataSeeder extends Seeder
     private function flat(array $values): array
     {
         return array_combine($values, $values);
+    }
+
+    /** Trường "Ô tích" (có/không) — không có option, không nối mã. */
+    private function tickField(?int $orgId, string $key, string $label, int $position): void
+    {
+        CustomField::updateOrCreate(
+            ['org_unit_id' => $orgId, 'key' => $key],
+            [
+                'label' => $label,
+                'field_type' => 'tick',
+                'options' => null,
+                'rules' => null,
+                'affects_code' => false,
+                'required' => false,
+                'position' => $position,
+                'status' => CustomField::STATUS_ACTIVE,
+                'active' => true,
+            ]
+        );
     }
 
     private function staff(string $email, string $name, ?Role $role, ?OrgUnit $org): void

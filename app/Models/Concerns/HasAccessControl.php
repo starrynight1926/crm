@@ -26,6 +26,8 @@ trait HasAccessControl
 
     private ?array $visibleOrgUnitIdsCache = null;
 
+    private ?array $memberOrgUnitIdsCache = null;
+
     /** @return Collection<int, Assignment> */
     public function effectiveAssignments(): Collection
     {
@@ -96,6 +98,41 @@ trait HasAccessControl
         return $this->visibleOrgUnitIdsCache = $query->pluck('id')->all();
     }
 
+    /**
+     * Id các org_unit trên CÙNG NHÁNH với org của user (kho chung phòng/team nhìn được dù scope=self):
+     * org của assignment + toàn bộ cấp cha (đi lên) + toàn bộ cấp con/subtree (đi xuống).
+     * ⇒ kho team A hiện cho: team A, phòng cha (KD), công ty; nhưng team B anh em thì không.
+     */
+    public function memberOrgUnitIds(): array
+    {
+        if ($this->memberOrgUnitIdsCache !== null) {
+            return $this->memberOrgUnitIdsCache;
+        }
+
+        $ids = [];
+        $prefixes = [];
+        foreach ($this->effectiveAssignments() as $assignment) {
+            // Cấp cha + chính nó (tách từ path)
+            foreach (array_filter(explode('/', trim((string) $assignment->orgUnit->path, '/'))) as $seg) {
+                $ids[(int) $seg] = true;
+            }
+            // Cấp con / subtree
+            $prefixes[] = $assignment->orgUnit->path;
+        }
+
+        if ($prefixes !== []) {
+            $query = OrgUnit::query();
+            foreach (array_unique($prefixes) as $i => $prefix) {
+                $query->{$i === 0 ? 'where' : 'orWhere'}('path', 'like', $prefix . '%');
+            }
+            foreach ($query->pluck('id') as $id) {
+                $ids[(int) $id] = true;
+            }
+        }
+
+        return $this->memberOrgUnitIdsCache = array_keys($ids);
+    }
+
     /** User có ít nhất một assignment còn hiệu lực → được thấy dữ liệu bản thân. */
     public function hasSelfScope(): bool
     {
@@ -112,5 +149,6 @@ trait HasAccessControl
         $this->effectiveAssignmentsCache = null;
         $this->permissionKeysCache = null;
         $this->visibleOrgUnitIdsCache = null;
+        $this->memberOrgUnitIdsCache = null;
     }
 }

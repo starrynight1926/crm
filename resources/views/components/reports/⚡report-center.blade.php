@@ -511,7 +511,13 @@ new class extends Component
                                 <td class="px-4 py-2.5">{{ $lead->received_date?->format('d/m/Y') }}</td>
                                 @foreach ($leadCustomFields as $cf)
                                     <td class="px-4 py-2.5">
-                                        {{ $cf->field_type === 'select' ? ($cf->optionLabel($vals[$cf->id] ?? '') ?: '—') : ($vals[$cf->id] ?? '—') }}
+                                        @if ($cf->field_type === 'tick')
+                                            {{ ($vals[$cf->id] ?? '') !== '' ? '✓' : '—' }}
+                                        @elseif ($cf->field_type === 'select')
+                                            {{ $cf->optionLabel($vals[$cf->id] ?? '') ?: '—' }}
+                                        @else
+                                            {{ $vals[$cf->id] ?? '—' }}
+                                        @endif
                                     </td>
                                 @endforeach
                             </tr>

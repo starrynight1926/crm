@@ -292,6 +292,28 @@ class DistributionEngine
         ]);
     }
 
+    /** Chuyển lead vào kho chung của một phòng/team cụ thể (pool_level=team, org chỉ định). */
+    public function moveToTeam(Lead $lead, int $orgUnitId, int $actorId): void
+    {
+        LeadDistributionLog::create([
+            'lead_id' => $lead->id,
+            'action' => LeadDistributionLog::ACTION_RECALL,
+            'from_pool_level' => $lead->pool_level,
+            'to_pool_level' => Lead::POOL_TEAM,
+            'from_owner_id' => $lead->owner_id,
+            'org_unit_id' => $orgUnitId,
+            'actor_id' => $actorId,
+            'created_at' => now(),
+        ]);
+
+        $lead->update([
+            'owner_id' => null,
+            'assigned_at' => null,
+            'pool_level' => Lead::POOL_TEAM,
+            'org_unit_id' => $orgUnitId,
+        ]);
+    }
+
     /** Chia tay cho 1 sale cụ thể (quyền lead.distribute). */
     public function manualAssign(Lead $lead, User $user, int $actorId): void
     {

@@ -145,7 +145,7 @@ new class extends Component
         $this->guardSelectedOrg();
         $this->validate([
             'label' => 'required|string|max:100',
-            'fieldType' => 'required|in:text,number,date,email,select,code',
+            'fieldType' => 'required|in:text,number,date,email,select,tick,code',
         ], [], ['label' => 'tên trường']);
 
         $orgId = $this->selectedOrgId !== '' ? (int) $this->selectedOrgId : null;
@@ -471,16 +471,36 @@ new class extends Component
                             </span>
                         </div>
                         @if ($has)
-                            <div class="flex flex-wrap gap-2">
+                            <div class="space-y-2">
                                 @foreach ($group['fields'] as $f)
-                                    @php $live = $f->active && $f->status === \App\Models\CustomField::STATUS_ACTIVE; @endphp
-                                    <span class="inline-flex items-center gap-1.5 text-xs pl-2.5 pr-2 py-1 rounded-md border {{ $live ? 'bg-white border-gold-200' : 'bg-ink/5 border-ink/10 opacity-70' }}">
-                                        <span class="font-semibold {{ $live ? 'text-ink/80' : 'text-ink/40' }}">{{ $f->label }}</span>
-                                        <span class="text-ink/40">{{ \App\Models\CustomField::TYPES[$f->field_type] ?? $f->field_type }}</span>
-                                        @if ($f->affects_code)<span class="text-[10px] font-bold text-gold-700 bg-gold-100 rounded px-1 py-px" title="Nối vào mã KH">#mã</span>@endif
-                                        @if ($f->required)<span class="text-red-500 font-bold" title="Bắt buộc">*</span>@endif
-                                        @if ($f->status === \App\Models\CustomField::STATUS_PENDING)<span class="text-[10px] text-amber-700 bg-amber-50 rounded px-1 py-px">chờ duyệt</span>@endif
-                                    </span>
+                                    @php
+                                        $live = $f->active && $f->status === \App\Models\CustomField::STATUS_ACTIVE;
+                                        $ck = $f->rules['code_kind'] ?? null;
+                                        // Danh sách giá trị hiển thị bên cạnh: 'Giải thích (Giá trị)' nếu có nhãn khác, ngược lại chỉ Giá trị
+                                        $vals = [];
+                                        if ($f->field_type === 'code' && $ck === 'fixed') {
+                                            $vals[] = $f->rules['fixed_value'] ?? '';
+                                        } else {
+                                            foreach ($f->options ?? [] as $opt) {
+                                                $lbl = $f->optionLabel($opt);
+                                                $vals[] = ($lbl !== '' && $lbl !== $opt) ? "{$lbl} ({$opt})" : $opt;
+                                            }
+                                        }
+                                    @endphp
+                                    <div class="flex flex-wrap items-center gap-1.5">
+                                        <span class="inline-flex items-center gap-1.5 text-xs pl-2.5 pr-2 py-1 rounded-md border {{ $live ? 'bg-white border-gold-200' : 'bg-ink/5 border-ink/10 opacity-70' }}">
+                                            <span class="font-semibold {{ $live ? 'text-ink/80' : 'text-ink/40' }}">{{ $f->label }}</span>
+                                            <span class="text-ink/40">{{ \App\Models\CustomField::TYPES[$f->field_type] ?? $f->field_type }}</span>
+                                            @if ($f->affects_code)<span class="text-[10px] font-bold text-gold-700 bg-gold-100 rounded px-1 py-px" title="Nối vào mã KH">#mã</span>@endif
+                                            @if ($f->required)<span class="text-red-500 font-bold" title="Bắt buộc">*</span>@endif
+                                            @if ($f->status === \App\Models\CustomField::STATUS_PENDING)<span class="text-[10px] text-amber-700 bg-amber-50 rounded px-1 py-px">chờ duyệt</span>@endif
+                                        </span>
+                                        @foreach ($vals as $v)
+                                            @if ($v !== '')
+                                                <span class="text-[11px] text-ink/60 bg-gold-50/70 border border-gold-100 rounded px-1.5 py-0.5">{{ $v }}</span>
+                                            @endif
+                                        @endforeach
+                                    </div>
                                 @endforeach
                             </div>
                         @endif

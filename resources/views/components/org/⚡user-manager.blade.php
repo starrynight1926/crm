@@ -467,11 +467,11 @@ new class extends Component
                         @error('aScopeNodes')<p class="text-xs text-red-600 mb-2">{{ $message }}</p>@enderror
                     @endif
 
-                    <button wire:click="addAssignment" class="bg-gold-600 hover:bg-gold-700 text-white font-semibold text-sm px-5 py-2 rounded-md">+ Thêm assignment</button>
                 </div>
 
-                <div class="flex justify-end mt-6">
+                <div class="flex justify-end items-center gap-3 mt-6 pt-5 border-t border-gold-100">
                     <button wire:click="$set('showAssignModal', false)" class="text-sm font-semibold text-ink/60 border border-gold-200 px-5 py-2 rounded-md hover:bg-gold-50">Đóng</button>
+                    <button wire:click="addAssignment" class="bg-gold-600 hover:bg-gold-700 text-white font-semibold text-sm px-6 py-2 rounded-md">Lưu phân quyền</button>
                 </div>
             </div>
         </div>

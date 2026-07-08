@@ -122,15 +122,20 @@ class Lead extends Model
     {
         return $query->where(function (Builder $q) use ($user) {
             $orgIds = $user->visibleOrgUnitIds();
+            $memberOrgIds = $user->memberOrgUnitIds();
             if ($orgIds !== []) {
                 $q->orWhereIn('org_unit_id', $orgIds);
                 // Lead kho chung (chưa chia) cũng visible cho user có scope tổ chức
                 $q->orWhere(fn (Builder $sub) => $sub->whereNull('org_unit_id')->where('pool_level', self::POOL_COMMON));
             }
+            // Kho chung phòng/team: thành viên (org của mình + cấp cha) thấy được, dù scope self
+            if ($memberOrgIds !== []) {
+                $q->orWhere(fn (Builder $sub) => $sub->where('pool_level', self::POOL_TEAM)->whereIn('org_unit_id', $memberOrgIds));
+            }
             if ($user->hasSelfScope()) {
                 $q->orWhere('owner_id', $user->id)->orWhere('receiver_id', $user->id);
             }
-            if ($orgIds === [] && ! $user->hasSelfScope()) {
+            if ($orgIds === [] && $memberOrgIds === [] && ! $user->hasSelfScope()) {
                 $q->whereRaw('1 = 0');
             }
         });
@@ -143,7 +148,16 @@ class Lead extends Model
             return true;
         }
 
-        return $this->org_unit_id !== null && $user->canSeeOrgUnit($this->org_unit_id);
+        if ($this->org_unit_id === null) {
+            return false;
+        }
+
+        // Kho chung phòng/team: thành viên phòng/team (hoặc cấp cha) thấy được
+        if ($this->pool_level === self::POOL_TEAM && in_array($this->org_unit_id, $user->memberOrgUnitIds(), true)) {
+            return true;
+        }
+
+        return $user->canSeeOrgUnit($this->org_unit_id);
     }
 
     /**

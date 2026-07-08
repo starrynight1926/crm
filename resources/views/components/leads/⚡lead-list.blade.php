@@ -145,6 +145,9 @@ new class extends Component
                 $id = (int) str_replace('cf_', '', $key);
                 $cf = $cfs->get($id);
                 $raw = (string) ($lead->customValues->firstWhere('custom_field_id', $id)?->value ?? '');
+                if ($cf && $cf->field_type === 'tick') {
+                    return $raw !== '' ? 'Có' : '';
+                }
                 return $cf && $cf->field_type === 'select' ? $cf->optionLabel($raw) : $raw;
             })(),
         };

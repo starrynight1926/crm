@@ -19,6 +19,7 @@ class CustomField extends Model
         'date' => 'Ngày',
         'email' => 'Email',
         'select' => 'Danh sách chọn',
+        'tick' => 'Ô tích (có / không)',
         'code' => 'Mã phân loại (nối vào mã KH)',
     ];
 
