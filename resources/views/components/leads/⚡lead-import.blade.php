@@ -35,6 +35,9 @@ new class extends Component
 
     public string $templateName = '';
 
+    /** Mẫu import theo phòng: '' = công ty, 'org:{id}' = phòng cụ thể. */
+    public string $selectedOrgTemplate = '';
+
     public ?int $lastBatchId = null;
 
     // Field lead chuẩn (scope.md mục 4)
@@ -64,20 +67,27 @@ new class extends Component
         'note' => ['note', 'ghi chú'],
     ];
 
-    /** Trường tùy biến đang áp (active) → ['cf_<id>' => 'Nhãn (Phòng)']. */
+    /** Trường tùy biến đang áp (active) → ['cf_<id>' => 'Nhãn #MÃ (Phòng)']. */
     private function customTargets(): array
     {
         $out = [];
-        $fields = CustomField::query()
+        foreach ($this->customFields() as $f) {
+            $scope = $f->org_unit_id === null ? 'Công ty' : ($f->orgUnit?->name ?? 'Phòng');
+            $code = $f->import_code ? " #{$f->import_code}" : '';
+            $req = $f->required ? ' *' : '';
+            $out['cf_' . $f->id] = $f->label . $code . ' (' . $scope . ')' . $req;
+        }
+        return $out;
+    }
+
+    /** Cache custom fields active cho session. */
+    private function customFields()
+    {
+        return CustomField::query()
             ->where('active', true)
             ->where('status', CustomField::STATUS_ACTIVE)
             ->with('orgUnit')
             ->orderBy('org_unit_id')->orderBy('position')->get();
-        foreach ($fields as $f) {
-            $scope = $f->org_unit_id === null ? 'Công ty' : ($f->orgUnit?->name ?? 'Phòng');
-            $out['cf_' . $f->id] = $f->label . ' (' . $scope . ')';
-        }
-        return $out;
     }
 
     /** Toàn bộ target: field chuẩn + trường tùy biến. */
@@ -119,10 +129,12 @@ new class extends Component
         $this->defaults = array_fill_keys($keys, '');
     }
 
-    /** Tự đoán mapping theo tên cột: field chuẩn theo từ khóa, custom theo nhãn. */
+    /** Tự đoán mapping theo tên cột: field chuẩn theo từ khóa, custom theo import_code hoặc nhãn. */
     private function autoGuess(): void
     {
+        $fields = $this->customFields();
         $custom = $this->customTargets();
+
         foreach ($this->headers as $index => $header) {
             $h = $this->norm((string) $header);
             if ($h === '') {
@@ -134,10 +146,19 @@ new class extends Component
                     break;
                 }
             }
-            foreach ($custom as $target => $label) {
-                // nhãn custom bỏ phần " (Phòng)" để so
-                $base = $this->norm(preg_replace('/\s*\(.*\)\s*$/', '', $label));
-                if (($this->mapping[$target] ?? '') === '' && $base !== '' && $h === $base) {
+            // Custom fields: ưu tiên match theo import_code, fallback theo nhãn
+            foreach ($fields as $f) {
+                $target = 'cf_' . $f->id;
+                if (($this->mapping[$target] ?? '') !== '') {
+                    continue;
+                }
+                if ($f->import_code && $h === $this->norm($f->import_code)) {
+                    $this->mapping[$target] = (string) $index;
+                    continue;
+                }
+                $label = $custom[$target] ?? '';
+                $base = $this->norm(preg_replace('/\s*[#(].*$/', '', $label));
+                if ($base !== '' && $h === $base) {
                     $this->mapping[$target] = (string) $index;
                 }
             }
@@ -241,6 +262,42 @@ new class extends Component
         }, $filename);
     }
 
+    /** Tải file mẫu theo phòng ban đang chọn (trường chuẩn + trường tùy biến áp dụng). */
+    public function downloadBlankSample()
+    {
+        $orgUnit = null;
+        $slug = 'cong-ty';
+        if (str_starts_with($this->selectedOrgTemplate, 'org:')) {
+            $orgUnit = \App\Models\OrgUnit::find((int) substr($this->selectedOrgTemplate, 4));
+            $slug = $orgUnit ? \Illuminate\Support\Str::slug($orgUnit->name) : 'phong';
+        }
+
+        $fields = CustomField::applicableTo($orgUnit);
+
+        $headers = array_values(self::TARGETS);
+        foreach ($fields as $f) {
+            if ($f->field_type === 'code' && ($f->rules['code_kind'] ?? '') === 'fixed') {
+                continue;
+            }
+            $code = $f->import_code ?: $f->label;
+            $req = $f->required ? ' *' : '';
+            $headers[] = $code . $req;
+        }
+
+        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        foreach ($headers as $i => $header) {
+            $col = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($i + 1);
+            $sheet->setCellValue($col . '1', $header);
+            $sheet->getColumnDimension($col)->setAutoSize(true);
+            $sheet->getStyle($col . '1')->getFont()->setBold(true);
+        }
+
+        return response()->streamDownload(function () use ($spreadsheet) {
+            (new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet))->save('php://output');
+        }, "mau-import-{$slug}.xlsx");
+    }
+
     public function import()
     {
         abort_unless(auth()->user()->hasPermission('lead.import'), 403);
@@ -251,6 +308,23 @@ new class extends Component
         }
         if (($this->mapping['name'] ?? '') === '' || ($this->mapping['phone'] ?? '') === '') {
             $this->addError('mapping', 'Bắt buộc map cột Tên và SĐT.');
+            return;
+        }
+
+        // Kiểm tra trường tùy biến bắt buộc đã được map hoặc có giá trị mặc định
+        $missing = [];
+        foreach ($this->customFields() as $f) {
+            if (! $f->required) continue;
+            $target = 'cf_' . $f->id;
+            $mapped = ($this->mapping[$target] ?? '') !== '';
+            $hasDefault = trim((string) ($this->defaults[$target] ?? '')) !== '';
+            if (! $mapped && ! $hasDefault) {
+                $code = $f->import_code ? " (#{$f->import_code})" : '';
+                $missing[] = $f->label . $code;
+            }
+        }
+        if ($missing !== []) {
+            $this->addError('mapping', 'Trường bắt buộc chưa map hoặc chưa có mặc định: ' . implode(', ', $missing));
             return;
         }
 
@@ -314,6 +388,7 @@ new class extends Component
             'batches' => $batches,
             'targets' => $this->allTargets(),
             'templates' => ImportTemplate::orderByDesc('id')->get(),
+            'orgOptions' => \App\Models\OrgUnit::orderBy('path')->get(),
         ];
     }
 };
@@ -325,16 +400,64 @@ new class extends Component
         <p class="text-sm text-ink/60">Upload Excel/CSV → chọn/tạo template → map cột (kèm giá trị mặc định) → pipeline chuẩn hóa, chống trùng, đưa lead sạch vào kho chung.</p>
     </div>
 
+    {{-- Hướng dẫn các bước --}}
+    <div class="mb-6 bg-white border border-gold-200 rounded-xl shadow-card px-6 py-5">
+        <h2 class="text-sm font-bold text-ink/60 uppercase tracking-wider mb-4">Quy trình import</h2>
+        <div class="flex items-center justify-between gap-2 overflow-x-auto">
+            @foreach ([
+                ['icon' => '1', 'label' => 'Chọn mẫu import', 'desc' => 'Chọn phòng/team để tải file mẫu đúng bộ trường'],
+                ['icon' => '2', 'label' => 'Điền thông tin', 'desc' => 'Nhập dữ liệu khách hàng vào file mẫu đã tải'],
+                ['icon' => '3', 'label' => 'Upload lên hệ thống', 'desc' => 'Chọn file → map cột → bấm Import'],
+                ['icon' => '4', 'label' => 'Sửa các lỗi sai nếu có', 'desc' => 'Xem mục "Lead lỗi" để sửa dữ liệu thiếu/sai'],
+                ['icon' => '5', 'label' => 'Đăng tải', 'desc' => 'Lead sạch tự vào kho chung, engine chia số xử lý'],
+            ] as $i => $step)
+                @if ($i > 0)
+                    <svg class="w-5 h-5 shrink-0 text-gold-300" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+                @endif
+                <div class="flex items-start gap-3 min-w-[150px] flex-1">
+                    <span class="shrink-0 w-8 h-8 rounded-full bg-gold-600 text-white font-bold text-sm flex items-center justify-center">{{ $step['icon'] }}</span>
+                    <div>
+                        <p class="text-sm font-semibold text-ink/80 leading-tight">{{ $step['label'] }}</p>
+                        <p class="text-[11px] text-ink/50 mt-0.5 leading-snug">{{ $step['desc'] }}</p>
+                    </div>
+                </div>
+            @endforeach
+        </div>
+    </div>
+
     @if (session('status'))
         <p class="mb-4 text-sm text-green-700 bg-green-50 border border-green-200 rounded-md px-4 py-2">{{ session('status') }}</p>
     @endif
 
-    {{-- Chọn mẫu import --}}
-    @if ($templates->isNotEmpty())
-        <div class="grid grid-cols-1 lg:grid-cols-[auto_1fr] gap-6 mb-6 items-start">
-            <div class="flex items-end gap-3 flex-wrap">
-                <div class="min-w-[200px]">
-                    <label class="block text-xs font-semibold text-ink/60 mb-1">Mẫu import</label>
+    {{-- Bước 1: Chọn mẫu import --}}
+    <div class="bg-white border border-gold-200 rounded-xl shadow-card p-6 mb-6">
+        <h2 class="font-bold text-gold-700 mb-4 flex items-center gap-2">
+            <span class="shrink-0 w-7 h-7 rounded-full bg-gold-600 text-white font-bold text-xs flex items-center justify-center">1</span>
+            Chọn mẫu import
+        </h2>
+        <p class="text-xs text-ink/50 mb-4">Mẫu được tạo tự động từ trường chuẩn + trường tùy biến theo phòng ban. Chọn phòng rồi tải file mẫu.</p>
+        <div class="flex items-end gap-3 flex-wrap">
+            <div class="min-w-[240px]">
+                <label class="block text-xs font-semibold text-ink/60 mb-1">Phòng / Team</label>
+                <select wire:model.live="selectedOrgTemplate" class="w-full border border-gold-200 rounded-md px-3 py-2 text-sm bg-white">
+                    <option value="">Mức công ty (trường chung)</option>
+                    @foreach ($orgOptions as $o)
+                        <option value="org:{{ $o->id }}">{{ str_repeat('— ', $o->depth) }}{{ $o->name }}</option>
+                    @endforeach
+                </select>
+            </div>
+            <button wire:click="downloadBlankSample"
+                    class="inline-flex items-center gap-1.5 text-sm font-semibold text-white bg-gold-600 hover:bg-gold-700 px-5 py-2.5 rounded-md">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/>
+                </svg>
+                Tải file mẫu
+            </button>
+        </div>
+        @if ($templates->isNotEmpty())
+            <div class="mt-4 pt-4 border-t border-gold-100 flex items-end gap-3 flex-wrap">
+                <div class="min-w-[240px]">
+                    <label class="block text-xs font-semibold text-ink/60 mb-1">Hoặc dùng mẫu đã lưu trước đó</label>
                     <select wire:model.live="selectedTemplateId" class="w-full border border-gold-200 rounded-md px-3 py-2 text-sm bg-white">
                         <option value="">— chọn mẫu —</option>
                         @foreach ($templates as $tpl)
@@ -344,47 +467,47 @@ new class extends Component
                 </div>
                 @if ($selectedTemplateId)
                     <button wire:click="downloadSample({{ (int) $selectedTemplateId }})"
-                            class="inline-flex items-center gap-1.5 text-sm font-semibold text-gold-700 border border-gold-300 hover:bg-gold-50 px-4 py-2 rounded-md">
+                            class="inline-flex items-center gap-1.5 text-sm font-semibold text-gold-700 border border-gold-300 hover:bg-gold-50 px-4 py-2.5 rounded-md">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/>
                         </svg>
-                        Tải mẫu
+                        Tải mẫu này
                     </button>
                 @endif
             </div>
+        @endif
 
-            @if ($selectedTemplateId && ($selectedTpl = $templates->firstWhere('id', (int) $selectedTemplateId)))
-                <div class="bg-white border border-gold-200 rounded-xl shadow-card p-4">
-                    <div class="text-sm font-bold text-ink/70 mb-2">Trường của mẫu "{{ $selectedTpl->name }}"</div>
-                    <table class="w-full text-xs">
-                        <thead>
-                            <tr class="text-left text-ink/50 border-b border-gold-200">
-                                <th class="py-1.5 pr-4 font-semibold">Cột file</th>
-                                <th class="py-1.5 pr-4 font-semibold">Trường hệ thống</th>
-                                <th class="py-1.5 font-semibold">Mặc định</th>
+        @if ($selectedTemplateId && ($selectedTpl = $templates->firstWhere('id', (int) $selectedTemplateId)))
+            <div class="mt-4 border border-gold-100 rounded-lg p-4 bg-gold-50/30">
+                <div class="text-sm font-bold text-ink/70 mb-2">Trường của mẫu "{{ $selectedTpl->name }}"</div>
+                <table class="w-full text-xs">
+                    <thead>
+                        <tr class="text-left text-ink/50 border-b border-gold-200">
+                            <th class="py-1.5 pr-4 font-semibold">Cột file</th>
+                            <th class="py-1.5 pr-4 font-semibold">Trường hệ thống</th>
+                            <th class="py-1.5 font-semibold">Mặc định</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach ($selectedTpl->config ?? [] as $entry)
+                            <tr class="border-b border-gold-100">
+                                <td class="py-1.5 pr-4 font-medium">{{ $entry['header'] ?: '—' }}</td>
+                                <td class="py-1.5 pr-4">
+                                    <span class="px-1.5 py-0.5 rounded bg-gold-50 text-gold-700 border border-gold-200">{{ $targets[$entry['target']] ?? $entry['target'] }}</span>
+                                </td>
+                                <td class="py-1.5 text-ink/50">{{ $entry['default'] ?: '—' }}</td>
                             </tr>
-                        </thead>
-                        <tbody>
-                            @foreach ($selectedTpl->config ?? [] as $entry)
-                                <tr class="border-b border-gold-100">
-                                    <td class="py-1.5 pr-4 font-medium">{{ $entry['header'] ?: '—' }}</td>
-                                    <td class="py-1.5 pr-4">
-                                        <span class="px-1.5 py-0.5 rounded bg-gold-50 text-gold-700 border border-gold-200">{{ $targets[$entry['target']] ?? $entry['target'] }}</span>
-                                    </td>
-                                    <td class="py-1.5 text-ink/50">{{ $entry['default'] ?: '—' }}</td>
-                                </tr>
-                            @endforeach
-                        </tbody>
-                    </table>
-                </div>
-            @endif
-        </div>
-    @endif
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+        @endif
+    </div>
 
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start mb-6">
         {{-- Upload + mapping --}}
         <div class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
-            <h2 class="font-bold text-gold-700 mb-4">1. Chọn file (CSV / XLSX)</h2>
+            <h2 class="font-bold text-gold-700 mb-4">2. Chọn file (CSV / XLSX)</h2>
             <input type="file" wire:model="file" accept=".csv,.xlsx,.xls"
                    class="block w-full text-sm border border-gold-200 rounded-md file:mr-3 file:px-4 file:py-2.5 file:border-0 file:bg-gold-50 file:text-gold-700 file:font-semibold file:text-sm cursor-pointer">
             @error('file')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
@@ -403,7 +526,7 @@ new class extends Component
                     </div>
                 </div>
 
-                <h2 class="font-bold text-gold-700 mt-6 mb-1">2. Map cột file → trường</h2>
+                <h2 class="font-bold text-gold-700 mt-6 mb-1">3. Map cột file → trường</h2>
                 <p class="text-xs text-ink/50 mb-3">Tự đoán theo tên cột; đặt "Mặc định" cho ô trống. Trường tùy biến theo phòng nằm cuối danh sách.</p>
                 @error('mapping')<p class="text-xs text-red-600 mb-2">{{ $message }}</p>@enderror
 
@@ -429,7 +552,7 @@ new class extends Component
 
                 <button wire:click="import" wire:loading.attr="disabled"
                         class="mt-6 w-full bg-gold-600 hover:bg-gold-700 text-white font-semibold py-3 rounded-md">
-                    3. Import ngay
+                    4. Import ngay
                 </button>
             @endif
         </div>

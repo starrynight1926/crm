@@ -18,6 +18,8 @@ new class extends Component
 
     public string $label = '';
 
+    public string $importCode = '';
+
     public string $fieldType = 'text';
 
     public string $optionsText = '';
@@ -98,7 +100,7 @@ new class extends Component
     public function openCreate(): void
     {
         $this->guardSelectedOrg();
-        $this->reset('editingId', 'label', 'optionsText', 'numberMin', 'numberMax', 'textMax', 'codeFixedValue');
+        $this->reset('editingId', 'label', 'importCode', 'optionsText', 'numberMin', 'numberMax', 'textMax', 'codeFixedValue');
         $this->fieldType = 'text';
         $this->codeKind = 'input';
         $this->selectRows = [['value' => '', 'label' => ''], ['value' => '', 'label' => '']];
@@ -116,6 +118,7 @@ new class extends Component
 
         $this->editingId = $field->id;
         $this->label = $field->label;
+        $this->importCode = $field->import_code ?? '';
         $this->fieldType = $field->field_type;
         $this->optionsText = implode("\n", $field->options ?? []);
         $this->required = $field->required;
@@ -146,7 +149,21 @@ new class extends Component
         $this->validate([
             'label' => 'required|string|max:100',
             'fieldType' => 'required|in:text,number,date,email,select,tick,code',
-        ], [], ['label' => 'tên trường']);
+            'importCode' => ['nullable', 'string', 'max:60', 'regex:/^[A-Za-z0-9_]+$/'],
+        ], [
+            'importCode.regex' => 'Mã import chỉ gồm chữ, số, gạch dưới (VD: LOAI_KH).',
+        ], ['label' => 'tên trường', 'importCode' => 'mã import']);
+
+        $importCode = trim($this->importCode) !== '' ? strtoupper(trim($this->importCode)) : null;
+        if ($importCode) {
+            $dup = CustomField::where('import_code', $importCode)
+                ->when($this->editingId, fn ($q) => $q->where('id', '!=', $this->editingId))
+                ->exists();
+            if ($dup) {
+                $this->addError('importCode', "Mã import \"{$importCode}\" đã được dùng bởi trường khác.");
+                return;
+            }
+        }
 
         $orgId = $this->selectedOrgId !== '' ? (int) $this->selectedOrgId : null;
 
@@ -217,6 +234,7 @@ new class extends Component
             $field = CustomField::findOrFail($this->editingId);
             $field->update([
                 'label' => $this->label,
+                'import_code' => $importCode,
                 'field_type' => $this->fieldType,
                 'options' => $options,
                 'rules' => $rules ?: null,
@@ -239,6 +257,7 @@ new class extends Component
             CustomField::create([
                 'org_unit_id' => $orgId,
                 'key' => $key,
+                'import_code' => $importCode,
                 'label' => $this->label,
                 'field_type' => $this->fieldType,
                 'options' => $options,
@@ -385,6 +404,7 @@ new class extends Component
             <thead>
                 <tr class="text-left text-xs uppercase tracking-wider text-ink/50 bg-gold-50/60">
                     <th class="px-5 py-3 font-semibold">Tên trường</th>
+                    <th class="px-5 py-3 font-semibold">Mã import</th>
                     <th class="px-5 py-3 font-semibold">Kiểu</th>
                     <th class="px-5 py-3 font-semibold">Ràng buộc</th>
                     <th class="px-5 py-3 font-semibold">Bắt buộc</th>
@@ -399,6 +419,7 @@ new class extends Component
                             {{ $field->label }}
                             @if ($field->affects_code)<span class="ml-1 text-xs text-gold-700" title="Nối vào mã KH">#mã</span>@endif
                         </td>
+                        <td class="px-5 py-3.5 font-mono text-xs text-gold-700">{{ $field->import_code ?: '—' }}</td>
                         <td class="px-5 py-3.5">
                             {{ \App\Models\CustomField::TYPES[$field->field_type] ?? $field->field_type }}
                         </td>
@@ -439,7 +460,7 @@ new class extends Component
                         </td>
                     </tr>
                 @empty
-                    <tr><td colspan="6" class="px-5 py-10 text-center text-ink/40">Chưa có trường nào ở phạm vi này.</td></tr>
+                    <tr><td colspan="7" class="px-5 py-10 text-center text-ink/40">Chưa có trường nào ở phạm vi này.</td></tr>
                 @endforelse
             </tbody>
         </table>
@@ -521,6 +542,12 @@ new class extends Component
                         <label class="block text-xs font-semibold uppercase tracking-widest text-ink/60 mb-1.5">Tên trường</label>
                         <input type="text" wire:model="label" placeholder="VD: Ngân sách dự kiến" class="w-full border border-gold-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-gold-500">
                         @error('label')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold uppercase tracking-widest text-ink/60 mb-1.5">Mã import (dùng match cột Excel)</label>
+                        <input type="text" wire:model="importCode" placeholder="VD: LOAI_KH" style="text-transform:uppercase" class="w-full border border-gold-200 rounded-md px-3 py-2 text-sm font-mono focus:outline-none focus:border-gold-500">
+                        <p class="text-[11px] text-ink/50 mt-1">Cột Excel có header trùng mã này sẽ tự map khi import. Chỉ chữ, số, gạch dưới.</p>
+                        @error('importCode')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
                     </div>
                     <div>
                         <label class="block text-xs font-semibold uppercase tracking-widest text-ink/60 mb-1.5">Kiểu dữ liệu</label>

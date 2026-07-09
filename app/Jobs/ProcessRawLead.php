@@ -77,6 +77,28 @@ class ProcessRawLead implements ShouldQueue
             return;
         }
 
+        // --- Validate trường tùy biến bắt buộc ---
+        $requiredFields = CustomField::query()
+            ->where('active', true)
+            ->where('status', CustomField::STATUS_ACTIVE)
+            ->where('required', true)
+            ->get();
+        $missingCf = [];
+        foreach ($requiredFields as $cf) {
+            if ($cf->field_type === 'code' && ($cf->rules['code_kind'] ?? '') === 'fixed') {
+                continue;
+            }
+            $val = trim((string) ($payload['cf_' . $cf->id] ?? ''));
+            if ($val === '') {
+                $code = $cf->import_code ? " (#{$cf->import_code})" : '';
+                $missingCf[] = $cf->label . $code;
+            }
+        }
+        if ($missingCf !== []) {
+            $this->fail_($raw, 'Thiếu trường bắt buộc: ' . implode(', ', $missingCf));
+            return;
+        }
+
         // --- Tạo lead sạch ---
         $lead = Lead::create([
             'raw_lead_id' => $raw->id,

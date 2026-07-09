@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Collection;
 
 #[Fillable([
-    'org_unit_id', 'key', 'label', 'field_type', 'options', 'rules', 'affects_code',
+    'org_unit_id', 'key', 'import_code', 'label', 'field_type', 'options', 'rules', 'affects_code',
     'required', 'position', 'active', 'status', 'requested_by', 'reviewed_by', 'reviewed_at', 'reject_reason',
 ])]
 class CustomField extends Model
