@@ -29,11 +29,56 @@ new class extends Component
     /** Key các cột được chọn để xuất (core: tên cột; custom: cf_{id}). */
     public array $exportCols = [];
 
+    /** Id các lead đang tick (chọn hàng loạt). */
+    public array $selected = [];
+
+    public bool $selectAll = false;
+
     public function updated($property): void
     {
         if (in_array($property, ['search', 'fClassification', 'fCamp', 'fAdSource', 'fDateFrom', 'fDateTo'])) {
             $this->resetPage();
+            $this->reset('selected', 'selectAll'); // đổi bộ lọc → bỏ chọn
         }
+    }
+
+    /** Tick "chọn tất cả" → chọn mọi lead trên trang hiện tại. */
+    public function updatedSelectAll($value): void
+    {
+        $this->selected = $value
+            ? $this->filteredQuery()->paginate(15)->pluck('id')->map(fn ($id) => (string) $id)->all()
+            : [];
+    }
+
+    /** Xóa 1 lead (mềm) trong phạm vi user — quyền lead.delete. */
+    public function deleteLead(int $id): void
+    {
+        abort_unless(auth()->user()->hasPermission('lead.delete'), 403);
+
+        $lead = Lead::visibleTo(auth()->user())->find($id);
+        if (! $lead) {
+            return;
+        }
+        $lead->delete();
+        AuditLog::record('delete', $lead, ['name' => $lead->name]);
+        $this->selected = array_values(array_diff($this->selected, [(string) $id]));
+        session()->flash('status', "Đã xóa khách hàng \"{$lead->name}\".");
+    }
+
+    /** Xóa hàng loạt các lead đang tick — quyền lead.delete. */
+    public function deleteSelected(): void
+    {
+        abort_unless(auth()->user()->hasPermission('lead.delete'), 403);
+
+        $ids = array_map('intval', $this->selected);
+        $leads = Lead::visibleTo(auth()->user())->whereIn('id', $ids)->get();
+        foreach ($leads as $lead) {
+            $lead->delete();
+            AuditLog::record('delete', $lead, ['name' => $lead->name, 'bulk' => true]);
+        }
+        $count = $leads->count();
+        $this->reset('selected', 'selectAll');
+        session()->flash('status', "Đã xóa {$count} khách hàng.");
     }
 
     /** Cột lõi có thể xuất: key => nhãn. */
@@ -206,6 +251,8 @@ new class extends Component
             'exportCore' => $this->showExportModal ? $this->coreColumns() : [],
             'exportCustomFields' => $this->showExportModal ? $this->exportableCustomFields() : collect(),
             'canExport' => $user->hasPermission('lead.export'),
+            'canUpdate' => $user->hasPermission('lead.update'),
+            'canDelete' => $user->hasPermission('lead.delete'),
         ];
     }
 };
@@ -282,11 +329,27 @@ new class extends Component
         </div>
     </div>
 
+    {{-- Thanh thao tác hàng loạt --}}
+    @if ($canDelete && count($selected) > 0)
+        <div class="bg-gold-50 border border-gold-300 rounded-xl px-5 py-3 mb-3 flex items-center gap-4">
+            <span class="text-sm font-semibold text-gold-800">Đã chọn {{ count($selected) }} khách hàng</span>
+            <button wire:click="deleteSelected" wire:confirm="Xóa {{ count($selected) }} khách hàng đã chọn?"
+                    class="text-sm font-semibold text-red-600 border border-red-300 hover:bg-red-50 px-4 py-1.5 rounded-md">🗑 Xóa đã chọn</button>
+            <button wire:click="$set('selected', [])" class="text-sm text-ink/50 hover:underline">Bỏ chọn</button>
+        </div>
+    @endif
+
     {{-- Bảng --}}
     <div class="bg-white border border-gold-200 rounded-xl shadow-card overflow-x-auto">
         <table class="w-full text-sm whitespace-nowrap">
             <thead>
                 <tr class="text-left text-xs uppercase tracking-wider text-ink/50 bg-gold-50/60">
+                    @if ($canDelete)
+                        <th class="px-4 py-3 font-semibold w-10">
+                            <input type="checkbox" wire:model.live="selectAll" class="rounded border-gold-300 text-gold-600 w-4 h-4">
+                        </th>
+                    @endif
+                    <th class="px-4 py-3 font-semibold w-12">STT</th>
                     <th class="px-4 py-3 font-semibold">Mã KH</th>
                     <th class="px-4 py-3 font-semibold">Ngày</th>
                     <th class="px-4 py-3 font-semibold">Page</th>
@@ -297,11 +360,20 @@ new class extends Component
                     <th class="px-4 py-3 font-semibold">Khu vực</th>
                     <th class="px-4 py-3 font-semibold">Chia cho</th>
                     <th class="px-4 py-3 font-semibold">Phân loại</th>
+                    @if ($canUpdate || $canDelete)
+                        <th class="px-4 py-3 font-semibold text-right">Thao tác</th>
+                    @endif
                 </tr>
             </thead>
             <tbody class="divide-y divide-gold-100">
                 @forelse ($leads as $lead)
                     <tr class="hover:bg-gold-50/40 cursor-pointer" onclick="window.location='{{ route('leads.show', $lead) }}'">
+                        @if ($canDelete)
+                            <td class="px-4 py-3" onclick="event.stopPropagation()">
+                                <input type="checkbox" wire:model.live="selected" value="{{ $lead->id }}" class="rounded border-gold-300 text-gold-600 w-4 h-4">
+                            </td>
+                        @endif
+                        <td class="px-4 py-3 text-ink/50">{{ $leads->firstItem() + $loop->index }}</td>
                         <td class="px-4 py-3 font-mono text-xs text-gold-700">{{ $lead->code ?: '—' }}</td>
                         <td class="px-4 py-3">{{ $lead->received_date->format('d/m/Y') }}</td>
                         <td class="px-4 py-3 text-ink/60">{{ $lead->page ?: '—' }}</td>
@@ -327,9 +399,27 @@ new class extends Component
                             @endphp
                             <span class="text-xs border px-2 py-0.5 rounded-full {{ $badge }}">{{ $lead->classificationLabel() }}</span>
                         </td>
+                        @if ($canUpdate || $canDelete)
+                            <td class="px-4 py-3 text-right" onclick="event.stopPropagation()">
+                                <div class="flex items-center justify-end gap-1.5">
+                                    @if ($canUpdate)
+                                        <a href="{{ route('leads.edit', $lead) }}" title="Sửa"
+                                           class="inline-flex items-center justify-center w-8 h-8 rounded-md border border-gold-200 text-gold-700 hover:bg-gold-50">
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z"/></svg>
+                                        </a>
+                                    @endif
+                                    @if ($canDelete)
+                                        <button wire:click="deleteLead({{ $lead->id }})" wire:confirm="Xóa khách hàng &quot;{{ $lead->name }}&quot;?" title="Xóa"
+                                                class="inline-flex items-center justify-center w-8 h-8 rounded-md border border-red-200 text-red-600 hover:bg-red-50">
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"/></svg>
+                                        </button>
+                                    @endif
+                                </div>
+                            </td>
+                        @endif
                     </tr>
                 @empty
-                    <tr><td colspan="10" class="px-4 py-10 text-center text-ink/40">Không có khách hàng nào trong phạm vi của bạn.</td></tr>
+                    <tr><td colspan="14" class="px-4 py-10 text-center text-ink/40">Không có khách hàng nào trong phạm vi của bạn.</td></tr>
                 @endforelse
             </tbody>
         </table>

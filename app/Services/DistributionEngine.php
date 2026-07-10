@@ -314,7 +314,7 @@ class DistributionEngine
         ]);
     }
 
-    /** Chia tay cho 1 sale cụ thể (quyền lead.distribute). */
+    /** Chia thủ công cho 1 sale cụ thể (quyền lead.distribute). */
     public function manualAssign(Lead $lead, User $user, int $actorId): void
     {
         LeadDistributionLog::create([

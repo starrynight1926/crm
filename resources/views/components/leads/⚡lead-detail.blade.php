@@ -7,12 +7,24 @@ use App\Models\Lead;
 use App\Models\LeadStatusLog;
 use App\Services\ContributionService;
 use Livewire\Component;
+use Livewire\WithFileUploads;
 
 new class extends Component
 {
+    use WithFileUploads;
+
     public Lead $lead;
 
     public string $newNote = '';
+
+    /** Ảnh đính kèm ghi chú (đánh giá trước/sau khi dùng dịch vụ). */
+    public array $noteImages = [];
+
+    /** Cờ "Khách trở lại" cho ghi chú này — đếm để ra tần suất quay lại. */
+    public bool $noteIsReturn = false;
+
+    /** Mã tiếp đón — bắt buộc khi tick "Khách trở lại". */
+    public string $noteReceptionCode = '';
 
     public bool $phoneRevealed = false;
 
@@ -40,13 +52,44 @@ new class extends Component
     public function addNote(): void
     {
         abort_unless($this->canEditLead(), 403);
-        $this->validate(['newNote' => 'required|string|max:2000'], [], ['newNote' => 'ghi chú']);
+        // Cho phép ghi chú rỗng nếu chỉ đính ảnh; nhưng phải có ít nhất nội dung hoặc ảnh.
+        $this->validate([
+            'newNote' => 'nullable|string|max:2000',
+            'noteImages' => 'array|max:10',
+            'noteImages.*' => 'image|max:5120', // ≤5MB mỗi ảnh
+            // Mã tiếp đón: bắt buộc + không trùng khi tick "Khách trở lại"; bỏ qua khi không phải return.
+            'noteReceptionCode' => $this->noteIsReturn
+                ? ['required', 'string', 'max:60', 'unique:lead_status_logs,reception_code']
+                : ['nullable'],
+        ], [
+            'noteReceptionCode.required' => 'Phải nhập mã tiếp đón khi tick "Khách trở lại".',
+            'noteReceptionCode.unique' => 'Mã tiếp đón này đã tồn tại, nhập mã khác.',
+        ], ['newNote' => 'ghi chú', 'noteImages.*' => 'ảnh', 'noteReceptionCode' => 'mã tiếp đón']);
 
-        LeadStatusLog::record($this->lead, 'note', $this->lead->note, $this->newNote, auth()->id());
-        $this->lead->update(['note' => $this->newNote, 'last_care_at' => now()]);
+        if (trim($this->newNote) === '' && $this->noteImages === []) {
+            $this->addError('newNote', 'Nhập ghi chú hoặc đính kèm ít nhất 1 ảnh.');
+            return;
+        }
 
-        $this->newNote = '';
+        $paths = [];
+        foreach ($this->noteImages as $img) {
+            $paths[] = $img->store('lead-notes/' . $this->lead->id, 'public');
+        }
+
+        LeadStatusLog::record(
+            $this->lead, 'note', $this->lead->note, $this->newNote ?: null, auth()->id(),
+            $paths, $this->noteIsReturn, $this->noteIsReturn ? trim($this->noteReceptionCode) : null
+        );
+        $this->lead->update(['note' => $this->newNote ?: $this->lead->note, 'last_care_at' => now()]);
+
+        $this->reset(['newNote', 'noteImages', 'noteIsReturn', 'noteReceptionCode']);
         $this->lead->refresh();
+    }
+
+    /** Tần suất quay lại = số ghi chú đã tick "Khách trở lại". */
+    public function returnCount(): int
+    {
+        return LeadStatusLog::where('lead_id', $this->lead->id)->where('is_return', true)->count();
     }
 
     public function updateClassification(string $value): void
@@ -314,11 +357,47 @@ new class extends Component
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10"/></svg>
                     </span>
                     Thêm Ghi chú mới
+                    <span class="ml-auto text-xs font-normal text-ink/50">Tần suất quay lại: <strong class="text-gold-700">{{ $this->returnCount() }}</strong></span>
                 </h2>
                 <textarea wire:model="newNote" rows="4" placeholder="Nhập nội dung tương tác hoặc ghi chú quan trọng về khách hàng..."
                           class="w-full border border-gold-200 rounded-lg px-4 py-3 text-sm bg-gold-50/40 focus:outline-none focus:border-gold-500 mb-3"></textarea>
                 @error('newNote')<p class="text-xs text-red-600 mb-2">{{ $message }}</p>@enderror
-                <div class="flex justify-end">
+
+                {{-- Upload ảnh --}}
+                <div class="mb-3">
+                    <label class="flex items-center gap-2 text-sm font-semibold text-gold-700 border border-dashed border-gold-300 rounded-lg px-4 py-2.5 cursor-pointer hover:bg-gold-50 w-fit">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z"/></svg>
+                        Đính kèm ảnh
+                        <input type="file" wire:model="noteImages" accept="image/*" multiple class="hidden">
+                    </label>
+                    <div wire:loading wire:target="noteImages" class="text-xs text-ink/40 mt-1">Đang tải ảnh…</div>
+                    @error('noteImages.*')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
+                    {{-- Preview ảnh sắp lưu --}}
+                    @if ($noteImages)
+                        <div class="flex flex-wrap gap-2 mt-2">
+                            @foreach ($noteImages as $img)
+                                @if (is_object($img))
+                                    <img src="{{ $img->temporaryUrl() }}" class="w-16 h-16 object-cover rounded-md border border-gold-200">
+                                @endif
+                            @endforeach
+                        </div>
+                    @endif
+                </div>
+
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                    <div class="flex flex-wrap items-center gap-3">
+                        <label class="flex items-center gap-2 text-sm cursor-pointer">
+                            <input type="checkbox" wire:model.live="noteIsReturn" class="rounded border-gold-300 text-gold-600 w-4 h-4">
+                            <span class="font-semibold text-gold-800">🔁 Khách trở lại</span>
+                        </label>
+                        @if ($noteIsReturn)
+                            <div>
+                                <input type="text" wire:model="noteReceptionCode" placeholder="Mã tiếp đón *"
+                                       class="border border-gold-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:border-gold-500 w-44">
+                                @error('noteReceptionCode')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
+                            </div>
+                        @endif
+                    </div>
                     <button wire:click="addNote" class="bg-gold-600 hover:bg-gold-700 text-white font-semibold text-sm px-6 py-2.5 rounded-md">Lưu Ghi chú</button>
                 </div>
             </div>
@@ -336,6 +415,12 @@ new class extends Component
                                     <span class="text-[10px] font-bold uppercase tracking-wider {{ $log->field === 'created' ? 'bg-gold-600 text-white' : 'bg-gold-100 border border-gold-300 text-gold-800' }} px-2 py-0.5 rounded">
                                         {{ \App\Models\LeadStatusLog::FIELD_LABELS[$log->field] ?? $log->field }}
                                     </span>
+                                    @if ($log->is_return)
+                                        <span class="text-[10px] font-bold uppercase tracking-wider bg-green-100 border border-green-300 text-green-800 px-2 py-0.5 rounded">🔁 Khách trở lại</span>
+                                        @if ($log->reception_code)
+                                            <span class="text-[10px] font-bold uppercase tracking-wider bg-gold-100 border border-gold-300 text-gold-800 px-2 py-0.5 rounded">Mã tiếp đón: {{ $log->reception_code }}</span>
+                                        @endif
+                                    @endif
                                     <span class="font-semibold text-sm">{{ $log->user?->name ?? 'Hệ thống' }}</span>
                                     <span class="text-xs text-ink/40 ml-auto">{{ $log->created_at->format('d/m/Y H:i') }}</span>
                                 </div>
@@ -351,6 +436,16 @@ new class extends Component
                                         {{ $log->new_value ?: '—' }}
                                     @endif
                                 </div>
+                                {{-- Ảnh đính kèm --}}
+                                @if (! empty($log->images))
+                                    <div class="flex flex-wrap gap-2 mt-2">
+                                        @foreach ($log->images as $path)
+                                            <a href="{{ \Illuminate\Support\Facades\Storage::disk('public')->url($path) }}" target="_blank">
+                                                <img src="{{ \Illuminate\Support\Facades\Storage::disk('public')->url($path) }}" class="w-20 h-20 object-cover rounded-md border border-gold-200 hover:opacity-90">
+                                            </a>
+                                        @endforeach
+                                    </div>
+                                @endif
                             </div>
                         </div>
                     @empty

@@ -21,7 +21,7 @@ new class extends Component
     /** @var array<int> id các lead được tick để thao tác hàng loạt */
     public array $selected = [];
 
-    // Chia tay 1 lead
+    // Chia thủ công 1 lead
     public ?int $assigningLeadId = null;
 
     public string $assignUserId = '';
@@ -323,7 +323,7 @@ new class extends Component
                 <button wire:click="$set('bulkMode', '')" class="text-sm text-ink/50">Hủy</button>
                 @error('bulkOrgId')<p class="w-full text-xs text-red-600">{{ $message }}</p>@enderror
             @else
-                <button wire:click="$set('bulkMode', 'assign')" class="text-sm font-semibold text-gold-700 border border-gold-300 hover:bg-white px-4 py-1.5 rounded-md">Chia tay hàng loạt</button>
+                <button wire:click="$set('bulkMode', 'assign')" class="text-sm font-semibold text-gold-700 border border-gold-300 hover:bg-white px-4 py-1.5 rounded-md">Chia thủ công hàng loạt</button>
                 <button wire:click="$set('bulkMode', 'pool')" class="text-sm font-semibold text-gold-700 border border-gold-300 hover:bg-white px-4 py-1.5 rounded-md">Chia về kho hàng loạt</button>
                 <button wire:click="$set('selected', [])" class="text-sm text-ink/50">Bỏ chọn</button>
             @endif
@@ -390,7 +390,7 @@ new class extends Component
                             @else
                                 @if ($tab !== 'personal' && $canDistribute)
                                     <button wire:click="autoDistribute({{ $lead->id }})" class="text-xs font-semibold text-gold-700 border border-gold-300 hover:bg-gold-50 px-3 py-1.5 rounded-md" title="Chạy engine theo rule">Chia tự động</button>
-                                    <button wire:click="startAssign({{ $lead->id }})" class="text-xs font-semibold text-ink/60 border border-gold-200 hover:bg-gold-50 px-3 py-1.5 rounded-md">Chia tay</button>
+                                    <button wire:click="startAssign({{ $lead->id }})" class="text-xs font-semibold text-ink/60 border border-gold-200 hover:bg-gold-50 px-3 py-1.5 rounded-md">Chia thủ công</button>
                                     <button wire:click="startPool({{ $lead->id }})" class="text-xs font-semibold text-ink/60 border border-gold-200 hover:bg-gold-50 px-3 py-1.5 rounded-md">Chia về kho</button>
                                 @endif
                                 @if ($tab !== 'personal' && $canPull)

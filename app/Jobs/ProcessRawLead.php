@@ -2,11 +2,13 @@
 
 namespace App\Jobs;
 
+use App\Models\Assignment;
 use App\Models\CustomField;
 use App\Models\Lead;
 use App\Models\LeadCustomValue;
 use App\Models\LeadStatusLog;
 use App\Models\RawLead;
+use App\Models\User;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 
@@ -128,8 +130,63 @@ class ProcessRawLead implements ShouldQueue
             'processed_at' => now(),
         ]);
 
-        // Lead sạch vào kho chung → engine chia số chạy ngay (không phụ thuộc giờ làm việc)
+        // Có cột CHIA CHO khớp được người → gán thẳng cho sale đó + team của họ.
+        $owner = $this->resolveOwner(trim((string) ($payload['owner'] ?? '')));
+        if ($owner) {
+            $this->assignToOwner($lead, $owner);
+
+            return;
+        }
+
+        // Không có/không khớp CHIA CHO → vào kho chung, engine chia số chạy ngay.
         app(\App\Services\DistributionEngine::class)->distribute($lead);
+    }
+
+    /**
+     * Khớp giá trị cột CHIA CHO với 1 user (chỉ nhận khi DUY NHẤT, tránh gán nhầm):
+     * ưu tiên trùng đúng họ tên → trùng phần đuôi (tên gọi) → chứa chuỗi.
+     */
+    private function resolveOwner(string $name): ?User
+    {
+        if ($name === '') {
+            return null;
+        }
+        $norm = fn ($s) => mb_strtolower(trim(preg_replace('/\s+/u', ' ', (string) $s)));
+        $target = $norm($name);
+        $users = User::query()->where('status', User::STATUS_ACTIVE)->get(['id', 'name']);
+
+        foreach ([
+            fn ($u) => $norm($u->name) === $target,
+            fn ($u) => str_ends_with($norm($u->name), ' ' . $target),
+            fn ($u) => str_contains($norm($u->name), $target),
+        ] as $matcher) {
+            $hit = $users->filter($matcher);
+            if ($hit->count() === 1) {
+                return User::find($hit->first()->id);
+            }
+            if ($hit->count() > 1) {
+                return null; // mơ hồ (VD nhiều "Giang") → bỏ qua, không đoán
+            }
+        }
+
+        return null;
+    }
+
+    /** Gán lead cho owner + team của owner (kho cá nhân), bỏ qua engine chia số. */
+    private function assignToOwner(Lead $lead, User $owner): void
+    {
+        $orgId = Assignment::where('user_id', $owner->id)->value('org_unit_id');
+        $lead->forceFill([
+            'owner_id' => $owner->id,
+            'org_unit_id' => $orgId,
+            'pool_level' => Lead::POOL_PERSONAL,
+            'assigned_at' => now(),
+            'last_care_at' => now(),
+        ])->save();
+        $lead->load('customValues');
+        $lead->generateCode(); // org đổi → mã KH có thể đổi đoạn phân loại
+
+        LeadStatusLog::record($lead, 'note', null, 'Gán từ import (CHIA CHO): ' . $owner->name, null);
     }
 
     /**

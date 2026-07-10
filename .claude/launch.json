@@ -4,7 +4,8 @@
     {
       "name": "lara-scrm",
       "runtimeExecutable": "php",
-      "runtimeArgs": ["artisan", "serve", "--port=8000"],
+      "runtimeArgs": ["artisan", "serve"],
+      "autoPort": true,
       "port": 8000
     }
   ]

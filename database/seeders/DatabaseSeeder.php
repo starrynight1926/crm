@@ -28,6 +28,8 @@ class DatabaseSeeder extends Seeder
             PermissionSeeder::class,
             OrgAndRoleSeeder::class,
             DemoDataSeeder::class,
+            TeamHoiCustomFieldSeeder::class, // sau OrgAndRoleSeeder: cần node Marketing
+            TeamHoiStaffSeeder::class,       // nhân viên sale Team Hợi (cần role Sale + Team Hợi)
         ]);
     }
 }

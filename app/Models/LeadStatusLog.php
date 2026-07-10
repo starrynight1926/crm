@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-#[Fillable(['lead_id', 'user_id', 'field', 'old_value', 'new_value', 'created_at'])]
+#[Fillable(['lead_id', 'user_id', 'field', 'old_value', 'new_value', 'images', 'is_return', 'reception_code', 'created_at'])]
 class LeadStatusLog extends Model
 {
     public $timestamps = false;
@@ -21,7 +21,11 @@ class LeadStatusLog extends Model
 
     protected function casts(): array
     {
-        return ['created_at' => 'datetime'];
+        return [
+            'created_at' => 'datetime',
+            'images' => 'array',
+            'is_return' => 'boolean',
+        ];
     }
 
     public function user(): BelongsTo
@@ -29,7 +33,7 @@ class LeadStatusLog extends Model
         return $this->belongsTo(User::class);
     }
 
-    public static function record(Lead $lead, string $field, ?string $old, ?string $new, ?int $userId): void
+    public static function record(Lead $lead, string $field, ?string $old, ?string $new, ?int $userId, array $images = [], bool $isReturn = false, ?string $receptionCode = null): void
     {
         static::create([
             'lead_id' => $lead->id,
@@ -37,6 +41,9 @@ class LeadStatusLog extends Model
             'field' => $field,
             'old_value' => $old,
             'new_value' => $new,
+            'images' => $images ?: null,
+            'is_return' => $isReturn,
+            'reception_code' => $isReturn ? $receptionCode : null,
             'created_at' => now(),
         ]);
     }

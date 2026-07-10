@@ -52,6 +52,7 @@ new class extends Component
         'ad_source' => 'Nguồn quảng cáo',
         'region' => 'Khu vực',
         'note' => 'NOTE',
+        'owner' => 'CHIA CHO (gán cho sale)',
     ];
 
     private const GUESS = [
@@ -65,6 +66,7 @@ new class extends Component
         'ad_source' => ['nguồn', 'nguon', 'source'],
         'region' => ['khu vực', 'khu vuc', 'region'],
         'note' => ['note', 'ghi chú'],
+        'owner' => ['chia cho', 'chia', 'phụ trách', 'phu trach'],
     ];
 
     /** Trường tùy biến đang áp (active) → ['cf_<id>' => 'Nhãn #MÃ (Phòng)']. */

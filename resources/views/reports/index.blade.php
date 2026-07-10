@@ -4,4 +4,5 @@
 
 @section('content')
     <livewire:reports.report-center />
+    <livewire:reports.report-template-manager />
 @endsection
