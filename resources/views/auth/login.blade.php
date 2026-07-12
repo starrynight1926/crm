@@ -66,12 +66,12 @@
             </button>
         </form>
 
-        <a href="{{ route('demo.login') }}"
+        <a href="{{ route('guide') }}"
            class="mt-6 w-full flex items-center justify-center gap-2 border border-gold-300 text-gold-700 hover:bg-gold-50 font-semibold py-3 rounded-md transition-colors">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.5 20.25a8.25 8.25 0 0115 0"/>
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25"/>
             </svg>
-            Login demo
+            Hướng dẫn sử dụng
         </a>
 
         <div class="border-t border-gold-100 mt-8 pt-5 text-center text-sm text-ink/60">

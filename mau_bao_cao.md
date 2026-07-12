@@ -53,21 +53,28 @@
 | 18 | CHUYÊN VIÊN TƯ VẤN 3 | ❌ thiếu | |
 | 19 | DỊCH VỤ | ✅ suy ra | `customer_services → services` |
 
-## 3. Phân nhóm gap
+## 3. Phân nhóm gap — ĐÃ XỬ LÝ (2026-07-12)
 
-**A. Chỉ cần lưu thêm → dùng `custom_fields` là đủ (không đụng schema):**
-Ngày sinh, Địa chỉ, Khai thác tiền sử, Nghề nghiệp, Bác sĩ tư vấn, Chuyên viên tư vấn 1/2/3, Cơ sở, Phân loại khách.
+**A. Custom fields mức công ty** (seed bởi `ReportCustomFieldSeeder`):
+Ngày sinh, Địa chỉ, Khai thác tiền sử, Nghề nghiệp, Phân loại khách (VIP/Tiềm năng/Mới/Cũ).
 
-**B. Cần LOGIC mới (gap thật):**
-- Tần suất quay lại — bộ đếm tự tăng, mâu thuẫn với chống trùng gộp-theo-phone.
-- Ngày ghi nhận doanh thu — tính từ payment đầu tiên.
-- Hình ảnh — chỗ lưu file ảnh theo mỗi lần dùng DV (nên gắn `customer_service_phases`).
+**B. Bảng riêng** — 2 bảng mới `facilities` + `staff_members`:
+- Cơ sở → FK `leads.facility_id` → bảng `facilities` (cây: Cơ sở > Phòng ban).
+- Bác sĩ tư vấn → FK `leads.doctor_id` → bảng `staff_members` (role=doctor).
+- Chuyên viên tư vấn 1/2/3 → FK `leads.consultant_1_id / 2 / 3` → `staff_members` (role=consultant).
+- Dropdown hiện theo nhóm Cơ sở › Phòng ban, có ô search lọc theo tên.
 
-**C. Vướng ngữ nghĩa:**
-- Phân loại khách (VIP/tiềm năng) ≠ `classification` funnel — đừng tái dùng cột này.
+**C. Logic đếm tần suất quay lại:**
+- Trong mục ghi chú (lead_status_logs): 2 checkbox exclusive "Khách tới lần đầu" (`is_first_visit`) và "Khách trở lại" (`is_return`).
+- Tần suất = COUNT(is_return = true) của lead.
+- Tick "Khách trở lại" bắt buộc nhập mã tiếp đón (reception_code, unique).
 
-## 4. Cần chốt trước khi làm
+**D. Còn lại (chưa làm):**
+- Ngày ghi nhận doanh thu — tính từ `MIN(payments.paid_at)`.
+- Hình ảnh — đã có `lead_status_logs.images` (ảnh đính kèm ghi chú), cần xác nhận đủ yêu cầu chưa.
 
-1. **Nhóm A**: tạo thành `custom_fields` mức công ty, hay thêm hẳn cột chuẩn vào `leads`? (báo cáo freeze cột thì cột chuẩn tiện hơn)
-2. **Tần suất quay lại**: 1 khách = 1 lead + đếm số lần quay lại, hay mỗi lần đến là 1 bản ghi riêng?
-3. **Chuyên viên tư vấn 1/2/3 + Bác sĩ**: là user trong hệ thống (FK `users`) hay chỉ text nhập tay?
+## 4. Quyết định đã chốt (2026-07-12)
+
+1. **Nhóm A**: `custom_fields` mức công ty (org_unit_id = null). ✅
+2. **Tần suất quay lại**: 1 lead + đếm số ghi chú tick "Khách trở lại". ✅
+3. **Bác sĩ/Chuyên viên**: chọn từ bảng `staff_members`, nhóm theo `facilities` (Cơ sở > Phòng ban). Không phải user hệ thống. ✅

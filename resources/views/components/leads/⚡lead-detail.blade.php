@@ -23,6 +23,9 @@ new class extends Component
     /** Cờ "Khách trở lại" cho ghi chú này — đếm để ra tần suất quay lại. */
     public bool $noteIsReturn = false;
 
+    /** Cờ "Khách tới lần đầu". Exclusive với noteIsReturn. */
+    public bool $noteIsFirstVisit = false;
+
     /** Mã tiếp đón — bắt buộc khi tick "Khách trở lại". */
     public string $noteReceptionCode = '';
 
@@ -47,6 +50,21 @@ new class extends Component
     private function canEditLead(): bool
     {
         return auth()->user()->hasPermission('lead.update') && $this->lead->isVisibleTo(auth()->user());
+    }
+
+    public function updatedNoteIsReturn(): void
+    {
+        if ($this->noteIsReturn) {
+            $this->noteIsFirstVisit = false;
+        }
+    }
+
+    public function updatedNoteIsFirstVisit(): void
+    {
+        if ($this->noteIsFirstVisit) {
+            $this->noteIsReturn = false;
+            $this->noteReceptionCode = '';
+        }
     }
 
     public function addNote(): void
@@ -78,11 +96,12 @@ new class extends Component
 
         LeadStatusLog::record(
             $this->lead, 'note', $this->lead->note, $this->newNote ?: null, auth()->id(),
-            $paths, $this->noteIsReturn, $this->noteIsReturn ? trim($this->noteReceptionCode) : null
+            $paths, $this->noteIsReturn, $this->noteIsReturn ? trim($this->noteReceptionCode) : null,
+            $this->noteIsFirstVisit
         );
         $this->lead->update(['note' => $this->newNote ?: $this->lead->note, 'last_care_at' => now()]);
 
-        $this->reset(['newNote', 'noteImages', 'noteIsReturn', 'noteReceptionCode']);
+        $this->reset(['newNote', 'noteImages', 'noteIsReturn', 'noteIsFirstVisit', 'noteReceptionCode']);
         $this->lead->refresh();
     }
 
@@ -174,6 +193,8 @@ new class extends Component
     {
         $customFields = \App\Models\CustomField::applicableTo($this->lead->orgUnit);
         $customValues = $this->lead->customValues->pluck('value', 'custom_field_id');
+
+        $this->lead->load(['facility.parent', 'doctor.facility.parent', 'consultant1.facility.parent', 'consultant2.facility.parent', 'consultant3.facility.parent']);
 
         return [
             'logs' => $this->lead->statusLogs()->with('user')->limit(50)->get(),
@@ -277,6 +298,36 @@ new class extends Component
                             <dd class="font-medium">{{ $lead->region ?: '—' }}</dd>
                         </div>
                     </div>
+                    @if ($lead->facility)
+                        <div>
+                            <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Cơ sở</dt>
+                            <dd class="font-medium">
+                                @if ($lead->facility->parent)
+                                    {{ $lead->facility->parent->name }} › {{ $lead->facility->name }}
+                                @else
+                                    {{ $lead->facility->name }}
+                                @endif
+                            </dd>
+                        </div>
+                    @endif
+                    @if ($lead->doctor)
+                        <div>
+                            <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Bác sĩ tư vấn</dt>
+                            <dd class="font-medium">{{ $lead->doctor->displayLabel() }}</dd>
+                        </div>
+                    @endif
+                    @if ($lead->consultant1 || $lead->consultant2 || $lead->consultant3)
+                        <div>
+                            <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Chuyên viên tư vấn</dt>
+                            <dd class="font-medium space-y-0.5">
+                                @foreach ([$lead->consultant1, $lead->consultant2, $lead->consultant3] as $i => $cv)
+                                    @if ($cv)
+                                        <div>{{ $i + 1 }}. {{ $cv->displayLabel() }}</div>
+                                    @endif
+                                @endforeach
+                            </dd>
+                        </div>
+                    @endif
                     <div class="grid grid-cols-2 gap-3">
                         <div>
                             <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Tình trạng lần 1</dt>
@@ -387,6 +438,10 @@ new class extends Component
                 <div class="flex flex-wrap items-center justify-between gap-3">
                     <div class="flex flex-wrap items-center gap-3">
                         <label class="flex items-center gap-2 text-sm cursor-pointer">
+                            <input type="checkbox" wire:model.live="noteIsFirstVisit" class="rounded border-gold-300 text-green-600 w-4 h-4">
+                            <span class="font-semibold text-green-700">🆕 Khách tới lần đầu</span>
+                        </label>
+                        <label class="flex items-center gap-2 text-sm cursor-pointer">
                             <input type="checkbox" wire:model.live="noteIsReturn" class="rounded border-gold-300 text-gold-600 w-4 h-4">
                             <span class="font-semibold text-gold-800">🔁 Khách trở lại</span>
                         </label>
@@ -415,6 +470,9 @@ new class extends Component
                                     <span class="text-[10px] font-bold uppercase tracking-wider {{ $log->field === 'created' ? 'bg-gold-600 text-white' : 'bg-gold-100 border border-gold-300 text-gold-800' }} px-2 py-0.5 rounded">
                                         {{ \App\Models\LeadStatusLog::FIELD_LABELS[$log->field] ?? $log->field }}
                                     </span>
+                                    @if ($log->is_first_visit)
+                                        <span class="text-[10px] font-bold uppercase tracking-wider bg-blue-100 border border-blue-300 text-blue-800 px-2 py-0.5 rounded">🆕 Khách tới lần đầu</span>
+                                    @endif
                                     @if ($log->is_return)
                                         <span class="text-[10px] font-bold uppercase tracking-wider bg-green-100 border border-green-300 text-green-800 px-2 py-0.5 rounded">🔁 Khách trở lại</span>
                                         @if ($log->reception_code)

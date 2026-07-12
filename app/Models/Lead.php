@@ -13,7 +13,9 @@ use Illuminate\Database\Eloquent\SoftDeletes;
     'raw_lead_id', 'code', 'received_date', 'page', 'camp',
     'insight', 'link', 'ad_source', 'name', 'phone', 'region', 'classification',
     'status_1', 'status_2', 'note',
-    'pool_level', 'owner_id', 'receiver_id', 'org_unit_id', 'assigned_at', 'last_care_at',
+    'pool_level', 'owner_id', 'receiver_id', 'org_unit_id',
+    'facility_id', 'doctor_id', 'consultant_1_id', 'consultant_2_id', 'consultant_3_id',
+    'assigned_at', 'last_care_at',
 ])]
 class Lead extends Model
 {
@@ -63,6 +65,31 @@ class Lead extends Model
     public function orgUnit(): BelongsTo
     {
         return $this->belongsTo(OrgUnit::class);
+    }
+
+    public function facility(): BelongsTo
+    {
+        return $this->belongsTo(Facility::class);
+    }
+
+    public function doctor(): BelongsTo
+    {
+        return $this->belongsTo(StaffMember::class, 'doctor_id');
+    }
+
+    public function consultant1(): BelongsTo
+    {
+        return $this->belongsTo(StaffMember::class, 'consultant_1_id');
+    }
+
+    public function consultant2(): BelongsTo
+    {
+        return $this->belongsTo(StaffMember::class, 'consultant_2_id');
+    }
+
+    public function consultant3(): BelongsTo
+    {
+        return $this->belongsTo(StaffMember::class, 'consultant_3_id');
     }
 
     public function statusLogs(): HasMany
