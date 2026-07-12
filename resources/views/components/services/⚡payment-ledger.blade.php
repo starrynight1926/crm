@@ -89,9 +89,9 @@ new class extends Component
         <div class="bg-white border border-gold-200 rounded-xl shadow-card">
             <div class="px-5 py-4 border-b border-gold-100 flex flex-wrap items-center gap-3">
                 <label class="text-xs font-semibold text-ink/50">Từ</label>
-                <input type="date" wire:model.live="fDateFrom" class="border border-gold-200 rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:border-gold-500">
+                <x-date-input field="fDateFrom" class="px-2.5 py-1.5" />
                 <label class="text-xs font-semibold text-ink/50">Đến</label>
-                <input type="date" wire:model.live="fDateTo" class="border border-gold-200 rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:border-gold-500">
+                <x-date-input field="fDateTo" class="px-2.5 py-1.5" />
             </div>
             <div class="overflow-x-auto">
             <table class="w-full text-sm min-w-[720px]">

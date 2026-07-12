@@ -496,9 +496,9 @@ new class extends Component
     {{-- Bộ lọc kỳ (dùng chung 2 tab) --}}
     <div class="bg-white border border-gold-200 rounded-xl shadow-card px-5 py-4 mb-5 flex flex-wrap items-center gap-3">
         <label class="text-xs font-semibold text-ink/50">Từ</label>
-        <input type="date" wire:model.live="from" class="border border-gold-200 rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:border-gold-500">
+        <x-date-input field="from" class="px-2.5 py-1.5" />
         <label class="text-xs font-semibold text-ink/50">Đến</label>
-        <input type="date" wire:model.live="to" class="border border-gold-200 rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:border-gold-500">
+        <x-date-input field="to" class="px-2.5 py-1.5" />
         @if ($section === 'team')
             <label class="text-xs font-semibold text-ink/50 ml-2">Team</label>
             <select wire:model.live="teamId" class="border border-gold-200 rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:border-gold-500">

@@ -92,7 +92,8 @@ new class extends Component
             'receiver' => 'Người thu thập',
             'owner' => 'Người phụ trách',
             'received_date' => 'Ngày thu thập',
-            'classification' => 'Phân loại',
+            'classification' => 'Danh mục',
+            'job_title' => 'Chức danh',
             'region' => 'Khu vực',
             'camp' => 'Camp',
             'page' => 'Page',
@@ -180,6 +181,7 @@ new class extends Component
             'owner' => (string) $lead->owner?->name,
             'received_date' => (string) $lead->received_date?->toDateString(),
             'classification' => $lead->classificationLabel(),
+            'job_title' => (string) $lead->owner?->job_title,
             'region' => (string) $lead->region,
             'camp' => (string) $lead->camp,
             'page' => (string) $lead->page,
@@ -289,11 +291,11 @@ new class extends Component
     <div class="bg-white border border-gold-200 rounded-xl shadow-card px-5 py-4 mb-5 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
         <div>
             <label class="block text-xs font-semibold text-ink/50 mb-1">Từ ngày</label>
-            <input type="date" wire:model.live="fDateFrom" class="w-full border border-gold-200 rounded-md px-2.5 py-2 text-sm focus:outline-none focus:border-gold-500">
+            <x-date-input field="fDateFrom" class="px-2.5 py-2" />
         </div>
         <div>
             <label class="block text-xs font-semibold text-ink/50 mb-1">Đến ngày</label>
-            <input type="date" wire:model.live="fDateTo" class="w-full border border-gold-200 rounded-md px-2.5 py-2 text-sm focus:outline-none focus:border-gold-500">
+            <x-date-input field="fDateTo" class="px-2.5 py-2" />
         </div>
         <div>
             <label class="block text-xs font-semibold text-ink/50 mb-1">Chiến dịch</label>
@@ -359,7 +361,8 @@ new class extends Component
                     <th class="px-4 py-3 font-semibold">Nguồn QC</th>
                     <th class="px-4 py-3 font-semibold">Khu vực</th>
                     <th class="px-4 py-3 font-semibold">Chia cho</th>
-                    <th class="px-4 py-3 font-semibold">Phân loại</th>
+                    <th class="px-4 py-3 font-semibold">Chức danh</th>
+                    <th class="px-4 py-3 font-semibold">Danh mục</th>
                     @if ($canUpdate || $canDelete)
                         <th class="px-4 py-3 font-semibold text-right">Thao tác</th>
                     @endif
@@ -387,6 +390,7 @@ new class extends Component
                         </td>
                         <td class="px-4 py-3 text-ink/60">{{ $lead->region ?: '—' }}</td>
                         <td class="px-4 py-3">{{ $lead->owner?->name ?: '—' }}</td>
+                        <td class="px-4 py-3 text-ink/60">{{ $lead->owner?->job_title ?: '—' }}</td>
                         <td class="px-4 py-3">
                             @php
                                 $cls = $lead->classification;

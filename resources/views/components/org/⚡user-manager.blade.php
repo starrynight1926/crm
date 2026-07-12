@@ -18,6 +18,8 @@ new class extends Component
 
     public string $filterRole = '';
 
+    public string $viewMode = 'list'; // list | tree
+
     // ----- Modal user -----
     public bool $showUserModal = false;
 
@@ -207,11 +209,52 @@ new class extends Component
             ->orderBy('name')
             ->paginate(10);
 
+        $allOrgUnits = OrgUnit::orderBy('path')->get();
+        $allRoles = Role::orderBy('name')->get();
+
+        $orgTree = [];
+        if ($this->viewMode === 'tree') {
+            $orgTree = $allOrgUnits->load(['children']);
+            $allAssignments = \App\Models\Assignment::with(['user', 'role'])
+                ->whereHas('user', fn ($q) => $q->where('status', User::STATUS_ACTIVE))
+                ->where('active', true)
+                ->get()
+                ->groupBy('org_unit_id');
+
+            $orgTree = $allOrgUnits->map(fn ($unit) => [
+                'id' => $unit->id,
+                'name' => $unit->name,
+                'depth' => $unit->depth,
+                'parent_id' => $unit->parent_id,
+                'active' => $unit->active,
+                'members' => ($allAssignments[$unit->id] ?? collect())->map(fn ($a) => [
+                    'user_id' => $a->user_id,
+                    'user_name' => $a->user->name,
+                    'user_email' => $a->user->email,
+                    'job_title' => $a->user->job_title,
+                    'role' => $a->role->name,
+                    'scope' => $a->data_scope,
+                    'locked' => $a->user->isLocked(),
+                ])->unique('user_id')->values()->all(),
+            ])->all();
+        }
+
+        $unassigned = [];
+        if ($this->viewMode === 'tree') {
+            $assignedUserIds = \App\Models\Assignment::where('active', true)->pluck('user_id')->unique();
+            $unassigned = User::where('status', User::STATUS_ACTIVE)
+                ->whereNotIn('id', $assignedUserIds)
+                ->orderBy('name')
+                ->get(['id', 'name', 'email']);
+        }
+
         return [
             'users' => $users,
-            'allRoles' => Role::orderBy('name')->get(),
-            'allOrgUnits' => OrgUnit::orderBy('path')->get(),
+            'allRoles' => $allRoles,
+            'allOrgUnits' => $allOrgUnits,
             'assignUser' => $this->assignUserId ? User::with(['assignments.role', 'assignments.orgUnit', 'assignments.scopeNodes'])->find($this->assignUserId) : null,
+            'orgTree' => $orgTree,
+            'unassigned' => $unassigned,
             'stats' => [
                 'total' => User::count(),
                 'active' => User::where('status', User::STATUS_ACTIVE)->count(),
@@ -237,6 +280,40 @@ new class extends Component
     @if (session('error'))
         <p class="mb-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-4 py-2">{{ session('error') }}</p>
     @endif
+
+    {{-- View mode tabs --}}
+    <div class="border-b border-gold-200 mb-5 flex gap-1 text-sm font-semibold uppercase tracking-wide">
+        <button wire:click="$set('viewMode', 'list')" class="px-4 py-3 border-b-2 -mb-px {{ $viewMode === 'list' ? 'border-gold-600 text-gold-700' : 'border-transparent text-ink/50 hover:text-gold-700' }}">Danh sách</button>
+        <button wire:click="$set('viewMode', 'tree')" class="px-4 py-3 border-b-2 -mb-px {{ $viewMode === 'tree' ? 'border-gold-600 text-gold-700' : 'border-transparent text-ink/50 hover:text-gold-700' }}">Sơ đồ tổ chức</button>
+    </div>
+
+    @if ($viewMode === 'tree')
+        {{-- Tree view --}}
+        <div class="bg-white border border-gold-200 rounded-xl shadow-card p-6" x-data="{ collapsed: {} }">
+            @php
+                $roots = collect($orgTree)->where('parent_id', null);
+                $byParent = collect($orgTree)->groupBy('parent_id');
+            @endphp
+
+            @foreach ($roots as $root)
+                @include('components.org._org-tree-node', ['node' => $root, 'byParent' => $byParent])
+            @endforeach
+
+            @if (count($unassigned))
+                <div class="mt-6 pt-4 border-t border-gold-100">
+                    <h3 class="text-sm font-bold text-ink/50 uppercase tracking-wider mb-3">Chưa gán đơn vị</h3>
+                    <div class="flex flex-wrap gap-2">
+                        @foreach ($unassigned as $u)
+                            <span class="inline-flex items-center gap-2 text-sm bg-gray-50 border border-gray-200 text-gray-600 px-3 py-1.5 rounded-lg">
+                                <span class="w-7 h-7 rounded bg-gray-200 text-gray-500 text-xs font-bold flex items-center justify-center">{{ mb_substr($u->name, 0, 1) }}</span>
+                                {{ $u->name }}
+                            </span>
+                        @endforeach
+                    </div>
+                </div>
+            @endif
+        </div>
+    @else
 
     <div class="bg-white border border-gold-200 rounded-xl shadow-card">
         {{-- Filter bar --}}
@@ -264,6 +341,7 @@ new class extends Component
             <thead>
                 <tr class="text-left text-xs uppercase tracking-wider text-ink/50 bg-gold-50/60">
                     <th class="px-5 py-3 font-semibold">Nhân viên</th>
+                    <th class="px-5 py-3 font-semibold">Chức danh</th>
                     <th class="px-5 py-3 font-semibold">Vai trò @ Đơn vị</th>
                     <th class="px-5 py-3 font-semibold">Trạng thái</th>
                     <th class="px-5 py-3 font-semibold text-right">Hành động</th>
@@ -281,6 +359,7 @@ new class extends Component
                                 </div>
                             </div>
                         </td>
+                        <td class="px-5 py-4 text-sm text-ink/70">{{ $user->job_title ?: '—' }}</td>
                         <td class="px-5 py-4">
                             <div class="flex flex-wrap gap-1.5">
                                 @forelse ($user->assignments as $a)
@@ -310,7 +389,7 @@ new class extends Component
                         </td>
                     </tr>
                 @empty
-                    <tr><td colspan="4" class="px-5 py-10 text-center text-ink/40">Không tìm thấy nhân viên nào.</td></tr>
+                    <tr><td colspan="5" class="px-5 py-10 text-center text-ink/40">Không tìm thấy nhân viên nào.</td></tr>
                 @endforelse
             </tbody>
         </table>
@@ -337,6 +416,8 @@ new class extends Component
             <div class="text-3xl font-extrabold text-red-700">{{ $stats['locked'] }}</div>
         </div>
     </div>
+
+    @endif {{-- end viewMode list/tree --}}
 
     {{-- Modal: user form --}}
     @if ($showUserModal)
