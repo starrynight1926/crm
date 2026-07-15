@@ -657,7 +657,7 @@ new class extends Component
                     <strong class="text-gold-700">{{ $funnel->total > 0 ? round($funnel->close / $funnel->total * 100, 1) : 0 }}%</strong>
                 </span>
                 <span class="text-ink/60">Doanh thu thực thu kỳ này:
-                    <strong class="font-mono text-green-700">{{ number_format((int) $funnel->revenue) }}₫</strong>
+                    <strong class="font-mono text-green-700">{{ number_format((int) $funnel->revenue, 0, ',', '.') }}₫</strong>
                 </span>
             </div>
         </div>
@@ -726,7 +726,7 @@ new class extends Component
                             <td class="px-5 py-3 text-right">{{ number_format($row->bookings) }}</td>
                             <td class="px-5 py-3 text-right font-semibold text-green-700">{{ number_format($row->closes) }}</td>
                             <td class="px-5 py-3 text-right font-mono">{{ $row->total > 0 ? round($row->closes / $row->total * 100, 1) : 0 }}%</td>
-                            <td class="px-5 py-3 text-right font-mono font-bold text-green-700">{{ number_format((int) $row->revenue) }}₫</td>
+                            <td class="px-5 py-3 text-right font-mono font-bold text-green-700">{{ number_format((int) $row->revenue, 0, ',', '.') }}₫</td>
                         </tr>
                     @empty
                         <tr><td colspan="7" class="px-5 py-8 text-center text-ink/40">Không có dữ liệu trong kỳ.</td></tr>

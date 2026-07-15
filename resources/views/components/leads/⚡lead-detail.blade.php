@@ -5,6 +5,7 @@ use App\Models\Contribution;
 use App\Models\ContributionTemplate;
 use App\Models\Lead;
 use App\Models\LeadStatusLog;
+use App\Models\Payment;
 use App\Services\ContributionService;
 use Livewire\Component;
 use Livewire\WithFileUploads;
@@ -70,12 +71,10 @@ new class extends Component
     public function addNote(): void
     {
         abort_unless($this->canEditLead(), 403);
-        // Cho phép ghi chú rỗng nếu chỉ đính ảnh; nhưng phải có ít nhất nội dung hoặc ảnh.
         $this->validate([
             'newNote' => 'nullable|string|max:2000',
             'noteImages' => 'array|max:10',
-            'noteImages.*' => 'image|max:5120', // ≤5MB mỗi ảnh
-            // Mã tiếp đón: bắt buộc + không trùng khi tick "Khách trở lại"; bỏ qua khi không phải return.
+            'noteImages.*' => 'image|max:5120',
             'noteReceptionCode' => $this->noteIsReturn
                 ? ['required', 'string', 'max:60', 'unique:lead_status_logs,reception_code']
                 : ['nullable'],
@@ -105,7 +104,7 @@ new class extends Component
         $this->lead->refresh();
     }
 
-    /** Tần suất quay lại = số ghi chú đã tick "Khách trở lại". */
+    /** Tần suất quay lại = số mã tiếp đón. */
     public function returnCount(): int
     {
         return LeadStatusLog::where('lead_id', $this->lead->id)->where('is_return', true)->count();
@@ -125,7 +124,6 @@ new class extends Component
         AuditLog::record('update', $this->lead, ['classification' => $value]);
         $this->lead->refresh();
 
-        // Deal Close → mở popup % đóng góp (Màn 10)
         if ($value === 'close' && auth()->user()->hasPermission('contribution.set')) {
             $this->openContribution();
         }
@@ -145,13 +143,11 @@ new class extends Component
         $existing = Contribution::with('user')->where('lead_id', $this->lead->id)->get();
 
         if ($existing->isNotEmpty()) {
-            // Đã chia rồi → mở lại để sửa
             $this->contribRows = $existing->map(fn ($c) => [
                 'user_id' => $c->user_id, 'name' => $c->user->name,
                 'role_label' => $c->role_label, 'percent' => (string) round((float) $c->percent, 2),
             ])->all();
         } else {
-            // Gợi ý người tham gia từ lịch sử + áp template mặc định theo vai trò
             $participants = app(ContributionService::class)->suggestParticipants($this->lead);
             $template = ContributionTemplate::firstWhere('is_default', true);
             $templatePercents = collect($template?->items ?? [])->pluck('percent', 'role_label');
@@ -194,15 +190,30 @@ new class extends Component
         $customFields = \App\Models\CustomField::applicableTo($this->lead->orgUnit);
         $customValues = $this->lead->customValues->pluck('value', 'custom_field_id');
 
-        $this->lead->load(['facility.parent', 'doctor.facility.parent', 'consultant1.facility.parent', 'consultant2.facility.parent', 'consultant3.facility.parent']);
+        $this->lead->load([
+            'facility.parent', 'doctor.facility.parent',
+            'consultant1.facility.parent', 'consultant2.facility.parent', 'consultant3.facility.parent',
+            'performingDoctor.facility.parent',
+            'upsells.staffMember', 'upsells.service',
+        ]);
+
+        $lastPayment = Payment::where('lead_id', $this->lead->id)->orderByDesc('paid_at')->first();
+        $totalPaid = Payment::where('lead_id', $this->lead->id)->sum('amount');
+        $paymentMethods = Payment::where('lead_id', $this->lead->id)
+            ->selectRaw('method, SUM(amount) as total')
+            ->groupBy('method')
+            ->pluck('total', 'method');
 
         return [
-            'logs' => $this->lead->statusLogs()->with('user')->limit(50)->get(),
+            'logs' => $this->lead->statusLogs()->with('user')->paginate(15, pageName: 'logPage'),
             'canEdit' => $this->canEditLead(),
             'customFields' => $customFields,
             'customValues' => $customValues,
             'contributions' => Contribution::with('user')->where('lead_id', $this->lead->id)->orderByDesc('percent')->get(),
             'canSetContribution' => auth()->user()->hasPermission('contribution.set'),
+            'lastPayment' => $lastPayment,
+            'totalPaid' => $totalPaid,
+            'paymentMethods' => $paymentMethods,
         ];
     }
 };
@@ -225,7 +236,7 @@ new class extends Component
             <a href="{{ route('leads.edit', $lead) }}"
                class="flex items-center gap-2 text-sm font-semibold text-ink/70 border border-gold-200 px-5 py-2.5 rounded-md hover:bg-gold-50">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487z"/></svg>
-                Sửa thông tin
+                Cập nhật thông tin
             </a>
         @endif
     </div>
@@ -234,129 +245,276 @@ new class extends Component
         <p class="mb-4 text-sm text-green-700 bg-green-50 border border-green-200 rounded-md px-4 py-2">{{ session('status') }}</p>
     @endif
 
-    <div class="grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-6 items-start">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+        {{-- ═══ CỘT TRÁI: Thông tin khách hàng ═══ --}}
         <div class="space-y-6">
-            {{-- Thông tin chi tiết --}}
+            {{-- Card chính: Thông tin cơ bản + Nhân sự + Trạng thái --}}
             <div class="bg-white border-l-4 border-gold-600 border-y border-r border-y-gold-200 border-r-gold-200 rounded-xl shadow-card p-6">
-                <h2 class="text-xs font-bold uppercase tracking-[0.15em] text-ink/60 border-b border-gold-100 pb-3 mb-4">Thông tin chi tiết</h2>
-                <dl class="space-y-3.5 text-sm">
-                    <div class="grid grid-cols-2 gap-3">
+                <h2 class="text-xs font-bold uppercase tracking-[0.15em] text-ink/60 border-b border-gold-100 pb-3 mb-4">Thông tin khách hàng</h2>
+                <dl class="space-y-3 text-sm">
+                    {{-- SĐT nổi bật --}}
+                    <div class="flex items-center gap-3 bg-gold-50 border border-gold-200 rounded-lg px-4 py-2.5">
+                        <svg class="w-4 h-4 text-gold-600 shrink-0" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 002.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 01-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 00-1.091-.852H4.5A2.25 2.25 0 002.25 4.5v2.25z"/></svg>
+                        <span class="font-mono font-bold text-gold-800 text-base">
+                            @if ($phoneRevealed) {{ $lead->phone }}
+                            @else {{ \App\Models\Lead::maskPhone($lead->phone) }}
+                            @endif
+                        </span>
+                        @if ($lead->canViewFullPhone(auth()->user()))
+                            @if ($phoneRevealed)
+                                <button wire:click="$set('phoneRevealed', false)" class="text-xs font-semibold text-ink/50 border border-gray-300 px-2 py-0.5 rounded hover:bg-gray-100 ml-auto">Ẩn số</button>
+                            @else
+                                <button wire:click="revealPhone" class="text-xs font-semibold text-gold-600 border border-gold-300 px-2 py-0.5 rounded hover:bg-gold-100 ml-auto" title="Ghi audit log khi xem">Hiện số</button>
+                            @endif
+                        @endif
+                    </div>
+
+                    <div class="grid grid-cols-3 gap-3">
                         <div>
                             <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Ngày</dt>
                             <dd class="font-medium">{{ $lead->received_date->format('d/m/Y') }}</dd>
                         </div>
                         <div>
-                            <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Page</dt>
-                            <dd class="font-medium">{{ $lead->page ?: '—' }}</dd>
-                        </div>
-                    </div>
-                    <div>
-                        <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Số điện thoại</dt>
-                        <dd class="font-mono font-semibold text-gold-700 flex items-center gap-2">
-                            @if ($phoneRevealed)
-                                {{ $lead->phone }}
-                            @else
-                                {{ \App\Models\Lead::maskPhone($lead->phone) }}
-                                @if ($lead->canViewFullPhone(auth()->user()))
-                                    <button wire:click="revealPhone" class="text-xs font-sans font-semibold text-gold-600 border border-gold-300 px-2 py-0.5 rounded hover:bg-gold-50" title="Ghi audit log khi xem">
-                                        Hiện số
-                                    </button>
-                                @endif
-                            @endif
-                        </dd>
-                    </div>
-                    <div>
-                        <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Camp (chiến dịch)</dt>
-                        <dd class="font-medium">{{ $lead->camp ?: '—' }}</dd>
-                    </div>
-                    <div>
-                        <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Insight / Link</dt>
-                        <dd class="font-medium">
-                            {{ $lead->insight ?: '—' }}
-                            @if ($lead->link)
-                                <a href="{{ $lead->link }}" target="_blank" rel="noopener" class="block text-gold-600 underline truncate">{{ $lead->link }}</a>
-                            @endif
-                        </dd>
-                    </div>
-                    <div class="grid grid-cols-2 gap-3">
-                        <div>
                             <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Nguồn</dt>
                             <dd class="font-medium">{{ $lead->ad_source ?: '—' }}</dd>
                         </div>
                         <div>
-                            <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Người nhận</dt>
-                            <dd class="font-medium">{{ $lead->receiver?->name ?: 'Hệ thống' }}</dd>
+                            <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Tần suất quay lại</dt>
+                            <dd class="font-bold text-gold-700">{{ $this->returnCount() }}</dd>
                         </div>
                     </div>
+
+                    @if ($lead->page || $lead->camp)
                     <div class="grid grid-cols-2 gap-3">
                         <div>
-                            <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Lead chia cho</dt>
-                            <dd class="font-medium text-gold-700">{{ $lead->owner?->name ?: 'Chưa chia' }}</dd>
+                            <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Page</dt>
+                            <dd class="font-medium">{{ $lead->page ?: '—' }}</dd>
                         </div>
                         <div>
-                            <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Khu vực</dt>
-                            <dd class="font-medium">{{ $lead->region ?: '—' }}</dd>
+                            <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Camp</dt>
+                            <dd class="font-medium">{{ $lead->camp ?: '—' }}</dd>
                         </div>
                     </div>
-                    @if ($lead->facility)
-                        <div>
-                            <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Cơ sở</dt>
-                            <dd class="font-medium">
-                                @if ($lead->facility->parent)
-                                    {{ $lead->facility->parent->name }} › {{ $lead->facility->name }}
+                    @endif
+
+                    @if ($lead->insight || $lead->link)
+                    <div>
+                        <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Insight</dt>
+                        <dd class="font-medium">
+                            {{ $lead->insight ?: '' }}
+                            @if ($lead->link)
+                                <a href="{{ $lead->link }}" target="_blank" rel="noopener" class="block text-gold-600 underline truncate text-xs mt-0.5">{{ $lead->link }}</a>
+                            @endif
+                        </dd>
+                    </div>
+                    @endif
+
+                    {{-- Nhóm nhân sự --}}
+                    <div class="border-t border-gold-100 pt-3 mt-1">
+                        <p class="text-xs font-bold uppercase tracking-wider text-ink/40 mb-2">Cơ sở & Nhân sự</p>
+                        <div class="space-y-2">
+                            @if ($lead->facility)
+                            <div class="flex items-center gap-2">
+                                <svg class="w-3.5 h-3.5 text-ink/30 shrink-0" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 21h19.5m-18-18v18m10.5-18v18m6-13.5V21M6.75 6.75h.75m-.75 3h.75m-.75 3h.75m3-6h.75m-.75 3h.75m-.75 3h.75M6.75 21v-3.375c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21M3 3h12m-.75 4.5H21m-3.75 3H21"/></svg>
+                                <span class="font-medium text-sm">
+                                    @if ($lead->facility->parent) {{ $lead->facility->parent->name }} › @endif{{ $lead->facility->name }}
+                                </span>
+                            </div>
+                            @endif
+                            @if ($lead->doctor)
+                            <div class="flex items-center gap-2">
+                                <span class="text-[10px] font-bold uppercase tracking-wider bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded shrink-0">BS tư vấn</span>
+                                <span class="font-medium text-sm">{{ $lead->doctor->displayLabel() }}</span>
+                            </div>
+                            @endif
+                            @foreach ([$lead->consultant1, $lead->consultant2, $lead->consultant3] as $i => $cv)
+                                @if ($cv)
+                                <div class="flex items-center gap-2">
+                                    <span class="text-[10px] font-bold uppercase tracking-wider bg-green-100 text-green-700 px-1.5 py-0.5 rounded shrink-0">CVTV{{ $i + 1 }}</span>
+                                    <span class="font-medium text-sm">{{ $cv->displayLabel() }}</span>
+                                </div>
+                                @endif
+                            @endforeach
+                            @if ($lead->service_name)
+                            <div class="flex items-center gap-2">
+                                <span class="text-[10px] font-bold uppercase tracking-wider bg-gold-100 text-gold-700 px-1.5 py-0.5 rounded shrink-0">Dịch vụ</span>
+                                <span class="font-medium text-sm">{{ $lead->service_name }}</span>
+                            </div>
+                            @endif
+                        </div>
+                    </div>
+
+                    {{-- Phân phối --}}
+                    <div class="border-t border-gold-100 pt-3 mt-1">
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Lead chia cho</dt>
+                                <dd class="font-medium text-gold-700">{{ $lead->owner?->name ?: 'Chưa chia' }}</dd>
+                            </div>
+                            <div>
+                                <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Người nhận</dt>
+                                <dd class="font-medium">{{ $lead->receiver?->name ?: 'Hệ thống' }}</dd>
+                            </div>
+                        </div>
+                    </div>
+
+                    {{-- Trạng thái --}}
+                    <div class="border-t border-gold-100 pt-3 mt-1">
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Tình trạng 1</dt>
+                                <dd class="font-medium">{{ $lead->status_1 ?: '—' }}</dd>
+                            </div>
+                            <div>
+                                <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Tình trạng 2</dt>
+                                <dd class="font-medium">{{ $lead->status_2 ?: '—' }}</dd>
+                            </div>
+                        </div>
+                        @if ($lastPayment)
+                        <div class="mt-2">
+                            <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Ngày ghi nhận doanh thu</dt>
+                            <dd class="font-medium">{{ $lastPayment->paid_at->format('d/m/Y') }}</dd>
+                        </div>
+                        @endif
+                        <div class="mt-3">
+                            <dt class="text-xs uppercase tracking-wider text-ink/40 mb-1">Phân loại kết quả</dt>
+                            <dd>
+                                @if ($canEdit)
+                                    <select wire:change="updateClassification($event.target.value)"
+                                            class="border border-gold-200 rounded-full px-3 py-1.5 text-sm bg-gold-50 text-gold-800 font-semibold focus:outline-none focus:border-gold-500">
+                                        @foreach (\App\Models\Lead::CLASSIFICATIONS as $key => $label)
+                                            <option value="{{ $key }}" @selected($lead->classification === $key)>{{ $label }}</option>
+                                        @endforeach
+                                    </select>
                                 @else
-                                    {{ $lead->facility->name }}
+                                    <span class="text-sm bg-gold-50 border border-gold-200 text-gold-800 font-semibold px-3 py-1 rounded-full">{{ $lead->classificationLabel() }}</span>
                                 @endif
                             </dd>
                         </div>
-                    @endif
-                    @if ($lead->doctor)
-                        <div>
-                            <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Bác sĩ tư vấn</dt>
-                            <dd class="font-medium">{{ $lead->doctor->displayLabel() }}</dd>
-                        </div>
-                    @endif
-                    @if ($lead->consultant1 || $lead->consultant2 || $lead->consultant3)
-                        <div>
-                            <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Chuyên viên tư vấn</dt>
-                            <dd class="font-medium space-y-0.5">
-                                @foreach ([$lead->consultant1, $lead->consultant2, $lead->consultant3] as $i => $cv)
-                                    @if ($cv)
-                                        <div>{{ $i + 1 }}. {{ $cv->displayLabel() }}</div>
-                                    @endif
-                                @endforeach
-                            </dd>
-                        </div>
-                    @endif
-                    <div class="grid grid-cols-2 gap-3">
-                        <div>
-                            <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Tình trạng lần 1</dt>
-                            <dd class="font-medium">{{ $lead->status_1 ?: '—' }}</dd>
-                        </div>
-                        <div>
-                            <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Tình trạng lần 2</dt>
-                            <dd class="font-medium">{{ $lead->status_2 ?: '—' }}</dd>
-                        </div>
-                    </div>
-                    <div>
-                        <dt class="text-xs uppercase tracking-wider text-ink/40 mb-1">Phân loại kết quả</dt>
-                        <dd>
-                            @if ($canEdit)
-                                <select wire:change="updateClassification($event.target.value)"
-                                        class="border border-gold-200 rounded-full px-3 py-1.5 text-sm bg-gold-50 text-gold-800 font-semibold focus:outline-none focus:border-gold-500">
-                                    @foreach (\App\Models\Lead::CLASSIFICATIONS as $key => $label)
-                                        <option value="{{ $key }}" @selected($lead->classification === $key)>{{ $label }}</option>
-                                    @endforeach
-                                </select>
-                            @else
-                                <span class="text-sm bg-gold-50 border border-gold-200 text-gold-800 font-semibold px-3 py-1 rounded-full">{{ $lead->classificationLabel() }}</span>
-                            @endif
-                        </dd>
                     </div>
                 </dl>
             </div>
 
-            {{-- % đóng góp (hiện khi đã chia hoặc deal close) --}}
+            {{-- INSIGHT — gom vào 1 card nếu có --}}
+            @if ($lead->birthday || $lead->address || $lead->medical_history || $lead->occupation)
+            <div class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
+                <h2 class="text-xs font-bold uppercase tracking-[0.15em] text-ink/60 border-b border-gold-100 pb-3 mb-4">INSIGHT khách hàng</h2>
+                <dl class="space-y-3 text-sm">
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Ngày sinh</dt>
+                            <dd class="font-medium">{{ $lead->birthday?->format('d/m/Y') ?: '—' }}</dd>
+                        </div>
+                        <div>
+                            <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Nghề nghiệp</dt>
+                            <dd class="font-medium">{{ $lead->occupation ?: '—' }}</dd>
+                        </div>
+                    </div>
+                    @if ($lead->address)
+                    <div>
+                        <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Địa chỉ</dt>
+                        <dd class="font-medium">{{ $lead->address }}</dd>
+                    </div>
+                    @endif
+                    @if ($lead->medical_history)
+                    <div>
+                        <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Khai thác tiền sử</dt>
+                        <dd class="font-medium whitespace-pre-line">{{ $lead->medical_history }}</dd>
+                    </div>
+                    @endif
+                </dl>
+
+                {{-- LIỆU TRÌNH gom vào cùng card INSIGHT --}}
+                @if ($lead->treatment_1 || $lead->treatment_2 || $lead->treatment_3 || $lead->treatment_4 || $lead->performingDoctor || $lead->quality_rating)
+                <div class="border-t border-gold-100 mt-4 pt-4">
+                    <p class="text-xs font-bold uppercase tracking-wider text-ink/40 mb-3">Liệu trình</p>
+                    <dl class="space-y-2.5 text-sm">
+                        <div class="grid grid-cols-4 gap-2">
+                            @foreach (['treatment_1' => 'Lần 1', 'treatment_2' => 'Lần 2', 'treatment_3' => 'Lần 3', 'treatment_4' => 'Lần 4'] as $field => $label)
+                            <div class="text-center">
+                                <dt class="text-[10px] uppercase tracking-wider text-ink/40 mb-0.5">{{ $label }}</dt>
+                                <dd class="font-medium text-xs">{{ $lead->{$field} ? $lead->{$field}->format('d/m') : '—' }}</dd>
+                            </div>
+                            @endforeach
+                        </div>
+                        @if ($lead->performingDoctor)
+                        <div class="flex items-center gap-2">
+                            <span class="text-[10px] font-bold uppercase tracking-wider bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded shrink-0">BS thực hiện</span>
+                            <span class="font-medium text-sm">{{ $lead->performingDoctor->displayLabel() }}</span>
+                        </div>
+                        @endif
+                        @if ($lead->quality_rating)
+                        <div>
+                            <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Đánh giá CLCM</dt>
+                            <dd class="font-medium whitespace-pre-line">{{ $lead->quality_rating }}</dd>
+                        </div>
+                        @endif
+                    </dl>
+                </div>
+                @endif
+            </div>
+            @endif
+
+            {{-- DV tiềm năng & UPSELL + Tài chính — gom lại --}}
+            @if ($lead->potential_service || $lead->upsells->isNotEmpty() || $totalPaid > 0)
+            <div class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
+                <h2 class="text-xs font-bold uppercase tracking-[0.15em] text-ink/60 border-b border-gold-100 pb-3 mb-4">Tài chính & Dịch vụ phát sinh</h2>
+
+                {{-- Tổng tiền thực trả --}}
+                @if ($totalPaid > 0)
+                <div class="bg-green-50 border border-green-200 rounded-lg px-4 py-3 mb-4">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-bold uppercase tracking-wider text-green-700">Tổng tiền thực trả</span>
+                        <span class="font-mono font-bold text-lg text-green-700">{{ number_format($totalPaid, 0, ',', '.') }}₫</span>
+                    </div>
+                    @if ($paymentMethods->isNotEmpty())
+                    <div class="mt-2 space-y-1">
+                        @foreach ($paymentMethods as $method => $amount)
+                            <div class="flex items-center justify-between text-sm">
+                                <span class="text-green-600">{{ \App\Models\Payment::METHODS[$method] ?? $method }}</span>
+                                <span class="font-mono text-green-700">{{ number_format($amount, 0, ',', '.') }}₫</span>
+                            </div>
+                        @endforeach
+                    </div>
+                    @endif
+                </div>
+                @endif
+
+                <dl class="space-y-3 text-sm">
+                    @if ($lead->potential_service)
+                    <div>
+                        <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Dịch vụ tiềm năng</dt>
+                        <dd class="font-medium whitespace-pre-line">{{ $lead->potential_service }}</dd>
+                    </div>
+                    @endif
+
+                    @if ($lead->upsells->isNotEmpty())
+                    <div class="border-t border-gold-100 pt-3">
+                        <dt class="text-xs uppercase tracking-wider text-ink/40 mb-2">DS Dịch vụ phát sinh</dt>
+                        <div class="space-y-1.5">
+                            @foreach ($lead->upsells as $up)
+                                <div class="flex items-center justify-between bg-gold-50/50 border border-gold-100 rounded-lg px-3 py-2">
+                                    <div>
+                                        <span class="font-medium">{{ $up->service?->name ?? '—' }}</span>
+                                        @if ($up->staffMember)
+                                            <span class="text-xs text-ink/50 ml-1">— {{ $up->staffMember->name }}</span>
+                                        @endif
+                                    </div>
+                                    <span class="font-mono font-semibold text-gold-700">{{ number_format($up->amount, 0, ',', '.') }}₫</span>
+                                </div>
+                            @endforeach
+                        </div>
+                        <div class="flex items-center justify-between border-t border-gold-200 mt-2 pt-2">
+                            <span class="text-xs font-bold uppercase tracking-wider text-ink/60">Tổng phát sinh</span>
+                            <span class="font-mono font-bold text-gold-700">{{ number_format($lead->upsells->sum('amount'), 0, ',', '.') }}₫</span>
+                        </div>
+                    </div>
+                    @endif
+                </dl>
+            </div>
+            @endif
+
+            {{-- % đóng góp + Trường bổ sung --}}
             @if ($contributions->isNotEmpty() || $lead->classification === 'close')
                 <div class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
                     <div class="flex items-center justify-between border-b border-gold-100 pb-3 mb-4">
@@ -379,13 +537,12 @@ new class extends Component
                 </div>
             @endif
 
-            {{-- Trường bổ sung theo phòng ban --}}
             @if ($customFields->isNotEmpty())
                 <div class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
                     <h2 class="text-xs font-bold uppercase tracking-[0.15em] text-ink/60 border-b border-gold-100 pb-3 mb-4">
                         Trường bổ sung {{ $lead->orgUnit ? '(' . $lead->orgUnit->name . ')' : '' }}
                     </h2>
-                    <dl class="space-y-3.5 text-sm">
+                    <dl class="grid grid-cols-2 gap-3 text-sm">
                         @foreach ($customFields as $field)
                             <div>
                                 <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">
@@ -400,6 +557,7 @@ new class extends Component
             @endif
         </div>
 
+        {{-- ═══ CỘT PHẢI: Tương tác + Dịch vụ ═══ --}}
         <div class="space-y-6">
             {{-- Thêm ghi chú --}}
             <div class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
@@ -410,11 +568,10 @@ new class extends Component
                     Thêm Ghi chú mới
                     <span class="ml-auto text-xs font-normal text-ink/50">Tần suất quay lại: <strong class="text-gold-700">{{ $this->returnCount() }}</strong></span>
                 </h2>
-                <textarea wire:model="newNote" rows="4" placeholder="Nhập nội dung tương tác hoặc ghi chú quan trọng về khách hàng..."
+                <textarea wire:model="newNote" rows="3" placeholder="Nhập nội dung tương tác hoặc ghi chú quan trọng về khách hàng..."
                           class="w-full border border-gold-200 rounded-lg px-4 py-3 text-sm bg-gold-50/40 focus:outline-none focus:border-gold-500 mb-3"></textarea>
                 @error('newNote')<p class="text-xs text-red-600 mb-2">{{ $message }}</p>@enderror
 
-                {{-- Upload ảnh --}}
                 <div class="mb-3">
                     <label class="flex items-center gap-2 text-sm font-semibold text-gold-700 border border-dashed border-gold-300 rounded-lg px-4 py-2.5 cursor-pointer hover:bg-gold-50 w-fit">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z"/></svg>
@@ -423,7 +580,6 @@ new class extends Component
                     </label>
                     <div wire:loading wire:target="noteImages" class="text-xs text-ink/40 mt-1">Đang tải ảnh…</div>
                     @error('noteImages.*')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
-                    {{-- Preview ảnh sắp lưu --}}
                     @if ($noteImages)
                         <div class="flex flex-wrap gap-2 mt-2">
                             @foreach ($noteImages as $img)
@@ -439,27 +595,30 @@ new class extends Component
                     <div class="flex flex-wrap items-center gap-3">
                         <label class="flex items-center gap-2 text-sm cursor-pointer">
                             <input type="checkbox" wire:model.live="noteIsFirstVisit" class="rounded border-gold-300 text-green-600 w-4 h-4">
-                            <span class="font-semibold text-green-700">🆕 Khách tới lần đầu</span>
+                            <span class="font-semibold text-green-700">🆕 Lần đầu</span>
                         </label>
                         <label class="flex items-center gap-2 text-sm cursor-pointer">
                             <input type="checkbox" wire:model.live="noteIsReturn" class="rounded border-gold-300 text-gold-600 w-4 h-4">
-                            <span class="font-semibold text-gold-800">🔁 Khách trở lại</span>
+                            <span class="font-semibold text-gold-800">🔁 Trở lại</span>
                         </label>
                         @if ($noteIsReturn)
                             <div>
                                 <input type="text" wire:model="noteReceptionCode" placeholder="Mã tiếp đón *"
-                                       class="border border-gold-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:border-gold-500 w-44">
+                                       class="border border-gold-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:border-gold-500 w-40">
                                 @error('noteReceptionCode')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
                             </div>
                         @endif
                     </div>
-                    <button wire:click="addNote" class="bg-gold-600 hover:bg-gold-700 text-white font-semibold text-sm px-6 py-2.5 rounded-md">Lưu Ghi chú</button>
+                    <button wire:click="addNote" class="bg-gold-600 hover:bg-gold-700 text-white font-semibold text-sm px-5 py-2 rounded-md">Lưu Ghi chú</button>
                 </div>
             </div>
 
             {{-- Timeline lịch sử --}}
             <div class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
-                <h2 class="font-bold mb-5">Lịch sử tương tác</h2>
+                <div class="flex items-center justify-between mb-5">
+                    <h2 class="font-bold">Lịch sử tương tác</h2>
+                    <span class="text-xs text-ink/40">{{ $logs->total() }} ghi chú</span>
+                </div>
                 <div class="relative pl-6 space-y-4">
                     <div class="absolute left-2 top-1 bottom-1 w-px bg-gold-200"></div>
                     @forelse ($logs as $log)
@@ -471,12 +630,12 @@ new class extends Component
                                         {{ \App\Models\LeadStatusLog::FIELD_LABELS[$log->field] ?? $log->field }}
                                     </span>
                                     @if ($log->is_first_visit)
-                                        <span class="text-[10px] font-bold uppercase tracking-wider bg-blue-100 border border-blue-300 text-blue-800 px-2 py-0.5 rounded">🆕 Khách tới lần đầu</span>
+                                        <span class="text-[10px] font-bold uppercase tracking-wider bg-blue-100 border border-blue-300 text-blue-800 px-2 py-0.5 rounded">🆕 Lần đầu</span>
                                     @endif
                                     @if ($log->is_return)
-                                        <span class="text-[10px] font-bold uppercase tracking-wider bg-green-100 border border-green-300 text-green-800 px-2 py-0.5 rounded">🔁 Khách trở lại</span>
+                                        <span class="text-[10px] font-bold uppercase tracking-wider bg-green-100 border border-green-300 text-green-800 px-2 py-0.5 rounded">🔁 Trở lại</span>
                                         @if ($log->reception_code)
-                                            <span class="text-[10px] font-bold uppercase tracking-wider bg-gold-100 border border-gold-300 text-gold-800 px-2 py-0.5 rounded">Mã tiếp đón: {{ $log->reception_code }}</span>
+                                            <span class="text-[10px] font-bold uppercase tracking-wider bg-gold-100 border border-gold-300 text-gold-800 px-2 py-0.5 rounded">{{ $log->reception_code }}</span>
                                         @endif
                                     @endif
                                     <span class="font-semibold text-sm">{{ $log->user?->name ?? 'Hệ thống' }}</span>
@@ -484,7 +643,6 @@ new class extends Component
                                 </div>
                                 <div class="text-sm text-ink/80">
                                     @if ($log->field === 'classification')
-                                        Cập nhật trạng thái:
                                         <span class="text-ink/50">{{ \App\Models\Lead::CLASSIFICATIONS[$log->old_value] ?? $log->old_value ?? '—' }}</span>
                                         →
                                         <strong class="text-gold-700">{{ \App\Models\Lead::CLASSIFICATIONS[$log->new_value] ?? $log->new_value }}</strong>
@@ -494,14 +652,20 @@ new class extends Component
                                         {{ $log->new_value ?: '—' }}
                                     @endif
                                 </div>
-                                {{-- Ảnh đính kèm --}}
                                 @if (! empty($log->images))
-                                    <div class="flex flex-wrap gap-2 mt-2">
-                                        @foreach ($log->images as $path)
-                                            <a href="{{ \Illuminate\Support\Facades\Storage::disk('public')->url($path) }}" target="_blank">
-                                                <img src="{{ \Illuminate\Support\Facades\Storage::disk('public')->url($path) }}" class="w-20 h-20 object-cover rounded-md border border-gold-200 hover:opacity-90">
-                                            </a>
+                                    <div class="flex flex-wrap gap-2 mt-2" x-data="{ lightbox: null }">
+                                        @foreach ($log->images as $idx => $path)
+                                            @php $url = \Illuminate\Support\Facades\Storage::disk('public')->url($path); @endphp
+                                            <img src="{{ $url }}" alt="Ảnh {{ $idx + 1 }}"
+                                                 class="w-12 h-12 object-cover rounded border border-gold-200 cursor-pointer hover:ring-2 hover:ring-gold-400"
+                                                 @click="lightbox = '{{ $url }}'">
                                         @endforeach
+                                        <template x-if="lightbox">
+                                            <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" @click.self="lightbox = null" @keydown.escape.window="lightbox = null">
+                                                <img :src="lightbox" class="max-w-full max-h-[90vh] rounded-lg shadow-2xl">
+                                                <button @click="lightbox = null" class="absolute top-4 right-4 text-white bg-black/50 rounded-full w-10 h-10 flex items-center justify-center text-xl hover:bg-black/70">&times;</button>
+                                            </div>
+                                        </template>
                                     </div>
                                 @endif
                             </div>
@@ -510,6 +674,11 @@ new class extends Component
                         <p class="text-sm text-ink/40">Chưa có hoạt động nào.</p>
                     @endforelse
                 </div>
+                @if ($logs->hasPages())
+                    <div class="mt-5 pt-4 border-t border-gold-100">
+                        {{ $logs->links() }}
+                    </div>
+                @endif
             </div>
         </div>
     </div>

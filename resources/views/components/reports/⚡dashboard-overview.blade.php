@@ -131,7 +131,7 @@ new class extends Component
             </div>
             <div>
                 <div class="text-xs font-semibold uppercase tracking-widest text-ink/50">Doanh thu thực thu tháng</div>
-                <div class="text-2xl font-extrabold font-mono text-green-700">{{ number_format((int) ($funnel->revenue ?? 0)) }}₫</div>
+                <div class="text-2xl font-extrabold font-mono text-green-700">{{ number_format((int) ($funnel->revenue ?? 0), 0, ',', '.') }}₫</div>
             </div>
         </div>
     </div>
@@ -146,7 +146,7 @@ new class extends Component
                         <span class="w-7 h-7 rounded-full {{ $index === 0 ? 'bg-gold-600 text-white' : 'bg-gold-100 text-gold-700' }} flex items-center justify-center font-bold text-xs">{{ $index + 1 }}</span>
                         <span class="flex-1 font-semibold">{{ $topSaleUsers[$row->user_id]?->name ?? '—' }}</span>
                         <span class="text-xs text-ink/50">{{ (int) $row->closes }} close / {{ (int) $row->total }} lead</span>
-                        <span class="font-mono text-green-700 font-semibold">{{ number_format((int) $row->revenue) }}₫</span>
+                        <span class="font-mono text-green-700 font-semibold">{{ number_format((int) $row->revenue, 0, ',', '.') }}₫</span>
                     </div>
                 @empty
                     <p class="px-6 py-8 text-sm text-ink/40 text-center">Chưa có dữ liệu tháng này.</p>

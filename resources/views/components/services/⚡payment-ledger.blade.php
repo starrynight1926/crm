@@ -65,15 +65,15 @@ new class extends Component
     <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
         <div class="bg-white border border-gold-200 rounded-xl shadow-card p-5">
             <div class="text-xs font-semibold uppercase tracking-widest text-ink/50 mb-2">Thực thu hôm nay</div>
-            <div class="text-2xl font-extrabold font-mono text-green-700">{{ number_format($stats['today']) }}₫</div>
+            <div class="text-2xl font-extrabold font-mono text-green-700">{{ number_format($stats['today'], 0, ',', '.') }}₫</div>
         </div>
         <div class="bg-white border border-gold-200 rounded-xl shadow-card p-5">
             <div class="text-xs font-semibold uppercase tracking-widest text-ink/50 mb-2">Thực thu tháng {{ now()->format('m/Y') }}</div>
-            <div class="text-2xl font-extrabold font-mono text-green-700">{{ number_format($stats['month']) }}₫</div>
+            <div class="text-2xl font-extrabold font-mono text-green-700">{{ number_format($stats['month'], 0, ',', '.') }}₫</div>
         </div>
         <div class="bg-white border border-gold-200 rounded-xl shadow-card p-5">
             <div class="text-xs font-semibold uppercase tracking-widest text-ink/50 mb-2">Tổng công nợ còn lại</div>
-            <div class="text-2xl font-extrabold font-mono {{ $stats['debt'] > 0 ? 'text-red-600' : 'text-ink/40' }}">{{ number_format($stats['debt']) }}₫</div>
+            <div class="text-2xl font-extrabold font-mono {{ $stats['debt'] > 0 ? 'text-red-600' : 'text-ink/40' }}">{{ number_format($stats['debt'], 0, ',', '.') }}₫</div>
         </div>
     </div>
 
@@ -114,7 +114,7 @@ new class extends Component
                                 <span class="text-xs text-ink/40 font-mono ml-1">{{ $payment->lead?->code }}</span>
                             </td>
                             <td class="px-5 py-3 text-ink/60">{{ $payment->customerService?->service?->name ?: '—' }}</td>
-                            <td class="px-5 py-3 text-right font-mono font-bold text-green-700">{{ number_format($payment->amount) }}₫</td>
+                            <td class="px-5 py-3 text-right font-mono font-bold text-green-700">{{ number_format($payment->amount, 0, ',', '.') }}₫</td>
                             <td class="px-5 py-3 text-xs">{{ \App\Models\Payment::METHODS[$payment->method] }}</td>
                             <td class="px-5 py-3">{{ $payment->collector?->name }}</td>
                         </tr>
@@ -148,9 +148,9 @@ new class extends Component
                                 <span class="text-xs text-ink/40 font-mono ml-1">{{ $cs->lead?->code }}</span>
                             </td>
                             <td class="px-5 py-3 text-ink/60">{{ $cs->service?->name }}</td>
-                            <td class="px-5 py-3 text-right font-mono">{{ number_format($cs->agreed_price) }}₫</td>
-                            <td class="px-5 py-3 text-right font-mono text-green-700">{{ number_format($paid) }}₫</td>
-                            <td class="px-5 py-3 text-right font-mono font-bold text-red-600">{{ number_format($cs->agreed_price - $paid) }}₫</td>
+                            <td class="px-5 py-3 text-right font-mono">{{ number_format($cs->agreed_price, 0, ',', '.') }}₫</td>
+                            <td class="px-5 py-3 text-right font-mono text-green-700">{{ number_format($paid, 0, ',', '.') }}₫</td>
+                            <td class="px-5 py-3 text-right font-mono font-bold text-red-600">{{ number_format($cs->agreed_price - $paid, 0, ',', '.') }}₫</td>
                         </tr>
                     @empty
                         <tr><td colspan="5" class="px-5 py-10 text-center text-ink/40">Không có công nợ nào 🎉</td></tr>

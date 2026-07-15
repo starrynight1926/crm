@@ -52,13 +52,13 @@ class DemoDataSeeder extends Seeder
         }
 
         // ── Quy tắc trường ───────────────────────────────────────
-        // Cấp công ty: "Phân loại" (loại data) nối thẳng vào mã KH → KH-{id}-{mã}
-        $this->selectField(null, 'phan_loai', 'Phân loại', [
-            'MKT' => 'Data Marketing',
-            'C' => 'Data lạnh',
-            'BDM' => 'Data BDM',
-            'SI' => 'Data tự giới thiệu',
-            'N' => 'Data tự đến',
+        // Cấp công ty: "Nguồn" (loại data) nối thẳng vào mã KH → KH-{id}-{mã}
+        $this->selectField(null, 'phan_loai', 'Nguồn', [
+            'MKT' => 'MKT',
+            'BOD' => 'BOD',
+            'SR' => 'SR',
+            'BR' => 'BR',
+            'AFF' => 'AFF',
         ], 1, affectsCode: true);
 
         // Dọn field mã cố định theo phòng (KD/MKT) — đã thay bằng "Phân loại" cấp công ty,

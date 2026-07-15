@@ -20,6 +20,8 @@ new class extends Component
 
     public string $fAdSource = '';
 
+    public string $fNguon = '';
+
     public string $fDateFrom = '';
 
     public string $fDateTo = '';
@@ -34,12 +36,76 @@ new class extends Component
 
     public bool $selectAll = false;
 
+    public bool $showColumnPicker = false;
+
+    /** Các cột đang hiển thị trong bảng. */
+    public array $visibleCols = [];
+
+    /** Danh sách cột có thể ẩn/hiện (key => label). */
+    public const TABLE_COLUMNS = [
+        'code' => 'Mã KH',
+        'received_date' => 'Ngày',
+        'page' => 'Page',
+        'name' => 'Tên khách hàng',
+        'phone' => 'SĐT',
+        'camp' => 'Camp',
+        'nguon' => 'Nguồn',
+        'ad_source' => 'Nguồn QC',
+        'region' => 'Khu vực',
+        'owner' => 'Chia cho',
+        'classification' => 'Danh mục',
+    ];
+
+    public function mount(): void
+    {
+        $prefs = auth()->user()->report_prefs ?? [];
+        $saved = $prefs['lead_list_columns'] ?? null;
+        $valid = array_keys(self::TABLE_COLUMNS);
+        $this->visibleCols = $saved
+            ? array_values(array_intersect($saved, $valid))
+            : $valid;
+    }
+
     public function updated($property): void
     {
-        if (in_array($property, ['search', 'fClassification', 'fCamp', 'fAdSource', 'fDateFrom', 'fDateTo'])) {
+        if (in_array($property, ['search', 'fClassification', 'fCamp', 'fAdSource', 'fNguon', 'fDateFrom', 'fDateTo'])) {
             $this->resetPage();
-            $this->reset('selected', 'selectAll'); // đổi bộ lọc → bỏ chọn
+            $this->reset('selected', 'selectAll');
         }
+    }
+
+    public function updatedVisibleCols(): void
+    {
+        $this->saveColumnPrefs();
+    }
+
+    public function toggleColumn(string $key): void
+    {
+        if (in_array($key, $this->visibleCols)) {
+            $this->visibleCols = array_values(array_diff($this->visibleCols, [$key]));
+        } else {
+            $this->visibleCols[] = $key;
+        }
+        $this->saveColumnPrefs();
+    }
+
+    public function showAllColumns(): void
+    {
+        $this->visibleCols = array_keys(self::TABLE_COLUMNS);
+        $this->saveColumnPrefs();
+    }
+
+    private function saveColumnPrefs(): void
+    {
+        $user = auth()->user();
+        $prefs = $user->report_prefs ?? [];
+        $prefs['lead_list_columns'] = array_values($this->visibleCols);
+        $user->update(['report_prefs' => $prefs]);
+    }
+
+    public function colVisible(string $key): bool
+    {
+        return in_array($key, $this->visibleCols);
     }
 
     /** Tick "chọn tất cả" → chọn mọi lead trên trang hiện tại. */
@@ -131,7 +197,7 @@ new class extends Component
     {
         abort_unless(auth()->user()->hasPermission('lead.export'), 403);
         if ($this->exportCols === []) {
-            $this->exportCols = $this->allExportKeys(); // mặc định: tất cả
+            $this->exportCols = $this->allExportKeys();
         }
         $this->showExportModal = true;
     }
@@ -164,6 +230,8 @@ new class extends Component
             ->when($this->fClassification, fn ($q) => $q->where('classification', $this->fClassification))
             ->when($this->fCamp, fn ($q) => $q->where('camp', $this->fCamp))
             ->when($this->fAdSource, fn ($q) => $q->where('ad_source', $this->fAdSource))
+            ->when($this->fNguon, fn ($q) => $q->whereHas('customValues', fn ($cv) =>
+                $cv->where('custom_field_id', 1)->where('value', $this->fNguon)))
             ->when($this->fDateFrom, fn ($q) => $q->where('received_date', '>=', $this->fDateFrom))
             ->when($this->fDateTo, fn ($q) => $q->where('received_date', '<=', $this->fDateTo))
             ->orderByDesc('received_date')
@@ -250,11 +318,13 @@ new class extends Component
             'leads' => $leads,
             'campOptions' => Lead::visibleTo($user)->whereNotNull('camp')->distinct()->orderBy('camp')->pluck('camp'),
             'adSourceOptions' => Lead::visibleTo($user)->whereNotNull('ad_source')->distinct()->orderBy('ad_source')->pluck('ad_source'),
+            'nguonOptions' => \App\Models\CustomField::find(1)?->options ?? [],
             'exportCore' => $this->showExportModal ? $this->coreColumns() : [],
             'exportCustomFields' => $this->showExportModal ? $this->exportableCustomFields() : collect(),
             'canExport' => $user->hasPermission('lead.export'),
             'canUpdate' => $user->hasPermission('lead.update'),
             'canDelete' => $user->hasPermission('lead.delete'),
+            'tableColumns' => self::TABLE_COLUMNS,
         ];
     }
 };
@@ -288,7 +358,7 @@ new class extends Component
     </div>
 
     {{-- Bộ lọc --}}
-    <div class="bg-white border border-gold-200 rounded-xl shadow-card px-5 py-4 mb-5 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+    <div class="bg-white border border-gold-200 rounded-xl shadow-card px-5 py-4 mb-5 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
         <div>
             <label class="block text-xs font-semibold text-ink/50 mb-1">Từ ngày</label>
             <x-date-input field="fDateFrom" class="px-2.5 py-2" />
@@ -312,6 +382,15 @@ new class extends Component
                 <option value="">Tất cả</option>
                 @foreach ($adSourceOptions as $source)
                     <option value="{{ $source }}">{{ $source }}</option>
+                @endforeach
+            </select>
+        </div>
+        <div>
+            <label class="block text-xs font-semibold text-ink/50 mb-1">Nguồn data</label>
+            <select wire:model.live="fNguon" class="w-full border border-gold-200 rounded-md px-2.5 py-2 text-sm bg-white focus:outline-none focus:border-gold-500">
+                <option value="">Tất cả</option>
+                @foreach ($nguonOptions as $opt)
+                    <option value="{{ $opt }}">{{ $opt }}</option>
                 @endforeach
             </select>
         </div>
@@ -343,6 +422,33 @@ new class extends Component
 
     {{-- Bảng --}}
     <div class="bg-white border border-gold-200 rounded-xl shadow-card overflow-x-auto">
+        {{-- Thanh chọn cột --}}
+        <div class="px-5 py-2.5 border-b border-gold-100 flex items-center justify-between">
+            <span class="text-xs text-ink/40">Hiển thị {{ count($visibleCols) }}/{{ count($tableColumns) }} cột</span>
+            <div class="relative" x-data="{ open: false }">
+                <button @click="open = !open" class="inline-flex items-center gap-1.5 text-sm font-semibold text-gold-700 border border-gold-300 px-3 py-1.5 rounded-md hover:bg-gold-50">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 1 1-3 0m3 0a1.5 1.5 0 1 0-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-9.75 0h9.75"/></svg>
+                    Chọn cột
+                </button>
+                <div x-show="open" @click.outside="open = false" x-cloak x-transition
+                     class="absolute right-0 top-full mt-1 w-56 bg-white border border-gold-200 rounded-xl shadow-lg z-30 py-2">
+                    <div class="px-3 pb-2 mb-1 border-b border-gold-100 flex items-center justify-between">
+                        <span class="text-[11px] font-semibold uppercase tracking-wider text-ink/40">Cột hiển thị</span>
+                        <button wire:click="showAllColumns" class="text-[11px] font-semibold text-gold-600 hover:underline">Hiện tất cả</button>
+                    </div>
+                    @foreach ($tableColumns as $key => $label)
+                        <label class="flex items-center gap-2.5 px-3 py-1.5 hover:bg-gold-50 cursor-pointer text-sm" wire:key="col-{{ $key }}">
+                            <input type="checkbox"
+                                   @checked(in_array($key, $visibleCols))
+                                   wire:click="toggleColumn('{{ $key }}')"
+                                   class="rounded border-gold-300 text-gold-600 focus:ring-gold-500 w-4 h-4">
+                            {{ $label }}
+                        </label>
+                    @endforeach
+                </div>
+            </div>
+        </div>
+
         <table class="w-full text-sm whitespace-nowrap">
             <thead>
                 <tr class="text-left text-xs uppercase tracking-wider text-ink/50 bg-gold-50/60">
@@ -352,17 +458,17 @@ new class extends Component
                         </th>
                     @endif
                     <th class="px-4 py-3 font-semibold w-12">STT</th>
-                    <th class="px-4 py-3 font-semibold">Mã KH</th>
-                    <th class="px-4 py-3 font-semibold">Ngày</th>
-                    <th class="px-4 py-3 font-semibold">Page</th>
-                    <th class="px-4 py-3 font-semibold">Tên khách hàng</th>
-                    <th class="px-4 py-3 font-semibold">SĐT</th>
-                    <th class="px-4 py-3 font-semibold">Camp</th>
-                    <th class="px-4 py-3 font-semibold">Nguồn QC</th>
-                    <th class="px-4 py-3 font-semibold">Khu vực</th>
-                    <th class="px-4 py-3 font-semibold">Chia cho</th>
-                    <th class="px-4 py-3 font-semibold">Chức danh</th>
-                    <th class="px-4 py-3 font-semibold">Danh mục</th>
+                    @if ($this->colVisible('code'))        <th class="px-4 py-3 font-semibold">Mã KH</th> @endif
+                    @if ($this->colVisible('received_date'))<th class="px-4 py-3 font-semibold">Ngày</th> @endif
+                    @if ($this->colVisible('page'))        <th class="px-4 py-3 font-semibold">Page</th> @endif
+                    @if ($this->colVisible('name'))        <th class="px-4 py-3 font-semibold">Tên khách hàng</th> @endif
+                    @if ($this->colVisible('phone'))       <th class="px-4 py-3 font-semibold">SĐT</th> @endif
+                    @if ($this->colVisible('camp'))        <th class="px-4 py-3 font-semibold">Camp</th> @endif
+                    @if ($this->colVisible('nguon'))       <th class="px-4 py-3 font-semibold">Nguồn</th> @endif
+                    @if ($this->colVisible('ad_source'))   <th class="px-4 py-3 font-semibold">Nguồn QC</th> @endif
+                    @if ($this->colVisible('region'))      <th class="px-4 py-3 font-semibold">Khu vực</th> @endif
+                    @if ($this->colVisible('owner'))       <th class="px-4 py-3 font-semibold">Chia cho</th> @endif
+                    @if ($this->colVisible('classification'))<th class="px-4 py-3 font-semibold">Danh mục</th> @endif
                     @if ($canUpdate || $canDelete)
                         <th class="px-4 py-3 font-semibold text-right">Thao tác</th>
                     @endif
@@ -377,32 +483,69 @@ new class extends Component
                             </td>
                         @endif
                         <td class="px-4 py-3 text-ink/50">{{ $leads->firstItem() + $loop->index }}</td>
-                        <td class="px-4 py-3 font-mono text-xs text-gold-700">{{ $lead->code ?: '—' }}</td>
-                        <td class="px-4 py-3">{{ $lead->received_date->format('d/m/Y') }}</td>
-                        <td class="px-4 py-3 text-ink/60">{{ $lead->page ?: '—' }}</td>
-                        <td class="px-4 py-3 font-semibold text-gold-700">{{ $lead->name }}</td>
-                        <td class="px-4 py-3 font-mono">{{ $lead->phoneFor(auth()->user()) }}</td>
-                        <td class="px-4 py-3 text-ink/60">{{ $lead->camp ?: '—' }}</td>
-                        <td class="px-4 py-3">
-                            @if ($lead->ad_source)
-                                <span class="text-xs bg-gold-50 border border-gold-200 px-2 py-0.5 rounded">{{ $lead->ad_source }}</span>
-                            @else — @endif
-                        </td>
-                        <td class="px-4 py-3 text-ink/60">{{ $lead->region ?: '—' }}</td>
-                        <td class="px-4 py-3">{{ $lead->owner?->name ?: '—' }}</td>
-                        <td class="px-4 py-3 text-ink/60">{{ $lead->owner?->job_title ?: '—' }}</td>
-                        <td class="px-4 py-3">
-                            @php
-                                $cls = $lead->classification;
-                                $badge = match(true) {
-                                    in_array($cls, ['close', 'show', 'booking']) => 'bg-green-50 border-green-200 text-green-700',
-                                    in_array($cls, ['klld', 'missed']) => 'bg-red-50 border-red-200 text-red-600',
-                                    $cls === 'new' => 'bg-blue-50 border-blue-200 text-blue-700',
-                                    default => 'bg-gold-50 border-gold-200 text-gold-700',
-                                };
-                            @endphp
-                            <span class="text-xs border px-2 py-0.5 rounded-full {{ $badge }}">{{ $lead->classificationLabel() }}</span>
-                        </td>
+                        @if ($this->colVisible('code'))
+                            <td class="px-4 py-3 font-mono text-xs text-gold-700">{{ $lead->code ?: '—' }}</td>
+                        @endif
+                        @if ($this->colVisible('received_date'))
+                            <td class="px-4 py-3">{{ $lead->received_date->format('d/m/Y') }}</td>
+                        @endif
+                        @if ($this->colVisible('page'))
+                            <td class="px-4 py-3 text-ink/60">{{ $lead->page ?: '—' }}</td>
+                        @endif
+                        @if ($this->colVisible('name'))
+                            <td class="px-4 py-3 font-semibold text-gold-700">{{ $lead->name }}</td>
+                        @endif
+                        @if ($this->colVisible('phone'))
+                            <td class="px-4 py-3 font-mono">{{ $lead->phoneFor(auth()->user()) }}</td>
+                        @endif
+                        @if ($this->colVisible('camp'))
+                            <td class="px-4 py-3 text-ink/60">{{ $lead->camp ?: '—' }}</td>
+                        @endif
+                        @if ($this->colVisible('nguon'))
+                            @php $nguonVal = $lead->customValues->firstWhere('custom_field_id', 1)?->value; @endphp
+                            <td class="px-4 py-3">
+                                @if ($nguonVal)
+                                    <span class="text-xs bg-blue-50 border border-blue-200 px-2 py-0.5 rounded">{{ $nguonVal }}</span>
+                                @else — @endif
+                            </td>
+                        @endif
+                        @if ($this->colVisible('ad_source'))
+                            <td class="px-4 py-3">
+                                @if ($lead->ad_source)
+                                    <span class="text-xs bg-gold-50 border border-gold-200 px-2 py-0.5 rounded">{{ $lead->ad_source }}</span>
+                                @else — @endif
+                            </td>
+                        @endif
+                        @if ($this->colVisible('region'))
+                            <td class="px-4 py-3 text-ink/60">{{ $lead->region ?: '—' }}</td>
+                        @endif
+                        @if ($this->colVisible('owner'))
+                            <td class="px-4 py-3">{{ $lead->owner?->name ?: '—' }}</td>
+                        @endif
+                        @if ($this->colVisible('classification'))
+                            <td class="px-4 py-3">
+                                @php
+                                    $badge = match($lead->classification) {
+                                        'new'           => 'bg-gray-100 text-gray-700',
+                                        'lead'          => 'bg-blue-100 text-blue-800',
+                                        'follow'        => 'bg-cyan-100 text-cyan-800',
+                                        'net'           => 'bg-indigo-100 text-indigo-800',
+                                        'quan_tam'      => 'bg-yellow-100 text-yellow-800',
+                                        'tham_khao'     => 'bg-amber-100 text-amber-800',
+                                        'tim_hieu'      => 'bg-sky-100 text-sky-800',
+                                        'tai_chinh_yeu' => 'bg-rose-100 text-rose-700',
+                                        'goi_lai_sau'   => 'bg-slate-100 text-slate-700',
+                                        'booking'       => 'bg-orange-100 text-orange-800',
+                                        'show'          => 'bg-purple-100 text-purple-800',
+                                        'close'         => 'bg-green-100 text-green-800',
+                                        'klld'          => 'bg-red-100 text-red-700',
+                                        'missed'        => 'bg-red-100 text-red-700',
+                                        default         => 'bg-gray-100 text-gray-600',
+                                    };
+                                @endphp
+                                <span class="text-xs font-semibold px-2.5 py-1 rounded-full {{ $badge }}">{{ $lead->classificationLabel() }}</span>
+                            </td>
+                        @endif
                         @if ($canUpdate || $canDelete)
                             <td class="px-4 py-3 text-right" onclick="event.stopPropagation()">
                                 <div class="flex items-center justify-end gap-1.5">
@@ -423,7 +566,7 @@ new class extends Component
                         @endif
                     </tr>
                 @empty
-                    <tr><td colspan="14" class="px-4 py-10 text-center text-ink/40">Không có khách hàng nào trong phạm vi của bạn.</td></tr>
+                    <tr><td colspan="{{ 2 + count($visibleCols) + ($canUpdate || $canDelete ? 1 : 0) + ($canDelete ? 1 : 0) }}" class="px-4 py-10 text-center text-ink/40">Không có khách hàng nào trong phạm vi của bạn.</td></tr>
                 @endforelse
             </tbody>
         </table>

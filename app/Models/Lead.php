@@ -16,6 +16,11 @@ use Illuminate\Database\Eloquent\SoftDeletes;
     'pool_level', 'owner_id', 'receiver_id', 'org_unit_id',
     'facility_id', 'doctor_id', 'consultant_1_id', 'consultant_2_id', 'consultant_3_id',
     'assigned_at', 'last_care_at',
+    'birthday', 'address', 'medical_history', 'occupation',
+    'service_name',
+    'treatment_1', 'treatment_2', 'treatment_3', 'treatment_4',
+    'performing_doctor_id', 'quality_rating',
+    'potential_service',
 ])]
 class Lead extends Model
 {
@@ -49,6 +54,11 @@ class Lead extends Model
             'received_date' => 'date',
             'assigned_at' => 'datetime',
             'last_care_at' => 'datetime',
+            'birthday' => 'date',
+            'treatment_1' => 'date',
+            'treatment_2' => 'date',
+            'treatment_3' => 'date',
+            'treatment_4' => 'date',
         ];
     }
 
@@ -92,6 +102,11 @@ class Lead extends Model
         return $this->belongsTo(StaffMember::class, 'consultant_3_id');
     }
 
+    public function performingDoctor(): BelongsTo
+    {
+        return $this->belongsTo(StaffMember::class, 'performing_doctor_id');
+    }
+
     public function statusLogs(): HasMany
     {
         return $this->hasMany(LeadStatusLog::class)->orderByDesc('created_at');
@@ -115,6 +130,11 @@ class Lead extends Model
     public function contributions(): HasMany
     {
         return $this->hasMany(Contribution::class);
+    }
+
+    public function upsells(): HasMany
+    {
+        return $this->hasMany(LeadUpsell::class);
     }
 
     /**
