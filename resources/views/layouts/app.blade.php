@@ -10,6 +10,8 @@
             ['label' => 'Dịch vụ', 'route' => auth()->user()->hasPermission('service.manage') ? 'services.catalog' : null, 'match' => 'services.*'],
             ['label' => 'Thu tiền', 'route' => auth()->user()->hasPermission('payment.record') ? 'payments.index' : null, 'match' => 'payments.*'],
             ['label' => 'Báo cáo', 'route' => auth()->user()->hasAnyPermission(['report.view', 'report.view_all']) ? 'reports.index' : null, 'match' => 'reports.*'],
+            ['label' => 'Duyệt lead', 'route' => auth()->user()->hasPermission('lead.approve_source') ? 'leads.approvals' : null, 'match' => 'leads.approvals'],
+            ['label' => 'Quy tắc VH', 'route' => auth()->user()->hasPermission('ops.manage') ? 'ops.rules' : null, 'match' => 'ops.*'],
         ];
     @endphp
     <div class="min-h-screen flex flex-col" x-data="{ mobileMenu: false }">
@@ -62,7 +64,13 @@
                             <div class="font-semibold truncate">{{ auth()->user()->name }}</div>
                             <div class="text-xs text-ink/50 truncate">{{ auth()->user()->email }}</div>
                         </div>
-                        <a href="{{ route('settings.index') }}" class="block px-4 py-2 hover:bg-gold-50">Cài đặt</a>
+                        @php
+                            // Ẩn "Cài đặt" nếu user không có bất kỳ quyền quản trị nào
+                            $adminPerms = ['user.manage', 'role.manage', 'org.manage', 'field.manage', 'field.approve', 'rule.manage', 'service.manage', 'connection.manage', 'ops.manage', 'lead.import'];
+                        @endphp
+                        @if (auth()->user()->hasAnyPermission($adminPerms))
+                            <a href="{{ route('settings.index') }}" class="block px-4 py-2 hover:bg-gold-50">Cài đặt</a>
+                        @endif
                         <a href="{{ route('sessions.index') }}" class="block px-4 py-2 hover:bg-gold-50">Quản lý phiên đăng nhập</a>
                         @if (auth()->user()->hasPermission('connection.manage'))
                             <a href="{{ route('sources.index') }}" class="block px-4 py-2 hover:bg-gold-50">Kết nối nguồn lead</a>

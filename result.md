@@ -13,6 +13,213 @@
   - ...
 -->
 
+## Phase 6.6+ — Dọn duplicate org + gộp CM khu vực về CM sale ✅
+- **Ngày**: 2026-07-16
+- **Đã làm**:
+  - **Gộp 3 role vùng** (`CM Hà Nội / CM Đà Nẵng / CM HCM`) về role chung **`CM sale`**. Khu vực do assignment (phòng ban gắn) quyết định. Migrate 6 assignment sang CM sale, giữ nguyên org + scope. Thêm `lead.distribute_ctv` vào CM sale. Sửa 3 seeder để không tái sinh role vùng khi seed lại.
+  - **Dọn nhánh Marketing cũ** (id 6/7/8/9) — data trước Phase 6.6, các team này đã có bản real ở HN (id 20 Team Ms. Giang, id 21 Team Mr. Hợi). Xóa 4 org + 13 user demo `@sweetsica.com` (không tham chiếu lead nào). Xóa thêm id 19 "Team Hợi" rỗng.
+  - **Rename** id 10 `Telesales Marketing` → `Marketing` để ngang cấp BDM (id 11) dưới Cơ sở HN, đúng nghiệp vụ user chỉ.
+- **Cây org sạch còn** (nhìn theo path): Công ty > (Cơ sở HN > Marketing / BDM / Team Ms. Giang > (Team Booking + Team Sale) / Team Mr. Hợi > (Team Booking + Team Sale)) + (Cơ sở HCM > Team Ms. Ashley > (Team Booking + Team Sale)) + (Vận hành & Giám sát) + (Phòng Kinh doanh > Team Sale A/B) + (Phòng Marketing) + (Phòng Booking > Team trực page + Team booking).
+- **Ghi chú**: cụm "Phòng Kinh doanh / Marketing / Booking" ở cuối cây là data seed từ OrgAndRoleSeeder + Phase66FlowSeeder — có thể cần dọn sau khi user chốt cấu trúc chính thức.
+
+## Phase 6.6+ — Seed 4 role luồng 6 nguồn + booking_status + fix bug @php compile ✅
+- **Ngày**: 2026-07-16
+- **Bối cảnh**: user yêu cầu rà + test 6 luồng nguồn theo bảng: Team trực page (nhóm 1) / CM booking (nhóm 2-3) / Team booking (nhận số) / CM sale (chia sang sale) — hiện DB thiếu 4 role này.
+- **Đã làm**:
+  - **Migration mới**: `leads.booking_status` (enum `not_booked/booked/rescheduled`, default `not_booked`, có index). Là placeholder cho b_ước handoff booking→sale — Team booking đổi trạng thái khi khách đồng ý, CM sale nhìn theo trạng thái này để chia sang sale (UI nút "Đặt lịch booking" sẽ làm sau).
+  - **Model Lead**: 3 constant `BOOKING_*` + map `BOOKING_STATUSES` + cast + fillable.
+  - **Seeder mới `Phase66FlowSeeder`** (idempotent):
+    - Org units: `Phòng Booking > Team trực page + Team booking` (thêm dưới root Công ty).
+    - 4 role: `Team trực page`, `CM booking`, `Team booking`, `CM sale` — permission theo bảng nghiệp vụ.
+    - 5 user demo (pw `123456`): `page1@`, `cmbk@`, `book1@`, `book2@`, `cmsale@longevity.com.vn`.
+  - **🐛 Bug thật fix nhân dịp này**: form thêm lead `/leads/create` 500 — Blade compiler ở dự án này KHÔNG convert `@php ... @endphp` (cả block form và single-line inline `@php ... @endphp`) thành `<?php ... ?>`; chỉ `@endphp` được convert → biến sinh trong block không tồn tại lúc echo. Đã đổi 5 chỗ trong `⚡lead-form.blade.php` sang raw `<?php ... ?>`. Ngoài ra chuyển tính `svcTreeJson` từ @php trong view vào data return của component (sạch hơn). Chưa rõ vì sao Blade lỗi, có thể do phiên bản Livewire 4 + Laravel 13 override compile; tinker test `compileString` với @php lại chạy đúng — cần đào tiếp sau.
+- **Verify**:
+  - `Lead::allowedSourceGroupsFor` cho từng user demo trả đúng nhóm nguồn theo permission.
+  - Login `page1@` + navigate `/leads/create` → form load 200, dropdown "Nhóm nguồn" hiện: Marketing, Data lạnh, BDM, Bạn giới thiệu, Khách tự đến (không có CTV — đúng).
+- **Tài khoản demo mới** (pw `123456`):
+
+  | Email | Role | Org | Thấy source_group |
+  |---|---|---|---|
+  | page1@longevity.com.vn | Team trực page | Team trực page | marketing, data_cold, bdm, referral, walk_in |
+  | cmbk@longevity.com.vn | CM booking | Phòng Booking | marketing, data_cold, bdm, referral, walk_in |
+  | book1@longevity.com.vn | Team booking | Team booking | referral, walk_in |
+  | book2@longevity.com.vn | Team booking | Team booking | referral, walk_in |
+  | cmsale@longevity.com.vn | CM sale | Phòng Kinh doanh | marketing, data_cold, bdm, referral, walk_in |
+
+- **Test tay 6 luồng** (2026-07-16): tạo 6 lead thật (KH-021..026), 1 qua browser (KH-021 do page1 tạo), 5 qua tinker mô phỏng actor. **Kết quả**:
+
+  | Lead | Nhóm | pool | org | owner/recv | approval | Nghiệp vụ đúng? |
+  |---|---|---|---|---|---|---|
+  | KH-021 | marketing (page1) | common | null | recv=page1 | none | ⚠️ Nên vào **kho Phòng Booking** thay vì kho chung |
+  | KH-022 | data_cold (cmbk) | common | null | recv=cmbk | none | ⚠️ Nên vào kho Phòng Booking |
+  | KH-023 | bdm (cmbk) | common | null | recv=cmbk | none | ⚠️ Nên vào kho Phòng Booking |
+  | KH-024 | ctv (ttg CM HN) | common | null | recv=ttg | none | ⚠️ Nên gán về sale khu vực HN |
+  | KH-025 | walk_in (nvkd) | common | null | recv=nvkd | **pending** | ⚠️ Approval OK nhưng nên vào org CM cơ sở |
+  | KH-026 | referral (chọn sale nvkd) | **personal** | null | owner=nvkd | none | ✅ Đúng — vào kho cá nhân sale |
+
+- **Gap nghiệp vụ tìm được** (chưa có trong code, cần bàn):
+  - **Auto-route theo source_group**: hiện Livewire form chỉ gán `pool_level=common` cho mọi nguồn (trừ nhóm 4 chọn sale nhận). Cần thêm logic khi save:
+    - marketing/data_cold/bdm → `org_unit_id = Phòng Booking`, `pool_level=team` (vào kho booking để CM booking chia cho Team booking)
+    - ctv → `org_unit_id = Phòng Kinh doanh của khu vực CM đó`, `pool_level=team` (CM khu vực chia tay cho sale)
+    - walk_in → `org_unit_id = phòng của CM cơ sở người up`, `pool_level=team` (chờ CM cơ sở duyệt rồi chia)
+  - **User chốt (2026-07-16)**: kho booking KHÔNG phải theo chi nhánh mà theo **từng team sale** (VD Team Giang có team booking riêng, Team Hợi có team booking riêng). Cấu trúc org phải là: mỗi team sale gắn 1 team booking con hoặc sibling. Auto-route: khi Marketing/Data lạnh/BDM up lead → lead chảy về team booking của team sale mà người up thuộc về / hoặc do CM booking quyết định target team. Cần thiết kế chi tiết trước khi code.
+  - **User chốt (2026-07-16)**: chưa code auto-route — giữ nguyên, xử lý phase sau.
+- **Chưa làm / lưu ý**:
+  - Nghiệp vụ mismatch nhỏ: theo bảng, Team trực page CHỈ nên up Marketing (nhóm 1), CM booking mới up nhóm 2-3. Hiện `SOURCE_PERMISSIONS` gán chung `lead.distribute_team` cho 3 nhóm → cả 2 role thấy đủ 3. Nếu user muốn strict thì phải tách permission (VD `lead.source.marketing/data_cold/bdm`). Chưa đổi, hỏi user trước.
+  - Nút "Đặt lịch booking" + logic handoff booking→sale dựa trên `booking_status` chưa làm — cần thiết kế UI sau.
+
+## Phase 6.6 — Nhân sự đầy đủ HN + HCM (26 user) ✅ (mở rộng)
+- **Ngày**: 2026-07-16
+- **Đã làm**:
+  - **3 team con** dưới chi nhánh: `Team Ms. Giang` (team-giang) + `Team Mr. Hợi` (team-hoi-hn) — thuộc HN; `Team Ms. Ashley` (team-ashley) — thuộc HCM. Tạo qua `OrgUnit::createNode` idempotent.
+  - **`RealCmStaffSeeder` viết lại** hỗ trợ:
+    - **Migrate assignment**: nếu user đã có assignment role đó ở org cũ, `update` sang org đúng thay vì tạo mới → TL Đức + Quỳn tự migrate từ chi nhánh về team con.
+    - Set `job_title` cho từng người (Clinic Manager / DM / Team Leader / SHC / HC / Trợ lý kinh doanh).
+  - **26 user thật** (mật khẩu `123456`):
+    - **HN Team Ms. Giang** (7): CM Giang (ttg) + 6 chuyên viên (thk/nhg/nmp/nta/ntn/cla)
+    - **HN Team Mr. Hợi** (7): CM Hợi (tvh) — assignment ở branch-hn (scope custom = HN) + TL Đức (nhd, scope=team) + 5 chuyên viên (ptt/ntt/pta/ntm/nma)
+    - **HCM Team Ms. Ashley** (12): DM Ngân (tnkn) + TL Quỳn (ptkq) + 3 CM (tbt/nmt/hbtl) + 6 chuyên viên (tyn/nhn/hmm/ntt2/nkc/lpd)
+    - **Công ty** (1): Trợ lý Tự (lpt) — scope custom = toàn công ty
+  - **Xử lý conflict email**: Nguyễn Thị Thúy (HN) → `ntt@`, Nguyễn Thị Thanh (HCM) → `ntt2@` (initials trùng nên đánh số).
+  - **Xóa 2 demo cũ** (`cmhn@`, `cmhcm@`), giữ `cmdn@longevity.com.vn` cho Đà Nẵng.
+- **Test suite**: **115/116 pass** (không đổi).
+- **Ghi chú**:
+  - CM Tạ Văn Hợi + CM Trần Thị Thu Giang assignment tại **chi nhánh** với scope custom = HN (thấy toàn HN). Muốn CM chỉ thấy team của mình thì gán lại tại team con — chưa cần thiết vì user vẫn chưa yêu cầu phân biệt.
+  - Convention email: initials + bỏ "Thị" khi tên 4 âm tiết, conflict → suffix số. Nếu mày muốn đổi convention khác thì bảo, tao đổi tất trong seeder + DB.
+
+## Phase 6.6 — Nhân sự thật HN + HCM (9 user) ✅
+- **Ngày**: 2026-07-16
+- **Bối cảnh**: user cung cấp danh sách nhân sự thật 2 chi nhánh (HN + HCM), yêu cầu thay 2 demo user (`cmhn@`, `cmhcm@`) bằng CM/DM/TL/Trợ lý thật.
+- **3 role mới trong OrgAndRoleSeeder**:
+  - `Team Leader`: quyền như CM nhưng scope team — permissions: `lead.view/view_phone/create/update/distribute/distribute_team/recall/approve_source` + `report.view`.
+  - `Trợ lý kinh doanh`: view-only — chỉ `lead.view` + `report.view`. Scope custom = toàn công ty.
+  - `DM HCM`: cao nhất khu vực HCM — 20 permission (full CM + user.manage + rule.manage + report.view_all + field.approve...).
+- **Seeder mới `RealCmStaffSeeder`** (idempotent): tạo 9 user thật + gán role + scope tương ứng. Xóa 2 demo `cmhn@` / `cmhcm@`. Đăng ký vào `DatabaseSeeder`.
+- **9 tài khoản CM/DM/TL/Trợ lý** (password `123456`):
+
+  | Chi nhánh | Email | Họ tên | Role |
+  |---|---|---|---|
+  | HN | ttg@longevity.com.vn | Trần Thị Thu Giang | CM Hà Nội |
+  | HN | tvh@longevity.com.vn | Tạ Văn Hợi | CM Hà Nội |
+  | HN | nhd@longevity.com.vn | Nguyễn Hoành Đức | Team Leader |
+  | HCM | tnkn@longevity.com.vn | Trần Nguyễn Kim Ngân | DM HCM |
+  | HCM | ptkq@longevity.com.vn | Phan Trần Khánh Quỳn | Team Leader |
+  | HCM | tbt@longevity.com.vn | Trần Thị Bích Trâm | CM HCM |
+  | HCM | nmt@longevity.com.vn | Nguyễn Thị Minh Thư | CM HCM |
+  | HCM | hbtl@longevity.com.vn | Huỳnh Bùi Thanh Lan | CM HCM |
+  | Công ty | lpt@longevity.com.vn | Lê Thị Phương Tự | Trợ lý kinh doanh |
+
+- **Đà Nẵng giữ demo** `cmdn@longevity.com.vn` (chưa có nhân sự thật).
+- **Test suite**: **115/116 pass** (không đổi).
+- **Chưa làm** (theo yêu cầu user): các chuyên viên tư vấn (SHC/HC, 17 người) — user tự thêm qua UI Quản lý nhân viên.
+
+## Phase 6.6 — Dọn seeder + system_settings + CM demo users ✅
+- **Ngày**: 2026-07-16
+- **Đã làm**:
+  - **Chuẩn hóa email** — đổi toàn bộ `@sweetsica.com` → `@longevity.com.vn` (khớp với các seeder khác đã dùng đuôi này). 3 seeder + 3 record trong DB.
+  - **Role `Manager`**: gán 9 permission: `lead.view`, `lead.create`, `lead.update`, `lead.view_phone`, `lead.distribute`, `lead.distribute_team`, `lead.approve_source`, `lead.recall`, `report.view` (đủ để CM team vận hành Phase 6.6).
+  - **Role `Sale`**: gán `lead.view`, `lead.create`, `lead.update`, `report.view` (đủ để sale nhìn + tạo lead trong scope).
+  - **`system_settings` mặc định**: `default_recall_after_days=7`, `default_escalate_after_days=3`, `default_allow_permanent=1`. `RecallPolicyResolver` không còn trả null cho số ngày.
+  - **3 CM user demo** (password `123456`, scope self ở node gốc "Công ty"): `cmhn@longevity.com.vn` / `cmdn@longevity.com.vn` / `cmhcm@longevity.com.vn`.
+- **Verify DB**: 6 user + 5 role có permission đúng + 3 system_settings có giá trị.
+- **Test suite**: **115/116 pass** (không đổi so với lần trước — chỉ 1 legacy fail đã biết).
+- **Tài khoản demo hiện tại**:
+  - Admin: `admin@longevity.com.vn` / `admin@123` (mật khẩu cũ giữ nguyên khi update email).
+  - Sale: `nvkd@longevity.com.vn`, `nvmkt@longevity.com.vn` / `123456`.
+  - CM khu vực: `cmhn@`, `cmdn@`, `cmhcm@longevity.com.vn` / `123456`.
+
+## Phase 6.6.c + d — Modal recall/permanent + màn duyệt + màn Quy tắc VH + test 6 luồng ✅
+- **Ngày**: 2026-07-16
+- **Đã làm**:
+  - **6.6.c1 — Modal chia số**: `⚡lead-pools.blade.php` thêm 2 property `$assignRecallMode` (default/custom/permanent) + `$assignRecallDays`. UI modal assign hiện dropdown 3 option **chỉ khi user có `lead.recall`**. Sau `manualAssign`: nếu permanent (và policy cho phép) → `is_permanent_assignment=true`; custom → `recall_at = now + N ngày`; default → dùng `recall_after_days` từ `RecallPolicyResolver::for($org)`.
+  - **6.6.c2 — Màn duyệt "Khách tự đến"** (`/leads/approvals`, permission `lead.approve_source`):
+    - Livewire component `⚡lead-approvals.blade.php`: bảng lead `source_group=walk_in` + `approval_status=pending` (lọc theo scope). Actions: **Duyệt** (set approved + log `ACTION_APPROVE`) / **Từ chối** kèm lý do (bắt buộc nhập, log `ACTION_REJECT` với `reason`).
+    - Nav item "Duyệt lead" theo permission `lead.approve_source`.
+  - **6.6.c3 — Màn "Quy tắc vận hành"** (`/ops/rules`, permission `ops.manage`):
+    - Livewire component `⚡ops-rules.blade.php` — 3 tab:
+      1. **Phân bổ (giám sát)**: bảng 4 permission (`distribute_team`/`distribute_ctv`/`approve_source`/`recall`) kèm danh sách user + role đang có.
+      2. **Thời gian recall/escalate**: bảng cây org, mỗi node có cột "Hiệu lực (resolved)" hiển thị giá trị đang áp + nguồn (`org:N` hoặc `system`) — tường minh xem cấp nào đang override. Sửa/xóa cấu hình per node.
+      3. **Overdue booking**: top 100 lead có `overdue_marked_at`.
+    - Nav item "Quy tắc VH" theo permission `ops.manage`.
+  - **6.6.d — Feature test 6 luồng** (`Phase66FlowsTest`, 6 test):
+    - Admin thấy đủ 6 nhóm nguồn.
+    - NV thường (không permission) chỉ thấy 2 nhóm (referral + walk_in).
+    - CM khu vực (có `lead.distribute_ctv`) thấy thêm nhóm CTV.
+    - Route `/leads/approvals` chặn user thiếu `lead.approve_source` (403), admin OK (200).
+    - Route `/ops/rules` chặn user thiếu `ops.manage`, admin OK.
+    - Duyệt lead walk_in qua Livewire → `approval_status=approved` + log `ACTION_APPROVE`.
+- **Kết quả test suite**: **115/116 pass** (Phase 6.6 tổng cộng thêm 19 test mới, tất cả pass).
+- **⚠️ Vẫn còn 1 test legacy fail** — `LeadScopeTest::test_team_scope_sees_all_leads_in_subtree` (đã verify từ 6.6.a: không phải regression, có thể xóa/sửa test sau).
+- **Ghi chú**:
+  - Modal chia số: giá trị "default" đọc từ `RecallPolicyResolver::for($lead->orgUnit)` — nếu chưa cấu hình node nào thì lead vẫn assign OK, chỉ không có `recall_at` (== không tự thu hồi).
+  - "Chia vĩnh viễn" bị ẩn nếu policy áp dụng có `allow_permanent_assignment=false` — nhưng UI hiện đang hiện luôn 3 option; validation ở backend chặn set permanent khi policy cấm. **Nice-to-have sau**: ẩn option "permanent" nếu policy cấm (cần fetch policy khi mở modal — hiện đang lười).
+  - Màn Quy tắc VH có "Nguồn: system" khi chưa ai set — vẫn hoạt động bình thường (dùng default null → không auto-thu hồi).
+- **Kết thúc Phase 6.6** ✅. Toàn bộ luồng 6 nguồn + recall/escalate + màn ops đã có backend + UI + test.
+
+## Phase 6.6.b — Form lead + jobs vòng đời ✅
+- **Ngày**: 2026-07-16
+- **Đã làm**:
+  - `Lead` model: thêm 6 constant `SOURCE_*` + map `SOURCE_GROUPS` (nhãn) + `SOURCE_PERMISSIONS` (map nhóm → permission cần có). Thêm 4 constant `APPROVAL_*`. Casts cho các cột mới. Helper `Lead::allowedSourceGroupsFor(User)` lọc theo permission người dùng.
+  - Form `⚡lead-form.blade.php`: property `$sourceGroup`, dropdown "Nhóm nguồn" cạnh "Ngày" (hint xanh khi chọn Referral/Walk-in), validate required + in-list theo `allowedSourceGroupsFor`, referral bắt buộc có personId, walk_in tự set `approval_status = pending`.
+  - `LeadDistributionLog`: thêm cột `reason` vào fillable + 4 constant action mới (`ESCALATE`/`APPROVE`/`REJECT`/`MARK_OVERDUE`).
+  - 3 command mới + schedule (`routes/console.php`):
+    - `leads:process-recalls` (hourly): thu hồi lead có `recall_at <= now` về pool team, bỏ qua `is_permanent_assignment = true`.
+    - `leads:process-escalates` (daily 02:00): quét pool team, so với `RecallPolicyResolver::escalate_after_days`, quá hạn → chuyển `org_unit_id` lên `parent_id` + log escalate. Skip node gốc.
+    - `leads:mark-overdue-booking --days=7` (daily 02:15): lead nhóm marketing/data_cold/bdm ở kho common quá 7 ngày → set `overdue_marked_at` + log (không xóa).
+  - `Phase66JobsTest` — **5 test**: recall hết hạn / bỏ qua chia vĩnh viễn / escalate lên cha khi quá hạn / bỏ qua khi chưa quá / mark-overdue chỉ nhóm 1-2-3.
+- **Kết quả test suite**: **109/110 pass** (thêm 5 test mới của Phase 6.6.b, tất cả pass).
+- **⚠️ Vẫn còn 1 test legacy fail** — `LeadScopeTest::test_team_scope_sees_all_leads_in_subtree` (đã verify với git stash ở 6.6.a): không phải regression.
+- **Ghi chú**:
+  - Nhóm nguồn CTV trong dropdown chỉ hiện với user có `lead.distribute_ctv` (mặc định là 3 role `CM Hà Nội/Đà Nẵng/HCM`). Admin có mọi quyền nên thấy đủ 6 nhóm.
+  - Nhóm 1-3 (Marketing/Data lạnh/BDM) yêu cầu `lead.distribute_team` — chưa gán role nào ngoài admin, cần assign khi có team booking thực tế.
+- **Chưa làm** (đẩy sang 6.6.c/d):
+  - Màn duyệt lead "Khách tự đến" (approval_status = pending) cho CM cơ sở.
+  - Form chia lead thêm ô "Thu hồi sau XX ngày / Chia vĩnh viễn" (khi role có `lead.recall`).
+  - Màn "Quy tắc vận hành" (permission `ops.manage`) — 3 tab.
+
+## Phase 6.6.a — Data & permission (nền) ✅
+- **Ngày hoàn thành**: 2026-07-16
+- **Đã làm**:
+  - Migration `2026_07_15_100000_phase_6_6_lead_source_group_and_recall_policies.php`:
+    - `leads` thêm 7 cột: `source_group`, `approval_status`, `approval_by`, `approved_at`, `overdue_marked_at`, `recall_at`, `is_permanent_assignment` + 3 index.
+    - Tạo bảng `recall_policies` (unique per org_unit) + `system_settings` (key-value).
+    - `lead_distribution_logs` thêm cột `reason`.
+  - `PermissionSeeder`: thêm 4 permission mới — `lead.distribute_team`, `lead.distribute_ctv`, `lead.approve_source`, `ops.manage`. Giữ `lead.pull_pool` (user muốn giữ, đổi mô tả "legacy").
+  - `OrgAndRoleSeeder`: seed 3 role hệ thống `CM Hà Nội` / `CM Đà Nẵng` / `CM HCM`, gán `lead.distribute_ctv`.
+  - `RecallPolicyResolver` (app/Services): resolve theo path materialized, **ancestor gần root nhất thắng** (cha override con). Fallback null → system_settings → mặc định `allow_permanent = true`.
+  - `DemoDataSeeder`: reset 5 lead demo với 5 `source_group` khác nhau (marketing/data_cold/bdm/referral/walk_in), lead walk_in để `approval_status = pending` minh họa luồng duyệt.
+  - Test `RecallPolicyResolverTest`: **8 test** cover cascade (system default / team riêng / phòng override team / ancestor cao nhất thắng / sibling không leak / null fallback / root không policy / cây sâu 4 cấp).
+- **Kết quả test suite**: **104/105 pass** (thêm 8 test mới của tao, tất cả pass).
+- **⚠️ 1 test cũ vẫn fail — KHÔNG do Phase 6.6**: `LeadScopeTest::test_team_scope_sees_all_leads_in_subtree`. Verify bằng `git stash + test` → fail cả khi rollback toàn bộ thay đổi Phase 6.6. Nguyên nhân: assertion cũ (`assertNotContains($noOrg->id, $visible)`) mâu thuẫn với logic hiện tại của `Lead::scopeVisibleTo` (line 176) — user có scope org thấy được kho chung. Test này đã broken từ trước, cần bàn với user: (a) sửa test cho khớp logic mới hoặc (b) đảo logic scope.
+- **Ghi chú**:
+  - Ancestor resolve dùng path materialized `/1/4/9/` — cực nhanh, không đệ quy.
+  - `system_settings` để trống — sẽ fill giá trị mặc định ở phase 6.6.c (màn ops) qua UI của admin. Nếu chưa fill: `allow_permanent = true`, các số ngày = null (nghĩa là "không có mặc định" → CM phải nhập tay ở form chia).
+- **Chưa làm (chuyển sang 6.6.b/c/d)**: form chia lead với ô "Thu hồi sau XX ngày", 6 luồng nghiệp vụ, màn Quy tắc vận hành, job scheduler recall/escalate/mark-overdue.
+
+## Chốt thiết kế Phase 6.6 — Luồng vận hành 6 nguồn + recall/escalate 🔷 (design only, chưa code)
+- **Ngày**: 2026-07-15
+- **Bối cảnh**: user đưa sơ đồ luồng 6 nhóm nguồn (bảng + flowchart). Tao review, đặt 4-5 câu hỏi bóc tách, cuối cùng chốt design đầy đủ trước khi động code (đúng CLAUDE.md).
+- **Chốt (chi tiết ở scope.md 6.3 + 7.6, ERD.md B2-B3, plan.md Phase 6.6)**:
+  - **6 nhóm nguồn**: Marketing / Data lạnh / BDM / Bạn giới thiệu / CTV / Khách tự đến — mỗi nhóm có `source_group` riêng, quyết định luồng đi (kho booking / kho CM cơ sở / thẳng vào sale).
+  - **Permission mới**: `lead.distribute_team`, `lead.distribute_ctv`, `lead.recall`, `lead.approve_source`, `ops.manage`. Deprecate `lead.pull_pool` (không xóa để không gãy dữ liệu).
+  - **Role hệ thống mới**: `CM Hà Nội` / `CM Đà Nẵng` / `CM HCM` — user tự thêm tỉnh sau.
+  - **Recall 2 tầng**: CM chia đặt mốc "Thu hồi sau XX ngày" hoặc "Chia vĩnh viễn" (admin bypass được). Hết hạn → về pool team CM. Quá `escalate_after_days` → lên kho CM cấp cha.
+  - **Cấu hình thời gian**: bảng mới `recall_policies` per org_unit. **Phòng cha override toàn bộ team con** (user chọn cách A, chặt chẽ theo luồng quản lý).
+  - **Bỏ hoàn toàn NV tự kéo lead** khỏi kho phòng: chỉ user có `lead.distribute_team` mới thấy kho team.
+  - **Trang mới "Quy tắc vận hành"** (permission `ops.manage`) 3 tab: giám sát phân bổ / cấu hình thời gian / danh sách overdue booking.
+- **Q&A gạch đầu dòng đã chốt với user** (giữ để tránh quên context):
+  - Nhánh "Không đồng ý" ở kho booking → ở lại kho booking, đánh dấu overdue, không auto-delete.
+  - Cứng tên user "HN Giang / ĐN Linda / HCM Jenny" → **bỏ**, chuyển thành role + permission.
+  - Nhóm 4 (Bạn giới thiệu): người up **tự chọn sale**, không duyệt (mọi cấp).
+  - Nhóm 6 (Khách tự đến): CM cơ sở duyệt; nhân viên nào cũng up được (kể cả CTV).
+  - Thời gian escalate: **tách riêng** với thời gian hoàn số (2 tham số khác nhau).
+  - Thu hồi số → về pool team → CM team duyệt → quá hạn escalate lên CM khu vực.
+- **Breaking changes**:
+  - Lead cũ (~130 lead demo hiện có) không có `source_group` — plan backfill: mặc định `marketing` cho lead từ import/webhook, `referral` cho lead nhập tay không nguồn ads.
+  - `sla_policies` (Phase 4) giữ nguyên — khác khái niệm với `recall_policies` (SLA = chăm sóc quá X giờ; recall_policies = thời gian sở hữu do CM đặt).
+  - UI Màn 12 (kho lead) mất nút "Kéo về tôi" → cần cập nhật hướng dẫn user.
+- **Trạng thái**: chỉ update tài liệu, chưa code. Task list ở `plan.md` Phase 6.6 chia làm 4 nhóm (data/permission → nghiệp vụ → màn ops → test). Tao đề xuất bắt đầu từ **6.6.a (data & permission)** vì các phần sau phụ thuộc vào migration + permission mới.
+
 ## Import chính rule-based (template + mặc định + trường tùy biến) ✅ (bổ sung, xen Phase 7)
 - **Ngày**: 2026-07-06
 - **Bối cảnh**: sau khi làm khu demo rule-based, user chốt nâng **màn import chính** lên tương tự (thay vì 2 luồng song song). Scope: template dùng chung toàn công ty + giá trị mặc định + map cả trường tùy biến; giữ nguyên pipeline `raw_leads` → `ProcessRawLead` (async, dedup, sinh mã, chia số).

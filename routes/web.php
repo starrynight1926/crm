@@ -43,8 +43,12 @@ Route::middleware('auth')->group(function () {
         Route::view('/create', 'leads.create')->middleware('permission:lead.create')->name('leads.create');
         Route::view('/import', 'leads.import')->middleware('permission:lead.import')->name('leads.import');
         Route::view('/failed', 'leads.failed')->middleware('permission:lead.import')->name('leads.failed');
+        Route::view('/approvals', 'leads.approvals')->middleware('permission:lead.approve_source')->name('leads.approvals');
         Route::get('/{lead}', fn (\App\Models\Lead $lead) => view('leads.show', ['lead' => $lead]))->name('leads.show');
         Route::get('/{lead}/edit', fn (\App\Models\Lead $lead) => view('leads.edit', ['lead' => $lead]))
             ->middleware('permission:lead.update')->name('leads.edit');
     });
+
+    // Phase 6.6 — Quy tắc vận hành (chỉ admin hệ thống)
+    Route::view('/ops/rules', 'ops.rules')->middleware('permission:ops.manage')->name('ops.rules');
 });

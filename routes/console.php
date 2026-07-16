@@ -11,6 +11,11 @@ Artisan::command('inspire', function () {
 // Thu hồi lead quá SLA (chỉ tác dụng khi có policy mode=auto)
 Schedule::command('leads:recall-overdue')->everyTenMinutes();
 
+// Phase 6.6 — 3 job vòng đời lead
+Schedule::command('leads:process-recalls')->hourly();
+Schedule::command('leads:process-escalates')->dailyAt('02:00');
+Schedule::command('leads:mark-overdue-booking')->dailyAt('02:15');
+
 // Aggregate hôm nay mỗi 2 phút (độ tươi dashboard 1–3 phút); chốt cứng hôm qua sau nửa đêm
 Schedule::command('stats:aggregate')->everyTwoMinutes();
 Schedule::command('stats:aggregate', ['--from' => now()->subDay()->toDateString()])->dailyAt('00:30');

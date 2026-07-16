@@ -81,6 +81,12 @@ new class extends Component
 
     public string $classification = 'new';
 
+    /** Trạng thái đặt lịch booking (Chưa đặt / Đã đặt / Hẹn lại). */
+    public string $bookingStatus = 'not_booked';
+
+    /** Phase 6.6 — 1 trong 6 nhóm nguồn (Marketing / Data lạnh / BDM / Bạn giới thiệu / CTV / Khách tự đến). */
+    public string $sourceGroup = '';
+
     public ?int $facilityId = null;
     public ?int $doctorId = null;
     public ?int $consultant1Id = null;
@@ -126,6 +132,8 @@ new class extends Component
         $this->status_2 = $lead->status_2 ?? '';
         $this->note = $lead->note ?? '';
         $this->classification = $lead->classification;
+        $this->bookingStatus = $lead->booking_status ?? 'not_booked';
+        $this->sourceGroup = $lead->source_group ?? '';
         $this->facilityId = $lead->facility_id;
         $this->doctorId = $lead->doctor_id;
         $this->consultant1Id = $lead->consultant_1_id;
@@ -326,11 +334,14 @@ new class extends Component
     {
         $this->duplicateLeadId = null;
 
+        $allowedSources = Lead::allowedSourceGroupsFor(auth()->user());
         $this->validate([
             'name' => 'required|string|max:150',
             'phone' => 'required|string',
             'received_date' => 'required|date',
             'classification' => 'required|in:' . implode(',', array_keys(Lead::CLASSIFICATIONS)),
+            'bookingStatus' => 'required|in:' . implode(',', array_keys(Lead::BOOKING_STATUSES)),
+            'sourceGroup' => 'required|in:' . implode(',', array_keys($allowedSources)),
             'link' => 'nullable|string|max:500',
             'birthday' => 'nullable|date',
             'address' => 'nullable|string|max:500',
@@ -346,7 +357,13 @@ new class extends Component
         ], [
             'upsellRows.*.service_id.required' => 'Chọn dịch vụ cho dòng upsell.',
             'upsellRows.*.amount.required' => 'Nhập số tiền cho dòng upsell.',
-        ], ['name' => 'tên khách hàng', 'phone' => 'SĐT', 'received_date' => 'ngày']);
+        ], ['name' => 'tên khách hàng', 'phone' => 'SĐT', 'received_date' => 'ngày', 'sourceGroup' => 'nhóm nguồn']);
+
+        // Bạn giới thiệu bắt buộc phải chọn sale nhận ngay (không qua duyệt).
+        if ($this->sourceGroup === Lead::SOURCE_REFERRAL && ! $this->personId) {
+            $this->addError('personId', 'Nguồn "Bạn giới thiệu": bắt buộc chọn sale nhận.');
+            return;
+        }
 
         if ($this->personId && ! $this->assignableUserIds()->contains($this->personId)) {
             $this->addError('personId', 'Không thể chia cho nhân sự này.');
@@ -392,6 +409,7 @@ new class extends Component
             'status_2' => $this->status_2 ?: null,
             'note' => $this->note ?: null,
             'classification' => $this->classification,
+            'booking_status' => $this->bookingStatus,
             'facility_id' => $this->facilityId ?: null,
             'doctor_id' => $this->doctorId ?: null,
             'consultant_1_id' => $this->consultant1Id ?: null,
@@ -410,6 +428,8 @@ new class extends Component
             'performing_doctor_id' => $this->performingDoctorId ?: null,
             'quality_rating' => $this->quality_rating ?: null,
             'potential_service' => $this->potential_service ?: null,
+            'source_group' => $this->sourceGroup,
+            'approval_status' => $this->sourceGroup === Lead::SOURCE_WALK_IN ? Lead::APPROVAL_PENDING : Lead::APPROVAL_NONE,
         ];
 
         if ($this->lead) {
@@ -457,6 +477,29 @@ new class extends Component
             $attributes['last_care_at'] = now();
         }
 
+        // Handoff Booking↔Sale theo booking_status:
+        // - Booking→Sale khi đổi sang "Đã đặt" (từ trạng thái khác).
+        // - Sale→Booking khi đổi ngược sang "Chưa đặt". "Hẹn lại" giữ ở Team Sale (còn hiệu lực).
+        if ($lead->booking_status !== 'booked' && $this->bookingStatus === 'booked') {
+            $saleOrgId = $this->siblingByName($lead->org_unit_id, 'Team Booking', 'Team Sale');
+            if ($saleOrgId) {
+                $attributes['org_unit_id'] = $saleOrgId;
+                $attributes['pool_level'] = Lead::POOL_TEAM;
+                $attributes['owner_id'] = null;
+                $attributes['assigned_at'] = null;
+                LeadStatusLog::record($lead, 'handoff', 'booking', 'sale', $user->id);
+            }
+        } elseif ($lead->booking_status === 'booked' && $this->bookingStatus === 'not_booked') {
+            $bookingOrgId = $this->siblingByName($lead->org_unit_id, 'Team Sale', 'Team Booking');
+            if ($bookingOrgId) {
+                $attributes['org_unit_id'] = $bookingOrgId;
+                $attributes['pool_level'] = Lead::POOL_TEAM;
+                $attributes['owner_id'] = null;
+                $attributes['assigned_at'] = null;
+                LeadStatusLog::record($lead, 'handoff', 'sale', 'booking', $user->id);
+            }
+        }
+
         $lead->update($attributes);
         $this->syncCustomValues($lead, $cleanCustom);
         $this->syncUpsells($lead);
@@ -466,6 +509,25 @@ new class extends Component
 
         session()->flash('status', 'Đã cập nhật thông tin khách hàng.');
         $this->redirectRoute('leads.show', $lead);
+    }
+
+    /**
+     * Tìm sibling có $targetName của node có $fromName cùng cha.
+     * VD (23, 'Team Booking', 'Team Sale') → id của Team Sale cùng cha team-giang.
+     */
+    private function siblingByName(?int $fromOrgId, string $fromName, string $targetName): ?int
+    {
+        if (! $fromOrgId) {
+            return null;
+        }
+        $node = \App\Models\OrgUnit::find($fromOrgId);
+        if (! $node || $node->name !== $fromName || ! $node->parent_id) {
+            return null;
+        }
+
+        return \App\Models\OrgUnit::where('parent_id', $node->parent_id)
+            ->where('name', $targetName)
+            ->value('id');
     }
 
     /** Thuộc tính owner/org/pool theo đích chia; $existing để giữ assigned_at khi owner không đổi. */
@@ -549,10 +611,25 @@ new class extends Component
             'facilities' => $facilities,
             'staffTree' => $staffTree,
             'allStaff' => $allStaff,
-            'serviceTree' => Service::whereNull('parent_id')->where('active', true)
+            'serviceTree' => $serviceTree = Service::whereNull('parent_id')->where('active', true)
                 ->with(['children' => fn ($q) => $q->where('active', true)->orderBy('name')
                     ->with(['children' => fn ($q2) => $q2->where('active', true)->orderBy('name')])])
                 ->orderBy('name')->get(),
+            'svcTreeJson' => $serviceTree->map(function ($cat) {
+                return [
+                    'id' => $cat->id, 'name' => $cat->name, 'code' => $cat->code, 'is_cat' => true,
+                    'children' => $cat->children->map(function ($child) {
+                        $sub = $child->children;
+                        if ($sub->isNotEmpty()) {
+                            return [
+                                'id' => $child->id, 'name' => $child->name, 'code' => $child->code, 'is_cat' => true,
+                                'children' => $sub->map(fn ($s) => ['id' => $s->id, 'name' => $s->name, 'code' => $s->code, 'is_cat' => false, 'children' => []])->values(),
+                            ];
+                        }
+                        return ['id' => $child->id, 'name' => $child->name, 'code' => $child->code, 'is_cat' => false, 'children' => []];
+                    })->values(),
+                ];
+            })->values()->toJson(),
             'assignedConsultants' => $assignedConsultants,
         ];
     }
@@ -560,7 +637,7 @@ new class extends Component
 ?>
 
 <div x-data="{ extraConsultants: {{ $consultant3Id ? 2 : ($consultant2Id ? 1 : 0) }} }">
-    @php $canDistribute = auth()->user()->hasPermission('lead.distribute'); @endphp
+<?php $canDistribute = auth()->user()->hasPermission('lead.distribute'); ?>
     <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
         <div>
             <h1 class="text-3xl font-bold mb-1">{{ $lead ? 'Cập nhật Khách Hàng' : 'Thêm Mới Khách Hàng' }}</h1>
@@ -605,9 +682,28 @@ new class extends Component
                             @error('received_date')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
                         </div>
                         <div>
+                            <label class="block text-sm font-medium mb-1.5">Nhóm nguồn <span class="text-red-500">*</span></label>
+                            @php($_allowedSources = \App\Models\Lead::allowedSourceGroupsFor(auth()->user()))
+                            <select wire:model.live="sourceGroup" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-gold-500">
+                                <option value="">— Chọn nhóm nguồn —</option>
+                                @foreach ($_allowedSources as $key => $label)
+                                    <option value="{{ $key }}">{{ $label }}</option>
+                                @endforeach
+                            </select>
+                            @error('sourceGroup')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
+                            @if ($sourceGroup === \App\Models\Lead::SOURCE_REFERRAL)
+                                <p class="text-xs text-amber-700 mt-1">Chọn sale nhận ở khối "Chia cho" bên dưới (bắt buộc).</p>
+                            @elseif ($sourceGroup === \App\Models\Lead::SOURCE_WALK_IN)
+                                <p class="text-xs text-amber-700 mt-1">Lead sẽ ở trạng thái "chờ CM cơ sở duyệt".</p>
+                            @endif
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
                             <label class="block text-sm font-medium mb-1.5">PAGE</label>
                             <input type="text" wire:model="page" placeholder="Tên fanpage" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
                         </div>
+                        <div></div>
                     </div>
                     <div class="grid grid-cols-2 gap-4">
                         <div>
@@ -665,23 +761,6 @@ new class extends Component
             </div>
 
             {{-- DV tiềm năng + UPSELL --}}
-            @php
-                $svcTreeJson = $serviceTree->map(function ($cat) {
-                    return [
-                        'id' => $cat->id, 'name' => $cat->name, 'code' => $cat->code, 'is_cat' => true,
-                        'children' => $cat->children->map(function ($child) {
-                            $sub = $child->children;
-                            if ($sub->isNotEmpty()) {
-                                return [
-                                    'id' => $child->id, 'name' => $child->name, 'code' => $child->code, 'is_cat' => true,
-                                    'children' => $sub->map(fn ($s) => ['id' => $s->id, 'name' => $s->name, 'code' => $s->code, 'is_cat' => false, 'children' => []])->values(),
-                                ];
-                            }
-                            return ['id' => $child->id, 'name' => $child->name, 'code' => $child->code, 'is_cat' => false, 'children' => []];
-                        })->values(),
-                    ];
-                })->values()->toJson();
-            @endphp
             <div class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
                 <h2 class="font-bold text-gold-700 mb-5 flex items-center gap-2">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18L9 11.25l4.306 4.307a11.95 11.95 0 015.814-5.519l2.74-1.22m0 0l-5.94-2.281m5.94 2.28l-2.28 5.941"/></svg>
@@ -949,10 +1028,10 @@ new class extends Component
         </div>
 
         {{-- CỘT PHẢI --}}
+<?php $staffTreeJson = json_encode($staffTree, JSON_UNESCAPED_UNICODE); ?>
+        <script>window.__staffTree = {!! $staffTreeJson !!};</script>
         <div class="space-y-6">
             {{-- Cơ sở & Nhân sự --}}
-            @php $staffTreeJson = json_encode($staffTree, JSON_UNESCAPED_UNICODE); @endphp
-            <script>window.__staffTree = {!! $staffTreeJson !!};</script>
             <div class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
                 <h2 class="font-bold text-gold-700 mb-5 flex items-center gap-2">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z"/></svg>
@@ -1203,13 +1282,24 @@ new class extends Component
                         <label class="block text-sm font-medium mb-1.5">Ghi nhận tình trạng lần 2</label>
                         <input type="text" wire:model="status_2" placeholder="VD: Đã tư vấn" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
                     </div>
-                    <div>
-                        <label class="block text-sm font-medium mb-1.5">PHÂN LOẠI KẾT QUẢ</label>
-                        <select wire:model="classification" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-gold-500">
-                            @foreach (\App\Models\Lead::CLASSIFICATIONS as $key => $label)
-                                <option value="{{ $key }}">{{ $label }}</option>
-                            @endforeach
-                        </select>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium mb-1.5">PHÂN LOẠI KẾT QUẢ</label>
+                            <select wire:model="classification" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-gold-500">
+                                @foreach (\App\Models\Lead::CLASSIFICATIONS as $key => $label)
+                                    <option value="{{ $key }}">{{ $label }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-1.5">TRẠNG THÁI ĐẶT LỊCH</label>
+                            <select wire:model="bookingStatus" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-gold-500">
+                                @foreach (\App\Models\Lead::BOOKING_STATUSES as $key => $label)
+                                    <option value="{{ $key }}">{{ $label }}</option>
+                                @endforeach
+                            </select>
+                            <p class="text-xs text-ink/50 mt-1">Team booking đổi khi khách đồng ý gặp.</p>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1223,10 +1313,10 @@ new class extends Component
                     <span class="text-xs font-normal text-ink/50">({{ $lead?->orgUnit?->name ?? $this->targetOrgUnit()?->name ?? 'mức công ty' }})</span>
                 </h2>
                 <p class="text-xs text-ink/50 mb-5">Bộ trường buộc khai theo quy định hiện hành.</p>
-                @php $cfLabels = \App\Models\CustomField::labelMap($customFields); @endphp
+<?php $cfLabels = \App\Models\CustomField::labelMap($customFields); ?>
                 <div class="space-y-4">
                     @foreach ($customFields as $field)
-                        @php $ck = $field->rules['code_kind'] ?? null; @endphp
+<?php $ck = $field->rules['code_kind'] ?? null; ?>
                         @continue($field->field_type === 'code' && $ck === 'fixed')
                         <div wire:key="cf-{{ $field->id }}">
                             <label class="block text-sm font-medium mb-1.5">
@@ -1241,7 +1331,7 @@ new class extends Component
                                 <select wire:model="custom.{{ $field->id }}" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-gold-500">
                                     <option value="">— chọn —</option>
                                     @foreach ($field->options ?? [] as $option)
-                                        @php $ol = $field->optionLabel($option); @endphp
+<?php $ol = $field->optionLabel($option); ?>
                                         <option value="{{ $option }}">{{ ($ol !== '' && $ol !== $option) ? "$ol ($option)" : $option }}</option>
                                     @endforeach
                                 </select>

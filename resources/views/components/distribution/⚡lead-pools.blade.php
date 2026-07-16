@@ -26,6 +26,10 @@ new class extends Component
 
     public string $assignUserId = '';
 
+    // Phase 6.6 — mốc thu hồi khi chia (chỉ hiện với user có lead.recall)
+    public string $assignRecallMode = 'default'; // default (dùng recall_after_days) | custom | permanent
+    public ?int $assignRecallDays = null;
+
     // Chia về kho phòng/team 1 lead
     public ?int $poolingLeadId = null;
 
@@ -140,7 +144,23 @@ new class extends Component
         $user = User::findOrFail((int) $this->assignUserId);
         app(DistributionEngine::class)->manualAssign($lead, $user, auth()->id());
 
+        // Phase 6.6: nếu người chia có quyền recall, áp mốc thu hồi
+        if (auth()->user()->hasPermission('lead.recall')) {
+            $fresh = $lead->refresh();
+            $policyOrg = $fresh->org_unit_id ? \App\Models\OrgUnit::find($fresh->org_unit_id) : null;
+            $policy = $policyOrg ? \App\Services\RecallPolicyResolver::for($policyOrg) : null;
+            if ($this->assignRecallMode === 'permanent' && ($policy === null || $policy['allow_permanent_assignment'])) {
+                $fresh->update(['is_permanent_assignment' => true, 'recall_at' => null]);
+            } elseif ($this->assignRecallMode === 'custom' && $this->assignRecallDays > 0) {
+                $fresh->update(['is_permanent_assignment' => false, 'recall_at' => now()->addDays($this->assignRecallDays)]);
+            } elseif ($policy && $policy['recall_after_days']) {
+                $fresh->update(['is_permanent_assignment' => false, 'recall_at' => now()->addDays($policy['recall_after_days'])]);
+            }
+        }
+
         $this->assigningLeadId = null;
+        $this->assignRecallMode = 'default';
+        $this->assignRecallDays = null;
         session()->flash('status', "Đã chia tay {$lead->name} cho {$user->name}.");
     }
 
@@ -367,11 +387,21 @@ new class extends Component
                         @endif
                         <td class="px-4 py-3 text-right">
                             @if ($assigningLeadId === $lead->id)
-                                <span class="inline-flex items-center gap-2">
+                                <span class="inline-flex flex-wrap items-center gap-2">
                                     <select wire:model="assignUserId" class="border border-gold-200 rounded-md px-2 py-1.5 text-xs bg-white focus:outline-none focus:border-gold-500">
                                         <option value="">— chọn sale —</option>
                                         @foreach ($assignableUsers as $u)<option value="{{ $u->id }}">{{ $u->name }}</option>@endforeach
                                     </select>
+                                    @if (auth()->user()->hasPermission('lead.recall'))
+                                        <select wire:model.live="assignRecallMode" class="border border-gold-200 rounded-md px-2 py-1.5 text-xs bg-white">
+                                            <option value="default">Mặc định (theo Quy tắc)</option>
+                                            <option value="custom">Thu hồi sau X ngày…</option>
+                                            <option value="permanent">Chia vĩnh viễn</option>
+                                        </select>
+                                        @if ($assignRecallMode === 'custom')
+                                            <input type="number" min="1" wire:model="assignRecallDays" placeholder="ngày" class="w-20 border border-gold-200 rounded-md px-2 py-1.5 text-xs">
+                                        @endif
+                                    @endif
                                     <button wire:click="confirmAssign" class="text-xs font-semibold bg-gold-600 text-white px-3 py-1.5 rounded-md">OK</button>
                                     <button wire:click="$set('assigningLeadId', null)" class="text-xs text-ink/50">Hủy</button>
                                 </span>

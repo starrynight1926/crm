@@ -1,6 +1,7 @@
 # Lara-SCRM — ERD (thiết kế dữ liệu chi tiết)
 
 > Đi kèm `scope.md`. 2 connection Laravel: `pgsql` (raw) + `mysql` (clean, default).
+> Cập nhật 2026-07-15: mở rộng `leads` cho luồng 6 nguồn + bảng mới `recall_policies` / `system_settings` (xem B2, B3).
 
 ---
 
@@ -82,7 +83,13 @@ Nhật ký webhook/API call: id, source_type, connection_id (logic), http_status
 | classification | enum: `new` / `lead` / `follow` / `net` / `tai_chinh_yeu` / `quan_tam` / `tham_khao` / `tim_hieu` / `goi_lai_sau` / `klld` / `missed` / `booking` / `show` / `close` |
 | status_1 / status_2 | text — Ghi nhận tình trạng lần 1 / lần 2 |
 | note | text |
-| pool_level | enum: `common` / `team` / `personal` |
+| pool_level | enum: `common` / `booking` / `ctv` / `approval` / `team` / `personal` — mở rộng 2026-07-15 để phản ánh 6 luồng nguồn |
+| source_group | enum: `marketing` / `data_cold` / `bdm` / `referral` / `ctv` / `walk_in` — nhóm nguồn (6.3) |
+| approval_status | enum: `none` / `pending` / `approved` / `rejected` — dùng cho luồng "Khách tự đến" |
+| approval_by, approved_at | FK users, timestamp — ai duyệt, khi nào |
+| overdue_marked_at | timestamp nullable — đánh dấu lead từ chối quá hạn ở kho booking (không auto-delete) |
+| recall_at | timestamp nullable — mốc thu hồi (do CM chia đặt); null = chia vĩnh viễn |
+| is_permanent_assignment | bool default false — "Chia vĩnh viễn" (admin vẫn thu hồi được) |
 | owner_id | FK users, nullable (CHIA CHO) |
 | receiver_id | FK users, nullable (Người nhận LEAD / thu thập) |
 | org_unit_id | FK org_units, nullable — team đang giữ |
@@ -98,7 +105,9 @@ Bổ sung 2026-07-03 (mã KH + trường tùy biến, xem scope.md 4.1–4.2):
 
 **lead_status_logs** — id, lead_id FK, user_id FK, field (`classification`/`status_1`/`status_2`/`note`), old_value, new_value, created_at. Nguồn cho lịch sử chăm sóc + audit.
 
-**lead_distribution_logs** — id, lead_id FK, action (`distribute`/`recall`/`pull`/`manual_assign`), from_pool_level, to_pool_level, from_owner_id, to_owner_id, org_unit_id, rule_id nullable, actor_id nullable (null = hệ thống), created_at.
+**lead_distribution_logs** — id, lead_id FK, action (`distribute`/`recall`/`escalate`/`manual_assign`/`approve`/`reject`), from_pool_level, to_pool_level, from_owner_id, to_owner_id, org_unit_id, rule_id nullable, actor_id nullable (null = hệ thống), reason text nullable (dùng cho reject/escalate), created_at.
+
+> Ghi chú: action `pull` deprecated 2026-07-15 (bỏ cơ chế NV tự lấy lead). Migration mới không xóa dữ liệu lịch sử, chỉ không sinh mới.
 
 ### B3. Chia số
 
@@ -121,6 +130,28 @@ Bổ sung 2026-07-03 (mã KH + trường tùy biến, xem scope.md 4.1–4.2):
 **user_lead_settings** — user_id PK, receiving (bool bật/tắt nhận số), off_reason, off_until.
 
 **sla_policies** — id, org_unit_id nullable (null = mặc định toàn cty), mode (`auto`/`manual`/`off`), recall_after_hours, recall_to (`common`/`team`).
+
+> **Deprecated 2026-07-15**: bảng này giữ cho SLA "quá X giờ không chăm → thu hồi" (nghiệp vụ SLA chăm sóc). Cơ chế **recall theo mốc CM đặt lúc chia + escalate 2 tầng** dùng bảng `recall_policies` (mới) — 2 khái niệm khác nhau, không gộp.
+
+**recall_policies** (mới, 2026-07-15) — cấu hình recall + escalate theo cấp phòng ban/team, override từ trên xuống
+
+| Cột | Ghi chú |
+|---|---|
+| id | PK |
+| org_unit_id | FK org_units, unique. Cấu hình gắn với node (phòng ban hoặc team) |
+| recall_after_days | int nullable — mặc định "Thu hồi sau XX ngày" khi CM không nhập tay ở form chia |
+| escalate_after_days | int nullable — quá X ngày ở pool team CM → escalate lên kho CM cấp cha |
+| allow_permanent_assignment | bool default true — bật/tắt lựa chọn "Chia vĩnh viễn" trên form chia của cấp này |
+| set_by | FK users, updated_at | ai chỉnh, khi nào |
+
+**Quy tắc resolve** (từ trên xuống, cấp cha ghi đè cấp con):
+1. Tìm node cha gần nhất có `recall_policies` (theo path). Nếu có → dùng cấu hình đó (cấp con bị bắt buộc theo).
+2. Không có ở tổ tiên → dùng cấu hình của chính node đó (nếu có).
+3. Không có nữa → dùng mặc định hệ thống (config file / bảng `system_settings`).
+
+Viết thành `RecallPolicyResolver::for($orgUnit)` trả về `(recall_after_days, escalate_after_days, allow_permanent)`.
+
+**system_settings** (mới nếu chưa có) — key-value cấu hình chung: `default_recall_after_days`, `default_escalate_after_days`, `default_allow_permanent`, `sys_admin_can_bypass_permanent` (mặc định true).
 
 ### B4. Dịch vụ & tiền
 

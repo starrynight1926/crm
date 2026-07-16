@@ -22,9 +22,13 @@ class PermissionSeeder extends Seeder
         ],
         'distribution' => [
             'lead.distribute' => 'Chia số thủ công',
-            'lead.recall' => 'Thu hồi lead',
-            'lead.pull_pool' => 'Kéo lead từ kho',
+            'lead.distribute_team' => 'Chia số cho team (thấy kho team)',
+            'lead.distribute_ctv' => 'Phân bổ nguồn Cộng tác viên (theo khu vực)',
+            'lead.recall' => 'Thu hồi lead + đặt mốc thu hồi khi chia',
+            'lead.approve_source' => 'Duyệt lead từ luồng "Khách tự đến"',
+            'lead.pull_pool' => 'Kéo lead từ kho (legacy — chỉ hiện khi role tick tay)',
             'rule.manage' => 'Cấu hình rule chia số',
+            'ops.manage' => 'Cấu hình Quy tắc vận hành (thời gian recall/escalate)',
         ],
         'organization' => [
             'user.manage' => 'Quản lý nhân viên & phân quyền',

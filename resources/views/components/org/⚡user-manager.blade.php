@@ -18,7 +18,7 @@ new class extends Component
 
     public string $filterRole = '';
 
-    public string $viewMode = 'list'; // list | tree
+    public string $viewMode = 'tree'; // tree | list
 
     // ----- Modal user -----
     public bool $showUserModal = false;
@@ -32,6 +32,8 @@ new class extends Component
     public string $uphone = '';
 
     public string $upassword = '';
+
+    public string $ujobTitle = '';
 
     public string $ustatus = User::STATUS_ACTIVE;
 
@@ -68,7 +70,7 @@ new class extends Component
 
     public function openCreateUser(): void
     {
-        $this->reset('editingUserId', 'uname', 'uemail', 'uphone', 'upassword');
+        $this->reset('editingUserId', 'uname', 'uemail', 'uphone', 'upassword', 'ujobTitle');
         $this->ustatus = User::STATUS_ACTIVE;
         $this->resetErrorBag();
         $this->showUserModal = true;
@@ -82,6 +84,7 @@ new class extends Component
         $this->uemail = $user->email;
         $this->uphone = $user->phone ?? '';
         $this->upassword = '';
+        $this->ujobTitle = $user->job_title ?? '';
         $this->ustatus = $user->status;
         $this->resetErrorBag();
         $this->showUserModal = true;
@@ -94,15 +97,17 @@ new class extends Component
             'uemail' => ['required', 'email', Rule::unique('users', 'email')->ignore($this->editingUserId)],
             'uphone' => 'nullable|string|max:20',
             'upassword' => $this->editingUserId ? 'nullable|string|min:8' : 'required|string|min:8',
+            'ujobTitle' => 'nullable|string|max:100',
             'ustatus' => 'required|in:active,locked',
         ], [], [
-            'uname' => 'họ tên', 'uemail' => 'email', 'uphone' => 'SĐT', 'upassword' => 'mật khẩu',
+            'uname' => 'họ tên', 'uemail' => 'email', 'uphone' => 'SĐT', 'upassword' => 'mật khẩu', 'ujobTitle' => 'chức danh',
         ]);
 
         $attributes = [
             'name' => $data['uname'],
             'email' => $data['uemail'],
             'phone' => $data['uphone'] ?: null,
+            'job_title' => $data['ujobTitle'] ?: null,
             'status' => $data['ustatus'],
         ];
         if ($data['upassword']) {
@@ -283,8 +288,8 @@ new class extends Component
 
     {{-- View mode tabs --}}
     <div class="border-b border-gold-200 mb-5 flex gap-1 text-sm font-semibold uppercase tracking-wide">
-        <button wire:click="$set('viewMode', 'list')" class="px-4 py-3 border-b-2 -mb-px {{ $viewMode === 'list' ? 'border-gold-600 text-gold-700' : 'border-transparent text-ink/50 hover:text-gold-700' }}">Danh sách</button>
         <button wire:click="$set('viewMode', 'tree')" class="px-4 py-3 border-b-2 -mb-px {{ $viewMode === 'tree' ? 'border-gold-600 text-gold-700' : 'border-transparent text-ink/50 hover:text-gold-700' }}">Sơ đồ tổ chức</button>
+        <button wire:click="$set('viewMode', 'list')" class="px-4 py-3 border-b-2 -mb-px {{ $viewMode === 'list' ? 'border-gold-600 text-gold-700' : 'border-transparent text-ink/50 hover:text-gold-700' }}">Danh sách</button>
     </div>
 
     @if ($viewMode === 'tree')
@@ -441,6 +446,11 @@ new class extends Component
                             <label class="block text-xs font-semibold uppercase tracking-widest text-ink/60 mb-1.5">SĐT</label>
                             <input type="text" wire:model="uphone" class="w-full border border-gold-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-gold-500">
                         </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold uppercase tracking-widest text-ink/60 mb-1.5">Chức danh</label>
+                        <input type="text" wire:model="ujobTitle" placeholder="VD: Clinic Manager, Team Leader, SHC, HC..." class="w-full border border-gold-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-gold-500">
+                        @error('ujobTitle')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
                     </div>
                     <div class="grid grid-cols-2 gap-4">
                         <div>

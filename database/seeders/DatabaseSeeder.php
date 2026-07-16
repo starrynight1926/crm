@@ -16,7 +16,7 @@ class DatabaseSeeder extends Seeder
     public function run(): void
     {
         User::updateOrCreate(
-            ['email' => 'admin@sweetsica.com'],
+            ['email' => 'admin@longevity.com.vn'],
             [
                 'name' => 'Quản trị viên',
                 'password' => 'admin@123',
@@ -30,6 +30,8 @@ class DatabaseSeeder extends Seeder
             DemoDataSeeder::class,
             TeamHoiCustomFieldSeeder::class, // sau OrgAndRoleSeeder: cần node Marketing
             TeamHoiStaffSeeder::class,       // nhân viên sale Team Hợi (cần role Sale + Team Hợi)
+            RealCmStaffSeeder::class,        // Phase 6.6: CM/DM/TL/Trợ lý thật của HN + HCM
+            Phase66FlowSeeder::class,        // Phase 6.6+: 4 role luồng 6 nguồn + user demo
         ]);
     }
 }

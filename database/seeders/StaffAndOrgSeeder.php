@@ -75,7 +75,7 @@ class StaffAndOrgSeeder extends Seeder
     private function createViewerRole(): void
     {
         $viewer = Role::updateOrCreate(
-            ['name' => 'Viewer'],
+            ['name' => 'Observer'],
             ['description' => 'Xem toàn bộ, không thêm/sửa/xóa dịch vụ và nhân sự']
         );
 
@@ -92,8 +92,12 @@ class StaffAndOrgSeeder extends Seeder
 
     private function seedViewerAccounts(): void
     {
-        $viewer = Role::firstWhere('name', 'Viewer');
+        $viewer = Role::firstWhere('name', 'Observer');
         $root = OrgUnit::firstWhere('code', 'company');
+        // 2026-07-16: Observer gán vào Nhóm Giám Sát (id 38), scope custom vẫn = root để thấy toàn cây.
+        $opsMonSub = OrgUnit::firstWhere('code', 'ops-monitor-sub')
+            ?? OrgUnit::createNode(['name' => 'Nhóm Giám Sát', 'code' => 'ops-monitor-sub'],
+                OrgUnit::firstWhere('code', 'ops-monitor'));
         if (! $viewer || ! $root) {
             return;
         }
@@ -125,20 +129,24 @@ class StaffAndOrgSeeder extends Seeder
                 $assignment = Assignment::create([
                     'user_id' => $user->id,
                     'role_id' => $viewer->id,
-                    'org_unit_id' => $root->id,
+                    'org_unit_id' => $opsMonSub->id,
                     'data_scope' => Assignment::SCOPE_CUSTOM,
                 ]);
                 $assignment->scopeNodes()->sync([$root->id]);
             }
         }
 
-        $this->command?->info('Seeded ' . count($accounts) . ' tài khoản Viewer.');
+        $this->command?->info('Seeded ' . count($accounts) . ' tài khoản Observer.');
     }
 
     private function seedSystemAdmins(): void
     {
         $admin = Role::firstWhere('name', 'Admin');
         $root = OrgUnit::firstWhere('code', 'company');
+        // 2026-07-16: Bảo + Tú (Admin IT/QC) gán vào Nhóm Vận Hành, scope custom vẫn = root.
+        $opsRun = OrgUnit::firstWhere('code', 'ops-run')
+            ?? OrgUnit::createNode(['name' => 'Nhóm Vận Hành', 'code' => 'ops-run'],
+                OrgUnit::firstWhere('code', 'ops-monitor'));
         if (! $admin || ! $root) {
             return;
         }
@@ -167,7 +175,7 @@ class StaffAndOrgSeeder extends Seeder
                 $assignment = Assignment::create([
                     'user_id' => $user->id,
                     'role_id' => $admin->id,
-                    'org_unit_id' => $root->id,
+                    'org_unit_id' => $opsRun->id,
                     'data_scope' => Assignment::SCOPE_CUSTOM,
                 ]);
                 $assignment->scopeNodes()->sync([$root->id]);
@@ -189,19 +197,31 @@ class StaffAndOrgSeeder extends Seeder
             User::where('name', $name)->update(['job_title' => $title]);
         }
 
+        // 2026-07-16: Lương Thị Kim Phấn = CM Marketing Đà Nẵng, gán role CM sale ở Marketing Đà Nẵng.
         $phan = User::firstWhere('name', 'Lương Thị Kim Phấn');
         if (! $phan) {
             $phan = User::create([
                 'name' => 'Lương Thị Kim Phấn',
                 'email' => 'ltkp@longevity.com.vn',
-                'job_title' => 'Clinic Manager (CM)',
+                'job_title' => 'CM Marketing Đà Nẵng',
                 'password' => '123456',
                 'status' => User::STATUS_ACTIVE,
             ]);
         } else {
-            $phan->update(['job_title' => 'Clinic Manager (CM)']);
+            $phan->update(['job_title' => 'CM Marketing Đà Nẵng']);
         }
 
-        $this->command?->info('Cập nhật chức danh cho 4 nhân viên.');
+        $cmSale = Role::firstWhere('name', 'CM sale');
+        $mktDn = OrgUnit::firstWhere('code', 'marketing-dn');
+        if ($cmSale && $mktDn && ! Assignment::where('user_id', $phan->id)->where('role_id', $cmSale->id)->exists()) {
+            Assignment::create([
+                'user_id' => $phan->id,
+                'role_id' => $cmSale->id,
+                'org_unit_id' => $mktDn->id,
+                'data_scope' => Assignment::SCOPE_TEAM,
+            ]);
+        }
+
+        $this->command?->info('Cập nhật chức danh + gán Kim Phấn làm CM Marketing Đà Nẵng.');
     }
 }

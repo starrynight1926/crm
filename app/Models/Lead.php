@@ -21,6 +21,10 @@ use Illuminate\Database\Eloquent\SoftDeletes;
     'treatment_1', 'treatment_2', 'treatment_3', 'treatment_4',
     'performing_doctor_id', 'quality_rating',
     'potential_service',
+    // Phase 6.6
+    'source_group', 'approval_status', 'approval_by', 'approved_at',
+    'overdue_marked_at', 'recall_at', 'is_permanent_assignment',
+    'booking_status',
 ])]
 class Lead extends Model
 {
@@ -48,6 +52,50 @@ class Lead extends Model
     public const POOL_TEAM = 'team';
     public const POOL_PERSONAL = 'personal';
 
+    // Phase 6.6 — 6 nhóm nguồn
+    public const SOURCE_MARKETING = 'marketing';
+    public const SOURCE_DATA_COLD = 'data_cold';
+    public const SOURCE_BDM = 'bdm';
+    public const SOURCE_REFERRAL = 'referral';
+    public const SOURCE_CTV = 'ctv';
+    public const SOURCE_WALK_IN = 'walk_in';
+
+    public const SOURCE_GROUPS = [
+        self::SOURCE_MARKETING => 'Marketing',
+        self::SOURCE_DATA_COLD => 'Data lạnh',
+        self::SOURCE_BDM => 'BDM',
+        self::SOURCE_REFERRAL => 'Bạn giới thiệu',
+        self::SOURCE_CTV => 'Cộng tác viên',
+        self::SOURCE_WALK_IN => 'Khách tự đến',
+    ];
+
+    // Permission tương ứng cần có để thấy nhóm nguồn đó ở form thêm lead.
+    // referral + walk_in: ai cũng thấy (giá trị null = mọi user tạo lead).
+    public const SOURCE_PERMISSIONS = [
+        self::SOURCE_MARKETING => 'lead.distribute_team',
+        self::SOURCE_DATA_COLD => 'lead.distribute_team',
+        self::SOURCE_BDM => 'lead.distribute_team',
+        self::SOURCE_CTV => 'lead.distribute_ctv',
+        self::SOURCE_REFERRAL => null,
+        self::SOURCE_WALK_IN => null,
+    ];
+
+    // Phase 6.6+ — trạng thái đặt lịch booking (khách đồng ý gặp)
+    public const BOOKING_NOT_BOOKED = 'not_booked';
+    public const BOOKING_BOOKED = 'booked';
+    public const BOOKING_RESCHEDULED = 'rescheduled';
+
+    public const BOOKING_STATUSES = [
+        self::BOOKING_NOT_BOOKED => 'Chưa đặt',
+        self::BOOKING_BOOKED => 'Đã đặt',
+        self::BOOKING_RESCHEDULED => 'Hẹn lại',
+    ];
+
+    public const APPROVAL_NONE = 'none';
+    public const APPROVAL_PENDING = 'pending';
+    public const APPROVAL_APPROVED = 'approved';
+    public const APPROVAL_REJECTED = 'rejected';
+
     protected function casts(): array
     {
         return [
@@ -59,7 +107,25 @@ class Lead extends Model
             'treatment_2' => 'date',
             'treatment_3' => 'date',
             'treatment_4' => 'date',
+            'approved_at' => 'datetime',
+            'overdue_marked_at' => 'datetime',
+            'recall_at' => 'datetime',
+            'is_permanent_assignment' => 'boolean',
         ];
+    }
+
+    /** Danh sách nguồn user hiện tại được phép chọn khi tạo lead. */
+    public static function allowedSourceGroupsFor(User $user): array
+    {
+        $out = [];
+        foreach (self::SOURCE_GROUPS as $key => $label) {
+            $perm = self::SOURCE_PERMISSIONS[$key];
+            if ($perm === null || $user->hasPermission($perm)) {
+                $out[$key] = $label;
+            }
+        }
+
+        return $out;
     }
 
     public function owner(): BelongsTo
