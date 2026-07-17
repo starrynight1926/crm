@@ -149,8 +149,8 @@ class OrgStaffSeeder extends Seeder
                 'perms' => ['contribution.set','field.approve','field.manage','lead.approve_source','lead.create','lead.delete','lead.distribute','lead.distribute_ctv','lead.distribute_team','lead.export','lead.import','lead.recall','lead.update','lead.view','lead.view_phone','payment.record','report.view','report.view_all','rule.manage','service.manage','user.manage'],
             ],
             'Team trực page' => [
-                'desc' => 'Team trực page marketing — up lead nguồn Marketing vào kho booking',
-                'perms' => ['lead.create','lead.distribute_team','lead.update','lead.view','lead.view_phone'],
+                'desc' => 'Team trực page marketing — chỉ có quyền thêm mới khách hàng',
+                'perms' => ['lead.create'],
             ],
             'CM booking' => [
                 'desc' => 'CM Phòng Booking — up Data lạnh/BDM, chia lead trong kho booking cho team booking',

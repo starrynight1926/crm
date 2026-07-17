@@ -30,8 +30,8 @@ class Phase66FlowSeeder extends Seeder
         // 2) 4 role mới. Permissions gán theo SOURCE_PERMISSIONS + nhu cầu luồng.
         $roleDefs = [
             'Team trực page' => [
-                'desc' => 'Team trực page marketing — up lead nguồn Marketing vào kho booking',
-                'perms' => ['lead.view', 'lead.view_phone', 'lead.create', 'lead.update', 'lead.distribute_team'],
+                'desc' => 'Team trực page marketing — chỉ có quyền thêm mới khách hàng',
+                'perms' => ['lead.create'],
             ],
             'CM booking' => [
                 'desc' => 'CM Phòng Booking — up Data lạnh/BDM, chia lead trong kho booking cho team booking',
