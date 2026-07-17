@@ -27,6 +27,14 @@
         @endif
         <span class="inline-flex items-center gap-1.5 text-sm font-bold px-3 py-1.5 rounded-lg {{ $color }}">
             {{ $node['name'] }}
+            @if (!empty($node['managers']))
+                <span class="text-xs opacity-80 font-normal">
+                    :
+                    @foreach ($node['managers'] as $mgr)
+                        {{ $mgr['user_name'] }}@if ($mgr['job_title']) ({{ $mgr['job_title'] }})@endif{{ !$loop->last ? ', ' : '' }}
+                    @endforeach
+                </span>
+            @endif
             @if ($hasMembers)
                 <span class="text-xs opacity-60 font-normal">({{ count($node['members']) }})</span>
             @endif

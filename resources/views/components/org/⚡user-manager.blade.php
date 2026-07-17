@@ -226,13 +226,15 @@ new class extends Component
                 ->get()
                 ->groupBy('org_unit_id');
 
-            $orgTree = $allOrgUnits->map(fn ($unit) => [
-                'id' => $unit->id,
-                'name' => $unit->name,
-                'depth' => $unit->depth,
-                'parent_id' => $unit->parent_id,
-                'active' => $unit->active,
-                'members' => ($allAssignments[$unit->id] ?? collect())->map(fn ($a) => [
+            $managersByUnit = \DB::table('org_unit_managers')
+                ->join('users', 'users.id', '=', 'org_unit_managers.user_id')
+                ->select('org_unit_managers.org_unit_id', 'users.id as user_id', 'users.name as user_name', 'users.job_title')
+                ->orderBy('users.name')
+                ->get()
+                ->groupBy('org_unit_id');
+
+            $orgTree = $allOrgUnits->map(function ($unit) use ($allAssignments, $managersByUnit) {
+                $members = ($allAssignments[$unit->id] ?? collect())->map(fn ($a) => [
                     'user_id' => $a->user_id,
                     'user_name' => $a->user->name,
                     'user_email' => $a->user->email,
@@ -240,8 +242,22 @@ new class extends Component
                     'role' => $a->role->name,
                     'scope' => $a->data_scope,
                     'locked' => $a->user->isLocked(),
-                ])->unique('user_id')->values()->all(),
-            ])->all();
+                ])->unique('user_id')->values()->all();
+
+                return [
+                    'id' => $unit->id,
+                    'name' => $unit->name,
+                    'depth' => $unit->depth,
+                    'parent_id' => $unit->parent_id,
+                    'active' => $unit->active,
+                    'members' => $members,
+                    'managers' => ($managersByUnit[$unit->id] ?? collect())->map(fn ($m) => [
+                        'user_id' => $m->user_id,
+                        'user_name' => $m->user_name,
+                        'job_title' => $m->job_title,
+                    ])->values()->all(),
+                ];
+            })->all();
         }
 
         $unassigned = [];

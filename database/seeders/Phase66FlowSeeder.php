@@ -23,6 +23,7 @@ class Phase66FlowSeeder extends Seeder
         $teamHoi = OrgUnit::firstWhere('code', 'team-hoi-hn');
         $bookingGiang = OrgUnit::firstWhere('code', 'team-giang-booking');
         $bookingHoi = OrgUnit::firstWhere('code', 'team-hoi-booking');
+        $pageGiang = OrgUnit::firstWhere('code', 'team-giang-page');
         $saleGiang = OrgUnit::firstWhere('code', 'team-giang-sale');
         $saleHoi = OrgUnit::firstWhere('code', 'team-hoi-sale');
 
@@ -65,7 +66,7 @@ class Phase66FlowSeeder extends Seeder
         // 3) User demo (pw = 123456). Idempotent.
         $userDefs = [
             // email => [name, role, org, scope]
-            'page1@longevity.com.vn' => ['Phạm Trực Page 1', 'Team trực page', $bookingGiang, Assignment::SCOPE_SELF],
+            'page1@longevity.com.vn' => ['Phạm Trực Page 1', 'Team trực page', $pageGiang, Assignment::SCOPE_SELF],
             'cmbk@longevity.com.vn'  => ['CM Booking', 'CM booking', $bookingGiang, Assignment::SCOPE_TEAM],
             'book1@longevity.com.vn' => ['Nguyễn Booking 1', 'Team booking', $bookingGiang, Assignment::SCOPE_SELF],
             'book2@longevity.com.vn' => ['Trần Booking 2', 'Team booking', $bookingHoi, Assignment::SCOPE_SELF],
