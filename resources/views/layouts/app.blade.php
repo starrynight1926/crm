@@ -12,14 +12,17 @@
             ['label' => 'Dịch vụ', 'route' => $u->hasPermission('service.manage') ? 'services.catalog' : null, 'match' => 'services.*'],
             ['label' => 'Thu tiền', 'route' => $u->hasPermission('payment.record') ? 'payments.index' : null, 'match' => 'payments.*'],
         ], fn ($i) => $i['route']));
+        $opsChildren = array_values(array_filter([
+            ['label' => 'Tổ chức', 'route' => $u->hasPermission('user.manage') ? 'org.users' : null, 'match' => 'org.*'],
+            ['label' => 'Báo cáo', 'route' => $u->hasAnyPermission(['report.view', 'report.view_all']) ? 'reports.index' : null, 'match' => 'reports.*'],
+            ['label' => 'Quy tắc vận hành', 'route' => $u->hasPermission('ops.manage') ? 'ops.rules' : null, 'match' => 'ops.*'],
+        ], fn ($i) => $i['route']));
 
         $navItems = array_values(array_filter([
             ['label' => 'Dashboard', 'route' => 'dashboard', 'match' => 'dashboard'],
             !empty($customerChildren) ? ['label' => 'Khách hàng', 'match' => 'leads.*|distribution.*', 'children' => $customerChildren] : null,
             !empty($bizChildren) ? ['label' => 'Kinh doanh', 'match' => 'services.*|payments.*', 'children' => $bizChildren] : null,
-            ['label' => 'Tổ chức', 'route' => $u->hasPermission('user.manage') ? 'org.users' : null, 'match' => 'org.*'],
-            ['label' => 'Báo cáo', 'route' => $u->hasAnyPermission(['report.view', 'report.view_all']) ? 'reports.index' : null, 'match' => 'reports.*'],
-            ['label' => 'Quy tắc VH', 'route' => $u->hasPermission('ops.manage') ? 'ops.rules' : null, 'match' => 'ops.*'],
+            !empty($opsChildren) ? ['label' => 'Vận hành', 'match' => 'org.*|reports.*|ops.*', 'children' => $opsChildren] : null,
         ]));
 
         $isActive = function ($match) {
