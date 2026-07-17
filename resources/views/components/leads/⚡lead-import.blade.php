@@ -40,6 +40,13 @@ new class extends Component
 
     public ?int $lastBatchId = null;
 
+    /**
+     * Giới hạn dòng mỗi lần import. Pipeline hiện dispatch từng job đồng bộ trong request Livewire —
+     * file > 5000 dòng dễ timeout + tốn RAM đọc all-at-once. Muốn nạp lớn hơn cần refactor sang streaming
+     * + batch job (chưa làm, xem result.md ngày 2026-07-17).
+     */
+    public const MAX_ROWS_PER_IMPORT = 5000;
+
     // Field lead chuẩn (scope.md mục 4)
     public const TARGETS = [
         'name' => 'Tên khách hàng *',
@@ -332,6 +339,17 @@ new class extends Component
 
         $data = SpreadsheetReader::read(storage_path('app/private/' . $this->storedPath), $this->storedExtension);
 
+        // Chặn cứng file quá lớn — pipeline hiện chưa scale được (block Livewire request).
+        $rowCount = count($data['rows']);
+        if ($rowCount > self::MAX_ROWS_PER_IMPORT) {
+            $this->addError('file', sprintf(
+                'File có %s dòng, vượt giới hạn %s dòng/lần import. Vui lòng chia nhỏ file rồi import từng phần.',
+                number_format($rowCount),
+                number_format(self::MAX_ROWS_PER_IMPORT),
+            ));
+            return;
+        }
+
         $batch = ImportBatch::create([
             'file_name' => $this->storedName,
             'uploaded_by' => auth()->id(),
@@ -510,6 +528,10 @@ new class extends Component
         {{-- Upload + mapping --}}
         <div class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
             <h2 class="font-bold text-gold-700 mb-4">2. Chọn file (CSV / XLSX)</h2>
+            <p class="text-xs text-ink/60 mb-2">
+                Giới hạn <strong>{{ number_format(self::MAX_ROWS_PER_IMPORT) }} dòng / lần import</strong>.
+                File lớn hơn hãy chia nhỏ rồi import từng phần — pipeline hiện chưa được tối ưu cho batch cực lớn.
+            </p>
             <input type="file" wire:model="file" accept=".csv,.xlsx,.xls"
                    class="block w-full text-sm border border-gold-200 rounded-md file:mr-3 file:px-4 file:py-2.5 file:border-0 file:bg-gold-50 file:text-gold-700 file:font-semibold file:text-sm cursor-pointer">
             @error('file')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
