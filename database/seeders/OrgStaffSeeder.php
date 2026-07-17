@@ -149,8 +149,8 @@ class OrgStaffSeeder extends Seeder
                 'perms' => ['contribution.set','field.approve','field.manage','lead.approve_source','lead.create','lead.delete','lead.distribute','lead.distribute_ctv','lead.distribute_team','lead.export','lead.import','lead.recall','lead.update','lead.view','lead.view_phone','payment.record','report.view','report.view_all','rule.manage','service.manage','user.manage'],
             ],
             'Team trực page' => [
-                'desc' => 'Team trực page marketing — chỉ có quyền thêm mới khách hàng',
-                'perms' => ['lead.create'],
+                'desc' => 'Team trực page marketing — up lead nguồn Marketing/Data lạnh/BDM',
+                'perms' => ['lead.create','lead.distribute_team'],
             ],
             'CM booking' => [
                 'desc' => 'CM Phòng Booking — up Data lạnh/BDM, chia lead trong kho booking cho team booking',
@@ -293,7 +293,7 @@ class OrgStaffSeeder extends Seeder
             ['tbt@longevity.com.vn',  'CM sale',     'team-ashley-sale', Assignment::SCOPE_TEAM, []],
             ['hbtl@longevity.com.vn', 'CM sale',     'team-ashley-sale', Assignment::SCOPE_TEAM, []],
             ['nmt@longevity.com.vn',  'CM sale',     'team-ashley-sale', Assignment::SCOPE_TEAM, []],
-            ['lpt@longevity.com.vn',  'Trợ lý kinh doanh', 'ops-monitor-sub', Assignment::SCOPE_SELF, []],
+            ['lpt@longevity.com.vn',  'Trợ lý kinh doanh', 'company', Assignment::SCOPE_CUSTOM, ['company']],
             ['ltkp@longevity.com.vn', 'CM sale',     'marketing-dn',  Assignment::SCOPE_TEAM,   []],
 
             // Sale Team Hợi HN

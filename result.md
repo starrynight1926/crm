@@ -13,6 +13,37 @@
   - ...
 -->
 
+## QA browser 11 role + fix 5 bug + hardening pipeline import ✅
+- **Ngày**: 2026-07-17
+- **Bối cảnh**: user chốt `docs/role-flow-test.md` + script `scripts/role-flow-test.php` (26 assertion engine-level PASS 100%), sau đó QA tay qua browser 11 role thật để lộ gap UI vs engine.
+- **Đã làm**:
+  - **QA browser 11 role**: page1@ (Team trực page) / cmbk@ (CM booking) / book1@ (Team booking) / cmsale@ (CM sale demo) / thk@ (Sale) / admin@ / huyently@ (Observer) / lpt@ (Trợ lý KD) / tnkn@ (DM HCM) / nhd@ (Team Leader) / ttg@ (real CM sale Team Giang). Kiểm luồng đúng + luồng sai 403 + dropdown filter.
+  - **5 bug thật + fix**:
+    1. **BUG 1** — `Team trực page` role chỉ có `lead.create`, thiếu `lead.distribute_team` → dropdown "Nhóm nguồn" ở `/leads/create` chỉ hiện 2/5 (referral + walk_in), mất Marketing/Data lạnh/BDM = nghiệp vụ chính. Fix: thêm perm vào 2 seeder (`OrgStaffSeeder` + `Phase66FlowSeeder`).
+    2. **BUG 2** — Chi tiết KH `/leads/{id}` không có nút Thu hồi cho CM (dù có `lead.recall`). Fix: thêm method `recallLead()` + nút đỏ trong `resources/views/components/leads/⚡lead-detail.blade.php` (chỉ hiện khi có perm + lead có owner).
+    3. **BUG 3** — `cmsale@` demo bị gán leaf node `team-hoi-sale` (id=11) → dropdown "chọn kho đích" chỉ 1 option. Fix seed: đổi org sang `marketing-hn` (id=3) scope=team → subtree bao 2 team Giang + Hợi (visibleOrgs 1→9, dropdown 10 kho).
+    4. **BUG 4** — `lpt@` (Trợ lý KD) seed sai scope=self ở `ops-monitor-sub` → thấy 0 lead. Fix 2 seeder về scope=custom node=`company` → thấy toàn cty (visibleOrgs 24, view-only).
+    5. **BUG 6** — Pipeline `ProcessRawLead` validate required custom field TRÊN TOÀN BỘ trường active bất kể org → **mọi lead import CSV/webhook vào kho chung fail 100%** với reason "Thiếu Phân loại/Kết quả (Team Tạ Văn Hợi)". Fix: dùng `CustomField::applicableTo($targetOrg)` để chỉ validate trường bắt buộc trong scope org đích (null = chỉ mức công ty; có owner → cộng thêm trường phòng của owner).
+  - **BUG 5** (nghi ban đầu) — DM HCM thấy lead HN — đọc sai ID: KH-016 org_id=16 = **HCM Team Booking**, KH-011 org_id=17 = **HCM Team Sale** (trùng tên với HN nhưng khác id). Rút, engine đúng.
+  - **Pipeline import — hardening thêm 3 loại lỗi rõ ràng** (theo user chỉ đạo "báo lỗi nhập nhầm/sai mẫu/vượt thẩm quyền"):
+    - `"SĐT không hợp lệ"`, `"Thiếu tên khách hàng"` — nhập nhầm dữ liệu cơ bản.
+    - `"Thiếu trường bắt buộc (cho {org}): X, Y"` — thiếu required field trong scope.
+    - `"Dữ liệu vượt phạm vi/sai mẫu — lead đang vào {org} nhưng payload có: {label} (thuộc {org khác}, ngoài phạm vi)"` — payload chứa cf ngoài scope org đích.
+    - `"...payload có: #{id} (không tồn tại)"` — cf_id không có trong DB (sai mẫu).
+    - Trùng SĐT → `status=duplicate`, tự gộp field còn trống vào lead cũ (không tạo mới).
+- **Verify**:
+  - Script `php scripts/role-flow-test.php` → **26/26 PASS** (không regression).
+  - `php artisan test --filter=Phase66` → **11/11 PASS**.
+  - Browser confirm 4 bug fix: page1 dropdown 5 nhóm ✅, lpt /leads có data ✅, cmsale dropdown 10 kho ✅, cmsale click "Thu hồi" KH-020 → flash "Đã thu hồi lead về kho team" + owner=null ✅.
+  - Pipeline import CSV 6 dòng qua script `scripts/test-bulk-import.php`: 3 processed (KH-040/041/042 vào kho chung) + 1 duplicate (trùng SĐT tự gộp) + 2 failed đúng reason (invalid_phone / thiếu tên). Test edge case cf ngoài scope + cf id không tồn tại đều trả reason rõ.
+- **Docs**:
+  - `docs/role-flow-bugs.md` — chi tiết 5 bug + file nghi vấn + cách reproduce.
+  - `scripts/test-bulk-import.php` — script CLI enqueue import (bypass Livewire UI để test pipeline).
+  - `scripts/test-import.csv` — CSV mẫu 6 dòng cover đủ case (valid/invalid phone/thiếu tên/trùng SĐT).
+- **Chưa làm / cần bàn tiếp** (import scale lớn):
+  - Hiện `/leads/import` UI dispatch từng `ProcessRawLead` job đồng bộ trong request Livewire — file 100k dòng sẽ block request lâu + tốn RAM đọc SpreadsheetReader all-at-once. Cần: (a) chunk parse (đọc từng 500-1000 dòng), (b) dispatch background job `EnqueueImportBatch` để insert raw + dispatch job con, (c) UI báo "đang tải nền" thay vì chờ block. Chưa thấy user cần scale này, giữ nguyên tới khi có yêu cầu thật.
+  - Nút Thu hồi ở chi tiết KH: chưa có option "về kho chung" (chỉ về kho team). Nếu CM cần đẩy lên kho chung phải qua kho lead → cần bàn.
+
 ## Phase 6.6+ — Dọn duplicate org + gộp CM khu vực về CM sale ✅
 - **Ngày**: 2026-07-16
 - **Đã làm**:

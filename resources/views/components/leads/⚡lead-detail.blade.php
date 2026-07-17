@@ -7,6 +7,7 @@ use App\Models\Lead;
 use App\Models\LeadStatusLog;
 use App\Models\Payment;
 use App\Services\ContributionService;
+use App\Services\DistributionEngine;
 use Livewire\Component;
 use Livewire\WithFileUploads;
 
@@ -185,6 +186,18 @@ new class extends Component
         session()->flash('status', 'Đã lưu bảng % đóng góp.');
     }
 
+    /** Thu hồi lead khỏi sale đang giữ — đưa về kho team để CM chia lại. */
+    public function recallLead(): void
+    {
+        abort_unless(auth()->user()->hasPermission('lead.recall'), 403);
+        abort_unless($this->lead->owner_id !== null, 422, 'Lead chưa được chia — không có gì để thu hồi.');
+        abort_unless($this->lead->isVisibleTo(auth()->user()), 403);
+
+        app(DistributionEngine::class)->recall($this->lead, Lead::POOL_TEAM, auth()->id());
+        $this->lead->refresh();
+        session()->flash('status', 'Đã thu hồi lead về kho team.');
+    }
+
     public function with(): array
     {
         $customFields = \App\Models\CustomField::applicableTo($this->lead->orgUnit);
@@ -207,6 +220,7 @@ new class extends Component
         return [
             'logs' => $this->lead->statusLogs()->with('user')->paginate(15, pageName: 'logPage'),
             'canEdit' => $this->canEditLead(),
+            'canRecall' => auth()->user()->hasPermission('lead.recall') && $this->lead->isVisibleTo(auth()->user()),
             'customFields' => $customFields,
             'customValues' => $customValues,
             'contributions' => Contribution::with('user')->where('lead_id', $this->lead->id)->orderByDesc('percent')->get(),
@@ -232,13 +246,24 @@ new class extends Component
                 <div class="font-mono text-sm text-gold-700 mt-1">{{ $lead->code }}</div>
             @endif
         </div>
-        @if ($canEdit)
-            <a href="{{ route('leads.edit', $lead) }}"
-               class="flex items-center gap-2 text-sm font-semibold text-ink/70 border border-gold-200 px-5 py-2.5 rounded-md hover:bg-gold-50">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487z"/></svg>
-                Cập nhật thông tin
-            </a>
-        @endif
+        <div class="flex flex-wrap items-center gap-2">
+            @if ($canRecall && $lead->owner_id)
+                <button type="button"
+                        wire:click="recallLead"
+                        wire:confirm="Thu hồi lead khỏi {{ $lead->owner?->name ?? 'người giữ' }}? Lead sẽ quay về kho team."
+                        class="flex items-center gap-2 text-sm font-semibold text-red-700 border border-red-200 px-5 py-2.5 rounded-md hover:bg-red-50">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 016 6v6"/></svg>
+                    Thu hồi
+                </button>
+            @endif
+            @if ($canEdit)
+                <a href="{{ route('leads.edit', $lead) }}"
+                   class="flex items-center gap-2 text-sm font-semibold text-ink/70 border border-gold-200 px-5 py-2.5 rounded-md hover:bg-gold-50">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487z"/></svg>
+                    Cập nhật thông tin
+                </a>
+            @endif
+        </div>
     </div>
 
     @if (session('status'))

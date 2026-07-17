@@ -79,14 +79,18 @@ class ProcessRawLead implements ShouldQueue
             return;
         }
 
-        // --- Validate trường tùy biến bắt buộc ---
-        $requiredFields = CustomField::query()
-            ->where('active', true)
-            ->where('status', CustomField::STATUS_ACTIVE)
-            ->where('required', true)
-            ->get();
+        // --- Xác định org đích của lead trước khi validate ---
+        // Nếu có "CHIA CHO" khớp user → org = org của user đó. Nếu không → kho chung (null).
+        $targetOwner = $this->resolveOwner(trim((string) ($payload['owner'] ?? '')));
+        $targetOrg = $targetOwner
+            ? \App\Models\OrgUnit::find(Assignment::where('user_id', $targetOwner->id)->value('org_unit_id'))
+            : null;
+
+        // --- Validate trường tùy biến bắt buộc THEO SCOPE ORG ĐÍCH ---
+        // Kho chung (null) → chỉ áp trường bắt buộc cấp công ty. Có owner → thêm trường cấp phòng/nhóm của owner.
+        $applicable = CustomField::applicableTo($targetOrg);
         $missingCf = [];
-        foreach ($requiredFields as $cf) {
+        foreach ($applicable->where('required', true) as $cf) {
             if ($cf->field_type === 'code' && ($cf->rules['code_kind'] ?? '') === 'fixed') {
                 continue;
             }
@@ -97,7 +101,33 @@ class ProcessRawLead implements ShouldQueue
             }
         }
         if ($missingCf !== []) {
-            $this->fail_($raw, 'Thiếu trường bắt buộc: ' . implode(', ', $missingCf));
+            $orgLabel = $targetOrg?->name ?? 'Kho chung công ty';
+            $this->fail_($raw, "Thiếu trường bắt buộc (cho {$orgLabel}): " . implode(', ', $missingCf));
+            return;
+        }
+
+        // --- Vượt quá thẩm quyền / sai mẫu: payload chứa cf ngoài scope org đích ---
+        $applicableIds = $applicable->pluck('id')->all();
+        $outOfScope = [];
+        foreach ($payload as $k => $v) {
+            if (! is_string($k) || ! str_starts_with($k, 'cf_')) continue;
+            $val = trim((string) $v);
+            if ($val === '') continue;
+            $cfId = (int) substr($k, 3);
+            if ($cfId <= 0) continue;
+            if (! in_array($cfId, $applicableIds, true)) {
+                $cf = CustomField::find($cfId);
+                if (! $cf) {
+                    $outOfScope[] = "#{$cfId} (không tồn tại)";
+                } else {
+                    $scope = $cf->org_unit_id === null ? 'công ty' : ($cf->orgUnit?->name ?? "org#{$cf->org_unit_id}");
+                    $outOfScope[] = "{$cf->label} (thuộc {$scope}, ngoài phạm vi)";
+                }
+            }
+        }
+        if ($outOfScope !== []) {
+            $orgLabel = $targetOrg?->name ?? 'Kho chung công ty';
+            $this->fail_($raw, "Dữ liệu vượt phạm vi/sai mẫu — lead đang vào {$orgLabel} nhưng payload có: " . implode(', ', $outOfScope));
             return;
         }
 
@@ -131,9 +161,8 @@ class ProcessRawLead implements ShouldQueue
         ]);
 
         // Có cột CHIA CHO khớp được người → gán thẳng cho sale đó + team của họ.
-        $owner = $this->resolveOwner(trim((string) ($payload['owner'] ?? '')));
-        if ($owner) {
-            $this->assignToOwner($lead, $owner);
+        if ($targetOwner) {
+            $this->assignToOwner($lead, $targetOwner);
 
             return;
         }

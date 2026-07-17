@@ -85,8 +85,8 @@ class RealCmStaffSeeder extends Seeder
             ['tbt@longevity.com.vn', 'Trần Thị Bích Trâm', $roleCmHcm, OrgUnit::firstWhere('code','team-ashley-sale'), Assignment::SCOPE_TEAM, [], 'Clinic Manager'],
             ['nmt@longevity.com.vn', 'Nguyễn Thị Minh Thư', $roleCmHcm, OrgUnit::firstWhere('code','team-ashley-sale'), Assignment::SCOPE_TEAM, [], 'Trợ lý kinh doanh Clinic Manager (Assistant CM HCM)'],
             ['hbtl@longevity.com.vn', 'Huỳnh Bùi Thanh Lan', $roleCmHcm, OrgUnit::firstWhere('code','team-ashley-sale'), Assignment::SCOPE_TEAM, [], 'Clinic Manager'],
-            // 2026-07-16: Trợ lý kinh doanh thuộc "Vận hành & Giám sát", scope self.
-            ['lpt@longevity.com.vn', 'Lê Thị Phương Tự', $roleAssistant, OrgUnit::firstWhere('code','ops-monitor-sub'), Assignment::SCOPE_SELF, [], 'Trợ lý kinh doanh'],
+            // Trợ lý kinh doanh: scope custom toàn công ty — view-only mọi lead theo doc Phase 6.6.
+            ['lpt@longevity.com.vn', 'Lê Thị Phương Tự', $roleAssistant, OrgUnit::firstWhere('code','company'), Assignment::SCOPE_CUSTOM, [OrgUnit::firstWhere('code','company')?->id], 'Trợ lý kinh doanh'],
 
             // === HCM — Chuyên viên Team Ms.Ashley ===
             // 2026-07-16: SHC/HC sale HCM nằm trong Team Sale (con của Team Ashley).

@@ -26,12 +26,13 @@ class Phase66FlowSeeder extends Seeder
         $pageGiang = OrgUnit::firstWhere('code', 'team-giang-page');
         $saleGiang = OrgUnit::firstWhere('code', 'team-giang-sale');
         $saleHoi = OrgUnit::firstWhere('code', 'team-hoi-sale');
+        $marketingHn = OrgUnit::firstWhere('code', 'marketing-hn');
 
         // 2) 4 role mới. Permissions gán theo SOURCE_PERMISSIONS + nhu cầu luồng.
         $roleDefs = [
             'Team trực page' => [
-                'desc' => 'Team trực page marketing — chỉ có quyền thêm mới khách hàng',
-                'perms' => ['lead.create'],
+                'desc' => 'Team trực page marketing — up lead nguồn Marketing/Data lạnh/BDM',
+                'perms' => ['lead.create','lead.distribute_team'],
             ],
             'CM booking' => [
                 'desc' => 'CM Phòng Booking — up Data lạnh/BDM, chia lead trong kho booking cho team booking',
@@ -70,7 +71,8 @@ class Phase66FlowSeeder extends Seeder
             'cmbk@longevity.com.vn'  => ['CM Booking', 'CM booking', $bookingGiang, Assignment::SCOPE_TEAM],
             'book1@longevity.com.vn' => ['Nguyễn Booking 1', 'Team booking', $bookingGiang, Assignment::SCOPE_SELF],
             'book2@longevity.com.vn' => ['Trần Booking 2', 'Team booking', $bookingHoi, Assignment::SCOPE_SELF],
-            'cmsale@longevity.com.vn'=> ['CM Sale', 'CM sale', $saleHoi, Assignment::SCOPE_TEAM],
+            // cmsale demo: CM sale cấp Marketing HN — subtree bao 2 team Giang + Hợi để chuyển kho.
+            'cmsale@longevity.com.vn'=> ['CM Sale', 'CM sale', $marketingHn, Assignment::SCOPE_TEAM],
         ];
 
         foreach ($userDefs as $email => [$name, $roleName, $org, $scope]) {
