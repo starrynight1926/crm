@@ -21,15 +21,12 @@ class TeamHoiCustomFieldSeeder extends Seeder
 {
     public function run(): void
     {
-        // Node Marketing sẵn có (code marketing); tạo Team Hợi làm con nếu chưa có.
-        $marketing = OrgUnit::firstWhere('code', 'marketing');
-        if (! $marketing) {
-            $this->command?->error('Không tìm thấy Phòng Marketing (code=marketing). Chạy OrgAndRoleSeeder trước.');
+        // Team Hợi HN nằm sẵn trong OrgStaffSeeder (code team-hoi-hn).
+        $teamHoi = OrgUnit::firstWhere('code', 'team-hoi-hn');
+        if (! $teamHoi) {
+            $this->command?->error('Không tìm thấy Team Hợi (code=team-hoi-hn). Chạy OrgStaffSeeder trước.');
             return;
         }
-
-        $teamHoi = OrgUnit::firstWhere('code', 'team-hoi')
-            ?? OrgUnit::createNode(['name' => 'Team Hợi', 'code' => 'team-hoi'], $marketing);
 
         $fields = [
             [
