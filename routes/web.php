@@ -38,9 +38,11 @@ Route::middleware('auth')->group(function () {
     Route::view('/reports', 'reports.index')->middleware('permission:report.view,report.view_all')->name('reports.index');
     Route::view('/sources', 'sources.connections')->middleware('permission:connection.manage')->name('sources.index');
 
+    // /leads/create chỉ cần lead.create (Team trực page dùng để up lead nhưng không xem danh sách)
+    Route::view('/leads/create', 'leads.create')->middleware('permission:lead.create')->name('leads.create');
+
     Route::prefix('leads')->middleware('permission:lead.view')->group(function () {
         Route::view('/', 'leads.index')->name('leads.index');
-        Route::view('/create', 'leads.create')->middleware('permission:lead.create')->name('leads.create');
         Route::view('/import', 'leads.import')->middleware('permission:lead.import')->name('leads.import');
         Route::view('/failed', 'leads.failed')->middleware('permission:lead.import')->name('leads.failed');
         Route::view('/approvals', 'leads.approvals')->middleware('permission:lead.approve_source')->name('leads.approvals');

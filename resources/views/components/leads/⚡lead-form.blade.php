@@ -455,7 +455,12 @@ new class extends Component
         AuditLog::record('create', $lead);
 
         session()->flash('status', 'Đã tạo lead mới.');
-        $this->redirectRoute('leads.show', $lead);
+        if ($user->hasPermission('lead.view')) {
+            $this->redirectRoute('leads.show', $lead);
+        } else {
+            // Team trực page: không có quyền xem → quay lại form tạo mới.
+            $this->redirectRoute('leads.create');
+        }
     }
 
     private function updateLead(array $attributes, array $cleanCustom): void
@@ -644,7 +649,7 @@ new class extends Component
             <p class="text-sm text-ink/60">Vui lòng điền đầy đủ thông tin để cập nhật vào hệ thống sales pipeline.</p>
         </div>
         <div class="flex items-center gap-3">
-            <a href="{{ $lead ? route('leads.show', $lead) : route('leads.index') }}" class="text-sm font-semibold text-ink/60 border border-gold-200 px-5 py-2.5 rounded-md hover:bg-gold-50">Hủy</a>
+            <a href="{{ $lead ? route('leads.show', $lead) : (auth()->user()->hasPermission('lead.view') ? route('leads.index') : route('dashboard')) }}" class="text-sm font-semibold text-ink/60 border border-gold-200 px-5 py-2.5 rounded-md hover:bg-gold-50">Hủy</a>
             <button wire:click="save" class="bg-gold-600 hover:bg-gold-700 text-white font-semibold text-sm px-6 py-2.5 rounded-md">Lưu thông tin</button>
         </div>
     </div>
@@ -1359,7 +1364,7 @@ new class extends Component
     </div>
 
     <div class="border-t border-gold-100 mt-6 pt-5 flex justify-end gap-3">
-        <a href="{{ $lead ? route('leads.show', $lead) : route('leads.index') }}" class="text-sm font-semibold text-ink/60 border border-gold-200 px-5 py-2.5 rounded-md hover:bg-gold-50">Hủy</a>
+        <a href="{{ $lead ? route('leads.show', $lead) : (auth()->user()->hasPermission('lead.view') ? route('leads.index') : route('dashboard')) }}" class="text-sm font-semibold text-ink/60 border border-gold-200 px-5 py-2.5 rounded-md hover:bg-gold-50">Hủy</a>
         <button wire:click="save" class="bg-gold-600 hover:bg-gold-700 text-white font-semibold text-sm px-6 py-2.5 rounded-md">Lưu thông tin khách hàng</button>
     </div>
 </div>
