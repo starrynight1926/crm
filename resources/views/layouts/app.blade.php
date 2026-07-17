@@ -2,17 +2,32 @@
 
 @section('body')
     @php
-        $navItems = [
+        $u = auth()->user();
+        $customerChildren = array_values(array_filter([
+            ['label' => 'Danh sách khách hàng', 'route' => $u->hasPermission('lead.view') ? 'leads.index' : null, 'match' => 'leads.index'],
+            ['label' => 'Chia số', 'route' => $u->hasPermission('rule.manage') ? 'distribution.rules' : ($u->hasPermission('lead.view') ? 'distribution.pools' : null), 'match' => 'distribution.*'],
+            ['label' => 'Duyệt Lead', 'route' => $u->hasPermission('lead.approve_source') ? 'leads.approvals' : null, 'match' => 'leads.approvals'],
+        ], fn ($i) => $i['route']));
+        $bizChildren = array_values(array_filter([
+            ['label' => 'Dịch vụ', 'route' => $u->hasPermission('service.manage') ? 'services.catalog' : null, 'match' => 'services.*'],
+            ['label' => 'Thu tiền', 'route' => $u->hasPermission('payment.record') ? 'payments.index' : null, 'match' => 'payments.*'],
+        ], fn ($i) => $i['route']));
+
+        $navItems = array_values(array_filter([
             ['label' => 'Dashboard', 'route' => 'dashboard', 'match' => 'dashboard'],
-            ['label' => 'Khách hàng', 'route' => auth()->user()->hasPermission('lead.view') ? 'leads.index' : null, 'match' => 'leads.*'],
-            ['label' => 'Tổ chức', 'route' => auth()->user()->hasPermission('user.manage') ? 'org.users' : null, 'match' => 'org.*'],
-            ['label' => 'Chia số', 'route' => auth()->user()->hasPermission('rule.manage') ? 'distribution.rules' : (auth()->user()->hasPermission('lead.view') ? 'distribution.pools' : null), 'match' => 'distribution.*'],
-            ['label' => 'Dịch vụ', 'route' => auth()->user()->hasPermission('service.manage') ? 'services.catalog' : null, 'match' => 'services.*'],
-            ['label' => 'Thu tiền', 'route' => auth()->user()->hasPermission('payment.record') ? 'payments.index' : null, 'match' => 'payments.*'],
-            ['label' => 'Báo cáo', 'route' => auth()->user()->hasAnyPermission(['report.view', 'report.view_all']) ? 'reports.index' : null, 'match' => 'reports.*'],
-            ['label' => 'Duyệt lead', 'route' => auth()->user()->hasPermission('lead.approve_source') ? 'leads.approvals' : null, 'match' => 'leads.approvals'],
-            ['label' => 'Quy tắc VH', 'route' => auth()->user()->hasPermission('ops.manage') ? 'ops.rules' : null, 'match' => 'ops.*'],
-        ];
+            !empty($customerChildren) ? ['label' => 'Khách hàng', 'match' => 'leads.*|distribution.*', 'children' => $customerChildren] : null,
+            !empty($bizChildren) ? ['label' => 'Kinh doanh', 'match' => 'services.*|payments.*', 'children' => $bizChildren] : null,
+            ['label' => 'Tổ chức', 'route' => $u->hasPermission('user.manage') ? 'org.users' : null, 'match' => 'org.*'],
+            ['label' => 'Báo cáo', 'route' => $u->hasAnyPermission(['report.view', 'report.view_all']) ? 'reports.index' : null, 'match' => 'reports.*'],
+            ['label' => 'Quy tắc VH', 'route' => $u->hasPermission('ops.manage') ? 'ops.rules' : null, 'match' => 'ops.*'],
+        ]));
+
+        $isActive = function ($match) {
+            foreach (explode('|', $match) as $m) {
+                if (request()->routeIs(trim($m))) return true;
+            }
+            return false;
+        };
     @endphp
     <div class="min-h-screen flex flex-col" x-data="{ mobileMenu: false }">
         {{-- Top navbar --}}
@@ -35,9 +50,28 @@
 
                 <nav class="hidden md:flex items-center gap-0.5 lg:gap-1 text-sm font-medium">
                     @foreach ($navItems as $item)
-                        @if ($item['route'])
+                        @if (!empty($item['children']))
+                            <div class="relative" x-data="{ dd: false }" @mouseenter="dd = true" @mouseleave="dd = false">
+                                <button @click="dd = !dd"
+                                        class="px-2.5 lg:px-3 py-2 rounded-md whitespace-nowrap inline-flex items-center gap-1 {{ $isActive($item['match']) ? 'text-gold-700 font-semibold' : 'text-ink/70 hover:text-gold-700' }}">
+                                    {{ $item['label'] }}
+                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+                                </button>
+                                <div x-show="dd" x-cloak
+                                     class="absolute left-0 top-full pt-1 w-52 z-50">
+                                    <div class="bg-white border border-gold-200 rounded-lg shadow-card py-1">
+                                        @foreach ($item['children'] as $child)
+                                            <a href="{{ route($child['route']) }}"
+                                               class="block px-4 py-2 text-sm whitespace-nowrap {{ $isActive($child['match']) ? 'text-gold-700 font-semibold bg-gold-50' : 'text-ink/80 hover:bg-gold-50 hover:text-gold-700' }}">
+                                                {{ $child['label'] }}
+                                            </a>
+                                        @endforeach
+                                    </div>
+                                </div>
+                            </div>
+                        @elseif (!empty($item['route']))
                             <a href="{{ route($item['route']) }}"
-                               class="px-2.5 lg:px-3 py-2 rounded-md whitespace-nowrap {{ request()->routeIs($item['match']) ? 'text-gold-700 font-semibold' : 'text-ink/70 hover:text-gold-700' }}">
+                               class="px-2.5 lg:px-3 py-2 rounded-md whitespace-nowrap {{ $isActive($item['match']) ? 'text-gold-700 font-semibold' : 'text-ink/70 hover:text-gold-700' }}">
                                 {{ $item['label'] }}
                             </a>
                         @else
@@ -88,9 +122,19 @@
                  x-transition:enter="transition ease-out duration-150" x-transition:enter-start="opacity-0 -translate-y-2" x-transition:enter-end="opacity-100 translate-y-0"
                  class="md:hidden border-t border-gold-100 bg-white px-4 py-3 space-y-1">
                 @foreach ($navItems as $item)
-                    @if ($item['route'])
+                    @if (!empty($item['children']))
+                        <div class="pt-1">
+                            <div class="px-3 py-1.5 text-xs uppercase tracking-wide text-ink/40">{{ $item['label'] }}</div>
+                            @foreach ($item['children'] as $child)
+                                <a href="{{ route($child['route']) }}"
+                                   class="block px-6 py-2 rounded-md text-sm {{ $isActive($child['match']) ? 'bg-gold-50 text-gold-700 font-semibold' : 'text-ink/70 hover:bg-gold-50' }}">
+                                    {{ $child['label'] }}
+                                </a>
+                            @endforeach
+                        </div>
+                    @elseif (!empty($item['route']))
                         <a href="{{ route($item['route']) }}"
-                           class="block px-3 py-2.5 rounded-md text-sm font-medium {{ request()->routeIs($item['match']) ? 'bg-gold-50 text-gold-700 font-semibold' : 'text-ink/70 hover:bg-gold-50' }}">
+                           class="block px-3 py-2.5 rounded-md text-sm font-medium {{ $isActive($item['match']) ? 'bg-gold-50 text-gold-700 font-semibold' : 'text-ink/70 hover:bg-gold-50' }}">
                             {{ $item['label'] }}
                         </a>
                     @else
