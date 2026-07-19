@@ -17,14 +17,19 @@ class AuthController extends Controller
 
     public function login(Request $request): RedirectResponse
     {
-        $credentials = $request->validate([
-            'email' => ['required', 'email'],
+        $data = $request->validate([
+            'login'    => ['required', 'string'],
             'password' => ['required'],
+        ], [
+            'login.required' => 'Vui lòng nhập tài khoản hoặc email.',
         ]);
+
+        $field = filter_var($data['login'], FILTER_VALIDATE_EMAIL) ? 'email' : 'username';
+        $credentials = [$field => $data['login'], 'password' => $data['password']];
 
         if (! Auth::attempt($credentials, $request->boolean('remember'))) {
             throw ValidationException::withMessages([
-                'email' => 'Email hoặc mật khẩu không đúng.',
+                'login' => 'Tài khoản hoặc mật khẩu không đúng.',
             ]);
         }
 
@@ -34,7 +39,7 @@ class AuthController extends Controller
         if ($user->isLocked()) {
             Auth::logout();
             throw ValidationException::withMessages([
-                'email' => 'Tài khoản đã bị khóa. Liên hệ quản trị viên.',
+                'login' => 'Tài khoản đã bị khóa. Liên hệ quản trị viên.',
             ]);
         }
 

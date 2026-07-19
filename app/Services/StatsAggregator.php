@@ -19,11 +19,17 @@ class StatsAggregator
 
             $rows = [];
 
+            // Phase 6.21 — camp là custom field cấp phòng Marketing (nhiều field), JOIN theo key
+            $campFieldIds = DB::table('custom_fields')->where('key', 'camp')->pluck('id')->all();
+
             // --- Funnel từ leads ---
             $funnel = DB::table('leads')
+                ->leftJoin('lead_custom_values as camp_cv', function ($join) use ($campFieldIds) {
+                    $join->on('camp_cv.lead_id', '=', 'leads.id')->whereIn('camp_cv.custom_field_id', $campFieldIds ?: [0]);
+                })
                 ->whereDate('received_date', $date)
                 ->whereNull('deleted_at')
-                ->selectRaw("org_unit_id, owner_id, camp, ad_source,
+                ->selectRaw("leads.org_unit_id, leads.owner_id, camp_cv.value as camp, leads.ad_source,
                     count(*) as total,
                     sum(classification = 'lead') as `lead`,
                     sum(classification = 'follow') as `follow`,
@@ -31,7 +37,7 @@ class StatsAggregator
                     sum(classification = 'booking') as booking,
                     sum(classification = 'show') as `show`,
                     sum(classification = 'close') as `close`")
-                ->groupBy('org_unit_id', 'owner_id', 'camp', 'ad_source')
+                ->groupBy('leads.org_unit_id', 'leads.owner_id', 'camp_cv.value', 'leads.ad_source')
                 ->get();
 
             foreach ($funnel as $r) {
@@ -55,9 +61,12 @@ class StatsAggregator
             // --- Revenue từ payments (user = người thu) ---
             $revenue = DB::table('payments')
                 ->join('leads', 'leads.id', '=', 'payments.lead_id')
+                ->leftJoin('lead_custom_values as camp_cv', function ($join) use ($campFieldIds) {
+                    $join->on('camp_cv.lead_id', '=', 'leads.id')->whereIn('camp_cv.custom_field_id', $campFieldIds ?: [0]);
+                })
                 ->whereDate('payments.paid_at', $date)
-                ->selectRaw('leads.org_unit_id, payments.collected_by as user_id, leads.camp, leads.ad_source, sum(payments.amount) as amount')
-                ->groupBy('leads.org_unit_id', 'payments.collected_by', 'leads.camp', 'leads.ad_source')
+                ->selectRaw('leads.org_unit_id, payments.collected_by as user_id, camp_cv.value as camp, leads.ad_source, sum(payments.amount) as amount')
+                ->groupBy('leads.org_unit_id', 'payments.collected_by', 'camp_cv.value', 'leads.ad_source')
                 ->get();
 
             foreach ($revenue as $r) {

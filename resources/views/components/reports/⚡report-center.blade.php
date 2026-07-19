@@ -333,16 +333,23 @@ new class extends Component
             ->first();
     }
 
-    /** Tab marketing: group theo camp/nguồn/page — page không có trong stats_daily nên query leads trực tiếp. */
+    /** Tab marketing: group theo camp/nguồn/page. Phase 6.20: camp+page là custom_values. */
     private function marketingData()
     {
-        return $this->reportLeadQuery()
-            ->whereBetween('received_date', [$this->from, $this->to])
-            ->selectRaw("COALESCE({$this->groupBy}, '(trống)') as dim, count(*) total, sum(classification = 'close') closes, sum(classification = 'booking') bookings")
-            ->groupBy('dim')
-            ->orderByDesc('total')
-            ->limit(50)
-            ->get();
+        $q = $this->reportLeadQuery()->whereBetween('received_date', [$this->from, $this->to]);
+
+        if (in_array($this->groupBy, ['camp', 'page'], true)) {
+            $fieldIds = \App\Models\CustomField::where('key', $this->groupBy)->pluck('id')->all();
+            $q->leftJoin('lead_custom_values as gb_cv', function ($join) use ($fieldIds) {
+                $join->on('gb_cv.lead_id', '=', 'leads.id')->whereIn('gb_cv.custom_field_id', $fieldIds ?: [0]);
+            })->selectRaw("COALESCE(gb_cv.value, '(trống)') as dim, count(*) total, sum(classification = 'close') closes, sum(classification = 'booking') bookings")
+              ->groupBy('gb_cv.value');
+        } else {
+            $q->selectRaw("COALESCE(leads.{$this->groupBy}, '(trống)') as dim, count(*) total, sum(classification = 'close') closes, sum(classification = 'booking') bookings")
+              ->groupBy("leads.{$this->groupBy}");
+        }
+
+        return $q->orderByDesc('total')->limit(50)->get();
     }
 
     private function performanceData()

@@ -83,12 +83,16 @@ class ProcessRawLeadTest extends TestCase
 
     public function test_duplicate_phone_merges_into_existing_lead(): void
     {
+        // Phase 6.20 — camp giờ là custom field cấp công ty (được seed trong migration)
+        $campField = CustomField::whereNull('org_unit_id')->where('key', 'camp')->firstOrFail();
         $existing = Lead::create([
             'received_date' => now()->toDateString(),
             'name' => 'Khách cũ',
             'phone' => '0901234567',
-            'camp' => 'Camp cũ',
         ]);
+        LeadCustomValue::create(['lead_id' => $existing->id, 'custom_field_id' => $campField->id, 'value' => 'Camp cũ']);
+        // Reset accessor cache vì test khác có thể đã cache id sai
+        (function () { self::$_coreCustomFieldIds = []; })->call(new Lead);
 
         $raw = $this->process($this->makeRaw([
             'name' => 'Khách trùng',

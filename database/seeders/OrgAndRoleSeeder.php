@@ -44,7 +44,7 @@ class OrgAndRoleSeeder extends Seeder
         ]);
         $tl->permissions()->sync(Permission::whereIn('key', [
             'lead.view', 'lead.view_phone', 'lead.create', 'lead.update',
-            'lead.distribute', 'lead.distribute_team', 'lead.recall', 'lead.approve_source',
+            'lead.view_pool', 'lead.distribute', 'lead.distribute_booking', 'lead.distribute_sale', 'lead.recall', 'lead.approve_source',
             'report.view',
         ])->pluck('id'));
 
@@ -61,20 +61,21 @@ class OrgAndRoleSeeder extends Seeder
             'is_system' => true,
         ]);
         $dmHcm->permissions()->sync(Permission::whereIn('key', [
-            'lead.view', 'lead.view_phone', 'lead.create', 'lead.update', 'lead.delete',
+            'lead.view', 'lead.view_phone', 'lead.create', 'lead.update', 'lead.update_booking', 'lead.update_sale', 'lead.delete',
             'lead.import', 'lead.export',
-            'lead.distribute', 'lead.distribute_team', 'lead.distribute_ctv', 'lead.recall', 'lead.approve_source',
+            'lead.view_pool', 'lead.distribute', 'lead.distribute_booking', 'lead.distribute_sale', 'lead.distribute_ctv', 'lead.recall', 'lead.approve_source',
             'user.manage', 'rule.manage',
             'service.manage', 'payment.record', 'contribution.set',
             'field.manage', 'field.approve',
+            'staff.manage',
             'report.view', 'report.view_all',
         ])->pluck('id'));
 
         // Manager: quản lý team + phân bổ + duyệt + thu hồi + xem báo cáo trong scope
         $manager = Role::updateOrCreate(['name' => 'Manager'], ['description' => 'Quản lý team & chia số']);
         $managerPerms = Permission::whereIn('key', [
-            'lead.view', 'lead.create', 'lead.update', 'lead.view_phone',
-            'lead.distribute', 'lead.distribute_team', 'lead.approve_source', 'lead.recall',
+            'lead.view', 'lead.create', 'lead.update', 'lead.update_booking', 'lead.update_sale', 'lead.view_phone',
+            'lead.view_pool', 'lead.distribute', 'lead.distribute_booking', 'lead.distribute_sale', 'lead.approve_source', 'lead.recall',
             'report.view',
         ])->pluck('id');
         $manager->permissions()->sync($managerPerms);

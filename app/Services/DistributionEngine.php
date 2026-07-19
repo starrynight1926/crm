@@ -27,11 +27,14 @@ class DistributionEngine
     /** Chia 1 lead từ vị trí hiện tại xuống sâu nhất có thể. */
     public function distribute(Lead $lead): void
     {
+        // Phase 6.20 — eager load customValues để accessor page/camp không N+1 khi match rule
+        $lead->loadMissing('customValues');
         if ($lead->pool_level === Lead::POOL_COMMON) {
             $this->runLevel($lead, DistributionRule::LEVEL_POOL_TO_TEAM);
         }
 
         if ($lead->refresh()->pool_level === Lead::POOL_TEAM) {
+            $lead->loadMissing('customValues');
             $this->runLevel($lead, DistributionRule::LEVEL_TEAM_TO_USER);
         }
     }

@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-#[Fillable(['name', 'facility_id', 'role', 'active'])]
+#[Fillable(['name', 'title', 'facility_id', 'role', 'active'])]
 class StaffMember extends Model
 {
     public const ROLE_DOCTOR = 'doctor';
@@ -47,5 +47,11 @@ class StaffMember extends Model
         }
 
         return $facility->name . ' — ' . $this->name;
+    }
+
+    /** Tên hiển thị: "Tên\n(Chức vụ)" — dùng cho dropdown BS ở form + detail. */
+    public function displayName(): string
+    {
+        return $this->title ? $this->name . "\n(" . $this->title . ')' : $this->name;
     }
 }

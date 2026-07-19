@@ -24,6 +24,9 @@ Route::middleware('auth')->group(function () {
     Route::view('/settings', 'settings.index')->name('settings.index');
     Route::view('/settings/fields', 'settings.fields')->middleware('permission:field.manage')->name('settings.fields');
     Route::view('/settings/field-approvals', 'settings.field-approvals')->middleware('permission:field.approve')->name('settings.field-approvals');
+    Route::view('/settings/staff', 'settings.staff')->middleware('permission:staff.manage')->name('settings.staff');
+    Route::post('/settings/staff/export', [\App\Http\Controllers\StaffExportController::class, 'export'])
+        ->middleware('permission:staff.manage')->name('settings.staff.export');
 
     Route::view('/org/users', 'org.users')->middleware('permission:user.manage')->name('org.users');
     Route::view('/org/roles', 'org.roles')->middleware('permission:role.manage')->name('org.roles');
@@ -47,8 +50,11 @@ Route::middleware('auth')->group(function () {
         Route::view('/failed', 'leads.failed')->middleware('permission:lead.import')->name('leads.failed');
         Route::view('/approvals', 'leads.approvals')->middleware('permission:lead.approve_source')->name('leads.approvals');
         Route::get('/{lead}', fn (\App\Models\Lead $lead) => view('leads.show', ['lead' => $lead]))->name('leads.show');
-        Route::get('/{lead}/edit', fn (\App\Models\Lead $lead) => view('leads.edit', ['lead' => $lead]))
-            ->middleware('permission:lead.update')->name('leads.edit');
+        Route::get('/{lead}/edit', function (\App\Models\Lead $lead) {
+            abort_unless($lead->canEditPersonalInfo(auth()->user()), 403,
+                'Bạn không có quyền sửa thông tin khách hàng ở phase ' . ($lead->pipeline_phase ?? 'sale') . '.');
+            return view('leads.edit', ['lead' => $lead]);
+        })->name('leads.edit');
     });
 
     // Phase 6.6 — Quy tắc vận hành (chỉ admin hệ thống)

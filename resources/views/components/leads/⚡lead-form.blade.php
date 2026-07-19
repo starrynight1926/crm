@@ -7,6 +7,7 @@ use App\Models\Facility;
 use App\Models\Lead;
 use App\Models\LeadCustomValue;
 use App\Models\LeadStatusLog;
+use App\Models\LeadTreatment;
 use App\Models\LeadUpsell;
 use App\Models\OrgUnit;
 use App\Models\Service;
@@ -24,9 +25,8 @@ new class extends Component
 
     public string $received_date = '';
 
-    public string $page = '';
+    // Phase 6.20 — page/camp giờ là custom field cấp công ty (không còn property core)
 
-    public string $camp = '';
 
     public string $insight = '';
 
@@ -45,17 +45,9 @@ new class extends Component
     // --- Dịch vụ ---
     public string $service_name = '';
 
-    // --- LIỆU TRÌNH ---
-    public string $treatment_1 = '';
-    public string $treatment_2 = '';
-    public string $treatment_3 = '';
-    public string $treatment_4 = '';
-
-    // --- Bác sĩ thực hiện ---
-    public ?int $performingDoctorId = null;
-
-    // --- Đánh giá CLCM ---
-    public string $quality_rating = '';
+    // --- LIỆU TRÌNH (Phase 6.11 — dạng thẻ 1-N, mỗi lần bác sĩ + đánh giá riêng) ---
+    /** @var array<int, array{performed_at: string, performing_doctor_id: string|int|null, quality_rating: string}> */
+    public array $treatmentRows = [];
 
     // --- DV tiềm năng ---
     public string $potential_service = '';
@@ -101,7 +93,9 @@ new class extends Component
     public function mount(?Lead $lead = null): void
     {
         if ($lead?->exists) {
-            abort_unless($lead->isVisibleTo(auth()->user()), 403);
+            // Phase 6.8 — sửa info cá nhân chỉ khi có update_booking/update_sale khớp phase hiện tại.
+            abort_unless($lead->canEditPersonalInfo(auth()->user()), 403,
+                'Bạn không có quyền sửa thông tin khách hàng ở phase ' . ($lead->pipeline_phase ?? 'sale') . '.');
             $this->lead = $lead;
             $this->fillFromLead($lead);
         } else {
@@ -114,8 +108,7 @@ new class extends Component
         $this->name = $lead->name;
         $this->phone = $lead->phone;
         $this->received_date = $lead->received_date->toDateString();
-        $this->page = $lead->page ?? '';
-        $this->camp = $lead->camp ?? '';
+        // Phase 6.20 — page/camp giờ trong custom_values, sẽ hiện trong section Trường bổ sung
         $this->insight = $lead->insight ?? '';
         $this->link = $lead->link ?? '';
         $this->ad_source = $lead->ad_source ?? '';
@@ -146,12 +139,11 @@ new class extends Component
         $this->medical_history = $lead->medical_history ?? '';
         $this->occupation = $lead->occupation ?? '';
         $this->service_name = $lead->service_name ?? '';
-        $this->treatment_1 = $lead->treatment_1?->toDateString() ?? '';
-        $this->treatment_2 = $lead->treatment_2?->toDateString() ?? '';
-        $this->treatment_3 = $lead->treatment_3?->toDateString() ?? '';
-        $this->treatment_4 = $lead->treatment_4?->toDateString() ?? '';
-        $this->performingDoctorId = $lead->performing_doctor_id;
-        $this->quality_rating = $lead->quality_rating ?? '';
+        $this->treatmentRows = $lead->treatments->map(fn ($t) => [
+            'performed_at' => $t->performed_at?->toDateString() ?? '',
+            'performing_doctor_id' => (string) ($t->performing_doctor_id ?? ''),
+            'quality_rating' => $t->quality_rating ?? '',
+        ])->all();
         $this->potential_service = $lead->potential_service ?? '';
         $this->upsellRows = $lead->upsells->map(fn ($u) => [
             'staff_member_id' => (string) ($u->staff_member_id ?? ''),
@@ -187,6 +179,17 @@ new class extends Component
     {
         unset($this->upsellRows[$index]);
         $this->upsellRows = array_values($this->upsellRows);
+    }
+
+    public function addTreatmentRow(): void
+    {
+        $this->treatmentRows[] = ['performed_at' => '', 'performing_doctor_id' => '', 'quality_rating' => ''];
+    }
+
+    public function removeTreatmentRow(int $index): void
+    {
+        unset($this->treatmentRows[$index]);
+        $this->treatmentRows = array_values($this->treatmentRows);
     }
 
     /** Chọn kho (dù là kho chung công ty) thì bỏ chia cá nhân. */
@@ -320,6 +323,28 @@ new class extends Component
         }
     }
 
+    /** Phase 6.11 — Sync liệu trình (delete + recreate theo thứ tự nhập). */
+    private function syncTreatments(Lead $lead): void
+    {
+        $lead->treatments()->delete();
+        $seq = 1;
+        foreach ($this->treatmentRows as $row) {
+            $hasContent = ($row['performed_at'] ?? '') !== ''
+                || ($row['performing_doctor_id'] ?? '') !== ''
+                || trim((string) ($row['quality_rating'] ?? '')) !== '';
+            if (! $hasContent) {
+                continue;
+            }
+            LeadTreatment::create([
+                'lead_id' => $lead->id,
+                'sequence' => $seq++,
+                'performed_at' => $row['performed_at'] ?: null,
+                'performing_doctor_id' => $row['performing_doctor_id'] ?: null,
+                'quality_rating' => trim((string) ($row['quality_rating'] ?? '')) ?: null,
+            ]);
+        }
+    }
+
     private function syncCustomValues(Lead $lead, array $clean): void
     {
         foreach ($clean as $fieldId => $value) {
@@ -346,10 +371,10 @@ new class extends Component
             'birthday' => 'nullable|date',
             'address' => 'nullable|string|max:500',
             'occupation' => 'nullable|string|max:150',
-            'treatment_1' => 'nullable|date',
-            'treatment_2' => 'nullable|date',
-            'treatment_3' => 'nullable|date',
-            'treatment_4' => 'nullable|date',
+            'treatmentRows' => 'array',
+            'treatmentRows.*.performed_at' => 'nullable|date',
+            'treatmentRows.*.performing_doctor_id' => 'nullable|exists:staff_members,id',
+            'treatmentRows.*.quality_rating' => 'nullable|string|max:2000',
             'upsellRows' => 'array',
             'upsellRows.*.service_id' => 'required|exists:services,id',
             'upsellRows.*.staff_member_id' => 'nullable|exists:staff_members,id',
@@ -399,8 +424,7 @@ new class extends Component
             'name' => $this->name,
             'phone' => $normalized,
             'received_date' => $this->received_date,
-            'page' => $this->page ?: null,
-            'camp' => $this->camp ?: null,
+            // Phase 6.20 — page/camp: giờ ghi vào lead_custom_values qua form Trường bổ sung
             'insight' => $this->insight ?: null,
             'link' => $this->link ?: null,
             'ad_source' => $this->ad_source ?: null,
@@ -421,12 +445,6 @@ new class extends Component
             'medical_history' => $this->medical_history ?: null,
             'occupation' => $this->occupation ?: null,
             'service_name' => $this->service_name ?: null,
-            'treatment_1' => $this->treatment_1 ?: null,
-            'treatment_2' => $this->treatment_2 ?: null,
-            'treatment_3' => $this->treatment_3 ?: null,
-            'treatment_4' => $this->treatment_4 ?: null,
-            'performing_doctor_id' => $this->performingDoctorId ?: null,
-            'quality_rating' => $this->quality_rating ?: null,
             'potential_service' => $this->potential_service ?: null,
             'source_group' => $this->sourceGroup,
             'approval_status' => $this->sourceGroup === Lead::SOURCE_WALK_IN ? Lead::APPROVAL_PENDING : Lead::APPROVAL_NONE,
@@ -448,6 +466,7 @@ new class extends Component
         $lead = Lead::create($attributes);
         $this->syncCustomValues($lead, $cleanCustom);
         $this->syncUpsells($lead);
+        $this->syncTreatments($lead);
         $lead->load('customValues');
         $lead->generateCode();
 
@@ -508,6 +527,7 @@ new class extends Component
         $lead->update($attributes);
         $this->syncCustomValues($lead, $cleanCustom);
         $this->syncUpsells($lead);
+        $this->syncTreatments($lead);
         $lead->load('customValues');
         $lead->generateCode();
         AuditLog::record('update', $lead);
@@ -553,6 +573,41 @@ new class extends Component
         return ['owner_id' => null, 'org_unit_id' => null, 'pool_level' => Lead::POOL_COMMON, 'assigned_at' => null];
     }
 
+    /**
+     * Phase 6.9 — Danh sách chuyên viên tư vấn gán được cho lead.
+     * Rule: user active + có permission `lead.update` + assignment.org_unit ∈ subtree của lead.org_unit
+     * (nếu lead chưa có org_unit → dùng scope của người thao tác) + visible với người thao tác.
+     */
+    private function consultantUsers()
+    {
+        $viewer = auth()->user();
+        $visibleOrgIds = $viewer->visibleOrgUnitIds();
+
+        // Xác định "subtree hợp lệ" cho chuyên viên: dùng org_unit hiện tại của lead (nếu có).
+        $rootOrg = $this->targetOrgUnit();
+        if ($rootOrg) {
+            $subtreeIds = \App\Models\OrgUnit::where('path', 'like', $rootOrg->path . '%')->pluck('id')->all();
+        } else {
+            $subtreeIds = $visibleOrgIds; // chưa gắn team → dùng toàn bộ scope của người thao tác
+        }
+
+        // Giao với scope của người thao tác.
+        $allowedOrgIds = array_values(array_intersect($subtreeIds ?: [], $visibleOrgIds ?: []));
+        if ($allowedOrgIds === []) {
+            return collect();
+        }
+
+        return User::where('status', User::STATUS_ACTIVE)
+            ->whereHas('assignments', fn ($q) => $q->effective()
+                ->whereIn('org_unit_id', $allowedOrgIds)
+                ->whereHas('role.permissions', fn ($qq) => $qq->where('key', 'lead.update')))
+            ->orderBy('name')
+            ->get()
+            ->map(fn ($u) => ['id' => $u->id, 'name' => $u->name])
+            ->values()
+            ->all();
+    }
+
     /** Nhân sự có thể chia trực tiếp: trong phạm vi của người thao tác + chính mình. */
     private function assignableUsers()
     {
@@ -593,19 +648,24 @@ new class extends Component
 
         $allStaff = StaffMember::with('facility.parent')->active()->orderBy('name')->get();
 
+        // Bác sĩ giữ từ staff_members (title, chuyển API booking sau).
         $staffTree = $facilities->map(fn ($fac) => [
             'name' => $fac->name,
             'depts' => $fac->children->map(fn ($dept) => [
                 'id' => $dept->id,
                 'name' => $dept->name,
-                'doctors' => $allStaff->where('facility_id', $dept->id)->where('role', 'doctor')->map(fn ($s) => ['id' => $s->id, 'name' => $s->name])->values()->all(),
-                'consultants' => $allStaff->where('facility_id', $dept->id)->where('role', 'consultant')->map(fn ($s) => ['id' => $s->id, 'name' => $s->name])->values()->all(),
+                'doctors' => $allStaff->where('facility_id', $dept->id)->where('role', 'doctor')->map(fn ($s) => ['id' => $s->id, 'name' => $s->displayName()])->values()->all(),
             ])->all(),
         ])->all();
 
+        // Phase 6.9 — Chuyên viên tư vấn = user có lead.update, trong subtree org_unit của lead
+        // (kể cả lead chưa có org_unit_id → lấy trong scope của người thao tác), + visible cho user hiện tại.
+        $consultantUsers = $this->consultantUsers();
+
         $assignedConsultantIds = array_filter([$this->consultant1Id, $this->consultant2Id, $this->consultant3Id]);
+        // Nếu chuyên viên đã gán không nằm trong list (VD user chuyển team), vẫn phải hiển thị tên.
         $assignedConsultants = $assignedConsultantIds
-            ? $allStaff->whereIn('id', $assignedConsultantIds)->values()
+            ? User::whereIn('id', $assignedConsultantIds)->get()->map(fn ($u) => ['id' => $u->id, 'name' => $u->name])->values()
             : collect();
 
         return [
@@ -636,6 +696,7 @@ new class extends Component
                 ];
             })->values()->toJson(),
             'assignedConsultants' => $assignedConsultants,
+            'consultantUsers' => $consultantUsers,
         ];
     }
 };
@@ -682,7 +743,7 @@ new class extends Component
                     </div>
                     <div class="grid grid-cols-2 gap-4">
                         <div>
-                            <label class="block text-sm font-medium mb-1.5">Ngày <span class="text-red-500">*</span></label>
+                            <label class="block text-sm font-medium mb-1.5">Ngày thu thập <span class="text-red-500">*</span></label>
                             <x-date-input field="received_date" />
                             @error('received_date')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
                         </div>
@@ -703,31 +764,10 @@ new class extends Component
                             @endif
                         </div>
                     </div>
-                    <div class="grid grid-cols-2 gap-4">
-                        <div>
-                            <label class="block text-sm font-medium mb-1.5">PAGE</label>
-                            <input type="text" wire:model="page" placeholder="Tên fanpage" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
-                        </div>
-                        <div></div>
-                    </div>
-                    <div class="grid grid-cols-2 gap-4">
-                        <div>
-                            <label class="block text-sm font-medium mb-1.5">Camp</label>
-                            <input type="text" wire:model="camp" placeholder="Tên chiến dịch" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium mb-1.5">Nguồn QC</label>
-                            <input type="text" wire:model="ad_source" placeholder="VD: Facebook, Google..." class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
-                        </div>
-                    </div>
+                    {{-- PAGE + Camp giờ hiển thị trong section "Trường bổ sung" (Phase 6.20); Link move sang tab Insight --}}
                     <div>
-                        <label class="block text-sm font-medium mb-1.5">Link</label>
-                        <input type="text" wire:model="link" placeholder="https://facebook.com/..." class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
-                        @error('link')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium mb-1.5">Insight</label>
-                        <textarea wire:model="insight" rows="2" placeholder="Ghi chú insight khách hàng..." class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500"></textarea>
+                        <label class="block text-sm font-medium mb-1.5">Nguồn QC</label>
+                        <input type="text" wire:model="ad_source" placeholder="VD: Facebook, Google..." class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
                     </div>
                     <div>
                         <label class="block text-sm font-medium mb-1.5">NOTE</label>
@@ -736,13 +776,312 @@ new class extends Component
                 </div>
             </div>
 
-            {{-- Nhóm INSIGHT --}}
+            {{-- Trường bổ sung — moved lên đây (Phase 6.14) --}}
+            @if ($customFields->isNotEmpty())
             <div class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
+                <h2 class="font-bold text-gold-700 mb-1 flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.28z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                    Trường bổ sung
+                    <span class="text-xs font-normal text-ink/50">({{ $lead?->orgUnit?->name ?? $this->targetOrgUnit()?->name ?? 'mức công ty' }})</span>
+                </h2>
+                <p class="text-xs text-ink/50 mb-5">Trường có <span class="text-red-500">*</span> là bắt buộc.</p>
+<?php $cfLabels = \App\Models\CustomField::labelMap($customFields); ?>
+                <div class="space-y-4">
+                    @foreach ($customFields as $field)
+<?php $ck = $field->rules['code_kind'] ?? null; ?>
+                        @continue($field->field_type === 'code' && $ck === 'fixed')
+                        <div wire:key="cf-{{ $field->id }}">
+                            <label class="block text-sm font-medium mb-1.5">
+                                {{ $cfLabels[$field->id] ?? $field->label }}
+                                @if ($field->required)<span class="text-red-500">*</span>@endif
+                                @if ($field->affects_code)<span class="text-[10px] text-gold-700 ml-1">#mã KH</span>@endif
+                                @if ($field->org_unit_id === null)
+                                    <span class="text-[10px] uppercase tracking-wider text-ink/40 border border-gold-100 rounded px-1.5 py-0.5 ml-1">Công ty</span>
+                                @endif
+                            </label>
+                            @if ($field->field_type === 'select' || ($field->field_type === 'code' && $ck === 'select'))
+                                <select wire:model="custom.{{ $field->id }}" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-gold-500">
+                                    <option value="">— chọn —</option>
+                                    @foreach ($field->options ?? [] as $option)
+<?php $ol = $field->optionLabel($option); ?>
+                                        <option value="{{ $option }}">{{ ($ol !== '' && $ol !== $option) ? "$ol ($option)" : $option }}</option>
+                                    @endforeach
+                                </select>
+                            @elseif ($field->field_type === 'tick')
+                                <label class="inline-flex items-center gap-2 text-sm cursor-pointer select-none">
+                                    <input type="checkbox" wire:model="custom.{{ $field->id }}" class="rounded border-gold-300 text-gold-600 focus:ring-gold-500 w-5 h-5">
+                                    Có
+                                </label>
+                            @elseif ($field->field_type === 'date')
+                                <x-date-input field="custom.{{ $field->id }}" />
+                            @elseif ($field->field_type === 'number')
+                                <input type="number" step="any" wire:model="custom.{{ $field->id }}" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
+                            @elseif ($field->field_type === 'email')
+                                <input type="email" wire:model="custom.{{ $field->id }}" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
+                            @else
+                                <input type="text" wire:model="custom.{{ $field->id }}" @if($field->field_type==='code') style="text-transform:uppercase" @endif class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
+                            @endif
+                            @error('custom.' . $field->id)<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
+                        </div>
+                    @endforeach
+                </div>
+            </div>
+            @endif
+
+            {{-- INSIGHT chuyển sang cột phải (tab) Phase 6.15 --}}
+
+
+        </div>
+
+        {{-- CỘT PHẢI --}}
+<?php $staffTreeJson = json_encode($staffTree, JSON_UNESCAPED_UNICODE); ?>
+<?php $consultantUsersJson = json_encode($consultantUsers, JSON_UNESCAPED_UNICODE); ?>
+        <script>
+            window.__staffTree = {!! $staffTreeJson !!};
+            window.__consultantUsers = {!! $consultantUsersJson !!};
+        </script>
+        <div class="space-y-4" x-data="{ tab: 'staff' }">
+            {{-- Tabbar horizontal text-only, gọn labels (Phase 6.17) --}}
+            <div class="flex flex-wrap items-center border-b border-gold-200">
+                <?php $tabs = array_values(array_filter([
+                    ['key' => 'staff',        'label' => 'Nhân sự'],
+                    ['key' => 'insight',      'label' => 'Insight'],
+                    ['key' => 'treatment',    'label' => 'Liệu trình'],
+                    ['key' => 'status',       'label' => 'Trạng thái'],
+                    ['key' => 'upsell',       'label' => 'Dịch vụ'],
+                    $canDistribute ? ['key' => 'distribution', 'label' => 'Phân phối'] : null,
+                ])); ?>
+                @foreach ($tabs as $t)
+                    <button type="button" @click="tab = '{{ $t['key'] }}'"
+                            :class="tab === '{{ $t['key'] }}' ? 'text-gold-700 border-b-2 border-gold-600 font-semibold' : 'text-ink/50 border-b-2 border-transparent hover:text-gold-700'"
+                            class="px-3 py-2 -mb-px text-sm whitespace-nowrap transition-colors">
+                        {{ $t['label'] }}
+                    </button>
+                @endforeach
+            </div>
+
+            {{-- Cơ sở & Nhân sự --}}
+            <div x-show="tab === 'staff'" x-cloak class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
+                <h2 class="font-bold text-gold-700 mb-5 flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z"/></svg>
+                    Cơ sở & Nhân sự
+                </h2>
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium mb-1.5">CƠ SỞ</label>
+                        <select wire:model.live="facilityId" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-gold-500">
+                            <option value="">— Chọn cơ sở —</option>
+                            @foreach ($facilities as $fac)
+                                <optgroup label="{{ $fac->name }}">
+                                    @foreach ($fac->children as $dept)
+                                        <option value="{{ $dept->id }}">{{ $fac->name }} › {{ $dept->name }}</option>
+                                    @endforeach
+                                </optgroup>
+                            @endforeach
+                        </select>
+                    </div>
+
+                    {{-- BÁC SĨ — vẫn dùng staff_members (title, chuyển API booking sau) --}}
+                    <?php $doctorDropdowns = [
+                        ['label' => 'BÁC SĨ TƯ VẤN', 'wireModel' => 'doctorId', 'role' => 'doctors', 'placeholder' => 'Chọn bác sĩ', 'current' => $doctorId, 'slot' => 0],
+                    ]; ?>
+                    @foreach ($doctorDropdowns as $dd)
+                        <div @if($dd['slot'] > 0) x-show="extraConsultants >= {{ $dd['slot'] }}" x-cloak @endif>
+                            <label class="block text-sm font-medium mb-1.5">{{ $dd['label'] }}</label>
+                            <div x-data="{
+                                open: false,
+                                search: '',
+                                role: '{{ $dd['role'] }}',
+                                selectedId: {{ $dd['current'] ?: 'null' }},
+                                selectedName: {{ Js::from($dd['current'] ? $allStaff->firstWhere('id', $dd['current'])?->displayName() : '') }},
+                                get hasSelection() { return this.selectedId != null && this.selectedId > 0; },
+                                get filtered() {
+                                    let q = this.search.toLowerCase();
+                                    let fid = parseInt($wire.facilityId) || 0;
+                                    let tree = window.__staffTree;
+                                    let base = q
+                                        ? tree.map(fac => ({
+                                            ...fac,
+                                            depts: fac.depts.map(dept => ({
+                                                ...dept,
+                                                [this.role]: dept[this.role].filter(s => s.name.toLowerCase().includes(q))
+                                            })).filter(dept => dept[this.role].length > 0)
+                                        })).filter(fac => fac.depts.length > 0)
+                                        : tree.filter(fac => fac.depts.some(d => d[this.role].length > 0));
+                                    if (!fid) return base;
+                                    let matched = base.filter(fac => fac.depts.some(d => d.id === fid));
+                                    let rest = base.filter(fac => !fac.depts.some(d => d.id === fid));
+                                    return [...matched, ...rest];
+                                },
+                                pick(id, name) {
+                                    this.selectedId = id;
+                                    this.selectedName = name;
+                                    this.open = false;
+                                    this.search = '';
+                                    $wire.set('{{ $dd['wireModel'] }}', id);
+                                },
+                                clear() {
+                                    this.selectedId = null;
+                                    this.selectedName = '';
+                                    $wire.set('{{ $dd['wireModel'] }}', null);
+                                }
+                            }" @click.outside="open = false; search = ''" class="relative">
+                                <div x-show="hasSelection" x-cloak class="flex items-center justify-between gap-2 border border-gold-300 bg-gold-50 rounded-md px-3 py-2.5">
+                                    <span class="text-sm font-semibold text-gold-800 whitespace-pre-line leading-tight" x-text="selectedName"></span>
+                                    <button type="button" @click="clear()" class="text-xs font-semibold text-ink/50 hover:text-red-600">✕</button>
+                                </div>
+                                <button x-show="!hasSelection" type="button" @click="open = !open"
+                                        class="w-full flex items-center justify-between border border-gold-200 rounded-md px-3 py-2.5 text-sm text-ink/40 bg-white hover:border-gold-400">
+                                    <span>— {{ $dd['placeholder'] }} —</span>
+                                    <svg class="w-4 h-4 text-ink/30" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"/></svg>
+                                </button>
+                                <div x-show="open" x-cloak
+                                     class="absolute z-30 mt-1 w-full bg-white border border-gold-200 rounded-lg shadow-lg max-h-72 flex flex-col">
+                                    <div class="p-2 border-b border-gold-100">
+                                        <input type="text" x-model="search" placeholder="Nhập tên..." @keydown.escape="open = false; search = ''"
+                                               class="w-full border border-gold-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-gold-500" x-ref="searchInput">
+                                    </div>
+                                    <div class="overflow-y-auto flex-1 py-1">
+                                        <template x-for="fac in filtered" :key="fac.name">
+                                            <div>
+                                                <div class="px-3 py-1.5 text-xs font-bold text-gold-700 uppercase tracking-wider bg-gold-50" x-text="fac.name"></div>
+                                                <template x-for="dept in fac.depts" :key="dept.name">
+                                                    <div>
+                                                        <div class="px-5 py-1 text-xs font-semibold text-ink/50" x-text="dept.name"></div>
+                                                        <template x-for="s in dept[role]" :key="s.id">
+                                                            <button type="button" @click="pick(s.id, s.name)"
+                                                                    class="block w-full text-left pl-8 pr-3 py-1.5 text-sm hover:bg-gold-50 whitespace-pre-line leading-tight"
+                                                                    :class="{'bg-gold-100 font-semibold text-gold-800': selectedId === s.id}">
+                                                                <span x-text="s.name"></span>
+                                                            </button>
+                                                        </template>
+                                                    </div>
+                                                </template>
+                                            </div>
+                                        </template>
+                                        <template x-if="filtered.length === 0">
+                                            <p class="px-3 py-2 text-sm text-ink/40">Không tìm thấy.</p>
+                                        </template>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    @endforeach
+
+                    {{-- CHUYÊN VIÊN TƯ VẤN — user team sale trong subtree org_unit của lead --}}
+                    <?php $consultantDropdowns = [
+                        ['label' => 'CHUYÊN VIÊN TƯ VẤN 1', 'wireModel' => 'consultant1Id', 'current' => $consultant1Id, 'slot' => 0],
+                        ['label' => 'CHUYÊN VIÊN TƯ VẤN 2', 'wireModel' => 'consultant2Id', 'current' => $consultant2Id, 'slot' => 1],
+                        ['label' => 'CHUYÊN VIÊN TƯ VẤN 3', 'wireModel' => 'consultant3Id', 'current' => $consultant3Id, 'slot' => 2],
+                    ]; ?>
+                    @foreach ($consultantDropdowns as $cv)
+                        <?php
+                            $cvCurrentName = $cv['current']
+                                ? ($consultantUsers && ($_f = collect($consultantUsers)->firstWhere('id', $cv['current'])) ? $_f['name'] : ($assignedConsultants->firstWhere('id', $cv['current'])['name'] ?? ''))
+                                : '';
+                            // Alpine click: giảm slot, clear id hiện tại. Nếu bớt CV2 thì cũng clear CV3.
+                            $removeExpr = 'extraConsultants = ' . ($cv['slot'] - 1)
+                                . '; $wire.set(\'' . $cv['wireModel'] . '\', null)'
+                                . ($cv['slot'] === 1 ? '; $wire.set(\'consultant3Id\', null)' : '');
+                        ?>
+                        <div @if($cv['slot'] > 0) x-show="extraConsultants >= {{ $cv['slot'] }}" x-cloak @endif>
+                            <div class="flex items-center justify-between mb-1.5">
+                                <label class="block text-sm font-medium">{{ $cv['label'] }}</label>
+                                @if ($cv['slot'] > 0)
+                                    <button type="button"
+                                            @click="{{ $removeExpr }}"
+                                            class="text-xs font-semibold text-red-600 hover:text-red-800 inline-flex items-center gap-1"
+                                            title="Bớt chuyên viên {{ $cv['slot'] + 1 }}">
+                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                                        Bớt
+                                    </button>
+                                @endif
+                            </div>
+                            <div x-data="{
+                                open: false,
+                                search: '',
+                                selectedId: {{ $cv['current'] ?: 'null' }},
+                                selectedName: @js($cvCurrentName),
+                                get list() { return window.__consultantUsers || []; },
+                                get hasSelection() { return this.selectedId != null && this.selectedId > 0; },
+                                get filtered() {
+                                    let q = this.search.toLowerCase().trim();
+                                    return q === '' ? this.list : this.list.filter(u => u.name.toLowerCase().includes(q));
+                                },
+                                pick(id, name) {
+                                    this.selectedId = id;
+                                    this.selectedName = name;
+                                    this.open = false;
+                                    this.search = '';
+                                    $wire.set('{{ $cv['wireModel'] }}', id);
+                                },
+                                clear() {
+                                    this.selectedId = null;
+                                    this.selectedName = '';
+                                    $wire.set('{{ $cv['wireModel'] }}', null);
+                                }
+                            }" @click.outside="open = false; search = ''" class="relative">
+                                <div x-show="hasSelection" x-cloak class="flex items-center justify-between gap-2 border border-gold-300 bg-gold-50 rounded-md px-3 py-2.5">
+                                    <span class="text-sm font-semibold text-gold-800" x-text="selectedName"></span>
+                                    <button type="button" @click="clear()" class="text-xs font-semibold text-ink/50 hover:text-red-600">✕</button>
+                                </div>
+                                <button x-show="!hasSelection" type="button" @click="open = !open"
+                                        class="w-full flex items-center justify-between border border-gold-200 rounded-md px-3 py-2.5 text-sm text-ink/40 bg-white hover:border-gold-400">
+                                    <span>— Chọn chuyên viên —</span>
+                                    <svg class="w-4 h-4 text-ink/30" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"/></svg>
+                                </button>
+                                <div x-show="open" x-cloak
+                                     class="absolute z-30 mt-1 w-full bg-white border border-gold-200 rounded-lg shadow-lg max-h-72 flex flex-col">
+                                    <div class="p-2 border-b border-gold-100">
+                                        <input type="text" x-model="search" placeholder="Nhập tên..." @keydown.escape="open = false; search = ''"
+                                               class="w-full border border-gold-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-gold-500">
+                                    </div>
+                                    <div class="overflow-y-auto flex-1 py-1">
+                                        <template x-for="u in filtered" :key="u.id">
+                                            <button type="button" @click="pick(u.id, u.name)"
+                                                    class="block w-full text-left px-3 py-1.5 text-sm hover:bg-gold-50"
+                                                    :class="{'bg-gold-100 font-semibold text-gold-800': selectedId === u.id}">
+                                                <span x-text="u.name"></span>
+                                            </button>
+                                        </template>
+                                        <template x-if="filtered.length === 0">
+                                            <p class="px-3 py-2 text-sm text-ink/40">Không có chuyên viên phù hợp trong team.</p>
+                                        </template>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    @endforeach
+
+                    <button x-show="extraConsultants < 2" type="button" @click="extraConsultants++"
+                            class="inline-flex items-center gap-1.5 text-sm font-medium text-gold-700 hover:text-gold-800">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
+                        Thêm chuyên viên tư vấn
+                    </button>
+
+                    <div class="border-t border-gold-100 pt-4">
+                        <label class="block text-sm font-medium mb-1.5">DỊCH VỤ</label>
+                        <input type="text" wire:model="service_name" placeholder="Tên dịch vụ tổng" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
+                    </div>
+                </div>
+            </div>
+
+            {{-- INSIGHT (tab) — Phase 6.15 moved từ cột trái sang --}}
+            <div x-show="tab === 'insight'" x-cloak class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
                 <h2 class="font-bold text-gold-700 mb-5 flex items-center gap-2">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 18v-5.25m0 0a6.01 6.01 0 001.5-.189m-1.5.189a6.01 6.01 0 01-1.5-.189m3.75 7.478a12.06 12.06 0 01-4.5 0m3.75 2.383a14.406 14.406 0 01-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 10-7.517 0c.85.493 1.509 1.333 1.509 2.316V18"/></svg>
                     INSIGHT
                 </h2>
                 <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium mb-1.5">Ghi chú insight khách</label>
+                        <textarea wire:model="insight" rows="2" placeholder="Ghi chú insight khách hàng..." class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500"></textarea>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-1.5">Link</label>
+                        <input type="text" wire:model="link" placeholder="https://facebook.com/..." class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
+                        @error('link')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
+                    </div>
                     <div class="grid grid-cols-2 gap-4">
                         <div>
                             <label class="block text-sm font-medium mb-1.5">Ngày sinh</label>
@@ -765,8 +1104,105 @@ new class extends Component
                 </div>
             </div>
 
-            {{-- DV tiềm năng + UPSELL --}}
-            <div class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
+            {{-- Nhóm LIỆU TRÌNH (Phase 6.11 — dạng thẻ 1-N, mỗi lần bác sĩ + đánh giá riêng) --}}
+            <div x-show="tab === 'treatment'" x-cloak class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
+                <div class="flex items-center justify-between mb-5">
+                    <h2 class="font-bold text-gold-700 flex items-center gap-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5"/></svg>
+                        LIỆU TRÌNH
+                    </h2>
+                    <button type="button" wire:click="addTreatmentRow"
+                            class="inline-flex items-center gap-1.5 text-sm font-semibold text-white bg-gold-600 hover:bg-gold-700 px-3 py-1.5 rounded-md">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
+                        Thêm liệu trình
+                    </button>
+                </div>
+
+                @if (empty($treatmentRows))
+                    <p class="text-sm text-ink/40 italic">Chưa có lần liệu trình nào. Bấm "Thêm liệu trình" để bắt đầu.</p>
+                @endif
+
+                <div class="space-y-3">
+                    @foreach ($treatmentRows as $idx => $row)
+                        <div class="border border-gold-200 rounded-lg p-4 bg-gold-50/30 relative" wire:key="tr-{{ $idx }}">
+                            <button type="button" wire:click="removeTreatmentRow({{ $idx }})"
+                                    class="absolute top-2 right-2 text-xs font-semibold text-red-600 hover:text-red-800 inline-flex items-center gap-1"
+                                    title="Xoá lần {{ $idx + 1 }}">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                            </button>
+
+                            <div class="text-xs font-bold uppercase tracking-wider text-gold-700 mb-3">Lần {{ $idx + 1 }}</div>
+
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                                <div>
+                                    <label class="block text-xs font-medium text-ink/60 mb-1">Ngày thực hiện</label>
+                                    <x-date-input :field="'treatmentRows.' . $idx . '.performed_at'" />
+                                    @error("treatmentRows.{$idx}.performed_at")<p class="text-xs text-red-600 mt-0.5">{{ $message }}</p>@enderror
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-medium text-ink/60 mb-1">Bác sĩ thực hiện</label>
+                                    <select wire:model="treatmentRows.{{ $idx }}.performing_doctor_id"
+                                            class="w-full border border-gold-200 rounded-md px-2 py-2 text-sm bg-white focus:outline-none focus:border-gold-500">
+                                        <option value="">— Chọn bác sĩ —</option>
+                                        @foreach ($allStaff->where('role', 'doctor') as $doc)
+                                            <option value="{{ $doc->id }}">{{ $doc->name }}{{ $doc->title ? ' — ' . $doc->title : '' }}</option>
+                                        @endforeach
+                                    </select>
+                                    @error("treatmentRows.{$idx}.performing_doctor_id")<p class="text-xs text-red-600 mt-0.5">{{ $message }}</p>@enderror
+                                </div>
+                            </div>
+
+                            <div>
+                                <label class="block text-xs font-medium text-ink/60 mb-1">Đánh giá chất lượng chuyên môn</label>
+                                <textarea wire:model="treatmentRows.{{ $idx }}.quality_rating" rows="2"
+                                          placeholder="Ghi nhận đánh giá lần này..."
+                                          class="w-full border border-gold-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-gold-500"></textarea>
+                                @error("treatmentRows.{$idx}.quality_rating")<p class="text-xs text-red-600 mt-0.5">{{ $message }}</p>@enderror
+                            </div>
+                        </div>
+                    @endforeach
+                </div>
+            </div>
+
+            {{-- Trạng thái chăm sóc --}}
+            <div x-show="tab === 'status'" x-cloak class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
+                <h2 class="font-bold text-gold-700 mb-5 flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    Trạng thái chăm sóc
+                </h2>
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium mb-1.5">Ghi nhận tình trạng lần 1</label>
+                        <input type="text" wire:model="status_1" placeholder="VD: Đã liên hệ" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-1.5">Ghi nhận tình trạng lần 2</label>
+                        <input type="text" wire:model="status_2" placeholder="VD: Đã tư vấn" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium mb-1.5">PHÂN LOẠI KẾT QUẢ</label>
+                            <select wire:model="classification" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-gold-500">
+                                @foreach (\App\Models\Lead::CLASSIFICATIONS as $key => $label)
+                                    <option value="{{ $key }}">{{ $label }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-1.5">TRẠNG THÁI ĐẶT LỊCH</label>
+                            <select wire:model="bookingStatus" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-gold-500">
+                                @foreach (\App\Models\Lead::BOOKING_STATUSES as $key => $label)
+                                    <option value="{{ $key }}">{{ $label }}</option>
+                                @endforeach
+                            </select>
+                            <p class="text-xs text-ink/50 mt-1">Team booking đổi khi khách đồng ý gặp.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {{-- DV tiềm năng + UPSELL (tab) --}}
+            <div x-show="tab === 'upsell'" x-cloak class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
                 <h2 class="font-bold text-gold-700 mb-5 flex items-center gap-2">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18L9 11.25l4.306 4.307a11.95 11.95 0 015.814-5.519l2.74-1.22m0 0l-5.94-2.281m5.94 2.28l-2.28 5.941"/></svg>
                     Dịch vụ tiềm năng & UPSELL
@@ -959,9 +1395,9 @@ new class extends Component
                 </div>
             </div>
 
-            {{-- Phân phối & Cơ sở — chỉ admin vận hành --}}
+            {{-- Phân phối & Nguồn (tab, chỉ admin) --}}
             @if ($canDistribute)
-            <div class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
+            <div x-show="tab === 'distribution'" x-cloak class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
                 <h2 class="font-bold text-gold-700 mb-5 flex items-center gap-2">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5"/></svg>
                     Phân phối & Nguồn
@@ -1030,336 +1466,8 @@ new class extends Component
                 </div>
             </div>
             @endif
-        </div>
 
-        {{-- CỘT PHẢI --}}
-<?php $staffTreeJson = json_encode($staffTree, JSON_UNESCAPED_UNICODE); ?>
-        <script>window.__staffTree = {!! $staffTreeJson !!};</script>
-        <div class="space-y-6">
-            {{-- Cơ sở & Nhân sự --}}
-            <div class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
-                <h2 class="font-bold text-gold-700 mb-5 flex items-center gap-2">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z"/></svg>
-                    Cơ sở & Nhân sự
-                </h2>
-                <div class="space-y-4">
-                    <div>
-                        <label class="block text-sm font-medium mb-1.5">CƠ SỞ</label>
-                        <select wire:model.live="facilityId" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-gold-500">
-                            <option value="">— Chọn cơ sở —</option>
-                            @foreach ($facilities as $fac)
-                                <optgroup label="{{ $fac->name }}">
-                                    @foreach ($fac->children as $dept)
-                                        <option value="{{ $dept->id }}">{{ $fac->name }} › {{ $dept->name }}</option>
-                                    @endforeach
-                                </optgroup>
-                            @endforeach
-                        </select>
-                    </div>
-
-                    @foreach ([
-                        ['label' => 'BÁC SĨ TƯ VẤN', 'wireModel' => 'doctorId', 'role' => 'doctors', 'placeholder' => 'Chọn bác sĩ', 'current' => $doctorId, 'slot' => 0],
-                        ['label' => 'CHUYÊN VIÊN TƯ VẤN 1', 'wireModel' => 'consultant1Id', 'role' => 'consultants', 'placeholder' => 'Chọn chuyên viên', 'current' => $consultant1Id, 'slot' => 0],
-                        ['label' => 'CHUYÊN VIÊN TƯ VẤN 2', 'wireModel' => 'consultant2Id', 'role' => 'consultants', 'placeholder' => 'Chọn chuyên viên', 'current' => $consultant2Id, 'slot' => 1],
-                        ['label' => 'CHUYÊN VIÊN TƯ VẤN 3', 'wireModel' => 'consultant3Id', 'role' => 'consultants', 'placeholder' => 'Chọn chuyên viên', 'current' => $consultant3Id, 'slot' => 2],
-                    ] as $dd)
-                        <div @if($dd['slot'] > 0) x-show="extraConsultants >= {{ $dd['slot'] }}" x-cloak @endif>
-                            <label class="block text-sm font-medium mb-1.5">{{ $dd['label'] }}</label>
-                            <div x-data="{
-                                open: false,
-                                search: '',
-                                role: '{{ $dd['role'] }}',
-                                selectedId: {{ $dd['current'] ?: 'null' }},
-                                selectedName: '{{ $dd['current'] ? $allStaff->firstWhere('id', $dd['current'])?->name : '' }}',
-                                get hasSelection() { return this.selectedId != null && this.selectedId > 0; },
-                                get filtered() {
-                                    let q = this.search.toLowerCase();
-                                    let fid = parseInt($wire.facilityId) || 0;
-                                    let tree = window.__staffTree;
-                                    let base = q
-                                        ? tree.map(fac => ({
-                                            ...fac,
-                                            depts: fac.depts.map(dept => ({
-                                                ...dept,
-                                                [this.role]: dept[this.role].filter(s => s.name.toLowerCase().includes(q))
-                                            })).filter(dept => dept[this.role].length > 0)
-                                        })).filter(fac => fac.depts.length > 0)
-                                        : tree.filter(fac => fac.depts.some(d => d[this.role].length > 0));
-                                    if (!fid) return base;
-                                    let matched = base.filter(fac => fac.depts.some(d => d.id === fid));
-                                    let rest = base.filter(fac => !fac.depts.some(d => d.id === fid));
-                                    return [...matched, ...rest];
-                                },
-                                pick(id, name) {
-                                    this.selectedId = id;
-                                    this.selectedName = name;
-                                    this.open = false;
-                                    this.search = '';
-                                    $wire.set('{{ $dd['wireModel'] }}', id);
-                                },
-                                clear() {
-                                    this.selectedId = null;
-                                    this.selectedName = '';
-                                    $wire.set('{{ $dd['wireModel'] }}', null);
-                                }
-                            }" @click.outside="open = false; search = ''" class="relative">
-                                <div x-show="hasSelection" x-cloak class="flex items-center justify-between gap-2 border border-gold-300 bg-gold-50 rounded-md px-3 py-2.5">
-                                    <span class="text-sm font-semibold text-gold-800" x-text="selectedName"></span>
-                                    <button type="button" @click="clear()" class="text-xs font-semibold text-ink/50 hover:text-red-600">✕</button>
-                                </div>
-                                <button x-show="!hasSelection" type="button" @click="open = !open"
-                                        class="w-full flex items-center justify-between border border-gold-200 rounded-md px-3 py-2.5 text-sm text-ink/40 bg-white hover:border-gold-400">
-                                    <span>— {{ $dd['placeholder'] }} —</span>
-                                    <svg class="w-4 h-4 text-ink/30" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"/></svg>
-                                </button>
-                                <div x-show="open" x-cloak
-                                     class="absolute z-30 mt-1 w-full bg-white border border-gold-200 rounded-lg shadow-lg max-h-72 flex flex-col">
-                                    <div class="p-2 border-b border-gold-100">
-                                        <input type="text" x-model="search" placeholder="Nhập tên..." @keydown.escape="open = false; search = ''"
-                                               class="w-full border border-gold-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-gold-500" x-ref="searchInput">
-                                    </div>
-                                    <div class="overflow-y-auto flex-1 py-1">
-                                        <template x-for="fac in filtered" :key="fac.name">
-                                            <div>
-                                                <div class="px-3 py-1.5 text-xs font-bold text-gold-700 uppercase tracking-wider bg-gold-50" x-text="fac.name"></div>
-                                                <template x-for="dept in fac.depts" :key="dept.name">
-                                                    <div>
-                                                        <div class="px-5 py-1 text-xs font-semibold text-ink/50" x-text="dept.name"></div>
-                                                        <template x-for="s in dept[role]" :key="s.id">
-                                                            <button type="button" @click="pick(s.id, s.name)"
-                                                                    class="block w-full text-left pl-8 pr-3 py-1.5 text-sm hover:bg-gold-50"
-                                                                    :class="{'bg-gold-100 font-semibold text-gold-800': selectedId === s.id}">
-                                                                <span x-text="s.name"></span>
-                                                            </button>
-                                                        </template>
-                                                    </div>
-                                                </template>
-                                            </div>
-                                        </template>
-                                        <template x-if="filtered.length === 0">
-                                            <p class="px-3 py-2 text-sm text-ink/40">Không tìm thấy.</p>
-                                        </template>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    @endforeach
-
-                    <button x-show="extraConsultants < 2" type="button" @click="extraConsultants++"
-                            class="inline-flex items-center gap-1.5 text-sm font-medium text-gold-700 hover:text-gold-800">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
-                        Thêm chuyên viên tư vấn
-                    </button>
-
-                    <div class="border-t border-gold-100 pt-4">
-                        <label class="block text-sm font-medium mb-1.5">DỊCH VỤ</label>
-                        <input type="text" wire:model="service_name" placeholder="Tên dịch vụ tổng" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
-                    </div>
-                </div>
-            </div>
-
-            {{-- Nhóm LIỆU TRÌNH --}}
-            <div class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
-                <h2 class="font-bold text-gold-700 mb-5 flex items-center gap-2">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5"/></svg>
-                    LIỆU TRÌNH
-                </h2>
-                <div class="space-y-4">
-                    <div class="grid grid-cols-2 gap-4">
-                        <div>
-                            <label class="block text-sm font-medium mb-1.5">Lần 1</label>
-                            <x-date-input field="treatment_1" />
-                            @error('treatment_1')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium mb-1.5">Lần 2</label>
-                            <x-date-input field="treatment_2" />
-                            @error('treatment_2')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium mb-1.5">Lần 3</label>
-                            <x-date-input field="treatment_3" />
-                            @error('treatment_3')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium mb-1.5">Lần 4</label>
-                            <x-date-input field="treatment_4" />
-                            @error('treatment_4')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
-                        </div>
-                    </div>
-
-                    <div class="border-t border-gold-100 pt-4">
-                        {{-- Bác sĩ thực hiện — dùng cùng staffTree --}}
-                        <label class="block text-sm font-medium mb-1.5">BÁC SĨ THỰC HIỆN</label>
-                        <div x-data="{
-                            open: false,
-                            search: '',
-                            role: 'doctors',
-                            selectedId: {{ $performingDoctorId ?: 'null' }},
-                            selectedName: '{{ $performingDoctorId ? $allStaff->firstWhere('id', $performingDoctorId)?->name : '' }}',
-                            get hasSelection() { return this.selectedId != null && this.selectedId > 0; },
-                            get filtered() {
-                                let q = this.search.toLowerCase();
-                                let tree = window.__staffTree;
-                                return q
-                                    ? tree.map(fac => ({
-                                        ...fac,
-                                        depts: fac.depts.map(dept => ({
-                                            ...dept,
-                                            doctors: dept.doctors.filter(s => s.name.toLowerCase().includes(q))
-                                        })).filter(dept => dept.doctors.length > 0)
-                                    })).filter(fac => fac.depts.length > 0)
-                                    : tree.filter(fac => fac.depts.some(d => d.doctors.length > 0));
-                            },
-                            pick(id, name) {
-                                this.selectedId = id;
-                                this.selectedName = name;
-                                this.open = false;
-                                this.search = '';
-                                $wire.set('performingDoctorId', id);
-                            },
-                            clear() {
-                                this.selectedId = null;
-                                this.selectedName = '';
-                                $wire.set('performingDoctorId', null);
-                            }
-                        }" @click.outside="open = false; search = ''" class="relative">
-                            <div x-show="hasSelection" x-cloak class="flex items-center justify-between gap-2 border border-gold-300 bg-gold-50 rounded-md px-3 py-2.5">
-                                <span class="text-sm font-semibold text-gold-800" x-text="selectedName"></span>
-                                <button type="button" @click="clear()" class="text-xs font-semibold text-ink/50 hover:text-red-600">✕</button>
-                            </div>
-                            <button x-show="!hasSelection" type="button" @click="open = !open"
-                                    class="w-full flex items-center justify-between border border-gold-200 rounded-md px-3 py-2.5 text-sm text-ink/40 bg-white hover:border-gold-400">
-                                <span>— Chọn bác sĩ thực hiện —</span>
-                                <svg class="w-4 h-4 text-ink/30" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"/></svg>
-                            </button>
-                            <div x-show="open" x-cloak
-                                 class="absolute z-30 mt-1 w-full bg-white border border-gold-200 rounded-lg shadow-lg max-h-72 flex flex-col">
-                                <div class="p-2 border-b border-gold-100">
-                                    <input type="text" x-model="search" placeholder="Nhập tên..." @keydown.escape="open = false; search = ''"
-                                           class="w-full border border-gold-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-gold-500">
-                                </div>
-                                <div class="overflow-y-auto flex-1 py-1">
-                                    <template x-for="fac in filtered" :key="fac.name">
-                                        <div>
-                                            <div class="px-3 py-1.5 text-xs font-bold text-gold-700 uppercase tracking-wider bg-gold-50" x-text="fac.name"></div>
-                                            <template x-for="dept in fac.depts" :key="dept.name">
-                                                <div>
-                                                    <div class="px-5 py-1 text-xs font-semibold text-ink/50" x-text="dept.name"></div>
-                                                    <template x-for="s in dept.doctors" :key="s.id">
-                                                        <button type="button" @click="pick(s.id, s.name)"
-                                                                class="block w-full text-left pl-8 pr-3 py-1.5 text-sm hover:bg-gold-50"
-                                                                :class="{'bg-gold-100 font-semibold text-gold-800': selectedId === s.id}">
-                                                            <span x-text="s.name"></span>
-                                                        </button>
-                                                    </template>
-                                                </div>
-                                            </template>
-                                        </div>
-                                    </template>
-                                    <template x-if="filtered.length === 0">
-                                        <p class="px-3 py-2 text-sm text-ink/40">Không tìm thấy.</p>
-                                    </template>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div>
-                        <label class="block text-sm font-medium mb-1.5">Đánh giá chất lượng chuyên môn</label>
-                        <textarea wire:model="quality_rating" rows="2" placeholder="Đánh giá CLCM..." class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500"></textarea>
-                    </div>
-                </div>
-            </div>
-
-            {{-- Trạng thái chăm sóc --}}
-            <div class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
-                <h2 class="font-bold text-gold-700 mb-5 flex items-center gap-2">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                    Trạng thái chăm sóc
-                </h2>
-                <div class="space-y-4">
-                    <div>
-                        <label class="block text-sm font-medium mb-1.5">Ghi nhận tình trạng lần 1</label>
-                        <input type="text" wire:model="status_1" placeholder="VD: Đã liên hệ" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium mb-1.5">Ghi nhận tình trạng lần 2</label>
-                        <input type="text" wire:model="status_2" placeholder="VD: Đã tư vấn" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
-                    </div>
-                    <div class="grid grid-cols-2 gap-4">
-                        <div>
-                            <label class="block text-sm font-medium mb-1.5">PHÂN LOẠI KẾT QUẢ</label>
-                            <select wire:model="classification" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-gold-500">
-                                @foreach (\App\Models\Lead::CLASSIFICATIONS as $key => $label)
-                                    <option value="{{ $key }}">{{ $label }}</option>
-                                @endforeach
-                            </select>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium mb-1.5">TRẠNG THÁI ĐẶT LỊCH</label>
-                            <select wire:model="bookingStatus" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-gold-500">
-                                @foreach (\App\Models\Lead::BOOKING_STATUSES as $key => $label)
-                                    <option value="{{ $key }}">{{ $label }}</option>
-                                @endforeach
-                            </select>
-                            <p class="text-xs text-ink/50 mt-1">Team booking đổi khi khách đồng ý gặp.</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            {{-- Trường bổ sung --}}
-            @if ($customFields->isNotEmpty())
-            <div class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
-                <h2 class="font-bold text-gold-700 mb-1 flex items-center gap-2">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.28z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-                    Trường bổ sung
-                    <span class="text-xs font-normal text-ink/50">({{ $lead?->orgUnit?->name ?? $this->targetOrgUnit()?->name ?? 'mức công ty' }})</span>
-                </h2>
-                <p class="text-xs text-ink/50 mb-5">Bộ trường buộc khai theo quy định hiện hành.</p>
-<?php $cfLabels = \App\Models\CustomField::labelMap($customFields); ?>
-                <div class="space-y-4">
-                    @foreach ($customFields as $field)
-<?php $ck = $field->rules['code_kind'] ?? null; ?>
-                        @continue($field->field_type === 'code' && $ck === 'fixed')
-                        <div wire:key="cf-{{ $field->id }}">
-                            <label class="block text-sm font-medium mb-1.5">
-                                {{ $cfLabels[$field->id] ?? $field->label }}
-                                @if ($field->required)<span class="text-red-500">*</span>@endif
-                                @if ($field->affects_code)<span class="text-[10px] text-gold-700 ml-1">#mã KH</span>@endif
-                                @if ($field->org_unit_id === null)
-                                    <span class="text-[10px] uppercase tracking-wider text-ink/40 border border-gold-100 rounded px-1.5 py-0.5 ml-1">Công ty</span>
-                                @endif
-                            </label>
-                            @if ($field->field_type === 'select' || ($field->field_type === 'code' && $ck === 'select'))
-                                <select wire:model="custom.{{ $field->id }}" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-gold-500">
-                                    <option value="">— chọn —</option>
-                                    @foreach ($field->options ?? [] as $option)
-<?php $ol = $field->optionLabel($option); ?>
-                                        <option value="{{ $option }}">{{ ($ol !== '' && $ol !== $option) ? "$ol ($option)" : $option }}</option>
-                                    @endforeach
-                                </select>
-                            @elseif ($field->field_type === 'tick')
-                                <label class="inline-flex items-center gap-2 text-sm cursor-pointer select-none">
-                                    <input type="checkbox" wire:model="custom.{{ $field->id }}" class="rounded border-gold-300 text-gold-600 focus:ring-gold-500 w-5 h-5">
-                                    Có
-                                </label>
-                            @elseif ($field->field_type === 'date')
-                                <x-date-input field="custom.{{ $field->id }}" />
-                            @elseif ($field->field_type === 'number')
-                                <input type="number" step="any" wire:model="custom.{{ $field->id }}" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
-                            @elseif ($field->field_type === 'email')
-                                <input type="email" wire:model="custom.{{ $field->id }}" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
-                            @else
-                                <input type="text" wire:model="custom.{{ $field->id }}" @if($field->field_type==='code') style="text-transform:uppercase" @endif class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
-                            @endif
-                            @error('custom.' . $field->id)<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
-                        </div>
-                    @endforeach
-                </div>
-            </div>
-            @endif
+            {{-- Trường bổ sung — đã chuyển lên dưới "Thông tin khách hàng" (Phase 6.14) --}}
         </div>
     </div>
 

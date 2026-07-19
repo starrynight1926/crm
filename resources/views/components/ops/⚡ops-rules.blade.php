@@ -83,8 +83,11 @@ class extends Component {
         $data = [];
         if ($this->tab === 'roles') {
             $data['permMatrix'] = [
-                'lead.distribute_team' => ['Chia số cho team', $this->usersWithPermission('lead.distribute_team')],
+                'lead.distribute_booking' => ['Chia số kho Booking', $this->usersWithPermission('lead.distribute_booking')],
+                'lead.distribute_sale' => ['Chia số kho Sale', $this->usersWithPermission('lead.distribute_sale')],
                 'lead.distribute_ctv' => ['Phân bổ nguồn CTV', $this->usersWithPermission('lead.distribute_ctv')],
+                'lead.update_booking' => ['Sửa info khi Booking phase', $this->usersWithPermission('lead.update_booking')],
+                'lead.update_sale' => ['Sửa info khi Sale phase', $this->usersWithPermission('lead.update_sale')],
                 'lead.approve_source' => ['Duyệt Khách tự đến', $this->usersWithPermission('lead.approve_source')],
                 'lead.recall' => ['Thu hồi số', $this->usersWithPermission('lead.recall')],
             ];

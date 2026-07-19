@@ -90,18 +90,29 @@ Nhật ký webhook/API call: id, source_type, connection_id (logic), http_status
 | overdue_marked_at | timestamp nullable — đánh dấu lead từ chối quá hạn ở kho booking (không auto-delete) |
 | recall_at | timestamp nullable — mốc thu hồi (do CM chia đặt); null = chia vĩnh viễn |
 | is_permanent_assignment | bool default false — "Chia vĩnh viễn" (admin vẫn thu hồi được) |
+| booking_status | enum: `not_booked` / `booked` / `rescheduled` — trạng thái đặt lịch |
+| pipeline_phase | enum: `booking` / `sale` — giai đoạn lifecycle (Phase 6.8) |
+| pipeline_status | enum: `waiting_distribute` / `in_care` — trạng thái trong giai đoạn (Phase 6.8) |
+| consultant_1_id, consultant_2_id, consultant_3_id | FK **users** (Phase 6.9, trước đó là staff_members) — chuyên viên tư vấn = user team sale |
+| doctor_id | FK staff_members — bác sĩ tư vấn (không đăng nhập) |
+| ~~performing_doctor_id, treatment_1..4, quality_rating~~ | **Đã drop Phase 6.11** — chuyển sang bảng `lead_treatments` (thẻ 1-N) |
+| ~~page, camp~~ | **Đã drop Phase 6.20** — chuyển sang `lead_custom_values` (custom field cấp công ty, key `page`/`camp`) |
 | owner_id | FK users, nullable (CHIA CHO) |
 | receiver_id | FK users, nullable (Người nhận LEAD / thu thập) |
 | org_unit_id | FK org_units, nullable — team đang giữ |
 | assigned_at, last_care_at | datetime — tính SLA thu hồi |
 | timestamps, soft delete | |
 
-Index: (`org_unit_id`,`classification`), (`owner_id`,`classification`), (`received_date`), (`camp`), (`ad_source`), (`pool_level`).
+Index: (`org_unit_id`,`classification`), (`owner_id`,`classification`), (`received_date`), (`camp`), (`ad_source`), (`pool_level`), (`pipeline_phase`,`pipeline_status`).
 
 Bổ sung 2026-07-03 (mã KH + trường tùy biến, xem scope.md 4.1–4.2):
 - **leads** thêm cột: `code` varchar unique (VD `KH-00123-MKT-FB`, sinh sau khi có id), `type_code` varchar(10) (`MKT`/`C`/`BDM`/`SI`/`N`), `source_code` varchar(10) nullable.
 - **custom_fields** — id, org_unit_id FK nullable (null = mức công ty), `key` (unique trong org), label, field_type (`text`/`number`/`date`/`select`), options JSON (cho select), required bool, position, active, timestamps. Quyền `field.manage`.
 - **lead_custom_values** — lead_id FK + custom_field_id FK (PK kép), value text. Bộ trường áp theo org_unit đang giữ lead + tổ tiên (path) + mức công ty.
+
+**staff_members** (Phase 6.12 — thêm cột `title`): id, `name` (tên riêng), `title` (chức vụ), facility_id FK, role (`doctor`/`consultant`), active, timestamps. `title` nullable — hiển thị "Tên\n(Chức vụ)" qua `displayName()`.
+
+**lead_treatments** (Phase 6.11) — id, lead_id FK (cascade), `sequence` (1,2,3...), `performed_at` date nullable, `performing_doctor_id` FK staff_members nullable, `quality_rating` text nullable, timestamps. Index `(lead_id, sequence)`. Mỗi row = 1 lần liệu trình, có bác sĩ + đánh giá riêng.
 
 **lead_status_logs** — id, lead_id FK, user_id FK, field (`classification`/`status_1`/`status_2`/`note`), old_value, new_value, created_at. Nguồn cho lịch sử chăm sóc + audit.
 

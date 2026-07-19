@@ -28,6 +28,12 @@ return [
         'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
     ],
 
+    'booking' => [
+        'url' => env('BOOKING_URL', 'http://localhost:8001'),
+        'api_url' => env('BOOKING_API_URL', env('BOOKING_URL', 'http://localhost:8001') . '/api'),
+        'api_token' => env('BOOKING_API_TOKEN'),
+    ],
+
     'slack' => [
         'notifications' => [
             'bot_user_oauth_token' => env('SLACK_BOT_USER_OAUTH_TOKEN'),

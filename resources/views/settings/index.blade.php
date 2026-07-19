@@ -28,6 +28,7 @@
         ['label'=>'Duyệt trường','desc'=>'Duyệt trường bắt buộc do cấp dưới đề xuất.','route'=>'settings.field-approvals','perm'=>'field.approve','scope'=>'org','icon'=>'check'],
         ['label'=>'Rule chia số','desc'=>'Cấu hình luật phân bổ lead + SLA thu hồi.','route'=>'distribution.rules','perm'=>'rule.manage','scope'=>'org','icon'=>'split'],
         ['label'=>'Dịch vụ','desc'=>'Danh mục dịch vụ, phase & mẫu % đóng góp.','route'=>'services.catalog','perm'=>'service.manage','scope'=>'system','icon'=>'box'],
+        ['label'=>'Bác sĩ & Cơ sở','desc'=>'Danh mục nhân sự chuyên môn theo cơ sở; import/export Excel.','route'=>'settings.staff','perm'=>'staff.manage','scope'=>'system','icon'=>'users'],
         ['label'=>'Kết nối nguồn','desc'=>'Webhook & Ads API đổ lead về hệ thống.','route'=>'sources.index','perm'=>'connection.manage','scope'=>'system','icon'=>'plug'],
         ['label'=>'Báo cáo','desc'=>'Funnel, marketing, hiệu suất, chi tiết lead — xuất Excel.','route'=>'reports.index','perm'=>['report.view','report.view_all'],'scope'=>'org','icon'=>'chart'],
         ['label'=>'Quản lý phiên','desc'=>'Thiết bị đăng nhập & thu hồi phiên từ xa.','route'=>'sessions.index','perm'=>null,'scope'=>'me','icon'=>'device'],

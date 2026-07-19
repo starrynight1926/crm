@@ -137,8 +137,6 @@ class ProcessRawLead implements ShouldQueue
             'received_date' => $this->parseDate($payload['received_date'] ?? null) ?? $raw->created_at?->toDateString() ?? now()->toDateString(),
             'name' => $name,
             'phone' => $phone,
-            'page' => $payload['page'] ?? null,
-            'camp' => $payload['camp'] ?? null,
             'insight' => $payload['insight'] ?? null,
             'link' => $payload['link'] ?? null,
             'ad_source' => $payload['ad_source'] ?? null,
@@ -149,6 +147,8 @@ class ProcessRawLead implements ShouldQueue
         ]);
         // Trường tùy biến map từ file (payload key 'cf_<id>') — ghi trước khi sinh mã
         $this->writeCustomValues($lead, $payload);
+        // Phase 6.20 — page/camp giờ là custom field cấp công ty
+        $this->writeCoreCustom($lead, $payload, ['page', 'camp']);
         $lead->load('customValues');
         $lead->generateCode();
 
@@ -243,16 +243,50 @@ class ProcessRawLead implements ShouldQueue
         }
     }
 
+    /**
+     * Phase 6.21 — Ghi các field payload có key trùng với `key` của custom_field áp cho org của lead
+     * (VD 'page', 'camp' — hiện là cấp phòng Marketing). Nếu lead chưa có org → skip.
+     */
+    private function writeCoreCustom(Lead $lead, array $payload, array $keys): void
+    {
+        $applicable = CustomField::applicableTo($lead->orgUnit);
+        foreach ($keys as $key) {
+            $field = $applicable->firstWhere('key', $key);
+            if (! $field) continue;
+            $value = trim((string) ($payload[$key] ?? ''));
+            if ($value === '') continue;
+            LeadCustomValue::updateOrCreate(
+                ['lead_id' => $lead->id, 'custom_field_id' => $field->id],
+                ['value' => $value]
+            );
+        }
+    }
+
     /** Gộp thông tin mới vào lead cũ: chỉ điền field còn trống, log lại. */
     private function mergeInto(Lead $existing, RawLead $raw, array $payload): void
     {
         $merged = [];
-        foreach (['page', 'camp', 'insight', 'link', 'ad_source', 'region', 'note'] as $field) {
+        foreach (['insight', 'link', 'ad_source', 'region', 'note'] as $field) {
             $value = $payload[$field] ?? null;
             if ($value && ! $existing->{$field}) {
                 $existing->{$field} = $value;
                 $merged[] = $field;
             }
+        }
+        // Phase 6.21 — page/camp: field áp theo org của lead (cấp phòng Marketing)
+        $applicable = CustomField::applicableTo($existing->orgUnit);
+        foreach (['page', 'camp'] as $key) {
+            $field = $applicable->firstWhere('key', $key);
+            if (! $field) continue;
+            $value = trim((string) ($payload[$key] ?? ''));
+            if ($value === '') continue;
+            $existingValue = LeadCustomValue::where('lead_id', $existing->id)->where('custom_field_id', $field->id)->value('value');
+            if ($existingValue) continue;
+            LeadCustomValue::updateOrCreate(
+                ['lead_id' => $existing->id, 'custom_field_id' => $field->id],
+                ['value' => $value]
+            );
+            $merged[] = $key;
         }
 
         if ($merged !== []) {

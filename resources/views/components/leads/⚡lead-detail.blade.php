@@ -35,7 +35,9 @@ new class extends Component
 
     public function mount(Lead $lead): void
     {
-        abort_unless($lead->isVisibleTo(auth()->user()) || auth()->user()->hasPermission('lead.view_phone'), 403);
+        // Perm `lead.view_phone` chỉ để **unmask SĐT khi lead trong scope**, KHÔNG phải bypass visibility toàn trang.
+        // (Bug Phase 6.13 phát hiện: book1 có view_phone bypass được cả trang lead sale của team khác.)
+        abort_unless($lead->isVisibleTo(auth()->user()), 403);
         $this->lead = $lead;
     }
 
@@ -198,6 +200,30 @@ new class extends Component
         session()->flash('status', 'Đã thu hồi lead về kho team.');
     }
 
+    /**
+     * Chuyển lead từ Booking phase sang Sale phase (trạng thái Chờ chia).
+     * Team booking bấm khi khách đồng ý gặp → CM sale sẽ chia số ở kho Sale.
+     */
+    public function moveToSalePhase(): void
+    {
+        abort_unless($this->lead->pipeline_phase === Lead::PHASE_BOOKING, 422,
+            'Lead không ở phase Booking, không thể chuyển.');
+        abort_unless(
+            auth()->user()->hasAnyPermission(['lead.update_booking', 'lead.distribute_booking'])
+                && $this->lead->isVisibleTo(auth()->user()),
+            403
+        );
+
+        $before = $this->lead->pipelineLabel();
+        $this->lead->moveToSaleWaiting();
+        LeadStatusLog::record(
+            $this->lead, 'pipeline_phase', $before, $this->lead->pipelineLabel(),
+            auth()->id()
+        );
+        $this->lead->refresh();
+        session()->flash('status', 'Đã chuyển sang phase Sale — chờ CM sale chia số.');
+    }
+
     public function with(): array
     {
         $customFields = \App\Models\CustomField::applicableTo($this->lead->orgUnit);
@@ -205,8 +231,8 @@ new class extends Component
 
         $this->lead->load([
             'facility.parent', 'doctor.facility.parent',
-            'consultant1.facility.parent', 'consultant2.facility.parent', 'consultant3.facility.parent',
-            'performingDoctor.facility.parent',
+            'consultant1', 'consultant2', 'consultant3',
+            'treatments.performingDoctor',
             'upsells.staffMember', 'upsells.service',
         ]);
 
@@ -220,6 +246,10 @@ new class extends Component
         return [
             'logs' => $this->lead->statusLogs()->with('user')->paginate(15, pageName: 'logPage'),
             'canEdit' => $this->canEditLead(),
+            'canEditPersonalInfo' => $this->lead->canEditPersonalInfo(auth()->user()),
+            'canMoveToSale' => $this->lead->pipeline_phase === Lead::PHASE_BOOKING
+                && auth()->user()->hasAnyPermission(['lead.update_booking', 'lead.distribute_booking'])
+                && $this->lead->isVisibleTo(auth()->user()),
             'canRecall' => auth()->user()->hasPermission('lead.recall') && $this->lead->isVisibleTo(auth()->user()),
             'customFields' => $customFields,
             'customValues' => $customValues,
@@ -245,6 +275,17 @@ new class extends Component
             @if ($lead->code)
                 <div class="font-mono text-sm text-gold-700 mt-1">{{ $lead->code }}</div>
             @endif
+            @php
+                $isBooking = $lead->pipeline_phase === \App\Models\Lead::PHASE_BOOKING;
+                $isWaiting = $lead->pipeline_status === \App\Models\Lead::PSTATUS_WAITING;
+                $badgeClass = $isBooking
+                    ? ($isWaiting ? 'bg-amber-100 text-amber-800 border-amber-200' : 'bg-blue-100 text-blue-800 border-blue-200')
+                    : ($isWaiting ? 'bg-purple-100 text-purple-800 border-purple-200' : 'bg-green-100 text-green-800 border-green-200');
+            @endphp
+            <span class="inline-block mt-2 text-xs font-semibold px-2.5 py-1 rounded-full border {{ $badgeClass }}"
+                  title="Phase & trạng thái lifecycle">
+                {{ $lead->pipelineLabel() }}
+            </span>
         </div>
         <div class="flex flex-wrap items-center gap-2">
             @if ($canRecall && $lead->owner_id)
@@ -256,12 +297,40 @@ new class extends Component
                     Thu hồi
                 </button>
             @endif
-            @if ($canEdit)
+            @if ($canEditPersonalInfo)
                 <a href="{{ route('leads.edit', $lead) }}"
                    class="flex items-center gap-2 text-sm font-semibold text-ink/70 border border-gold-200 px-5 py-2.5 rounded-md hover:bg-gold-50">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487z"/></svg>
                     Cập nhật thông tin
                 </a>
+            @endif
+            @if ($canMoveToSale)
+                @php
+                    $bookingHandoffUrl = rtrim(config('services.booking.url'), '/') . '/handoff?' . http_build_query([
+                        'crm_lead_id' => $lead->id,
+                        'crm_lead_code' => $lead->code,
+                        'name' => $lead->name,
+                        'phone' => $lead->phone,
+                    ]);
+                @endphp
+                <a href="{{ $bookingHandoffUrl }}" target="_blank" rel="noopener"
+                   class="flex items-center gap-2 text-sm font-semibold text-ink/70 border border-gold-200 px-5 py-2.5 rounded-md hover:bg-gold-50"
+                   title="Mở app Booking để đặt lịch cho khách">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3.75 8.25h16.5M4.5 6h15a.75.75 0 01.75.75v12a.75.75 0 01-.75.75h-15a.75.75 0 01-.75-.75v-12A.75.75 0 014.5 6z"/>
+                    </svg>
+                    Mở Booking
+                </a>
+                <button type="button"
+                        wire:click="moveToSalePhase"
+                        wire:confirm="Xác nhận: khách đã đồng ý gặp. Chuyển lead sang phase Sale (Chờ chia) để CM sale phân bổ?"
+                        class="flex items-center gap-2 text-sm font-semibold text-white bg-gold-600 hover:bg-gold-700 px-5 py-2.5 rounded-md"
+                        title="Khách đồng ý gặp — chuyển sang phase Sale">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M13 5l7 7-7 7M20 12H4"/>
+                    </svg>
+                    Chuyển sang Sale
+                </button>
             @endif
         </div>
     </div>
@@ -309,18 +378,7 @@ new class extends Component
                         </div>
                     </div>
 
-                    @if ($lead->page || $lead->camp)
-                    <div class="grid grid-cols-2 gap-3">
-                        <div>
-                            <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Page</dt>
-                            <dd class="font-medium">{{ $lead->page ?: '—' }}</dd>
-                        </div>
-                        <div>
-                            <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Camp</dt>
-                            <dd class="font-medium">{{ $lead->camp ?: '—' }}</dd>
-                        </div>
-                    </div>
-                    @endif
+                    {{-- Page + Camp giờ hiển thị trong section "Trường bổ sung" (Phase 6.20) --}}
 
                     @if ($lead->insight || $lead->link)
                     <div>
@@ -347,16 +405,16 @@ new class extends Component
                             </div>
                             @endif
                             @if ($lead->doctor)
-                            <div class="flex items-center gap-2">
-                                <span class="text-[10px] font-bold uppercase tracking-wider bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded shrink-0">BS tư vấn</span>
-                                <span class="font-medium text-sm">{{ $lead->doctor->displayLabel() }}</span>
+                            <div class="flex items-start gap-2">
+                                <span class="text-[10px] font-bold uppercase tracking-wider bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded shrink-0 mt-0.5">BS tư vấn</span>
+                                <span class="font-medium text-sm whitespace-pre-line leading-tight">{{ $lead->doctor->displayName() }}</span>
                             </div>
                             @endif
                             @foreach ([$lead->consultant1, $lead->consultant2, $lead->consultant3] as $i => $cv)
                                 @if ($cv)
                                 <div class="flex items-center gap-2">
                                     <span class="text-[10px] font-bold uppercase tracking-wider bg-green-100 text-green-700 px-1.5 py-0.5 rounded shrink-0">CVTV{{ $i + 1 }}</span>
-                                    <span class="font-medium text-sm">{{ $cv->displayLabel() }}</span>
+                                    <span class="font-medium text-sm">{{ $cv->name }}</span>
                                 </div>
                                 @endif
                             @endforeach
@@ -421,7 +479,7 @@ new class extends Component
             </div>
 
             {{-- INSIGHT — gom vào 1 card nếu có --}}
-            @if ($lead->birthday || $lead->address || $lead->medical_history || $lead->occupation)
+            @if ($lead->birthday || $lead->address || $lead->medical_history || $lead->occupation || $lead->treatments->isNotEmpty())
             <div class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
                 <h2 class="text-xs font-bold uppercase tracking-[0.15em] text-ink/60 border-b border-gold-100 pb-3 mb-4">INSIGHT khách hàng</h2>
                 <dl class="space-y-3 text-sm">
@@ -449,32 +507,29 @@ new class extends Component
                     @endif
                 </dl>
 
-                {{-- LIỆU TRÌNH gom vào cùng card INSIGHT --}}
-                @if ($lead->treatment_1 || $lead->treatment_2 || $lead->treatment_3 || $lead->treatment_4 || $lead->performingDoctor || $lead->quality_rating)
+                {{-- LIỆU TRÌNH — dạng thẻ 1-N (Phase 6.11) --}}
+                @if ($lead->treatments->isNotEmpty())
                 <div class="border-t border-gold-100 mt-4 pt-4">
                     <p class="text-xs font-bold uppercase tracking-wider text-ink/40 mb-3">Liệu trình</p>
-                    <dl class="space-y-2.5 text-sm">
-                        <div class="grid grid-cols-4 gap-2">
-                            @foreach (['treatment_1' => 'Lần 1', 'treatment_2' => 'Lần 2', 'treatment_3' => 'Lần 3', 'treatment_4' => 'Lần 4'] as $field => $label)
-                            <div class="text-center">
-                                <dt class="text-[10px] uppercase tracking-wider text-ink/40 mb-0.5">{{ $label }}</dt>
-                                <dd class="font-medium text-xs">{{ $lead->{$field} ? $lead->{$field}->format('d/m') : '—' }}</dd>
+                    <div class="space-y-2.5">
+                        @foreach ($lead->treatments as $tr)
+                            <div class="border border-gold-200 rounded-md p-3 bg-gold-50/30">
+                                <div class="flex items-center justify-between mb-1.5">
+                                    <span class="text-xs font-bold uppercase tracking-wider text-gold-700">Lần {{ $tr->sequence }}</span>
+                                    <span class="text-xs text-ink/60">{{ $tr->performed_at ? $tr->performed_at->format('d/m/Y') : '— chưa có ngày —' }}</span>
+                                </div>
+                                @if ($tr->performingDoctor)
+                                    <div class="flex items-start gap-2 mb-1">
+                                        <span class="text-[10px] font-bold uppercase tracking-wider bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded shrink-0 mt-0.5">BS</span>
+                                        <span class="font-medium text-sm whitespace-pre-line leading-tight">{{ $tr->performingDoctor->displayName() }}</span>
+                                    </div>
+                                @endif
+                                @if ($tr->quality_rating)
+                                    <p class="text-xs text-ink/70 whitespace-pre-line mt-1">{{ $tr->quality_rating }}</p>
+                                @endif
                             </div>
-                            @endforeach
-                        </div>
-                        @if ($lead->performingDoctor)
-                        <div class="flex items-center gap-2">
-                            <span class="text-[10px] font-bold uppercase tracking-wider bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded shrink-0">BS thực hiện</span>
-                            <span class="font-medium text-sm">{{ $lead->performingDoctor->displayLabel() }}</span>
-                        </div>
-                        @endif
-                        @if ($lead->quality_rating)
-                        <div>
-                            <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Đánh giá CLCM</dt>
-                            <dd class="font-medium whitespace-pre-line">{{ $lead->quality_rating }}</dd>
-                        </div>
-                        @endif
-                    </dl>
+                        @endforeach
+                    </div>
                 </div>
                 @endif
             </div>

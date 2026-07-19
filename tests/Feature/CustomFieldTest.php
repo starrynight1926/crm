@@ -148,12 +148,14 @@ class CustomFieldTest extends TestCase
 
     public function test_lead_without_org_gets_company_fields_only(): void
     {
+        // Phase 6.20 — migration seed 2 field cấp công ty page+camp, cần lọc chỉ ma_gioi_thieu
         $companyField = $this->field(null, 'ma_gioi_thieu');
         $this->field($this->sales, 'nhu_cau');
 
         $applicable = CustomField::applicableTo(null);
-        $this->assertCount(1, $applicable);
-        $this->assertSame($companyField->id, $applicable->first()->id);
+        // Chỉ chọn ra field vừa tạo (bỏ qua page/camp mặc định của Phase 6.20)
+        $this->assertTrue($applicable->contains('id', $companyField->id));
+        $this->assertFalse($applicable->contains(fn ($f) => $f->key === 'nhu_cau'));
     }
 
     // ---------- Workflow duyệt ----------

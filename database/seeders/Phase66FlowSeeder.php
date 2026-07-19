@@ -37,20 +37,24 @@ class Phase66FlowSeeder extends Seeder
             'CM booking' => [
                 'desc' => 'CM Phòng Booking — up Data lạnh/BDM, chia lead trong kho booking cho team booking',
                 'perms' => [
-                    'lead.view', 'lead.view_phone', 'lead.create', 'lead.update',
-                    'lead.distribute', 'lead.distribute_team', 'lead.recall', 'report.view',
+                    'lead.view', 'lead.view_phone', 'lead.create', 'lead.update', 'lead.update_booking',
+                    'lead.view_pool', 'lead.distribute', 'lead.distribute_booking', 'lead.recall', 'report.view',
                 ],
             ],
             'Team booking' => [
-                'desc' => 'Team booking — gọi khách, đổi trạng thái đặt lịch',
-                'perms' => ['lead.view', 'lead.view_phone', 'lead.update'],
+                'desc' => 'Team booking — gọi khách, cập nhật info cá nhân + đổi trạng thái đặt lịch',
+                'perms' => ['lead.view', 'lead.view_phone', 'lead.update', 'lead.update_booking'],
             ],
             'CM sale' => [
-                'desc' => 'CM Phòng Kinh doanh — chia lead đã đồng ý sang sale (khu vực do assignment quyết định)',
+                'desc' => 'CM Phòng Kinh doanh — chia lead đã đồng ý sang sale + sửa info cá nhân khi ở phase Sale',
                 'perms' => [
-                    'lead.view', 'lead.view_phone', 'lead.create', 'lead.update',
-                    'lead.distribute', 'lead.distribute_team', 'lead.distribute_ctv', 'lead.recall', 'report.view',
+                    'lead.view', 'lead.view_phone', 'lead.create', 'lead.update', 'lead.update_sale',
+                    'lead.view_pool', 'lead.distribute', 'lead.distribute_sale', 'lead.distribute_ctv', 'lead.recall', 'report.view',
                 ],
+            ],
+            'Team sale' => [
+                'desc' => 'Sale nhân viên — chăm sóc khách, ghi chú, phân loại, gắn dịch vụ',
+                'perms' => ['lead.view', 'lead.view_phone', 'lead.update', 'report.view'],
             ],
         ];
 

@@ -276,10 +276,10 @@ new class extends Component
             'teamOptions' => OrgUnit::where('active', true)->orderBy('path')->get(),
             'poolOrgs' => $this->poolOrgs(),
             'assignableUsers' => User::where('status', 'active')
-                // Chỉ user "nhận lead": role có lead.update NHƯNG không có lead.distribute/distribute_team
+                // Chỉ user "nhận lead": role có lead.update NHƯNG không có quyền chia số
                 // → loại Team trực page (up lead), CM booking/sale, TL, DM, Admin, Manager (họ chia số, không nhận).
                 ->whereHas('assignments.role.permissions', fn ($q) => $q->where('key', 'lead.update'))
-                ->whereDoesntHave('assignments.role.permissions', fn ($q) => $q->whereIn('key', ['lead.distribute', 'lead.distribute_team']))
+                ->whereDoesntHave('assignments.role.permissions', fn ($q) => $q->whereIn('key', ['lead.distribute', 'lead.distribute_booking', 'lead.distribute_sale']))
                 ->orderBy('name')
                 ->get(),
             'canDistribute' => $user->hasPermission('lead.distribute'),

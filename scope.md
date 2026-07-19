@@ -130,11 +130,17 @@ Mô hình 2 lớp tách biệt:
 - Admin tự tạo role, tích checkbox từng quyền: xem/tạo/sửa/xóa lead, import, export, chia số, thu hồi, cấu hình rule chia, quản lý user/team, xem báo cáo...
 - Quyền **export** gắn trên role, mặc định tắt. Mọi lần export ghi audit log.
 - **Permission bổ sung (2026-07-15)**:
-  - `lead.distribute_team` — thay `lead.pull_pool` cũ. Ai có mới thấy kho team (chia số cho team).
+  - `lead.distribute_team` — [DEPRECATED 2026-07-19] tách thành `lead.distribute_booking` + `lead.distribute_sale`.
   - `lead.distribute_ctv` — dành cho nguồn CTV theo khu vực (gán vào role `CM Hà Nội / Đà Nẵng / HCM`).
   - `lead.recall` — cho phép thu hồi số + hiện ô "Thu hồi sau XX ngày / Chia vĩnh viễn" trong form chia.
   - `lead.approve_source` — duyệt lead từ luồng "Khách tự đến". CM trực tiếp của người up mới có quyền duyệt.
   - `ops.manage` — vào trang **Quy tắc vận hành** (mặc định gán Admin hệ thống).
+- **Permission bổ sung (2026-07-19, Phase 6.8)** — tách rõ vai trò booking vs sale:
+  - `lead.distribute_booking` — thấy kho Booking + chia số ở phase Booking (QL team booking).
+  - `lead.distribute_sale` — thấy kho Sale + chia số ở phase Sale (CM team sale).
+  - `lead.update_booking` — sửa info cá nhân (cột trái trang chi tiết) khi lead đang ở phase Booking. Không có perm này thì cột trái **read-only**, chỉ ghi chú/dịch vụ (cột phải) còn thao tác được.
+  - `lead.update_sale` — sửa info cá nhân khi lead đang ở phase Sale.
+  - Case flexible: role CM ôm cả 2 team → tick cả `distribute_booking`+`distribute_sale`+`update_booking`+`update_sale`. Tách người → chỉ tick nhóm phù hợp.
 
 ### 7.2 Phạm vi dữ liệu (data scope)
 - Cấu hình riêng, độc lập với role, 3 mức: **Chỉ dữ liệu bản thân** / **Chỉ dữ liệu team** / **Chọn phòng ban cụ thể**.
@@ -182,6 +188,33 @@ Màn dành cho **Admin hệ thống** (permission `ops.manage`), quản lý toà
    - Hết hạn "Thu hồi sau XX ngày" → về pool team CM.
    - Quá `escalate_after_days` ở pool team → escalate lên kho CM cấp cha.
 6. Từ chối ở kho booking → ở lại kho booking, đánh dấu overdue nếu quá thời hạn (không auto-delete).
+
+### 8.0.1 Trục lifecycle (Phase 6.8, 2026-07-19)
+
+Song song với `booking_status` (đã đặt lịch chưa), mỗi lead có 2 trục:
+
+- **`pipeline_phase`** (`booking` / `sale`): đang ở giai đoạn nghiệp vụ nào.
+- **`pipeline_status`** (`waiting_distribute` / `in_care`): trạng thái trong giai đoạn — Chờ chia / Đang chăm sóc.
+
+**4 tổ hợp:**
+
+| phase / status | Ai xử lý | Ai được sửa info cá nhân |
+|---|---|---|
+| Booking · Chờ chia | Kho Booking, QL team booking chia | `lead.update_booking` |
+| Booking · Đang chăm sóc | Team booking đang gọi | `lead.update_booking` |
+| Sale · Chờ chia | CM team sale chia số | `lead.update_sale` |
+| Sale · Đang chăm sóc | Sale nhân viên chăm | `lead.update_sale` |
+
+**Transition mặc định:**
+
+- Nhóm 1-3 (Marketing/Data lạnh/BDM) tạo mới → `booking / waiting_distribute`.
+- Booking gọi lần đầu (add note) → `booking / in_care`.
+- Team booking bấm **"Chuyển sang Sale"** (khách đồng ý gặp) → `sale / waiting_distribute`.
+- CM sale chia cho 1 sale cụ thể → `sale / in_care`.
+- Nhóm 4 (Bạn giới thiệu) & 5 (CTV đã chia): khởi tạo luôn `sale / in_care`.
+- Nhóm 6 (Khách tự đến): khởi tạo `sale / waiting_distribute` (chờ CM sale chia).
+
+**Rule khóa field cột trái**: user không có perm khớp phase → trang chi tiết cột trái read-only (chỉ xem), route `leads.edit` trả 403. Cột phải (ghi chú, dịch vụ, thu tiền, `booking_status`, `classification`) vẫn chạy bằng `lead.update` như cũ.
 
 ## 8.1 Dịch vụ gắn vào khách & theo dõi phase
 

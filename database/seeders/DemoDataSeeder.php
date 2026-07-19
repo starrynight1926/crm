@@ -97,12 +97,8 @@ class DemoDataSeeder extends Seeder
                 $this->flat(['MKT', 'Quét Inbox']), 1);
             $this->selectField($marketing->id, 'khu_vuc', 'Khu vực',
                 $this->flat(['TP.HCM', 'TỈNH', 'Hà Nội']), 2);
-            $this->selectField($marketing->id, 'camp', 'Camp', $this->flat([
-                'Khoa', 'TBG Nhật', 'tiểu đường', 'tự ib', 'miền Nam', 'TBG Sing', 'XK Nhật',
-                'XK 0 tuổi', 'Viên uống', 'website', 'trẻ hóa 0 tuổi', 'tự inbox', 'depoxy',
-                'gói khám đột quỵ', 'gói khám tiểu đường', 'gói khám gan', 'gói khám cổ vai gáy',
-                'quà tặng', 'TBG nhật-sing',
-            ]), 3);
+            // Phase 6.21 — Camp giờ được migration seed cho cả 3 phòng Marketing với options list.
+            // Không seed lại ở đây để tránh trùng key (org_unit_id + key).
             // Các trạng thái funnel là TỪNG Ô TÍCH riêng (đúng như các cột trong mẫu)
             $stages = [
                 'follow' => 'Follow', 'net' => 'Nét', 'tai_chinh_yeu' => 'Tài chính yếu',

@@ -83,10 +83,22 @@ new class extends Component
     {
         if (in_array($key, $this->visibleCols)) {
             $this->visibleCols = array_values(array_diff($this->visibleCols, [$key]));
+            // Reset filter khi ẩn cột (không kẹt filter cũ) — Phase 6.19
+            $filterMap = [
+                'camp' => 'fCamp',
+                'ad_source' => 'fAdSource',
+                'nguon' => 'fNguon',
+                'classification' => 'fClassification',
+                'received_date' => ['fDateFrom', 'fDateTo'],
+            ];
+            foreach ((array) ($filterMap[$key] ?? []) as $prop) {
+                $this->{$prop} = '';
+            }
         } else {
             $this->visibleCols[] = $key;
         }
         $this->saveColumnPrefs();
+        $this->resetPage();
     }
 
     public function showAllColumns(): void
@@ -165,7 +177,8 @@ new class extends Component
             'page' => 'Page',
             'status_1' => 'Tình trạng 1',
             'status_2' => 'Tình trạng 2',
-            'note' => 'Ghi chú',
+            'note' => 'Ghi chú (hiện tại)',
+            'note_history' => 'Lịch sử ghi chú',
         ];
     }
 
@@ -213,6 +226,22 @@ new class extends Component
     }
 
     /** Query lead theo bộ lọc hiện tại (dùng chung cho bảng + export). */
+    /** Phase 6.21 — Options distinct cho filter camp/page (union tất cả field key khớp, đa cấp). */
+    private function coreCustomOptions(string $key, \App\Models\User $user)
+    {
+        $fieldIds = CustomField::where('key', $key)->pluck('id');
+        if ($fieldIds->isEmpty()) return collect();
+
+        $visibleIds = Lead::visibleTo($user)->pluck('leads.id');
+        return \App\Models\LeadCustomValue::whereIn('lead_id', $visibleIds)
+            ->whereIn('custom_field_id', $fieldIds)
+            ->whereNotNull('value')
+            ->where('value', '!=', '')
+            ->distinct()
+            ->orderBy('value')
+            ->pluck('value');
+    }
+
     private function filteredQuery()
     {
         $user = auth()->user();
@@ -228,7 +257,12 @@ new class extends Component
                     ->when($normalized, fn ($qqq) => $qqq->orWhere('phone', $normalized)));
             })
             ->when($this->fClassification, fn ($q) => $q->where('classification', $this->fClassification))
-            ->when($this->fCamp, fn ($q) => $q->where('camp', $this->fCamp))
+            ->when($this->fCamp, function ($q) {
+                $campIds = CustomField::where('key', 'camp')->pluck('id');
+                if ($campIds->isNotEmpty()) {
+                    $q->whereHas('customValues', fn ($cv) => $cv->whereIn('custom_field_id', $campIds)->where('value', $this->fCamp));
+                }
+            })
             ->when($this->fAdSource, fn ($q) => $q->where('ad_source', $this->fAdSource))
             ->when($this->fNguon, fn ($q) => $q->whereHas('customValues', fn ($cv) =>
                 $cv->where('custom_field_id', 1)->where('value', $this->fNguon)))
@@ -236,6 +270,42 @@ new class extends Component
             ->when($this->fDateTo, fn ($q) => $q->where('received_date', '<=', $this->fDateTo))
             ->orderByDesc('received_date')
             ->orderByDesc('id');
+    }
+
+    /**
+     * Phase 6.24 — Gộp lịch sử ghi chú của lead thành 1 chuỗi multi-line cho export.
+     * Format mỗi log:
+     *   [dd/mm/YYYY HH:MM] Tên user: [prefix] nội dung [+N ảnh]
+     *     📎 dd/mm/YYYY HH:MM · <url>
+     *     ...
+     * Chỉ lấy logs field='note'. Ảnh xuất dưới dạng URL absolute (Phase 6.25).
+     */
+    private function noteHistoryCell(Lead $lead): string
+    {
+        $logs = \App\Models\LeadStatusLog::with('user')
+            ->where('lead_id', $lead->id)
+            ->where('field', 'note')
+            ->orderBy('created_at')
+            ->get();
+
+        if ($logs->isEmpty()) return '';
+
+        return $logs->map(function ($log) {
+            $when = $log->created_at?->format('d/m/Y H:i') ?? '';
+            $who = $log->user?->name ?: 'Hệ thống';
+            $text = trim((string) ($log->new_value ?? ''));
+            $images = is_array($log->images) ? $log->images : [];
+            $suffix = $images ? ' [+' . count($images) . ' ảnh]' : '';
+            $prefix = $log->is_first_visit ? '🆕 ' : ($log->is_return ? '🔁 ' : '');
+
+            $head = "[{$when}] {$who}: {$prefix}{$text}{$suffix}";
+            $imgLines = array_map(function ($path) use ($when) {
+                $url = url(\Illuminate\Support\Facades\Storage::disk('public')->url($path));
+                return "  📎 {$when} · {$url}";
+            }, $images);
+
+            return $imgLines ? $head . "\n" . implode("\n", $imgLines) : $head;
+        })->implode("\n");
     }
 
     private function cellValue(Lead $lead, string $key, $cfs): string
@@ -256,6 +326,7 @@ new class extends Component
             'status_1' => (string) $lead->status_1,
             'status_2' => (string) $lead->status_2,
             'note' => (string) $lead->note,
+            'note_history' => $this->noteHistoryCell($lead),
             default => (function () use ($lead, $key, $cfs) {
                 $id = (int) str_replace('cf_', '', $key);
                 $cf = $cfs->get($id);
@@ -296,7 +367,17 @@ new class extends Component
             ->all();
 
         $spreadsheet = new Spreadsheet();
-        $spreadsheet->getActiveSheet()->fromArray([$header, ...$rows]);
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->fromArray([$header, ...$rows]);
+
+        // Phase 6.24 — cột note_history có multi-line → bật wrap text + rộng cột
+        $noteHistoryIdx = array_search('note_history', $cols, true);
+        if ($noteHistoryIdx !== false) {
+            $colLetter = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($noteHistoryIdx + 1);
+            $sheet->getStyle($colLetter . ':' . $colLetter)->getAlignment()
+                ->setWrapText(true)->setVertical(\PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_TOP);
+            $sheet->getColumnDimension($colLetter)->setWidth(60);
+        }
 
         AuditLog::record('export', null, ['report' => 'leads', 'count' => count($rows), 'cols' => $cols]);
 
@@ -316,7 +397,7 @@ new class extends Component
 
         return [
             'leads' => $leads,
-            'campOptions' => Lead::visibleTo($user)->whereNotNull('camp')->distinct()->orderBy('camp')->pluck('camp'),
+            'campOptions' => $this->coreCustomOptions('camp', $user),
             'adSourceOptions' => Lead::visibleTo($user)->whereNotNull('ad_source')->distinct()->orderBy('ad_source')->pluck('ad_source'),
             'nguonOptions' => \App\Models\CustomField::find(1)?->options ?? [],
             'exportCore' => $this->showExportModal ? $this->coreColumns() : [],
@@ -357,53 +438,63 @@ new class extends Component
         </div>
     </div>
 
-    {{-- Bộ lọc --}}
-    <div class="bg-white border border-gold-200 rounded-xl shadow-card px-5 py-4 mb-5 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
-        <div>
-            <label class="block text-xs font-semibold text-ink/50 mb-1">Từ ngày</label>
-            <x-date-input field="fDateFrom" class="px-2.5 py-2" />
-        </div>
-        <div>
-            <label class="block text-xs font-semibold text-ink/50 mb-1">Đến ngày</label>
-            <x-date-input field="fDateTo" class="px-2.5 py-2" />
-        </div>
-        <div>
-            <label class="block text-xs font-semibold text-ink/50 mb-1">Chiến dịch</label>
-            <select wire:model.live="fCamp" class="w-full border border-gold-200 rounded-md px-2.5 py-2 text-sm bg-white focus:outline-none focus:border-gold-500">
-                <option value="">Tất cả</option>
-                @foreach ($campOptions as $camp)
-                    <option value="{{ $camp }}">{{ $camp }}</option>
-                @endforeach
-            </select>
-        </div>
-        <div>
-            <label class="block text-xs font-semibold text-ink/50 mb-1">Nguồn</label>
-            <select wire:model.live="fAdSource" class="w-full border border-gold-200 rounded-md px-2.5 py-2 text-sm bg-white focus:outline-none focus:border-gold-500">
-                <option value="">Tất cả</option>
-                @foreach ($adSourceOptions as $source)
-                    <option value="{{ $source }}">{{ $source }}</option>
-                @endforeach
-            </select>
-        </div>
-        <div>
-            <label class="block text-xs font-semibold text-ink/50 mb-1">Nguồn data</label>
-            <select wire:model.live="fNguon" class="w-full border border-gold-200 rounded-md px-2.5 py-2 text-sm bg-white focus:outline-none focus:border-gold-500">
-                <option value="">Tất cả</option>
-                @foreach ($nguonOptions as $opt)
-                    <option value="{{ $opt }}">{{ $opt }}</option>
-                @endforeach
-            </select>
-        </div>
-        <div>
-            <label class="block text-xs font-semibold text-ink/50 mb-1">Phân loại kết quả</label>
-            <select wire:model.live="fClassification" class="w-full border border-gold-200 rounded-md px-2.5 py-2 text-sm bg-white focus:outline-none focus:border-gold-500">
-                <option value="">Tất cả</option>
-                @foreach (\App\Models\Lead::CLASSIFICATIONS as $key => $label)
-                    <option value="{{ $key }}">{{ $label }}</option>
-                @endforeach
-            </select>
-        </div>
-        <div>
+    {{-- Bộ lọc — chỉ hiện khi cột tương ứng đang bật (Phase 6.19) --}}
+    <div class="bg-white border border-gold-200 rounded-xl shadow-card px-5 py-4 mb-5 flex flex-wrap items-end gap-3">
+        @if ($this->colVisible('received_date'))
+            <div class="min-w-[130px] flex-1">
+                <label class="block text-xs font-semibold text-ink/50 mb-1">Từ ngày</label>
+                <x-date-input field="fDateFrom" class="px-2.5 py-2" />
+            </div>
+            <div class="min-w-[130px] flex-1">
+                <label class="block text-xs font-semibold text-ink/50 mb-1">Đến ngày</label>
+                <x-date-input field="fDateTo" class="px-2.5 py-2" />
+            </div>
+        @endif
+        @if ($this->colVisible('camp'))
+            <div class="min-w-[140px] flex-1">
+                <label class="block text-xs font-semibold text-ink/50 mb-1">Chiến dịch</label>
+                <select wire:model.live="fCamp" class="w-full border border-gold-200 rounded-md px-2.5 py-2 text-sm bg-white focus:outline-none focus:border-gold-500">
+                    <option value="">Tất cả</option>
+                    @foreach ($campOptions as $camp)
+                        <option value="{{ $camp }}">{{ $camp }}</option>
+                    @endforeach
+                </select>
+            </div>
+        @endif
+        @if ($this->colVisible('ad_source'))
+            <div class="min-w-[140px] flex-1">
+                <label class="block text-xs font-semibold text-ink/50 mb-1">Nguồn QC</label>
+                <select wire:model.live="fAdSource" class="w-full border border-gold-200 rounded-md px-2.5 py-2 text-sm bg-white focus:outline-none focus:border-gold-500">
+                    <option value="">Tất cả</option>
+                    @foreach ($adSourceOptions as $source)
+                        <option value="{{ $source }}">{{ $source }}</option>
+                    @endforeach
+                </select>
+            </div>
+        @endif
+        @if ($this->colVisible('nguon'))
+            <div class="min-w-[140px] flex-1">
+                <label class="block text-xs font-semibold text-ink/50 mb-1">Nguồn data</label>
+                <select wire:model.live="fNguon" class="w-full border border-gold-200 rounded-md px-2.5 py-2 text-sm bg-white focus:outline-none focus:border-gold-500">
+                    <option value="">Tất cả</option>
+                    @foreach ($nguonOptions as $opt)
+                        <option value="{{ $opt }}">{{ $opt }}</option>
+                    @endforeach
+                </select>
+            </div>
+        @endif
+        @if ($this->colVisible('classification'))
+            <div class="min-w-[160px] flex-1">
+                <label class="block text-xs font-semibold text-ink/50 mb-1">Danh mục</label>
+                <select wire:model.live="fClassification" class="w-full border border-gold-200 rounded-md px-2.5 py-2 text-sm bg-white focus:outline-none focus:border-gold-500">
+                    <option value="">Tất cả</option>
+                    @foreach (\App\Models\Lead::CLASSIFICATIONS as $key => $label)
+                        <option value="{{ $key }}">{{ $label }}</option>
+                    @endforeach
+                </select>
+            </div>
+        @endif
+        <div class="min-w-[180px] flex-[2]">
             <label class="block text-xs font-semibold text-ink/50 mb-1">Tìm kiếm</label>
             <input type="search" wire:model.live.debounce.300ms="search" placeholder="Tên hoặc SĐT..."
                    class="w-full border border-gold-200 rounded-md px-2.5 py-2 text-sm focus:outline-none focus:border-gold-500">

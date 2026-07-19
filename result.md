@@ -2,6 +2,264 @@
 
 > Làm xong phase nào ghi vào đây: ngày hoàn thành, việc đã làm, việc dời lại/chưa xong, ghi chú & quyết định phát sinh. Mẫu bên dưới.
 
+## Phase 6.20 — Refactor page/camp thành custom field cấp công ty ✅
+- **Ngày hoàn thành**: 2026-07-19
+- **Đã làm** (A→D):
+  - **A. Migration + backfill**: `2026_07_19_160000_migrate_page_camp_to_custom_fields` — tạo 2 custom_field cấp công ty (`key=page` label PAGE + `key=camp` label Camp, org_unit null, không bắt buộc); backfill mọi lead có page/camp != null → `lead_custom_values`; DROP cột `page`, `camp` khỏi `leads`.
+  - **B. Pipeline** (`ProcessRawLead`): thêm helper `writeCoreCustom()` — payload có key `page`/`camp` → ghi vào `lead_custom_values` thay cột. Sửa `mergeInto()` bỏ 'page','camp' khỏi list core-field merge, thêm branch merge cho custom_values. WebhookController không cần đổi.
+  - **C1. Lead + form + detail**:
+    - `Lead` model: bỏ 'page', 'camp' khỏi Fillable. Thêm accessor `getPageAttribute()` / `getCampAttribute()` đọc từ `customValues` — `$lead->page` và `$lead->camp` vẫn work.
+    - `⚡lead-form`: xóa property `$page`/`$camp` + input PAGE/Camp core + Save attributes. Move Link → tab Insight.
+    - `⚡lead-detail`: xóa block hiển thị Page/Camp core (giờ hiển thị trong section Trường bổ sung).
+  - **C2. Lead-list**: `filteredQuery` chuyển `where camp = $fCamp` → `whereHas customValues (field_id, value)`. Thêm helper `coreCustomOptions('camp')` — options distinct từ `lead_custom_values`.
+  - **C3. Distribution rules**: `DistributionRule::matches()` dùng `$lead->{$field}` — accessor hoạt động. DistributionEngine `distribute()` thêm `loadMissing('customValues')` để tránh N+1.
+  - **C4. Reports**: `StatsAggregator::aggregateDay` LEFT JOIN `lead_custom_values as camp_cv` để lấy camp qua alias. `⚡report-center::marketingData()` refactor: nếu groupBy ∈ ['camp','page'] thì JOIN + groupBy `gb_cv.value`, else groupBy cột leads bình thường.
+  - **C5. Import + Connection Manager**: TARGETS + GUESS + payload key `page`/`camp` giữ nguyên — payload chảy qua `ProcessRawLead` → tự route sang custom_values (không cần đổi).
+  - **D. QA browser toàn pipeline**:
+    - Detail lead 49: section "Trường bổ sung" hiển thị `PAGE = Fanpage Longevity HN`, `CAMP = CAMP_JULY_KO1` ✓
+    - Form edit lead 49: custom field inputs (id 5, 6) pre-fill giá trị; input core `wire:model="page"`/`"camp"` không còn ✓
+    - `/leads` list render OK ✓
+    - `/distribution/rules` render OK ✓
+    - `/reports` tab Marketing group by `camp` → hiển thị đúng: `(trống) 36 · camp-summer 2 · CAMP_JULY_HCM3 1 · CAMP_JULY_KO1 1` ✓
+  - Cập nhật `ERD.md`: đánh dấu 2 cột đã drop, chú thích chuyển sang `lead_custom_values`.
+- **Ghi chú**:
+  - Custom field id được cache trong static `Lead::$_coreCustomFieldIds` để tránh query lặp.
+  - Query rule matching có accessor phía trong loop → nên eager load `customValues` ở DistributionEngine (đã fix).
+  - **Không tăng schema**: dùng bảng `lead_custom_values` sẵn có (composite PK lead_id + custom_field_id), không thêm bảng mới.
+- **Bug patched sau QA lần 2 (check lại)**:
+  1. Migration drop cột chưa drop index `leads_camp_index` → SQLite fresh migrate lỗi (115 tests fail). Fix: `dropIndex(['camp'])` trước `dropColumn`.
+  2. Test `ProcessRawLeadTest::duplicate_phone_merges` dùng `Lead::create(['camp' => ...])` — cột không còn. Fix: tạo `LeadCustomValue` với field seed từ migration; reset static cache `Lead::$_coreCustomFieldIds`.
+  3. Test `CustomFieldTest::lead_without_org_gets_company_fields_only` expected 1 field cấp công ty — refactor thêm 2 (page/camp) → thay `assertCount` bằng `assertTrue(contains)`.
+- **Test suite cuối**: 115/116 pass. Fail duy nhất là `LeadScopeTest::test_team_scope_sees_all_leads_in_subtree` — **pre-existing từ Phase 6.8**, không liên quan refactor này.
+- **Sửa seeder (task 46)**: bỏ dòng seed `selectField($marketing->id, 'camp', ...)` trong `DemoDataSeeder` — field Camp giờ được migration seed cấp công ty, không cần trùng ở cấp phòng ban.
+
+## Phase 6.21 — Chuyển page/camp từ cấp công ty → cấp phòng Marketing (3 org) ✅
+- **Ngày hoàn thành**: 2026-07-20
+- **Đã làm**:
+  - User chốt: page/camp là data riêng team Marketing, không phải data mọi org. Chuyển 2 field từ cấp công ty (org null) → cấp phòng Marketing, seed cho cả 3 cơ sở HN/HCM/DN.
+  - Migration `2026_07_20_100000_move_page_camp_to_marketing_depts`:
+    - Backup lead_custom_values đang gán 2 field cũ (id=5, id=6).
+    - Tạo 6 field mới (2 field × 3 org): page-HN, camp-HN, page-HCM, camp-HCM, page-DN, camp-DN. Camp có options select (19 giá trị từ DemoDataSeeder cũ).
+    - Backfill: mỗi value cũ → map sang field mới theo Marketing ancestor của org lead (dùng path prefix). Fallback Marketing HN nếu không match.
+    - Xóa 2 field cũ + cascade custom_values.
+  - **Refactor code đọc field theo key (key có thể ở nhiều org)**:
+    - `Lead::customValueByKey()` → dùng eager load `customValues.field` + iterate tìm value theo `field.key`. Bỏ static cache field_id.
+    - `ProcessRawLead::writeCoreCustom()` + `mergeInto` → dùng `CustomField::applicableTo($lead->orgUnit)->firstWhere('key', ...)` để pick field đúng theo org.
+    - `⚡lead-list::coreCustomOptions()` + `filteredQuery::fCamp` → `whereIn custom_field_id` với tất cả field IDs khớp key.
+    - `StatsAggregator` + `⚡report-center::marketingData()` → JOIN `whereIn` field IDs.
+  - `DemoDataSeeder`: bỏ dòng `selectField(marketing->id, 'camp', ...)` (migration đã seed cho cả 3 phòng).
+- **Test browser**: detail K1 (org team-giang-sale, subtree Marketing HN) → PAGE `Fanpage Longevity HN` + CAMP `CAMP_JULY_KO1` hiển thị đúng, value đã re-map sang field Marketing HN (id=8).
+- **Test suite**: 115/116 pass (fail duy nhất pre-existing từ Phase 6.8).
+- **Fix test pre-existing** (bonus): `LeadScopeTest::test_team_scope_sees_all_leads_in_subtree` fail vì test viết theo design cũ. Logic `scopeVisibleTo` hiện tại có branch cho kho chung công ty (org null + pool_level=common) visible với user có scope tổ chức. Update test khớp design mới (thêm assertion phân biệt kho chung vs null-org-khác-common). **Test suite giờ 116/116 pass**.
+
+## Booking Integration — Draft, chưa code (2026-07-20)
+User request tích hợp 2 chiều CRM ↔ Booking system (GET facilities/services/slots + POST appointments). Đã note đầy đủ vào [docs/booking-integration-draft.md](docs/booking-integration-draft.md): API contract, bảng `lead_appointments`, `BookingClient`, Livewire modal, 4 câu cần user chốt (auth, cache, giữ nút cũ, snapshot). **User đang research tiếp, chưa bắt đầu code.**
+
+## Phase 6.25 — Export note_history: thêm URL ảnh + thời gian upload ✅
+- **Ngày hoàn thành**: 2026-07-20
+- **User chốt**: mỗi ảnh trong ghi chú xuất dưới dạng **URL absolute + thời gian upload**, vẫn gộp trong cùng 1 cell.
+- **Đã làm**:
+  - `noteHistoryCell()` mở rộng: sau dòng head log có ảnh, in mỗi ảnh 1 line indent 2 space: `  📎 dd/mm/YYYY HH:MM · <url>`.
+  - URL absolute qua `url(Storage::disk('public')->url($path))` — prefix `APP_URL` để mở được từ file Excel.
+- **Test**: `Khách gọi hỏi giá dịch vụ. [+2 ảnh]\n  📎 19/07/2026 13:50 · http://localhost/storage/lead-notes/49/fake-a.jpg\n  📎 19/07/2026 13:50 · http://localhost/storage/lead-notes/49/fake-b.jpg`
+- **Test suite**: 117/117 pass.
+
+## Phase 6.24 — Export Excel: thêm cột "Lịch sử ghi chú" ✅
+- **Ngày hoàn thành**: 2026-07-20
+- **Đã làm**:
+  - `⚡lead-list` `coreColumns()`: thêm key `note_history` label "Lịch sử ghi chú" (giữ `note` cũ rename thành "Ghi chú (hiện tại)").
+  - Helper `noteHistoryCell(Lead)` gộp tất cả `lead_status_logs` field='note' của lead thành **1 cell multi-line**:
+    - Format mỗi log: `[dd/mm/YYYY HH:MM] Tên user: [prefix] nội dung [+N ảnh]`
+    - Prefix `🆕` (lần đầu) / `🔁` (khách trở lại) nếu có
+    - `[+N ảnh]` khi log có `images` (không nhúng ảnh — chỉ số lượng để nhẹ file)
+  - Export controller: sau `fromArray()`, apply style cho cột `note_history`: `wrapText=true`, vertical top, width 60 char để Excel hiển thị đẹp.
+- **Test**: cell format đúng — VD lead 49: `[19/07/2026 13:50] Quản trị viên: Khách gọi hỏi giá dịch vụ.\n[19/07/2026 13:50] An: Đã tư vấn combo laser 10 buổi.`
+- **Test suite**: 117/117 pass.
+- **Ghi chú**:
+  - **Không nhúng ảnh** trực tiếp vì file lớn + phức tạp. Nếu cần xem ảnh gốc, mở trang detail lead.
+  - `note` (core) vẫn xuất riêng — đây là note "hiện tại" trên `leads.note`. `note_history` là **timeline đầy đủ** từ status logs.
+
+## Phase 6.23 — Tách permission riêng `lead.view_pool` (Xem kho số) ✅
+- **Ngày hoàn thành**: 2026-07-20
+- **User chốt**: dùng permission riêng "Xem kho số" (`lead.view_pool`) thay vì gộp với distribute*. Cách này gọn — admin tick 1 quyền là được xem kho, không phụ thuộc quyền chia.
+- **Đã làm**:
+  - `PermissionSeeder`: thêm `lead.view_pool` "Xem kho số (kho chung công ty, chưa chia)" group distribution.
+  - `Lead::scopeVisibleTo()` + `isVisibleTo()`: check `hasPermission('lead.view_pool')` thay vì `hasAnyPermission(distribute*)`.
+  - Cấp `lead.view_pool` cho các role đã có `lead.distribute` (đều là DM/CM/QL/TL): OrgAndRoleSeeder + OrgStaffSeeder + Phase66FlowSeeder — tất cả nơi có `'lead.distribute'` giờ có thêm `'lead.view_pool'` trước nó.
+  - Test cũ Phase 6.22 rename thành `test_pool_visible_only_for_user_with_view_pool_permission`, dùng perm mới.
+- **Test suite**: 117/117 pass.
+
+## Phase 6.22 — Chặt lại visibility kho chung công ty (gate bằng perm distribute*) ✅
+- **Ngày hoàn thành**: 2026-07-20
+- **User chốt**: kho chung công ty (`org_unit_id=null, pool_level=common`) không mặc định visible cho mọi user có scope tổ chức. Chỉ user có quyền chia số (DM, CM) mới thấy để chia — người thường được chia gì thấy đó.
+- **Đã làm**:
+  - `Lead::scopeVisibleTo()` + `isVisibleTo()`: thêm điều kiện visible kho chung công ty chỉ khi user có 1 trong 4 perm: `lead.distribute` / `lead.distribute_booking` / `lead.distribute_sale` / `lead.distribute_ctv`.
+  - Test cũ update lại (design cũ đã sai): manager scope=team + không có perm distribute → KHÔNG thấy kho chung.
+  - Thêm test mới `test_pool_visible_only_for_user_with_distribute_permission`: cấp perm `lead.distribute` cho manager → thấy được lead kho chung.
+- **Test suite**: 117/117 pass.
+
+## Phase 6.19 — Filter lead-list liên kết với column visibility ✅
+- **Ngày hoàn thành**: 2026-07-19
+- **Đã làm**:
+  - `⚡lead-list`: mỗi ô filter (Chiến dịch/Nguồn QC/Nguồn data/Phân loại/Ngày) bọc `@if ($this->colVisible('X'))` → chỉ hiện khi cột tương ứng đang tick trong bộ chọn cột.
+  - Ô search "Tìm kiếm" giữ luôn hiện (không tied to 1 cột).
+  - `toggleColumn()`: khi tắt cột, reset filter value tương ứng (`fCamp='', fAdSource='', fNguon='', fClassification='', fDateFrom/To=''`) để không kẹt filter cũ, + `resetPage()`.
+  - Grid filter đổi từ `grid-cols-7` cố định → `flex flex-wrap items-end` — số filter linh hoạt.
+- **Test**: mặc định 5 filter (do camp+ad_source không tick prefs); bật cột `camp` → "Chiến dịch" xuất hiện; tắt lại → biến mất, `fCamp` reset về ''.
+
+## Phase 6.18 — Move field Insight vào tab Insight + rename Ngày → Ngày thu thập ✅
+- **Ngày hoàn thành**: 2026-07-19
+- **Đã làm**:
+  - `⚡lead-form`: bỏ textarea `insight` khỏi cột trái (nằm giữa Link ↔ NOTE), thêm vào đầu tab Insight cột phải, label "Ghi chú insight khách".
+  - Đổi label field `received_date` từ "Ngày *" → "Ngày thu thập *" cho rõ nghĩa.
+- **Test**: field Insight không còn ở cột trái, xuất hiện đúng khi click tab Insight; label "Ngày thu thập *" render đúng.
+
+## Phase 6.17 — Style tabbar: horizontal text-only inline ✅
+- **Ngày hoàn thành**: 2026-07-19
+- **Đã làm**:
+  - Đổi tabbar style từ dạng button pill fill vàng → text-only inline giống top nav Google Docs.
+  - Bar: `flex flex-wrap items-center border-b border-gold-200` — 1 hàng, wrap khi tràn (không scrollbar xấu).
+  - Active: `text-gold-700 border-b-2 border-gold-600 font-semibold`. Non-active: `text-ink/50 border-b-2 border-transparent hover:text-gold-700`.
+  - Rút gọn labels: Nhân sự · Insight · Liệu trình · Trạng thái · Dịch vụ · Phân phối. Padding `px-3 py-2`.
+- **Test browser**: 6 tab fit 1 hàng (barWidth 596px, hasScrollbar false), active gạch chân vàng.
+
+## Phase 6.16 — Thêm 2 tab: Dịch vụ & Upsell + Phân phối & Nguồn ✅
+- **Ngày hoàn thành**: 2026-07-19
+- **Đã làm**:
+  - Move `Dịch vụ tiềm năng & UPSELL` (200 dòng) và `Phân phối & Nguồn` (70 dòng) từ cột trái → cột phải, wrap `x-show="tab === 'upsell'"` / `x-show="tab === 'distribution'"`.
+  - Tabs array tăng lên 6, tab `distribution` conditional theo `$canDistribute`.
+  - Dùng Python script để cut+paste 2 blocks lớn (Edit tool không match nổi 200 dòng string).
+- **Cột trái sạch** — chỉ còn 2 section (Thông tin khách hàng + Trường bổ sung), phù hợp với vai trò "info cá nhân/nhân khẩu".
+- **Test browser**: 6 tab hiện đủ, switch tab Dịch vụ & Upsell + Phân phối & Nguồn → visible đúng, các tab khác ẩn.
+
+## Phase 6.15 — Cột phải: 4 section thành 4 tab (Alpine) ✅
+- **Ngày hoàn thành**: 2026-07-19
+- **Đã làm**:
+  - `⚡lead-form` cột phải: bọc `<div x-data="{ tab: 'staff' }">`, thêm tabbar 4 nút (active fill vàng, non-active border). Mỗi section trước đây `<div class="bg-white...">` thêm `x-show="tab === 'X'" x-cloak`.
+  - **INSIGHT** move từ cột trái (giữa Trường bổ sung ↔ DV tiềm năng) sang cột phải làm 1 tab.
+  - Thứ tự tab: **Cơ sở & Nhân sự (default)** → INSIGHT → Liệu Trình → Trạng thái chăm sóc.
+- **Test browser**: default tab "staff" visible, 3 tab khác ẩn (`display: none`). Click INSIGHT/Liệu Trình/Trạng thái chăm sóc → tab tương ứng visible, các tab khác ẩn. 4/4 tab switch OK.
+- **Bug gặp + fix**: `@php $tabs = [...] @endphp` block **không share scope** với `@foreach ($tabs as $t)` phía dưới trong Livewire volt → phải dùng `<?php $tabs = [...] ?>` inline. (Repeat bug từ Phase 6.11 — đã có trong skill, tao vẫn quên áp dụng.)
+
+## Phase 6.14 — Trường bổ sung: đối vị trí + fix dấu * cho Nguồn ✅
+- **Ngày hoàn thành**: 2026-07-19
+- **Đã làm**:
+  - `⚡lead-form`: chuyển block "Trường bổ sung" từ cột phải cuối → cột trái, ngay sau "Thông tin khách hàng" (trước INSIGHT). Đổi hint dưới header: "Trường có * là bắt buộc" cho rõ.
+  - Set `custom_fields.id=1` (Nguồn, mức công ty) → `required = true`. Trước đó DB flag `false` nên code không render * dù logic có sẵn `@if ($field->required)<span class="text-red-500">*</span>@endif`.
+- **Test browser** (admin, `/leads/49/edit`):
+  - Section order: Thông tin khách hàng → **Trường bổ sung** → INSIGHT → LIỆU TRÌNH · cột phải: Cơ sở & Nhân sự → Trạng thái chăm sóc.
+  - Field "Nguồn" hiển thị "Nguồn *  #mã KH  Công ty" — dấu * đỏ.
+  - Detail view cột phải: `TRƯỜNG BỔ SUNG (TEAM SALE) · NGUỒN *`.
+- **Ghi chú**:
+  - Logic required của custom field đã có sẵn từ đầu, chỉ cần data flag đúng. Không cần code mới. User có thể tự tick required trong `/settings/fields` cho các trường khác cần bắt buộc.
+
+## Phase 6.13 — QA multi-role + fix bug view_phone bypass scope ✅
+- **Ngày hoàn thành**: 2026-07-19
+- **Đã làm**:
+  - **BUG THẬT phát hiện** trong QA vai book1: user có perm `lead.view_phone` BYPASS được `isVisibleTo()` → xem được lead của team khác. Nguyên nhân: `⚡lead-detail::mount()` gate `abort_unless(isVisibleTo || hasPermission('lead.view_phone'), 403)`. Perm gốc `lead.view_phone` chỉ nên **unmask SĐT khi lead đã trong scope** (như `Lead::phoneFor()` đang dùng), không phải mở toàn trang.
+  - Fix: bỏ vế `|| hasPermission('lead.view_phone')` trong gate mount → chỉ giữ `isVisibleTo`. Verify book1 → /leads/49 (khác team) → 403 sau fix.
+  - QA browser 4 vai với 2 khách test (K1 Sale/in_care, K2 Booking/in_care):
+    | Vai | Perm chính | Trên K1 (sale) | Trên K2 (booking) |
+    |---|---|---|---|
+    | Sale nhân viên (nvkd) | lead.update | Thấy (owner mình) · KHÔNG có nút Cập nhật · edit → 403 | Không thấy (khác team, khác phase) |
+    | CM sale (cmsale) | update_sale + distribute_sale | Thấy · nút Cập nhật + Thu hồi · edit → OK | Thấy · KHÔNG có nút nào · edit → 403 |
+    | Team booking (book1) | update_booking | Không thấy sau fix (đúng scope) | Thấy · đủ 3 nút · edit → OK |
+    | CM booking (cmbk) | update_booking + distribute_booking | Không thấy · edit → 403 | Thấy · đủ 3 nút · edit → OK |
+  - Toàn bộ gate scope + phase-based edit hoạt động đúng cross-role.
+- **Ghi chú**:
+  - **Bài học**: QA bằng admin bị bypass mọi gate → không phát hiện được bug. Luôn phải test theo tài khoản chức năng thực tế. Đưa vào skill: "QA gate scope/permission phải dùng tài khoản đúng vai, không admin bypass".
+  - 2 khách test đang giữ nguyên trong DB (id 25, 49). User tự dọn khi cần.
+
+## Phase 6.12 — Trang quản lý Bác sĩ & Cơ sở ✅
+- **Ngày hoàn thành**: 2026-07-19
+- **Đã làm**:
+  - Migration `2026_07_19_140000_add_title_to_staff_members`: thêm cột `title` nullable, backfill từ `name` (split `"Tên\n(Chức vụ)"`).
+  - `StaffMember` model: thêm `title` vào Fillable, method `displayName()` gộp "Tên\n(Chức vụ)".
+  - `RealDoctorsSeeder`: lưu name + title riêng, không join `\n` nữa.
+  - Permission mới `staff.manage` — "Chỉnh sửa danh mục bác sĩ & cơ sở". Cấp Admin + DM HCM. Seed lại 3 seeder.
+  - Route `GET /settings/staff` + `POST /settings/staff/export`, middleware `permission:staff.manage`.
+  - Livewire component `settings/⚡staff-management`: 2 tab **Nhân sự chuyên môn** + **Cơ sở**.
+    - Tab Nhân sự: bảng list (Tên · Chức vụ · Cơ sở · Active · Thao tác), filter theo cơ sở + search theo tên/chức vụ, form Add/Edit 3 field riêng (Tên + Chức vụ + Cơ sở) + toggle active, xóa với confirm.
+    - Tab Cơ sở: CRUD facility cây 2 tầng, toggle active; xóa chặn nếu còn nhân sự hoặc cơ sở con.
+    - Import Excel: cột A=Cơ sở, B=Phòng ban, C=Tên, D=Chức vụ, E=Active. Upsert theo (facility_id, name).
+    - Export Excel: `StaffExportController` dump toàn bộ nhân sự (kể cả tắt) ra xlsx dùng `phpoffice/phpspreadsheet`.
+  - Update dropdown BS ở `⚡lead-form` (staffTree + selectedName) và thẻ liệu trình (select option `Name — Title`) dùng `$s->displayName()` / `$doc->title`. Detail view (`⚡lead-detail`) đổi sang `->displayName()`.
+  - Menu `settings/index`: thêm ô "Bác sĩ & Cơ sở" (icon users, scope system, perm `staff.manage`).
+  - Cập nhật ERD.md bảng `staff_members` (thêm cột title).
+- **Test browser**: trang render OK — 32 nhân sự, 6 cơ sở (3 root + 3 dept). Tạo mới "BS Test QA (Bác sĩ nội soi test)" → count 33, dropdown ở form lead thấy đúng "BS Test QA\n(Bác sĩ nội soi test)". Đã cleanup.
+- **Ghi chú**:
+  - Import Excel format khác file gốc "List nhân sự.xlsx" (đơn giản hơn: cột A=Cơ sở thay vì filter theo `Khối chuyên môn`). File gốc user cần re-format trước khi import qua UI, hoặc chạy seeder CLI.
+  - `RealDoctorsSeeder` đã register trong `DatabaseSeeder` — `php artisan db:seed` fresh sẽ tự seed 32 nhân sự vào 3 cơ sở. Idempotent (`updateOrCreate` theo `facility_id, name`).
+
+## Phase 6.11 — LIỆU TRÌNH dạng thẻ 1-N ✅
+- **Ngày hoàn thành**: 2026-07-19
+- **Đã làm**:
+  - Migration `2026_07_19_120000_create_lead_treatments_and_drop_old_columns`: tạo bảng `lead_treatments` (id, lead_id, sequence, performed_at, performing_doctor_id, quality_rating, timestamps + index); drop 6 cột cũ trên `leads` (`treatment_1..4`, `performing_doctor_id`, `quality_rating`). Data cũ 0 row → không backfill.
+  - Model `LeadTreatment` + relation `Lead::treatments()` (`HasMany`, orderBy sequence).
+  - `⚡lead-form`: bỏ 6 field cứng, thêm `treatmentRows` mảng, method `addTreatmentRow()` / `removeTreatmentRow($idx)`, `syncTreatments()` (delete + recreate theo thứ tự nhập). UI mỗi thẻ có Lần / Ngày / Bác sĩ (select với format `Name — (Chức vụ)`) / Đánh giá riêng + nút × xoá + nút "Thêm liệu trình" ở header.
+  - `⚡lead-detail`: bỏ hiển thị treatment_1..4 + BS thực hiện + quality_rating cũ, thay bằng vòng lặp qua `$lead->treatments` render dạng thẻ (sequence, ngày, BS, đánh giá).
+  - Cập nhật ERD.md (thêm bảng `lead_treatments`, đánh dấu 6 cột đã drop).
+- **Ghi chú**:
+  - `LeadTreatment` giữ nguyên FK `performing_doctor_id` → `staff_members` (user chốt bác sĩ vẫn là staff, không đăng nhập).
+  - Không giới hạn số lần liệu trình (cũ giới hạn 4).
+- **Test**: QA E2E pass — thêm 2 thẻ khác BS, save, verify DB có 2 row `lead_treatments` (sequence 1&2, ngày/BS/đánh giá đúng). Detail view timeline render 2 thẻ + bác sĩ 2 dòng đúng format.
+- **Bug phát hiện + fix trong QA**: section INSIGHT (bọc bởi `@if birthday || address || medical_history || occupation`) không include `treatments` → treatments không hiển thị nếu lead thiếu 4 field kia. Fix: thêm `|| $lead->treatments->isNotEmpty()` vào điều kiện.
+
+## Phase 6.10 — Seed 32 bác sĩ Khối chuyên môn + format tên xuống dòng ✅
+- **Ngày hoàn thành**: 2026-07-19
+- **Đã làm**:
+  - Đọc file `List nhân sự.xlsx`, lọc `PHÒNG BAN = Khối chuyên môn` + `STATUS = ON`, bỏ điều dưỡng (case-insensitive "điều dưỡng" trong chức vụ). Còn **32 người**: Hà Nội 19, HCM 11, Đà Nẵng 2.
+  - Seeder `RealDoctorsSeeder`: seed 3 facility root (Hà Nội / HCM / Đà Nẵng), mỗi root có 1 dept "Khối chuyên môn", 32 `staff_members` gắn dept tương ứng, `role=doctor`. Idempotent theo `(facility_id, name)`.
+  - Format `name` chứa `\n`: `"Hoàng Trà My\n(Bác sĩ chuyên khoa y học cổ truyền)"` — để UI render 2 dòng.
+  - UI dropdown BS tư vấn + BS thực hiện (`⚡lead-form`): thêm class `whitespace-pre-line leading-tight` cho `<span>` tên (cả lúc đang chọn và lúc đã pick). Đổi init `selectedName` sang `Js::from(...)` để không vỡ khi name có `\n`.
+  - UI trang chi tiết (`⚡lead-detail`): đổi `->displayLabel()` → `->name` cho BS tư vấn + BS thực hiện, thêm `whitespace-pre-line leading-tight` + `items-start` để label chip căn top.
+- **Dời lại / chưa xong**:
+  - Chưa refactor LIỆU TRÌNH sang dạng thẻ 1-N (bảng riêng `lead_treatments`) — user chưa chốt câu hỏi thiết kế; sẽ làm phase kế.
+- **Ghi chú**:
+  - Giữ schema `staff_members` không thêm cột — dùng `\n` trong `name` cho gọn (không cần title/code cột riêng).
+  - Bảng `staff_members` giờ chỉ dùng cho **bác sĩ / KTV chuyên môn** (consultant đã tách sang User ở Phase 6.9).
+
+## Phase 6.9 — Chuyên viên tư vấn = User (team sale) + fix nút "Bớt" chuyên viên ✅
+- **Ngày hoàn thành**: 2026-07-19
+- **Đã làm**:
+  - Migration `2026_07_19_100000_change_consultant_fk_to_users`: đổi FK `consultant_1_id`, `consultant_2_id`, `consultant_3_id` từ `staff_members` → `users`. Bảng `staff_members` đang rỗng (chưa dùng cho consultant) → không phải migrate data.
+  - `Lead` model: relationships `consultant1/2/3()` chuyển sang `belongsTo(User::class)`.
+  - `⚡lead-form`: thêm method `consultantUsers()` — lấy user có `lead.update` trong subtree `org_unit` của lead (nếu chưa gắn team dùng scope người thao tác) + giao với `visibleOrgUnitIds()`. Data đẩy qua `window.__consultantUsers` cho Alpine dropdown flat list.
+  - Tách UI dropdown: bác sĩ giữ Alpine tree cũ (`staffTree` từ `staff_members`); 3 chuyên viên dùng dropdown flat list mới (search theo tên).
+  - Fix bug **"thêm được, bớt không được"**: thêm nút `× Bớt` cạnh label chuyên viên 2/3 — click → giảm `extraConsultants` + clear `consultantXId` (bớt CV2 tự động clear luôn CV3).
+  - `⚡lead-detail`: eager load `consultant1/2/3` (bỏ `.facility.parent`), hiển thị `$cv->name` (User) thay cho `->displayLabel()` (StaffMember).
+  - Cập nhật `ERD.md` bảng leads.
+- **Dời lại / chưa xong**:
+  - Bảng `staff_members` hiện có `doctor` + (đã bỏ) `consultant`. Chưa seed doctor test → dropdown bác sĩ vẫn rỗng. Đợi bên booking đồng bộ qua API rồi seed.
+  - Chưa filter chặt CM khỏi dropdown chuyên viên — hiện tất cả user có `lead.update` trong scope đều hiện (bao gồm CM booking, CM sale). Nếu cần tách, thêm điều kiện loại role có `distribute_booking`/`distribute_sale`.
+- **Ghi chú & quyết định phát sinh**:
+  - Blade **không parse được `@foreach ([...] as $x)` với array literal đa dòng** — compile silently thành text raw → gây lỗi endforeach. Fix bằng cách khai báo array vào biến `<?php $x = [...] ?>` rồi loop `@foreach ($x as ...)`. Skill note: nhớ cách này cho các loop tương lai.
+  - Livewire volt `@php ... @endphp` block **không share scope với `@foreach`** phía dưới → phải dùng `<?php ?>` inline.
+- **Test**:
+  - QA browser: `admin` vào `/leads/1/edit` → dropdown 35 chuyên viên hiện đúng, nút "Bớt" hiện đúng vị trí. Chưa test transition thật (chọn chuyên viên → save → verify DB).
+
+## Phase 6.8 — Trục lifecycle phase/status + tách permission Booking/Sale ✅
+- **Ngày hoàn thành**: 2026-07-19
+- **Đã làm**:
+  - Migration `2026_07_19_000000_add_pipeline_phase_status_to_leads`: thêm `pipeline_phase` (booking/sale) + `pipeline_status` (waiting_distribute/in_care) + index. Backfill tất cả lead cũ = `sale/in_care` (user chọn phương án b — data test).
+  - Tách permission `lead.distribute_team` (deprecated) → `lead.distribute_booking` + `lead.distribute_sale`.
+  - Thêm 2 permission mới `lead.update_booking` + `lead.update_sale` — quyền sửa info cá nhân (cột trái) theo phase hiện tại của lead. Không có perm khớp phase → cột trái read-only, route `leads.edit` trả 403.
+  - `Lead` model: thêm constants `PHASE_*` / `PSTATUS_*`, method `canEditPersonalInfo(User)`, `personalInfoPermission()`, `pipelineLabel()`, `moveToSaleWaiting()`, `initialPipelineFor()`. `SOURCE_PERMISSIONS` chuyển `distribute_team` → `distribute_booking` cho nhóm 1-3.
+  - Route `leads.edit`: đổi middleware `permission:lead.update` → closure gate `canEditPersonalInfo`.
+  - `⚡lead-form.blade.php` (edit): gate mount theo `canEditPersonalInfo`.
+  - `⚡lead-detail.blade.php`: badge phase/status (4 màu), nút "Cập nhật thông tin" ẩn nếu không có perm khớp phase, thêm cụm 2 nút "Mở Booking" + "Chuyển sang Sale" chỉ hiện khi phase=booking + user có `update_booking`/`distribute_booking`. Log audit khi transition.
+  - Seed 2 role mới trong `Phase66FlowSeeder` + `OrgStaffSeeder`: **Team sale** (nhân viên sale) — trước chỉ có "Team booking". Cập nhật perms 4 role hiện có (Team trực page / CM booking / Team booking / CM sale) + role cấp cao (Admin/DM HCM/Manager/Team Leader) để có `distribute_booking`/`distribute_sale`/`update_booking`/`update_sale`.
+  - Trang **Quy tắc vận hành** (`⚡ops-rules`): bảng phân bổ tách 5 cột (distribute_booking / distribute_sale / distribute_ctv / update_booking / update_sale). Kho lead pool `⚡lead-pools` cập nhật filter danh sách "user nhận số" (loại luôn ai có `distribute_booking`/`distribute_sale`).
+  - Cập nhật `scope.md` §7.1 + §8.0.1 (bảng lifecycle mới) + `ERD.md` bảng `leads` thêm 3 cột + index.
+- **Dời lại / chưa xong**:
+  - Chưa auto-transition `booking/waiting → booking/in_care` khi có note đầu tiên bên booking (đang để thủ công/next phase).
+  - Chưa gọi API booking để tự đổi phase khi bên booking đặt lịch xong (đợi bên booking dựng endpoint hứng).
+  - Chưa test browser end-to-end (cần chạy `php artisan serve` + login test).
+- **Ghi chú & quyết định phát sinh**:
+  - User chọn tách 2 trục (phase + status) thay vì 1 enum ghép — dễ query/report hơn.
+  - `lead.distribute_team` giữ trong PermissionSeeder (đánh dấu DEPRECATED) để không vỡ role cũ. Các seeder chính đều đã migrate sang cặp mới.
+  - Backfill data cũ = `sale/in_care` (user chọn b) — nếu sau reseed data thật thì cần update lại theo `source_group`.
+
 <!--
 ## Phase X — <tên phase> ✅
 - **Ngày hoàn thành**: YYYY-MM-DD

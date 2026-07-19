@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 #[Fillable([
-    'raw_lead_id', 'code', 'received_date', 'page', 'camp',
+    'raw_lead_id', 'code', 'received_date',
     'insight', 'link', 'ad_source', 'name', 'phone', 'region', 'classification',
     'status_1', 'status_2', 'note',
     'pool_level', 'owner_id', 'receiver_id', 'org_unit_id',
@@ -18,13 +18,13 @@ use Illuminate\Database\Eloquent\SoftDeletes;
     'assigned_at', 'last_care_at',
     'birthday', 'address', 'medical_history', 'occupation',
     'service_name',
-    'treatment_1', 'treatment_2', 'treatment_3', 'treatment_4',
-    'performing_doctor_id', 'quality_rating',
     'potential_service',
     // Phase 6.6
     'source_group', 'approval_status', 'approval_by', 'approved_at',
     'overdue_marked_at', 'recall_at', 'is_permanent_assignment',
     'booking_status',
+    // Phase 6.8
+    'pipeline_phase', 'pipeline_status',
 ])]
 class Lead extends Model
 {
@@ -72,13 +72,77 @@ class Lead extends Model
     // Permission tương ứng cần có để thấy nhóm nguồn đó ở form thêm lead.
     // referral + walk_in: ai cũng thấy (giá trị null = mọi user tạo lead).
     public const SOURCE_PERMISSIONS = [
-        self::SOURCE_MARKETING => 'lead.distribute_team',
-        self::SOURCE_DATA_COLD => 'lead.distribute_team',
-        self::SOURCE_BDM => 'lead.distribute_team',
+        self::SOURCE_MARKETING => 'lead.distribute_booking',
+        self::SOURCE_DATA_COLD => 'lead.distribute_booking',
+        self::SOURCE_BDM => 'lead.distribute_booking',
         self::SOURCE_CTV => 'lead.distribute_ctv',
         self::SOURCE_REFERRAL => null,
         self::SOURCE_WALK_IN => null,
     ];
+
+    // Phase 6.8 — Trục lifecycle: phase (giai đoạn) + status (trạng thái trong giai đoạn)
+    public const PHASE_BOOKING = 'booking';
+    public const PHASE_SALE = 'sale';
+
+    public const PHASES = [
+        self::PHASE_BOOKING => 'Booking',
+        self::PHASE_SALE => 'Sale',
+    ];
+
+    public const PSTATUS_WAITING = 'waiting_distribute';
+    public const PSTATUS_IN_CARE = 'in_care';
+
+    public const PIPELINE_STATUSES = [
+        self::PSTATUS_WAITING => 'Chờ chia',
+        self::PSTATUS_IN_CARE => 'Đang chăm sóc',
+    ];
+
+    /** Perm cần có để sửa info cá nhân (cột trái) của lead — theo phase hiện tại. */
+    public function personalInfoPermission(): string
+    {
+        return $this->pipeline_phase === self::PHASE_BOOKING
+            ? 'lead.update_booking'
+            : 'lead.update_sale';
+    }
+
+    /** Gate: user này có được sửa info cá nhân của lead không (đúng phase + trong scope). */
+    public function canEditPersonalInfo(User $user): bool
+    {
+        return $user->hasPermission($this->personalInfoPermission()) && $this->isVisibleTo($user);
+    }
+
+    /** Nhãn phase-status đọc được (VD "Booking · Chờ chia"). */
+    public function pipelineLabel(): string
+    {
+        return (self::PHASES[$this->pipeline_phase] ?? $this->pipeline_phase)
+            . ' · ' . (self::PIPELINE_STATUSES[$this->pipeline_status] ?? $this->pipeline_status);
+    }
+
+    /**
+     * Chuyển sang phase Sale, trạng thái Chờ chia — bấm khi team booking chốt "khách đồng ý gặp".
+     * Team CM sale sẽ chia số ở kho Sale sau đó.
+     */
+    public function moveToSaleWaiting(): void
+    {
+        $this->update([
+            'pipeline_phase'  => self::PHASE_SALE,
+            'pipeline_status' => self::PSTATUS_WAITING,
+        ]);
+    }
+
+    /** Suy ra phase/status khởi tạo cho lead mới dựa trên source_group + owner_id. */
+    public static function initialPipelineFor(?string $sourceGroup, ?int $ownerId): array
+    {
+        // Nhóm 1-3 (Marketing / Data lạnh / BDM) → vào kho booking, chờ QL booking chia.
+        if (in_array($sourceGroup, [self::SOURCE_MARKETING, self::SOURCE_DATA_COLD, self::SOURCE_BDM], true)) {
+            return [self::PHASE_BOOKING, self::PSTATUS_WAITING];
+        }
+        // Nhóm 4 (Bạn giới thiệu) & 5 (CTV): đã có owner từ lúc up → sale/in_care.
+        // Nếu chưa có owner (nhóm 6 Khách tự đến, hoặc CTV chưa chia) → sale/waiting.
+        return $ownerId
+            ? [self::PHASE_SALE, self::PSTATUS_IN_CARE]
+            : [self::PHASE_SALE, self::PSTATUS_WAITING];
+    }
 
     // Phase 6.6+ — trạng thái đặt lịch booking (khách đồng ý gặp)
     public const BOOKING_NOT_BOOKED = 'not_booked';
@@ -103,10 +167,6 @@ class Lead extends Model
             'assigned_at' => 'datetime',
             'last_care_at' => 'datetime',
             'birthday' => 'date',
-            'treatment_1' => 'date',
-            'treatment_2' => 'date',
-            'treatment_3' => 'date',
-            'treatment_4' => 'date',
             'approved_at' => 'datetime',
             'overdue_marked_at' => 'datetime',
             'recall_at' => 'datetime',
@@ -153,24 +213,54 @@ class Lead extends Model
         return $this->belongsTo(StaffMember::class, 'doctor_id');
     }
 
+    // Phase 6.9 — Chuyên viên tư vấn = user (team sale), không phải staff_member.
     public function consultant1(): BelongsTo
     {
-        return $this->belongsTo(StaffMember::class, 'consultant_1_id');
+        return $this->belongsTo(User::class, 'consultant_1_id');
     }
 
     public function consultant2(): BelongsTo
     {
-        return $this->belongsTo(StaffMember::class, 'consultant_2_id');
+        return $this->belongsTo(User::class, 'consultant_2_id');
     }
 
     public function consultant3(): BelongsTo
     {
-        return $this->belongsTo(StaffMember::class, 'consultant_3_id');
+        return $this->belongsTo(User::class, 'consultant_3_id');
     }
 
-    public function performingDoctor(): BelongsTo
+    public function treatments(): HasMany
     {
-        return $this->belongsTo(StaffMember::class, 'performing_doctor_id');
+        return $this->hasMany(LeadTreatment::class)->orderBy('sequence');
+    }
+
+    /**
+     * Phase 6.21 — Accessor cho page/camp: đọc từ lead_custom_values qua relation `field`.
+     * Field có thể ở nhiều cấp (công ty / phòng) — pick value đầu tiên match key.
+     */
+    public function customValueByKey(string $key): ?string
+    {
+        $this->loadMissing('customValues.field');
+        foreach ($this->customValues as $v) {
+            if ($v->field?->key === $key) {
+                return $v->value;
+            }
+        }
+        return null;
+    }
+
+    /** Reset accessor cache (dùng cho test). @deprecated giữ để không phá test cũ. */
+    protected static array $_coreCustomFieldIds = [];
+
+    /** Attribute magic: $lead->page và $lead->camp giờ đọc từ custom_values (thay cột core đã drop). */
+    public function getPageAttribute(): ?string
+    {
+        return $this->customValueByKey('page');
+    }
+
+    public function getCampAttribute(): ?string
+    {
+        return $this->customValueByKey('camp');
     }
 
     public function statusLogs(): HasMany
@@ -236,10 +326,13 @@ class Lead extends Model
         return $query->where(function (Builder $q) use ($user) {
             $orgIds = $user->visibleOrgUnitIds();
             $memberOrgIds = $user->memberOrgUnitIds();
+            // Phase 6.23 — Kho chung công ty chỉ visible với user có perm `lead.view_pool`.
+            $canSeePool = $user->hasPermission('lead.view_pool');
             if ($orgIds !== []) {
                 $q->orWhereIn('org_unit_id', $orgIds);
-                // Lead kho chung (chưa chia) cũng visible cho user có scope tổ chức
-                $q->orWhere(fn (Builder $sub) => $sub->whereNull('org_unit_id')->where('pool_level', self::POOL_COMMON));
+                if ($canSeePool) {
+                    $q->orWhere(fn (Builder $sub) => $sub->whereNull('org_unit_id')->where('pool_level', self::POOL_COMMON));
+                }
             }
             // Kho chung phòng/team: thành viên (org của mình + cấp cha) thấy được, dù scope self
             if ($memberOrgIds !== []) {
@@ -262,7 +355,8 @@ class Lead extends Model
         }
 
         if ($this->org_unit_id === null) {
-            return false;
+            // Phase 6.23 — Kho chung công ty chỉ visible với user có perm `lead.view_pool`.
+            return $this->pool_level === self::POOL_COMMON && $user->hasPermission('lead.view_pool');
         }
 
         // Kho chung phòng/team: thành viên phòng/team (hoặc cấp cha) thấy được
