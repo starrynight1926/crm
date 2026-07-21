@@ -184,6 +184,8 @@ class DemoDataSeeder extends Seeder
                 'pool_level' => 'common',
                 'receiver_id' => $admin?->id,
                 'approval_status' => 'none',
+                'pipeline_phase' => Lead::PHASE_BOOKING,
+                'pipeline_status' => Lead::PSTATUS_WAITING,
             ], $attrs, ['phone' => $phone]));
             $lead->generateCode();
         };
@@ -191,47 +193,53 @@ class DemoDataSeeder extends Seeder
         $userByEmail = fn (string $email) => User::firstWhere('email', $email);
         $orgId = fn (string $code) => OrgUnit::firstWhere('code', $code)?->id;
 
-        // 1) 5 lead kho chung — 5 nguồn khác nhau
+        // 1) Kho chung công ty — 5 lead nhiều nguồn, chưa chia
         foreach ([
-            ['0917100001', 'Đỗ Minh Đạt',    'marketing', 'none'],
-            ['0917100002', 'Trần Ngọc Hoa',  'marketing', 'none'],
-            ['0917100003', 'Lê Văn Sơn',     'data_cold', 'none'],
-            ['0917100004', 'Phạm Thị Yến',   'bdm',       'none'],
-            ['0917100005', 'Nguyễn Tấn Vũ',  'walk_in',   'pending'],
+            ['0917100001', 'Khách kho chung công ty 1 (Marketing)', 'marketing', 'none'],
+            ['0917100002', 'Khách kho chung công ty 2 (Marketing)', 'marketing', 'none'],
+            ['0917100003', 'Khách kho chung công ty 3 (Data lạnh)', 'data_cold', 'none'],
+            ['0917100004', 'Khách kho chung công ty 4 (BDM)',       'bdm',       'none'],
+            ['0917100005', 'Khách kho chung công ty 5 (Khách tự đến, chờ duyệt)', 'walk_in', 'pending'],
         ] as [$p, $n, $sg, $ap]) {
-            $mk(['phone' => $p, 'name' => $n, 'source_group' => $sg, 'pool_level' => 'common', 'org_unit_id' => null, 'approval_status' => $ap]);
+            $mk(['phone' => $p, 'name' => $n, 'source_group' => $sg, 'pool_level' => 'common',
+                 'org_unit_id' => null, 'approval_status' => $ap,
+                 'pipeline_phase' => Lead::PHASE_BOOKING, 'pipeline_status' => Lead::PSTATUS_WAITING]);
         }
 
-        // 2) 3 lead kho cá nhân — sale đang chăm (funnel Follow/Booking/Show)
+        // 2) Kho cá nhân — Sale đang chăm sóc (phase Sale · in_care)
         $sales = [
-            ['0917200001', 'Ngô Thị Hà',    'follow',  $userByEmail('tyn@longevity.com.vn')],   // Yến Nhi (HCM)
-            ['0917200002', 'Vũ Anh Tuấn',   'booking', $userByEmail('nmp@longevity.com.vn')],   // Minh Phương (Giang)
-            ['0917200003', 'Bùi Kim Chi',   'show',    $userByEmail('nhg@longevity.com.vn')],   // Hương Giang (Hợi)
+            ['0917200001', 'Khách team Ashley (HCM) đang chăm 1',  'follow',  $userByEmail('tyn@longevity.com.vn')],
+            ['0917200002', 'Khách team Giang đang chăm 1',         'booking', $userByEmail('nmp@longevity.com.vn')],
+            ['0917200003', 'Khách team Hợi đang chăm 1',           'show',    $userByEmail('nhg@longevity.com.vn')],
         ];
         foreach ($sales as [$p, $n, $cls, $owner]) {
             $orgOfOwner = $owner?->assignments()->first()?->org_unit_id;
             $mk(['phone' => $p, 'name' => $n, 'classification' => $cls, 'pool_level' => 'personal',
-                 'owner_id' => $owner?->id, 'receiver_id' => $owner?->id, 'org_unit_id' => $orgOfOwner]);
+                 'owner_id' => $owner?->id, 'receiver_id' => $owner?->id, 'org_unit_id' => $orgOfOwner,
+                 'pipeline_phase' => Lead::PHASE_SALE, 'pipeline_status' => Lead::PSTATUS_IN_CARE]);
         }
 
-        // 3) 3 lead kho team booking — chờ Team booking gọi
+        // 3) Kho team booking — Booking · Chờ CM booking chia
         foreach ([
-            ['0917300001', 'Hoàng Thị Nga',   'marketing', $orgId('team-giang-booking')],
-            ['0917300002', 'Trần Văn Dũng',   'data_cold', $orgId('team-hoi-booking')],
-            ['0917300003', 'Nguyễn Thị Mai',  'bdm',       $orgId('team-ashley-booking')],
+            ['0917300001', 'Khách team Giang chờ CM booking chia 1',  'marketing', $orgId('team-giang-booking')],
+            ['0917300002', 'Khách team Hợi chờ CM booking chia 1',    'data_cold', $orgId('team-hoi-booking')],
+            ['0917300003', 'Khách team Ashley chờ CM booking chia 1', 'bdm',       $orgId('team-ashley-booking')],
         ] as [$p, $n, $sg, $org]) {
-            $mk(['phone' => $p, 'name' => $n, 'source_group' => $sg, 'pool_level' => 'team', 'org_unit_id' => $org]);
+            $mk(['phone' => $p, 'name' => $n, 'source_group' => $sg, 'pool_level' => 'team',
+                 'org_unit_id' => $org,
+                 'pipeline_phase' => Lead::PHASE_BOOKING, 'pipeline_status' => Lead::PSTATUS_WAITING]);
         }
 
-        // 4) 4 lead kho team CM — chờ CM chia sang sale (classification đã có phân hạng)
+        // 4) Kho team CM sale — Sale · Chờ CM sale chia
         foreach ([
-            ['0917400001', 'Lê Thị Linh',    'follow',  'marketing', $orgId('team-giang')],
-            ['0917400002', 'Phạm Văn Nam',   'net',     'marketing', $orgId('team-giang')],
-            ['0917400003', 'Trần Thị Hoa',   'follow',  'data_cold', $orgId('team-hoi-hn')],
-            ['0917400004', 'Đỗ Ngọc Bích',   'booking', 'bdm',       $orgId('team-hoi-hn')],
+            ['0917400001', 'Khách team Giang chờ CM sale chia 1',  'follow',  'marketing', $orgId('team-giang')],
+            ['0917400002', 'Khách team Giang chờ CM sale chia 2',  'net',     'marketing', $orgId('team-giang')],
+            ['0917400003', 'Khách team Hợi chờ CM sale chia 1',    'follow',  'data_cold', $orgId('team-hoi-hn')],
+            ['0917400004', 'Khách team Hợi chờ CM sale chia 2',    'booking', 'bdm',       $orgId('team-hoi-hn')],
         ] as [$p, $n, $cls, $sg, $org]) {
             $mk(['phone' => $p, 'name' => $n, 'source_group' => $sg, 'classification' => $cls,
-                 'pool_level' => 'team', 'org_unit_id' => $org]);
+                 'pool_level' => 'team', 'org_unit_id' => $org,
+                 'pipeline_phase' => Lead::PHASE_SALE, 'pipeline_status' => Lead::PSTATUS_WAITING]);
         }
     }
 

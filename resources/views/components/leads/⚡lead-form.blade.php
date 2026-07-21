@@ -728,9 +728,17 @@ new class extends Component
         <div class="space-y-6">
             {{-- Thông tin khách hàng --}}
             <div class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
-                <h2 class="font-bold text-gold-700 mb-5 flex items-center gap-2">
+                <h2 class="font-bold text-gold-700 mb-5 flex items-center gap-2 flex-wrap">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"/></svg>
                     Thông tin khách hàng
+                    @if ($lead?->exists && $lead->pipeline_phase)
+                        <span class="ml-auto text-xs font-semibold px-2.5 py-1 rounded-full border
+                            @if ($lead->pipeline_phase === \App\Models\Lead::PHASE_BOOKING) bg-blue-50 border-blue-200 text-blue-700
+                            @else bg-gold-50 border-gold-200 text-gold-700 @endif"
+                            title="Trạng thái pipeline hiện tại của lead">
+                            {{ $lead->pipelineLabel() }}
+                        </span>
+                    @endif
                 </h2>
                 <div class="space-y-4">
                     <div>
@@ -1242,7 +1250,7 @@ new class extends Component
                                     </select>
                                     <p class="text-xs text-ink/50 mt-1.5">
                                         @if ($selectedPerson)
-                                            Đã gán sale phụ trách → lead không nằm trong kho chung.
+                                            Đã gán nhân viên phụ trách → lead không nằm trong kho chung.
                                         @else
                                             Kho chung phòng/team: chỉ người trong phòng/team đó thấy được.
                                         @endif
@@ -1250,13 +1258,13 @@ new class extends Component
                                     @error('poolTarget')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
                                 </div>
                                 <div x-data="{ open: false }" @click.outside="open = false">
-                                    <label class="block text-sm font-medium mb-1.5">SALE PHỤ TRÁCH</label>
+                                    <label class="block text-sm font-medium mb-1.5">NHÂN VIÊN PHỤ TRÁCH</label>
                                     @if ($selectedPerson)
                                         <div class="flex items-center justify-between gap-2 border border-gold-300 bg-gold-50 rounded-md px-3 py-2.5">
                                             <span class="text-sm font-semibold text-gold-800">{{ $selectedPerson->name }}</span>
                                             <button type="button" wire:click="clearPerson" class="text-xs font-semibold text-ink/50 hover:text-red-600">Bỏ chọn ✕</button>
                                         </div>
-                                        <p class="text-xs text-ink/50 mt-1.5">Lead rời kho chung, chuyển vào kho cá nhân của sale này.</p>
+                                        <p class="text-xs text-ink/50 mt-1.5">Lead rời kho chung, chuyển vào kho cá nhân của nhân viên này.</p>
                                     @else
                                         <div class="relative">
                                             <input type="text" wire:model.live.debounce.250ms="personSearch" @focus="open = true" placeholder="Gõ tên để tìm nhân sự..."

@@ -127,11 +127,20 @@ class Lead extends Model
         return $user->hasPermission($this->personalInfoPermission()) && $this->isVisibleTo($user);
     }
 
-    /** Nhãn phase-status đọc được (VD "Booking · Chờ chia"). */
+    /** Nhãn phase-status đọc được (VD "Booking · Chờ CM booking chia"). */
     public function pipelineLabel(): string
     {
-        return (self::PHASES[$this->pipeline_phase] ?? $this->pipeline_phase)
-            . ' · ' . (self::PIPELINE_STATUSES[$this->pipeline_status] ?? $this->pipeline_status);
+        $phase = self::PHASES[$this->pipeline_phase] ?? $this->pipeline_phase;
+        // Với PSTATUS_WAITING, hiển thị rõ ai đang phải chia (CM booking hay CM sale)
+        // để phân biệt trong 2 phase.
+        if ($this->pipeline_status === self::PSTATUS_WAITING) {
+            $statusLabel = $this->pipeline_phase === self::PHASE_BOOKING
+                ? 'Chờ CM booking chia'
+                : 'Chờ CM sale chia';
+        } else {
+            $statusLabel = self::PIPELINE_STATUSES[$this->pipeline_status] ?? $this->pipeline_status;
+        }
+        return $phase . ' · ' . $statusLabel;
     }
 
     /**
