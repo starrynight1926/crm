@@ -416,6 +416,10 @@ new class extends Component
                             <dd class="font-medium">{{ $lead->received_date->format('d/m/Y') }}</dd>
                         </div>
                         <div>
+                            <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Nhóm nguồn</dt>
+                            <dd class="font-medium">{{ \App\Models\Lead::SOURCE_GROUPS[$lead->source_group] ?? '—' }}</dd>
+                        </div>
+                        <div>
                             <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Tần suất quay lại</dt>
                             <dd class="font-bold text-gold-700">{{ $this->returnCount() }}</dd>
                         </div>
