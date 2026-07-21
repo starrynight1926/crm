@@ -72,7 +72,7 @@ class Phase66FlowSeeder extends Seeder
         $userDefs = [
             // email => [name, role, org, scope]
             'page1@longevity.com.vn' => ['Phạm Trực Page 1', 'Team trực page', $pageGiang, Assignment::SCOPE_SELF],
-            'cmbk@longevity.com.vn'  => ['CM Booking', 'CM booking', $bookingGiang, Assignment::SCOPE_TEAM],
+            'cmbktg@longevity.com.vn' => ['CM Booking Team Giang', 'CM booking', $bookingGiang, Assignment::SCOPE_TEAM],
             'book1@longevity.com.vn' => ['Nguyễn Booking 1', 'Team booking', $bookingGiang, Assignment::SCOPE_SELF],
             'book2@longevity.com.vn' => ['Trần Booking 2', 'Team booking', $bookingHoi, Assignment::SCOPE_SELF],
             // cmsale demo: CM sale cấp Marketing HN — subtree bao 2 team Giang + Hợi để chuyển kho.

@@ -151,7 +151,12 @@ class DemoDataSeeder extends Seeder
                         $q->select('id')->from('leads')->whereIn('org_unit_id', $orgIds);
                     })
                     ->whereNotIn('lead_id', function ($q) use ($newPage) {
-                        $q->select('lead_id')->from('lead_custom_values')->where('custom_field_id', $newPage->id);
+                        // MySQL không cho tham chiếu trực tiếp bảng đang UPDATE trong subquery
+                        // → bọc thêm 1 lớp SELECT để MySQL materialize thành bảng dẫn xuất.
+                        $q->select('lead_id')->fromSub(function ($sub) use ($newPage) {
+                            $sub->select('lead_id')->from('lead_custom_values')
+                                ->where('custom_field_id', $newPage->id);
+                        }, 'lcv_existing');
                     })
                     ->update(['custom_field_id' => $newPage->id]);
             }

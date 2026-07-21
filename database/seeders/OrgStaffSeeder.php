@@ -236,7 +236,7 @@ class OrgStaffSeeder extends Seeder
 
             // Nhân sự luồng 6 nguồn (Phase 6.6) — không có job_title
             ['email' => 'page1@longevity.com.vn',  'name' => 'Phạm Trực Page 1', 'job_title' => null],
-            ['email' => 'cmbk@longevity.com.vn',   'name' => 'CM Booking',        'job_title' => null],
+            ['email' => 'cmbktg@longevity.com.vn',   'name' => 'CM Booking Team Giang',        'job_title' => null],
             ['email' => 'book1@longevity.com.vn',  'name' => 'Nguyễn Booking 1',  'job_title' => null],
             ['email' => 'book2@longevity.com.vn',  'name' => 'Trần Booking 2',    'job_title' => null],
             ['email' => 'cmsale@longevity.com.vn', 'name' => 'CM Sale',           'job_title' => null],
@@ -323,7 +323,7 @@ class OrgStaffSeeder extends Seeder
 
             // Luồng 6 nguồn Phase 6.6
             ['page1@longevity.com.vn',  'Team trực page', 'team-giang-page', Assignment::SCOPE_SELF, []],
-            ['cmbk@longevity.com.vn',   'CM booking',     'team-giang-booking', Assignment::SCOPE_TEAM, []],
+            ['cmbktg@longevity.com.vn',   'CM booking',     'team-giang-booking', Assignment::SCOPE_TEAM, []],
             ['book1@longevity.com.vn',  'Team booking',   'team-giang-booking', Assignment::SCOPE_SELF, []],
             ['book2@longevity.com.vn',  'Team booking',   'team-hoi-booking',   Assignment::SCOPE_SELF, []],
             ['cmsale@longevity.com.vn', 'CM sale',        'team-hoi-sale',      Assignment::SCOPE_TEAM, []],

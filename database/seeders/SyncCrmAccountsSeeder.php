@@ -54,7 +54,7 @@ class SyncCrmAccountsSeeder extends Seeder
             'nkc@longevity.com.vn'      => 'ntkc',
             'lpd@longevity.com.vn'      => 'lpd',
             'page1@longevity.com.vn'    => 'page1',
-            'cmbk@longevity.com.vn'     => 'cmbk',
+            'cmbktg@longevity.com.vn'   => 'cmbktg',
             'book1@longevity.com.vn'    => 'book1',
             'book2@longevity.com.vn'    => 'book2',
             'cmsale@longevity.com.vn'   => 'cmsale',
