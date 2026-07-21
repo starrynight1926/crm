@@ -457,7 +457,13 @@ new class extends Component
     {
         $user = auth()->user();
         $attributes['receiver_id'] = $user->id;
-        $attributes = array_merge($attributes, $this->poolAttributes());
+        $pool = $this->poolAttributes();
+        $attributes = array_merge($attributes, $pool);
+
+        // Phase 6.8 — set pipeline_phase/status theo source_group + owner (giống initialPipelineFor).
+        [$phase, $status] = Lead::initialPipelineFor($this->sourceGroup, $pool['owner_id'] ?? null);
+        $attributes['pipeline_phase'] = $phase;
+        $attributes['pipeline_status'] = $status;
 
         $lead = Lead::create($attributes);
         $this->syncCustomValues($lead, $cleanCustom);
