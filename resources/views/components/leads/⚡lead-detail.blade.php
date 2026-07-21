@@ -51,9 +51,39 @@ new class extends Component
     }
 
     /** Chỉ sửa/chăm được lead trong phạm vi mình (không phải lead đang nằm kho chung/ngoài scope). */
+    /**
+     * Sửa lead đầy đủ (info, classification, service...): user thuộc scope hiện tại của lead.
+     * Past handler (team đã từng giữ) KHÔNG có quyền này — chỉ được add note.
+     */
     private function canEditLead(): bool
     {
-        return auth()->user()->hasPermission('lead.update') && $this->lead->isVisibleTo(auth()->user());
+        $user = auth()->user();
+        if (! $user->hasPermission('lead.update')) return false;
+        if (! $this->lead->isVisibleTo($user)) return false;
+        // Nếu chỉ là past handler → không được edit full.
+        if ($this->isPastHandlerOnly($user)) return false;
+        return true;
+    }
+
+    /** Add note: user thuộc scope hiện tại HOẶC past handler (đã từng giữ lead). */
+    private function canAddNote(): bool
+    {
+        $user = auth()->user();
+        return $user->hasPermission('lead.update') && $this->lead->isVisibleTo($user);
+    }
+
+    /** True nếu user CHỈ là past handler (không nằm trong scope hiện tại). */
+    private function isPastHandlerOnly(\App\Models\User $user): bool
+    {
+        // Owner/receiver luôn coi là current.
+        if ($this->lead->owner_id === $user->id || $this->lead->receiver_id === $user->id) return false;
+        // Có thấy qua scope hiện tại?
+        $memberOrgs = $user->memberOrgUnitIds();
+        if ($this->lead->pool_level === Lead::POOL_TEAM && in_array($this->lead->org_unit_id, $memberOrgs, true)) return false;
+        if ($this->lead->org_unit_id !== null && $user->canSeeOrgUnit($this->lead->org_unit_id)) return false;
+        if ($this->lead->org_unit_id === null && $this->lead->pool_level === Lead::POOL_COMMON && $user->hasPermission('lead.view_pool')) return false;
+        // Không current mà thấy được → chắc chắn là past.
+        return $this->lead->isPastHandlerFor($user);
     }
 
     public function updatedNoteIsReturn(): void
@@ -73,7 +103,7 @@ new class extends Component
 
     public function addNote(): void
     {
-        abort_unless($this->canEditLead(), 403);
+        abort_unless($this->canAddNote(), 403);
         $this->validate([
             'newNote' => 'nullable|string|max:2000',
             'noteImages' => 'array|max:10',
@@ -246,6 +276,8 @@ new class extends Component
         return [
             'logs' => $this->lead->statusLogs()->with('user')->paginate(15, pageName: 'logPage'),
             'canEdit' => $this->canEditLead(),
+            'canAddNote' => $this->canAddNote(),
+            'isPastHandlerOnly' => $this->isPastHandlerOnly(auth()->user()),
             'canEditPersonalInfo' => $this->lead->canEditPersonalInfo(auth()->user()),
             'canMoveToSale' => $this->lead->pipeline_phase === Lead::PHASE_BOOKING
                 && auth()->user()->hasAnyPermission(['lead.update_booking', 'lead.distribute_booking'])
@@ -306,21 +338,36 @@ new class extends Component
             @endif
             @if ($canMoveToSale)
                 @php
-                    $bookingHandoffUrl = rtrim(config('services.booking.url'), '/') . '/handoff?' . http_build_query([
-                        'crm_lead_id' => $lead->id,
-                        'crm_lead_code' => $lead->code,
-                        'name' => $lead->name,
-                        'phone' => $lead->phone,
-                    ]);
+                    // Lấy slug cơ sở bên booking từ facility đã map. Nếu chưa map → nút disabled.
+                    $facility = $lead->facility;
+                    $coSoSlug = $facility?->booking_co_so_slug;
+                    $bookingBaseUrl = \App\Models\AppSetting::get('booking_url', config('services.booking.url'));
+                    $bookingHandoffUrl = $coSoSlug
+                        ? rtrim($bookingBaseUrl, '/') . '/' . $coSoSlug . '/tao-moi?' . http_build_query([
+                            'ho_ten' => $lead->name,
+                            'so_dien_thoai' => $lead->phone,
+                            'return_url' => route('leads.booking-callback', $lead),
+                        ])
+                        : null;
                 @endphp
-                <a href="{{ $bookingHandoffUrl }}" target="_blank" rel="noopener"
-                   class="flex items-center gap-2 text-sm font-semibold text-ink/70 border border-gold-200 px-5 py-2.5 rounded-md hover:bg-gold-50"
-                   title="Mở app Booking để đặt lịch cho khách">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3.75 8.25h16.5M4.5 6h15a.75.75 0 01.75.75v12a.75.75 0 01-.75.75h-15a.75.75 0 01-.75-.75v-12A.75.75 0 014.5 6z"/>
-                    </svg>
-                    Mở Booking
-                </a>
+                @if ($bookingHandoffUrl)
+                    <a href="{{ $bookingHandoffUrl }}" target="_blank" rel="noopener"
+                       class="flex items-center gap-2 text-sm font-semibold text-ink/70 border border-gold-200 px-5 py-2.5 rounded-md hover:bg-gold-50"
+                       title="Mở form đặt lịch bên hệ thống Booking, sau khi đặt xong sẽ tự cập nhật khách">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3.75 8.25h16.5M4.5 6h15a.75.75 0 01.75.75v12a.75.75 0 01-.75.75h-15a.75.75 0 01-.75-.75v-12A.75.75 0 014.5 6z"/>
+                        </svg>
+                        Đặt booking
+                    </a>
+                @else
+                    <span class="flex items-center gap-2 text-sm font-semibold text-ink/40 border border-ink/10 px-5 py-2.5 rounded-md cursor-not-allowed"
+                          title="Cơ sở '{{ $facility?->name ?? 'chưa gán' }}' chưa map sang cơ sở bên Booking. Admin vào Cài đặt › Cơ sở & Nhân sự để nhập slug.">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3.75 8.25h16.5M4.5 6h15a.75.75 0 01.75.75v12a.75.75 0 01-.75.75h-15a.75.75 0 01-.75-.75v-12A.75.75 0 014.5 6z"/>
+                        </svg>
+                        Đặt booking (chưa map cơ sở)
+                    </span>
+                @endif
                 <button type="button"
                         wire:click="moveToSalePhase"
                         wire:confirm="Xác nhận: khách đã đồng ý gặp. Chuyển lead sang phase Sale (Chờ chia) để CM sale phân bổ?"
@@ -367,10 +414,6 @@ new class extends Component
                         <div>
                             <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Ngày</dt>
                             <dd class="font-medium">{{ $lead->received_date->format('d/m/Y') }}</dd>
-                        </div>
-                        <div>
-                            <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Nguồn</dt>
-                            <dd class="font-medium">{{ $lead->ad_source ?: '—' }}</dd>
                         </div>
                         <div>
                             <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Tần suất quay lại</dt>

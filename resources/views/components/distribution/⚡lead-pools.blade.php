@@ -385,7 +385,7 @@ new class extends Component
                             <button wire:click="showDetail({{ $lead->id }})" class="font-semibold text-gold-700 hover:underline">{{ $lead->name }}</button>
                         </td>
                         <td class="px-4 py-3 font-mono">{{ $lead->phoneFor(auth()->user()) }}</td>
-                        <td class="px-4 py-3 text-ink/60">{{ $lead->region ?: '—' }} · {{ $lead->ad_source ?: '—' }}</td>
+                        <td class="px-4 py-3 text-ink/60">{{ $lead->region ?: '—' }}</td>
                         @if ($tab !== 'common')<td class="px-4 py-3">{{ $lead->orgUnit?->name ?: '—' }}</td>@endif
                         @if ($tab === 'personal')
                             <td class="px-4 py-3 font-semibold text-gold-700">{{ $lead->owner?->name }}</td>
@@ -476,7 +476,6 @@ new class extends Component
                             $rows = [
                                 'SĐT' => $detailLead->phoneFor(auth()->user()),
                                 'Ngày thu thập' => $detailLead->received_date?->format('d/m/Y'),
-                                'Nguồn' => $detailLead->ad_source ?: '—',
                                 'Khu vực' => $detailLead->region ?: '—',
                                 'Camp' => $detailLead->camp ?: '—',
                                 'Phân loại' => $detailLead->classificationLabel(),

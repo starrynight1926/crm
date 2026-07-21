@@ -18,8 +18,6 @@ new class extends Component
 
     public string $fCamp = '';
 
-    public string $fAdSource = '';
-
     public string $fNguon = '';
 
     public string $fDateFrom = '';
@@ -50,7 +48,6 @@ new class extends Component
         'phone' => 'SĐT',
         'camp' => 'Camp',
         'nguon' => 'Nguồn',
-        'ad_source' => 'Nguồn QC',
         'region' => 'Khu vực',
         'owner' => 'Chia cho',
         'classification' => 'Danh mục',
@@ -68,7 +65,7 @@ new class extends Component
 
     public function updated($property): void
     {
-        if (in_array($property, ['search', 'fClassification', 'fCamp', 'fAdSource', 'fNguon', 'fDateFrom', 'fDateTo'])) {
+        if (in_array($property, ['search', 'fClassification', 'fCamp', 'fNguon', 'fDateFrom', 'fDateTo'])) {
             $this->resetPage();
             $this->reset('selected', 'selectAll');
         }
@@ -86,7 +83,6 @@ new class extends Component
             // Reset filter khi ẩn cột (không kẹt filter cũ) — Phase 6.19
             $filterMap = [
                 'camp' => 'fCamp',
-                'ad_source' => 'fAdSource',
                 'nguon' => 'fNguon',
                 'classification' => 'fClassification',
                 'received_date' => ['fDateFrom', 'fDateTo'],
@@ -166,7 +162,6 @@ new class extends Component
             'code' => 'Mã KH',
             'name' => 'Họ tên khách',
             'phone' => 'SĐT',
-            'ad_source' => 'Nguồn',
             'receiver' => 'Người thu thập',
             'owner' => 'Người phụ trách',
             'received_date' => 'Ngày thu thập',
@@ -263,7 +258,6 @@ new class extends Component
                     $q->whereHas('customValues', fn ($cv) => $cv->whereIn('custom_field_id', $campIds)->where('value', $this->fCamp));
                 }
             })
-            ->when($this->fAdSource, fn ($q) => $q->where('ad_source', $this->fAdSource))
             ->when($this->fNguon, fn ($q) => $q->whereHas('customValues', fn ($cv) =>
                 $cv->where('custom_field_id', 1)->where('value', $this->fNguon)))
             ->when($this->fDateFrom, fn ($q) => $q->where('received_date', '>=', $this->fDateFrom))
@@ -314,7 +308,6 @@ new class extends Component
             'code' => (string) $lead->code,
             'name' => (string) $lead->name,
             'phone' => (string) $lead->phoneFor(auth()->user()),
-            'ad_source' => (string) $lead->ad_source,
             'receiver' => (string) $lead->receiver?->name,
             'owner' => (string) $lead->owner?->name,
             'received_date' => (string) $lead->received_date?->toDateString(),
@@ -398,7 +391,6 @@ new class extends Component
         return [
             'leads' => $leads,
             'campOptions' => $this->coreCustomOptions('camp', $user),
-            'adSourceOptions' => Lead::visibleTo($user)->whereNotNull('ad_source')->distinct()->orderBy('ad_source')->pluck('ad_source'),
             'nguonOptions' => \App\Models\CustomField::find(1)?->options ?? [],
             'exportCore' => $this->showExportModal ? $this->coreColumns() : [],
             'exportCustomFields' => $this->showExportModal ? $this->exportableCustomFields() : collect(),
@@ -457,17 +449,6 @@ new class extends Component
                     <option value="">Tất cả</option>
                     @foreach ($campOptions as $camp)
                         <option value="{{ $camp }}">{{ $camp }}</option>
-                    @endforeach
-                </select>
-            </div>
-        @endif
-        @if ($this->colVisible('ad_source'))
-            <div class="min-w-[140px] flex-1">
-                <label class="block text-xs font-semibold text-ink/50 mb-1">Nguồn QC</label>
-                <select wire:model.live="fAdSource" class="w-full border border-gold-200 rounded-md px-2.5 py-2 text-sm bg-white focus:outline-none focus:border-gold-500">
-                    <option value="">Tất cả</option>
-                    @foreach ($adSourceOptions as $source)
-                        <option value="{{ $source }}">{{ $source }}</option>
                     @endforeach
                 </select>
             </div>
@@ -556,7 +537,6 @@ new class extends Component
                     @if ($this->colVisible('phone'))       <th class="px-4 py-3 font-semibold">SĐT</th> @endif
                     @if ($this->colVisible('camp'))        <th class="px-4 py-3 font-semibold">Camp</th> @endif
                     @if ($this->colVisible('nguon'))       <th class="px-4 py-3 font-semibold">Nguồn</th> @endif
-                    @if ($this->colVisible('ad_source'))   <th class="px-4 py-3 font-semibold">Nguồn QC</th> @endif
                     @if ($this->colVisible('region'))      <th class="px-4 py-3 font-semibold">Khu vực</th> @endif
                     @if ($this->colVisible('owner'))       <th class="px-4 py-3 font-semibold">Chia cho</th> @endif
                     @if ($this->colVisible('classification'))<th class="px-4 py-3 font-semibold">Danh mục</th> @endif
@@ -597,13 +577,6 @@ new class extends Component
                             <td class="px-4 py-3">
                                 @if ($nguonVal)
                                     <span class="text-xs bg-blue-50 border border-blue-200 px-2 py-0.5 rounded">{{ $nguonVal }}</span>
-                                @else — @endif
-                            </td>
-                        @endif
-                        @if ($this->colVisible('ad_source'))
-                            <td class="px-4 py-3">
-                                @if ($lead->ad_source)
-                                    <span class="text-xs bg-gold-50 border border-gold-200 px-2 py-0.5 rounded">{{ $lead->ad_source }}</span>
                                 @else — @endif
                             </td>
                         @endif

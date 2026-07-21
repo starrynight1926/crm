@@ -30,7 +30,7 @@ new class extends Component
 
     public string $to = '';
 
-    public string $groupBy = 'camp'; // cho tab marketing: camp / ad_source / page
+    public string $groupBy = 'camp'; // cho tab marketing: camp / page
 
     /** Kiểu hiển thị mã KH ở tab Chi tiết lead. */
     public string $codeMode = 'full'; // full | required | simple
@@ -71,6 +71,9 @@ new class extends Component
     public function leadCode(Lead $lead): string
     {
         $core = 'KH-' . str_pad((string) $lead->id, 3, '0', STR_PAD_LEFT);
+        if ($src = $lead->sourceGroupCode()) {
+            $core .= '-' . $src;
+        }
         if ($this->codeMode === 'simple') {
             return $core;
         }
@@ -414,14 +417,14 @@ new class extends Component
             $cfs = $this->reportCustomFields();
             $cfLabels = \App\Models\CustomField::labelMap($cfs);
             $header = array_merge(
-                ['STT', 'Mã KH', 'Họ tên khách', 'Nguồn', 'Người thu thập', 'Người phụ trách', 'Ngày thu thập', 'Ngày ghi nhận DT', 'Tần suất quay lại', 'Mã tiếp đón', 'Dịch vụ', 'Ghi chú'],
+                ['STT', 'Mã KH', 'Họ tên khách', 'Người thu thập', 'Người phụ trách', 'Ngày thu thập', 'Ngày ghi nhận DT', 'Tần suất quay lại', 'Mã tiếp đón', 'Dịch vụ', 'Ghi chú'],
                 $cfs->map(fn ($f) => $cfLabels[$f->id] ?? $f->label)->all()
             );
             $rows = $this->leadDetailData()->values()->map(function ($lead, $i) use ($cfs) {
                 $vals = $lead->customValues->pluck('value', 'custom_field_id');
                 return array_merge(
                     [
-                        $i + 1, $this->leadCode($lead), $lead->name, (string) $lead->ad_source,
+                        $i + 1, $this->leadCode($lead), $lead->name,
                         (string) $lead->receiver?->name, (string) $lead->owner?->name,
                         (string) $lead->received_date?->toDateString(),
                         $lead->payments_min_paid_at ? \Illuminate\Support\Carbon::parse($lead->payments_min_paid_at)->toDateString() : '',
@@ -674,7 +677,7 @@ new class extends Component
         <div class="bg-white border border-gold-200 rounded-xl shadow-card">
             <div class="px-5 py-3 border-b border-gold-100 flex items-center gap-2">
                 <span class="text-xs font-semibold text-ink/50">Cắt theo:</span>
-                @foreach (['camp' => 'Camp', 'ad_source' => 'Nguồn quảng cáo', 'page' => 'PAGE'] as $key => $label)
+                @foreach (['camp' => 'Camp', 'page' => 'PAGE'] as $key => $label)
                     <button wire:click="$set('groupBy', '{{ $key }}')"
                             class="text-xs font-semibold px-3 py-1.5 rounded-md {{ $groupBy === $key ? 'bg-gold-100 text-gold-800 border border-gold-300' : 'text-ink/50 hover:bg-gold-50' }}">{{ $label }}</button>
                 @endforeach
@@ -683,7 +686,7 @@ new class extends Component
             <table class="w-full text-sm min-w-[560px]">
                 <thead>
                     <tr class="text-left text-xs uppercase tracking-wider text-ink/50 bg-gold-50/60">
-                        <th class="px-5 py-3 font-semibold">{{ ['camp' => 'Camp', 'ad_source' => 'Nguồn', 'page' => 'Page'][$groupBy] }}</th>
+                        <th class="px-5 py-3 font-semibold">{{ ['camp' => 'Camp', 'page' => 'Page'][$groupBy] }}</th>
                         <th class="px-5 py-3 font-semibold text-right">Lead về</th>
                         <th class="px-5 py-3 font-semibold text-right">Booking</th>
                         <th class="px-5 py-3 font-semibold text-right">Close</th>
@@ -810,7 +813,6 @@ new class extends Component
                             <th class="px-4 py-3 font-semibold">STT</th>
                             <th class="px-4 py-3 font-semibold">Mã KH</th>
                             <th class="px-4 py-3 font-semibold">Họ tên khách</th>
-                            <th class="px-4 py-3 font-semibold">Nguồn</th>
                             <th class="px-4 py-3 font-semibold">Người thu thập</th>
                             <th class="px-4 py-3 font-semibold">Người phụ trách</th>
                             <th class="px-4 py-3 font-semibold">Ngày thu thập</th>
@@ -834,7 +836,6 @@ new class extends Component
                                 <td class="px-4 py-2.5 text-ink/50">{{ $loop->iteration }}</td>
                                 <td class="px-4 py-2.5 font-mono text-xs text-gold-700">{{ $this->leadCode($lead) }}</td>
                                 <td class="px-4 py-2.5 font-medium">{{ $lead->name }}</td>
-                                <td class="px-4 py-2.5">{{ $lead->ad_source ?: '—' }}</td>
                                 <td class="px-4 py-2.5">{{ $lead->receiver?->name ?? '—' }}</td>
                                 <td class="px-4 py-2.5">{{ $lead->owner?->name ?? '—' }}</td>
                                 <td class="px-4 py-2.5">{{ $lead->received_date?->format('d/m/Y') }}</td>

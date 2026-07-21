@@ -139,7 +139,6 @@ class ProcessRawLead implements ShouldQueue
             'phone' => $phone,
             'insight' => $payload['insight'] ?? null,
             'link' => $payload['link'] ?? null,
-            'ad_source' => $payload['ad_source'] ?? null,
             'region' => $payload['region'] ?? null,
             'note' => $payload['note'] ?? null,
             'classification' => 'new',
@@ -266,7 +265,7 @@ class ProcessRawLead implements ShouldQueue
     private function mergeInto(Lead $existing, RawLead $raw, array $payload): void
     {
         $merged = [];
-        foreach (['insight', 'link', 'ad_source', 'region', 'note'] as $field) {
+        foreach (['insight', 'link', 'region', 'note'] as $field) {
             $value = $payload[$field] ?? null;
             if ($value && ! $existing->{$field}) {
                 $existing->{$field} = $value;

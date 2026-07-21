@@ -108,6 +108,28 @@
         <p class="text-ink/60 max-w-2xl mx-auto">Chọn vai trò của bạn để xem hướng dẫn chi tiết về quyền hạn và luồng thao tác thường ngày.</p>
     </div>
 
+    {{-- Sơ đồ luồng tổng quan --}}
+    <section class="mb-10" x-data="{ zoom: false }">
+        <h2 class="text-lg font-bold text-gold-700 mb-3 flex items-center gap-2">
+            <span class="w-1.5 h-6 bg-gold-600 rounded"></span>
+            Sơ đồ luồng tổng quan
+        </h2>
+        <div class="bg-white border border-gold-200 rounded-xl shadow-card p-3">
+            <button type="button" @click="zoom = true" class="block w-full">
+                <img src="{{ asset('images/flow.jpg') }}" alt="Sơ đồ luồng hệ thống CRM"
+                     class="w-full h-auto rounded-lg cursor-zoom-in hover:opacity-95 transition">
+            </button>
+            <p class="text-xs text-ink/50 mt-2 text-center">Nhấn vào ảnh để xem full-size</p>
+        </div>
+
+        {{-- Lightbox --}}
+        <div x-show="zoom" x-cloak @click="zoom = false" @keydown.escape.window="zoom = false"
+             class="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 cursor-zoom-out">
+            <img src="{{ asset('images/flow.jpg') }}" alt="Sơ đồ luồng"
+                 class="max-w-full max-h-full rounded-lg shadow-2xl">
+        </div>
+    </section>
+
     {{-- 4 role tabs --}}
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-8">
         @foreach ($roles as $key => $r)

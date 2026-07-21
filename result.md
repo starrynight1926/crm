@@ -735,3 +735,59 @@ User request tích hợp 2 chiều CRM ↔ Booking system (GET facilities/servic
   - Cấp công ty trong "quy tắc trường" (Tên/SĐT/Ngày/Người thu thập) là **field core** của lead → không seed thành custom_field để tránh trùng input.
 - **Test**: blade compile OK cả 3 view; `php artisan test` (CustomField/Lead...) 15 passed; test tay generateCode: full=`KH-007-KD-BDMBIDV`, required=`KH-007`, simple=`KH-007`, optionLabel=`Nguồn BDM BIDV`.
 - **Chưa làm / lưu ý**: chưa test tay qua browser (server 8000 do user giữ) — cần QA tay lại UI select/report.
+
+## Bổ sung (2026-07-20) — Kết nối SCRM ↔ Lara-SBooking (đặt lịch từ chi tiết khách)
+
+- **Mục tiêu**: nút "Đặt booking" ở chi tiết lead → mở form bên `lara-sbooking` (prefill KH), đặt xong tự về SCRM cập nhật `booking_status`, `booking_ma`, `booked_at`.
+- **Đã làm (3 phase)**:
+  - **Phase 1 — Bên booking**:
+    - Migration `booking.ma_booking` (unique, nullable) + backfill record cũ `BKG-yymmdd-{id6}`. Model event `created` tự sinh mã.
+    - `BookingController@create/createDichVu` đọc query prefill `ho_ten`, `so_dien_thoai`, `email`, `return_url`. View `longevity/create.blade.php` fallback prefill + hidden `return_url`.
+    - `safeReturnUrl()` whitelist host callback (chống open-redirect). `store()` redirect `{return_url}?booking_ma=&booking_id=` nếu whitelist match.
+    - `GET /api/bookings` (bearer token) + middleware `EnsureScrmToken` cho đồng bộ S2S sau này.
+  - **Phase 2 — Bên SCRM**:
+    - Migration `facilities.booking_co_so_slug` (map slug URL cơ sở bên booking) + `leads.booking_ma` + `leads.booked_at`.
+    - `BookingCallbackController` (route `GET /leads/{lead}/booking-callback`): cập nhật lead + AuditLog + flash message, gate qua `Lead::isVisibleTo()`.
+    - Nút "Đặt booking" trong `⚡lead-detail.blade.php` (chỉ hiện khi `canMoveToSale` = lead đang phase Booking). URL build từ slug + prefill. Facility chưa map slug → nút disabled kèm tooltip.
+    - Form `⚡staff-management.blade.php` thêm ô "Slug cơ sở bên Booking" (regex `[a-z0-9\-]+`) cho từng facility.
+  - **Phase 3 — UI thiết lập kết nối (thay đọc env)**:
+    - Cả 2 bên: bảng `app_settings(key,value)` + model `AppSetting` (cache per-request).
+    - Booking: trang `Thiết lập › Kết nối SCRM` (`/{co_so}/thiet-lap/ket-noi/scrm`, admin) — textarea whitelist host, lưu DB. `safeReturnUrl()` đọc DB fallback env.
+    - SCRM: trang `Cài đặt › Kết nối Booking` (`/settings/booking-connection`, `permission:connection.manage`) — 2 ô URL + API Token + nút "Test kết nối" (gọi `GET /api/bookings?per_page=1`). `lead-detail` đọc `booking_url` từ DB fallback env.
+- **Test**:
+  - Prefill query → 3 field khách + hidden `return_url` fill đúng ✅
+  - Submit form thật (top-level nav) → booking tạo `BKG-260720-000005`, redirect callback → SCRM update `booking_status=booked`, `booking_ma`, `booked_at` + flash "Đã đặt booking BKG-260720-000005 cho khách Trần Văn Đức" ✅
+  - Test nút ẩn/disable: lead phase Sale không có nút ✅
+  - "Test kết nối" bên SCRM trả `OK · tổng booking = 5` ✅
+  - Whitelist host lưu vào DB verify qua tinker ✅
+- **Ghi chú & quyết định**:
+  - Chọn hướng **embed form gốc** (mở tab sang booking) thay vì popup Livewire tự viết — tránh replicate ~200 dòng validate + 8 endpoint dropdown, không drift khi form booking đổi.
+  - Route form booking phòng khám thật là `/{co_so}/tao-moi` (không phải `/them-booking` như plan ban đầu). Đã sửa URL bên SCRM.
+  - `is_admin` không có trên `User` bên SCRM — dùng `permission:connection.manage` để gate trang "Kết nối Booking".
+  - Nút "Đặt booking" hiện tại chỉ hiện khi lead phase = Booking. Nếu muốn mở rộng (lead phase Sale/Close cũng đặt lại được) → nới điều kiện trong view.
+  - Token API chưa có UI sinh/revoke (vẫn dùng env `SCRM_API_TOKEN`); luồng embed hiện tại không cần token, chỉ dùng cho "Test kết nối" + đồng bộ S2S sau.
+- **Chưa làm / để lại**:
+  - UI sinh/revoke API token bên booking (hash-based, có tên gợi nhớ + last-used).
+  - Cache invalidation cross-request nếu chạy multi-worker.
+  - Endpoint mở rộng: `POST /api/bookings` cho luồng thay thế embed (nếu sau này muốn tạo booking không qua UI booking).
+
+## 2026-07-20 — Gộp trùng lặp "Nguồn" & "Nguồn QC" + nối mã source_group vào mã KH
+- **Vấn đề**: form lead có 3 trường cùng chủ đề "nguồn": (1) enum `source_group` (Nhóm nguồn — bắt buộc, phân phối), (2) cột `ad_source` (Nguồn QC — nhập tay), (3) custom field `phan_loai` cấp công ty có `affects_code=true` (Nguồn — nối vào mã KH). Trùng vai trò, người dùng nhầm.
+- **Sửa**:
+  - `Lead::SOURCE_GROUP_CODES` (MKT/COLD/BDM/REF/CTV/WI) — mã nối vào mã KH: `KH-001-MKT`, `KH-004-REF`, …
+  - `generateCode()` chèn đoạn source ngay sau id; `report-center.leadCode()` cũng chèn.
+  - Bỏ custom field `phan_loai` cấp công ty (`affects_code=true`) khỏi seed — thay bằng SOURCE_GROUP_CODES.
+  - Drop cột `leads.ad_source` + `stats_daily.ad_source` (migration `2026_07_20_140000_drop_ad_source_columns`). Bỏ khỏi UI form/list/detail/pools/import/reports, StatsAggregator, ProcessRawLead, WebhookController, FB Ads adapter, DistributionRule config, tests.
+  - Seed phòng Marketing: bỏ `nguon_quang_cao` (select cũ), thêm 2 text field `page` + `nguon_qc` cho MỌI phòng Marketing (marketing-hcm, marketing-hn, marketing-dn). Move giá trị `page` cấp công ty sang cấp phòng Marketing tương ứng.
+- **Chạy**: `php artisan migrate` + `db:seed --class=DemoDataSeeder` + regenerate mã 41 lead (`Lead::each(fn=>generateCode())`).
+- **Test**: 117/117 ✅ (sửa `DistributionEngineTest::test_condition_multiple_fields_all_must_match` — dùng `region`+`insight` thay cho `region`+`ad_source`).
+- **Cảnh báo dữ liệu**: mất giá trị `ad_source` cũ (FB Ads label "Facebook Ads"). Rule chia số cũ có filter `ad_source` bị bỏ điều kiện đó. `stats_daily` unique key giảm còn (date, org, user, camp).
+
+## 2026-07-20 — Perm mới `lead.consult` cho khối "CHUYÊN VIÊN TƯ VẤN"
+- **Vấn đề**: dropdown Chuyên viên tư vấn ở lead-form lọt cả Admin/DM (Bảo, Tú… phòng Vận hành) vì filter chỉ theo perm `lead.update`, mà Admin có tất cả perm.
+- **Sửa**:
+  - Thêm perm `lead.consult` (PermissionSeeder).
+  - Gán cho role thực sự tư vấn: `Team sale`, `CM sale` (OrgStaffSeeder); `Sale`, `Manager` (OrgAndRoleSeeder).
+  - Admin **KHÔNG** tự động nhận `lead.consult` (`Permission::where('key','!=','lead.consult')` khi sync). Muốn Admin tư vấn 1 lead → gán perm riêng qua Role Manager.
+  - Sửa `consultantUsers()` ở lead-form: filter `lead.update` → `lead.consult`.
+- **Verify**: Bảo/Tú (Admin ops-run) không còn trong danh sách. Danh sách còn Team sale + CM sale.

@@ -10,6 +10,7 @@ use App\Models\Permission;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Dữ liệu mẫu: nhân sự 2 phòng, khách kho chung, và quy tắc trường (mã phân loại
@@ -20,7 +21,12 @@ class DemoDataSeeder extends Seeder
     public function run(): void
     {
         $sales = OrgUnit::firstWhere('code', 'sales');
-        $marketing = OrgUnit::firstWhere('code', 'marketing');
+        // "marketing" theo phòng ban thực tế (marketing-hcm, marketing-dn, ...). Fallback về code=marketing để tương thích DB cũ.
+        $marketingOrgs = OrgUnit::where('code', 'like', 'marketing%')->get();
+        if ($marketingOrgs->isEmpty()) {
+            $marketingOrgs = OrgUnit::where('code', 'marketing')->get();
+        }
+        $marketing = $marketingOrgs->first(); // vẫn giữ 1 biến cho các đoạn cũ dùng $marketing
         $saleRole = Role::firstWhere('name', 'Sale');
 
         // Role Sale cần quyền cơ bản để thao tác lead (chỉ gán nếu chưa có quyền nào)
@@ -72,33 +78,36 @@ class DemoDataSeeder extends Seeder
         $this->seedFlowLeads($receiver);
 
         // ── Quy tắc trường ───────────────────────────────────────
-        // Cấp công ty: "Nguồn" (loại data) nối thẳng vào mã KH → KH-{id}-{mã}
-        $this->selectField(null, 'phan_loai', 'Nguồn', [
-            'MKT' => 'MKT',
-            'BOD' => 'BOD',
-            'SR' => 'SR',
-            'BR' => 'BR',
-            'AFF' => 'AFF',
-        ], 1, affectsCode: true);
+        // "Nguồn" cấp công ty ĐÃ GỠ: trùng lặp với enum source_group của lead
+        // (Marketing→MKT, BDM→BDM…), source_group giờ tự nối mã vào KH-{id}-{SRC}.
+        CustomField::whereNull('org_unit_id')->where('key', 'phan_loai')->get()->each->delete();
 
-        // Dọn field mã cố định theo phòng (KD/MKT) — đã thay bằng "Phân loại" cấp công ty,
-        // giữ lại thì mã KH bị nối lặp (VD KH-1-MKT-MKT). Xóa cả giá trị lead đính kèm.
+        // Dọn field mã cố định theo phòng (KD/MKT) — cũ, giữ lại thì mã KH bị nối lặp.
         CustomField::whereIn('org_unit_id', array_filter([$sales?->id, $marketing?->id]))
             ->where('key', 'ma_phan_loai')
             ->get()->each->delete();
-        // "Phân loại" cũ ở phòng KD (C/BDM… nối mã) cũng bỏ — đã gộp lên cấp công ty
+        // "Phân loại" cũ ở phòng KD cũng bỏ
         if ($sales) {
             CustomField::where('org_unit_id', $sales->id)->where('key', 'phan_loai')->get()->each->delete();
         }
 
-        // Cấp phòng Marketing: các trường theo MẪU PHÒNG MARKETING (không nối mã)
-        if ($marketing) {
-            $this->selectField($marketing->id, 'nguon_quang_cao', 'Nguồn quảng cáo',
-                $this->flat(['MKT', 'Quét Inbox']), 1);
-            $this->selectField($marketing->id, 'khu_vuc', 'Khu vực',
-                $this->flat(['TP.HCM', 'TỈNH', 'Hà Nội']), 2);
-            // Phase 6.21 — Camp giờ được migration seed cho cả 3 phòng Marketing với options list.
-            // Không seed lại ở đây để tránh trùng key (org_unit_id + key).
+        // Cấp phòng Marketing: các trường theo MẪU PHÒNG MARKETING (không nối mã).
+        // Có nhiều phòng Marketing (marketing-hcm, marketing-dn, ...), seed cho mỗi phòng.
+        foreach ($marketingOrgs as $mkt) {
+            $this->textField($mkt->id, 'page', 'Page', 1);
+            // Nếu tồn tại field nguon_qc dạng text (do seed trước) → xoá để chuyển sang select
+            CustomField::where('org_unit_id', $mkt->id)->where('key', 'nguon_qc')
+                ->where('field_type', 'text')->get()->each->delete();
+            $this->selectField($mkt->id, 'nguon_qc', 'Nguồn QC',
+                $this->flat(['Facebook', 'Google', 'TikTok', 'Zalo', 'Quét Inbox', 'Khác']), 2);
+            $this->selectField($mkt->id, 'khu_vuc', 'Khu vực',
+                $this->flat(['TP.HCM', 'TỈNH', 'Hà Nội']), 3);
+
+            // Bỏ field cũ (thay cho select "Nguồn quảng cáo" + cột ad_source đã drop)
+            CustomField::where('org_unit_id', $mkt->id)
+                ->whereIn('key', ['nguon_quang_cao'])
+                ->get()->each->delete();
+
             // Các trạng thái funnel là TỪNG Ô TÍCH riêng (đúng như các cột trong mẫu)
             $stages = [
                 'follow' => 'Follow', 'net' => 'Nét', 'tai_chinh_yeu' => 'Tài chính yếu',
@@ -108,12 +117,35 @@ class DemoDataSeeder extends Seeder
             ];
             $pos = 4;
             foreach ($stages as $key => $label) {
-                $this->tickField($marketing->id, 'tick_' . $key, $label, $pos++);
+                $this->tickField($mkt->id, 'tick_' . $key, $label, $pos++);
             }
             // Bỏ các field seed cũ đã gộp nhầm thành dropdown
-            CustomField::where('org_unit_id', $marketing->id)
+            CustomField::where('org_unit_id', $mkt->id)
                 ->whereIn('key', ['phan_loai', 'phan_loai_cs', 'ket_qua'])
                 ->get()->each->delete();
+        }
+
+        // Chuyển "Page" từ custom field cấp công ty → cấp phòng Marketing (khái niệm Page
+        // vốn chỉ của Marketing). Chia đều value theo lead.org_unit_id thuộc phòng nào.
+        $oldPage = CustomField::whereNull('org_unit_id')->where('key', 'page')->first();
+        if ($oldPage && $marketingOrgs->isNotEmpty()) {
+            foreach ($marketingOrgs as $mkt) {
+                $newPage = CustomField::where('org_unit_id', $mkt->id)->where('key', 'page')->first();
+                if (! $newPage) continue;
+                // Lead thuộc org này (hoặc con của nó) — con của Marketing chính là team booking/sale...
+                $orgIds = OrgUnit::where('id', $mkt->id)->orWhere('parent_id', $mkt->id)->pluck('id')->all();
+                DB::table('lead_custom_values')
+                    ->where('custom_field_id', $oldPage->id)
+                    ->whereIn('lead_id', function ($q) use ($orgIds) {
+                        $q->select('id')->from('leads')->whereIn('org_unit_id', $orgIds);
+                    })
+                    ->whereNotIn('lead_id', function ($q) use ($newPage) {
+                        $q->select('lead_id')->from('lead_custom_values')->where('custom_field_id', $newPage->id);
+                    })
+                    ->update(['custom_field_id' => $newPage->id]);
+            }
+            // Xoá field page cấp công ty (cascade các value còn lại của lead không thuộc marketing).
+            $oldPage->delete();
         }
     }
 
@@ -191,6 +223,25 @@ class DemoDataSeeder extends Seeder
     private function flat(array $values): array
     {
         return array_combine($values, $values);
+    }
+
+    /** Trường text tự do — không nối mã. */
+    private function textField(?int $orgId, string $key, string $label, int $position): void
+    {
+        CustomField::updateOrCreate(
+            ['org_unit_id' => $orgId, 'key' => $key],
+            [
+                'label' => $label,
+                'field_type' => 'text',
+                'options' => null,
+                'rules' => null,
+                'affects_code' => false,
+                'required' => false,
+                'position' => $position,
+                'status' => CustomField::STATUS_ACTIVE,
+                'active' => true,
+            ]
+        );
     }
 
     /** Trường "Ô tích" (có/không) — không có option, không nối mã. */

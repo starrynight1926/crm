@@ -269,7 +269,7 @@ new class extends Component
                             <div class="flex items-center gap-2" wire:key="map-{{ $index }}">
                                 <select wire:model="mappingRows.{{ $index }}.target" class="flex-1 border border-gold-200 rounded-md px-2.5 py-1.5 text-sm bg-white focus:outline-none focus:border-gold-500">
                                     <option value="">— field chuẩn —</option>
-                                    @foreach (['name', 'phone', 'received_date', 'page', 'camp', 'insight', 'link', 'ad_source', 'region', 'note'] as $field)
+                                    @foreach (['name', 'phone', 'received_date', 'page', 'camp', 'insight', 'link', 'region', 'note'] as $field)
                                         <option value="{{ $field }}">{{ $field }}</option>
                                     @endforeach
                                 </select>

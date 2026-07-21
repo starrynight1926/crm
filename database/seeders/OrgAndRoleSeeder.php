@@ -35,7 +35,9 @@ class OrgAndRoleSeeder extends Seeder
             ['name' => 'Admin'],
             ['description' => 'Toàn quyền hệ thống', 'is_system' => true]
         );
-        $admin->permissions()->sync(Permission::pluck('id'));
+        // Admin nhận mọi perm TRỪ `lead.consult` — perm này chỉ dành cho role thực sự tư vấn khách
+        // (Sale/CM sale/Team sale/Manager). Muốn Admin tư vấn cụ thể lead thì gán perm riêng qua Role Manager.
+        $admin->permissions()->sync(Permission::where('key', '!=', 'lead.consult')->pluck('id'));
 
         // Phase 6.6 — 3 role bổ sung theo cơ cấu thực tế
         $tl = Role::updateOrCreate(['name' => 'Team Leader'], [
@@ -74,7 +76,7 @@ class OrgAndRoleSeeder extends Seeder
         // Manager: quản lý team + phân bổ + duyệt + thu hồi + xem báo cáo trong scope
         $manager = Role::updateOrCreate(['name' => 'Manager'], ['description' => 'Quản lý team & chia số']);
         $managerPerms = Permission::whereIn('key', [
-            'lead.view', 'lead.create', 'lead.update', 'lead.update_booking', 'lead.update_sale', 'lead.view_phone',
+            'lead.view', 'lead.create', 'lead.update', 'lead.update_booking', 'lead.update_sale', 'lead.consult', 'lead.view_phone',
             'lead.view_pool', 'lead.distribute', 'lead.distribute_booking', 'lead.distribute_sale', 'lead.approve_source', 'lead.recall',
             'report.view',
         ])->pluck('id');
@@ -82,7 +84,7 @@ class OrgAndRoleSeeder extends Seeder
 
         // Sale: view + create lead trong scope của mình
         $sale = Role::updateOrCreate(['name' => 'Sale'], ['description' => 'Khai thác & chăm sóc khách hàng']);
-        $salePerms = Permission::whereIn('key', ['lead.view', 'lead.create', 'lead.update', 'report.view'])->pluck('id');
+        $salePerms = Permission::whereIn('key', ['lead.view', 'lead.create', 'lead.update', 'lead.consult', 'report.view'])->pluck('id');
         $sale->permissions()->sync($salePerms);
 
         // (Đã bỏ 3 role vùng CM Hà Nội/Đà Nẵng/HCM — 2026-07-16.

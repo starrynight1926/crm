@@ -38,7 +38,6 @@ class ProcessRawLeadTest extends TestCase
             'name' => 'Nguyễn Văn Pipeline',
             'phone' => '+84 912 345 678',
             'camp' => 'Camp T7',
-            'ad_source' => 'Facebook Ads',
             'received_date' => '01/07/2026',
         ]);
 

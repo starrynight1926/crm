@@ -11,9 +11,10 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 #[Fillable([
     'raw_lead_id', 'code', 'received_date',
-    'insight', 'link', 'ad_source', 'name', 'phone', 'region', 'classification',
+    'insight', 'link', 'name', 'phone', 'region', 'classification',
     'status_1', 'status_2', 'note',
     'pool_level', 'owner_id', 'receiver_id', 'org_unit_id',
+    'past_org_unit_ids',
     'facility_id', 'doctor_id', 'consultant_1_id', 'consultant_2_id', 'consultant_3_id',
     'assigned_at', 'last_care_at',
     'birthday', 'address', 'medical_history', 'occupation',
@@ -22,7 +23,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
     // Phase 6.6
     'source_group', 'approval_status', 'approval_by', 'approved_at',
     'overdue_marked_at', 'recall_at', 'is_permanent_assignment',
-    'booking_status',
+    'booking_status', 'booking_ma', 'booked_at',
     // Phase 6.8
     'pipeline_phase', 'pipeline_status',
 ])]
@@ -68,6 +69,21 @@ class Lead extends Model
         self::SOURCE_CTV => 'Cộng tác viên',
         self::SOURCE_WALK_IN => 'Khách tự đến',
     ];
+
+    // Mã nối vào mã KH theo nhóm nguồn: KH-{id}-{SOURCE_CODE}-...
+    public const SOURCE_GROUP_CODES = [
+        self::SOURCE_MARKETING => 'MKT',
+        self::SOURCE_DATA_COLD => 'COLD',
+        self::SOURCE_BDM => 'BDM',
+        self::SOURCE_REFERRAL => 'REF',
+        self::SOURCE_CTV => 'CTV',
+        self::SOURCE_WALK_IN => 'WI',
+    ];
+
+    public function sourceGroupCode(): string
+    {
+        return self::SOURCE_GROUP_CODES[$this->source_group] ?? '';
+    }
 
     // Permission tương ứng cần có để thấy nhóm nguồn đó ở form thêm lead.
     // referral + walk_in: ai cũng thấy (giá trị null = mọi user tạo lead).
@@ -171,7 +187,32 @@ class Lead extends Model
             'overdue_marked_at' => 'datetime',
             'recall_at' => 'datetime',
             'is_permanent_assignment' => 'boolean',
+            'booked_at' => 'datetime',
+            'past_org_unit_ids' => 'array',
         ];
+    }
+
+    /**
+     * Tự động ghi lại các org đã từng giữ lead (past handler).
+     * Mỗi lần org_unit_id đổi → append giá trị CŨ vào past_org_unit_ids (unique, bỏ null).
+     * Nhờ đó user thuộc team booking cũ vẫn thấy lead sau khi lead chuyển sang team sale.
+     */
+    protected static function booted(): void
+    {
+        static::saving(function (Lead $lead) {
+            if (! $lead->isDirty('org_unit_id')) {
+                return;
+            }
+            $oldOrgId = $lead->getOriginal('org_unit_id');
+            if ($oldOrgId === null) {
+                return;
+            }
+            $past = $lead->past_org_unit_ids ?? [];
+            if (! in_array($oldOrgId, $past, true)) {
+                $past[] = (int) $oldOrgId;
+                $lead->past_org_unit_ids = $past;
+            }
+        });
     }
 
     /** Danh sách nguồn user hiện tại được phép chọn khi tạo lead. */
@@ -301,6 +342,9 @@ class Lead extends Model
     public function generateCode(): string
     {
         $code = 'KH-' . str_pad((string) $this->id, 3, '0', STR_PAD_LEFT);
+        if ($src = $this->sourceGroupCode()) {
+            $code .= '-' . $src;
+        }
         foreach (CustomField::codeSegmentsFor($this) as $segment) {
             $code .= '-' . $segment;
         }
@@ -338,6 +382,13 @@ class Lead extends Model
             if ($memberOrgIds !== []) {
                 $q->orWhere(fn (Builder $sub) => $sub->where('pool_level', self::POOL_TEAM)->whereIn('org_unit_id', $memberOrgIds));
             }
+            // Past handler: lead đã từng ở org của user → user vẫn thấy (read-only + add note).
+            $pastOrgIds = array_values(array_unique(array_merge($orgIds ?: [], $memberOrgIds ?: [])));
+            if ($pastOrgIds !== []) {
+                foreach ($pastOrgIds as $oid) {
+                    $q->orWhereJsonContains('past_org_unit_ids', (int) $oid);
+                }
+            }
             if ($user->hasSelfScope()) {
                 $q->orWhere('owner_id', $user->id)->orWhere('receiver_id', $user->id);
             }
@@ -345,6 +396,21 @@ class Lead extends Model
                 $q->whereRaw('1 = 0');
             }
         });
+    }
+
+    /**
+     * User có phải là past handler của lead không (từng thuộc org đã giữ lead, nhưng không thuộc org hiện tại).
+     * Dùng để phân biệt "canFullyEdit" (org hiện tại) vs "canAddNote" (past handler).
+     */
+    public function isPastHandlerFor(User $user): bool
+    {
+        $past = $this->past_org_unit_ids ?? [];
+        if ($past === []) return false;
+        $userOrgs = array_values(array_unique(array_merge(
+            $user->visibleOrgUnitIds() ?: [],
+            $user->memberOrgUnitIds() ?: [],
+        )));
+        return array_intersect($past, $userOrgs) !== [];
     }
 
     /** Lead này có nằm trong scope của user không (dùng cho chi tiết / mask SĐT). */
@@ -364,7 +430,12 @@ class Lead extends Model
             return true;
         }
 
-        return $user->canSeeOrgUnit($this->org_unit_id);
+        if ($user->canSeeOrgUnit($this->org_unit_id)) {
+            return true;
+        }
+
+        // Past handler: user thuộc org đã từng giữ lead → thấy read-only + add note.
+        return $this->isPastHandlerFor($user);
     }
 
     /**

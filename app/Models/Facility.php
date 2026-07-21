@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['name', 'parent_id', 'active'])]
+#[Fillable(['name', 'parent_id', 'active', 'booking_co_so_slug'])]
 class Facility extends Model
 {
     public function parent(): BelongsTo

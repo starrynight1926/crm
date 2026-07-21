@@ -32,6 +32,7 @@
         ['label'=>'Kết nối nguồn','desc'=>'Webhook & Ads API đổ lead về hệ thống.','route'=>'sources.index','perm'=>'connection.manage','scope'=>'system','icon'=>'plug'],
         ['label'=>'Báo cáo','desc'=>'Funnel, marketing, hiệu suất, chi tiết lead — xuất Excel.','route'=>'reports.index','perm'=>['report.view','report.view_all'],'scope'=>'org','icon'=>'chart'],
         ['label'=>'Quản lý phiên','desc'=>'Thiết bị đăng nhập & thu hồi phiên từ xa.','route'=>'sessions.index','perm'=>null,'scope'=>'me','icon'=>'device'],
+        ['label'=>'Kết nối Booking','desc'=>'URL &amp; token API của hệ thống lara-sbooking; nút Đặt booking dùng cấu hình này.','route'=>'settings.booking-connection','perm'=>'connection.manage','scope'=>'system','icon'=>'plug'],
     ];
 
     $badges = [

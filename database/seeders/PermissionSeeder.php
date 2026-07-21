@@ -15,6 +15,7 @@ class PermissionSeeder extends Seeder
             'lead.view' => 'Xem lead',
             'lead.create' => 'Tạo lead',
             'lead.update' => 'Sửa lead (ghi chú, phân loại, booking_status, dịch vụ)',
+            'lead.consult' => 'Là chuyên viên tư vấn (được chọn ở khối CV tư vấn của lead)',
             'lead.update_booking' => 'Sửa info cá nhân khi lead ở phase Booking',
             'lead.update_sale' => 'Sửa info cá nhân khi lead ở phase Sale',
             'lead.delete' => 'Xóa lead',

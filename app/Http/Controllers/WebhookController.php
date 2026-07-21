@@ -40,7 +40,7 @@ class WebhookController extends Controller
         foreach ($connection->field_mapping ?: [] as $target => $sourceKey) {
             $payload[$target] = data_get($input, $sourceKey);
         }
-        foreach (['name', 'phone', 'received_date', 'page', 'camp', 'insight', 'link', 'ad_source', 'region', 'note'] as $field) {
+        foreach (['name', 'phone', 'received_date', 'page', 'camp', 'insight', 'link', 'region', 'note'] as $field) {
             $payload[$field] ??= $input[$field] ?? null;
         }
 

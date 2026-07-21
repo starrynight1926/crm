@@ -14,7 +14,7 @@ if (!file_exists($csv)) {
     copy('C:/Users/admin/AppData/Local/Temp/claude/F--Laragon-www-lara-scrm/7f1543a3-3a5d-497c-a8fd-61fe08316d1d/scratchpad/test-import.csv', $csv);
 }
 
-$mapping = [0=>'name',1=>'phone',2=>'received_date',3=>'page',4=>'camp',5=>'ad_source',6=>'link',7=>'insight'];
+$mapping = [0=>'name',1=>'phone',2=>'received_date',3=>'page',4=>'camp',5=>'link',6=>'insight'];
 
 $batchId = DB::connection('pgsql')->table('import_batches')->insertGetId([
     'file_name'      => 'test-import.csv',

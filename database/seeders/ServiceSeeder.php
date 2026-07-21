@@ -66,6 +66,13 @@ class ServiceSeeder extends Seeder
         $this->svc('DETOXOXY', 'DetoxOxy (xông thủy/hỏa)',       $dvLe, null, 30);
         $this->svc('TC-CVG',   'Thủy châm cổ vai gáy EAQ',      $dvLe, null, 1300);
         $this->svc('CSDC',     'Chăm sóc da cơ bản',             $dvLe, null, 100);
+        // Bổ sung từ "Danh mục sử dụng dịch vụ" (2026-07-20)
+        $this->svc('EAQ',      'EAQ (1 vùng)',                   $dvLe);
+        $this->svc('BJR-KHOP', 'BJR (1 khớp)',                   $dvLe);
+        $this->svc('YHPD-T4',  'Y học Phương Đông (Ghế YHCT tầng 4)', $dvLe);
+        $this->svc('MESOF',    'MesoF',                          $dvLe);
+        $this->svc('ILR',      'Thải độc (ILR)',                 $dvLe);
+        $this->svc('MAT',      'Miễn dịch (MAT)',                $dvLe);
 
         // ═══════════════════════════════════════════════════════════
         // 4. TẾ BÀO GỐC
@@ -79,6 +86,7 @@ class ServiceSeeder extends Seeder
         $this->svc('RETREAT',  'Retreat',                         $tbg, null, 2000);
         $this->svc('MB300',    'Metaboost 300',                   $tbg, null, 950, 'Giá lẻ tính theo đơn vị $950/lần');
         $this->svc('NMN',      'NMN Cap',                        $tbg, null, 350, 'Loại 660 cho quà tặng KH cũ');
+        $this->svc('RECELLS',  'Recells',                        $tbg);
 
         // ═══════════════════════════════════════════════════════════
         // 5. MEMO GIẢI PHÁP VỀ KHỚP

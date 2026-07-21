@@ -29,6 +29,7 @@ new class extends Component
     public string $facilityName = '';
     public ?int $facilityParentId = null;
     public bool $facilityActive = true;
+    public string $facilityBookingSlug = '';
 
     // Import
     public $importFile = null;
@@ -100,11 +101,12 @@ new class extends Component
         $this->facilityName = $f->name;
         $this->facilityParentId = $f->parent_id;
         $this->facilityActive = (bool) $f->active;
+        $this->facilityBookingSlug = (string) $f->booking_co_so_slug;
     }
 
     public function resetFacilityForm(): void
     {
-        $this->reset(['editingFacilityId', 'facilityName', 'facilityParentId', 'facilityActive']);
+        $this->reset(['editingFacilityId', 'facilityName', 'facilityParentId', 'facilityActive', 'facilityBookingSlug']);
         $this->facilityActive = true;
     }
 
@@ -112,6 +114,9 @@ new class extends Component
     {
         $this->validate([
             'facilityName' => 'required|string|max:255',
+            'facilityBookingSlug' => 'nullable|string|max:60|regex:/^[a-z0-9\-]+$/',
+        ], [
+            'facilityBookingSlug.regex' => 'Slug chỉ được chứa chữ thường, số và dấu gạch ngang.',
         ]);
 
         Facility::updateOrCreate(
@@ -120,6 +125,7 @@ new class extends Component
                 'name' => trim($this->facilityName),
                 'parent_id' => $this->facilityParentId ?: null,
                 'active' => $this->facilityActive,
+                'booking_co_so_slug' => trim($this->facilityBookingSlug) ?: null,
             ]
         );
 
@@ -385,6 +391,13 @@ new class extends Component
                                 @endif
                             @endforeach
                         </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-ink/70 mb-1">Slug cơ sở bên Booking</label>
+                        <input type="text" wire:model="facilityBookingSlug" placeholder="VD: 59ntn, 207nvt"
+                               class="w-full border border-gold-200 rounded-md px-3 py-2 text-sm font-mono">
+                        <p class="text-xs text-ink/50 mt-0.5">Slug URL cơ sở trong lara-sbooking. Trống = nút Đặt booking bị vô hiệu.</p>
+                        @error('facilityBookingSlug')<p class="text-xs text-red-600 mt-0.5">{{ $message }}</p>@enderror
                     </div>
                     <label class="flex items-center gap-2 text-sm">
                         <input type="checkbox" wire:model="facilityActive" class="rounded border-gold-300">

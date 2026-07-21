@@ -27,8 +27,6 @@ new class extends Component
 
     public string $condCamp = '';
 
-    public string $condAdSource = '';
-
     public string $condPage = '';
 
     /** @var array<int, array{type: string, id: string, weight: string}> */
@@ -53,7 +51,7 @@ new class extends Component
 
     public function openCreate(string $level): void
     {
-        $this->reset('editingId', 'name', 'orgUnitId', 'condRegion', 'condCamp', 'condAdSource', 'condPage');
+        $this->reset('editingId', 'name', 'orgUnitId', 'condRegion', 'condCamp', 'condPage');
         $this->level = $level;
         $this->priority = ((int) DistributionRule::where('level', $level)->max('priority')) + 10;
         $this->strategy = 'round_robin';
@@ -74,7 +72,6 @@ new class extends Component
         $conditions = $rule->conditions ?? [];
         $this->condRegion = implode(', ', $conditions['region'] ?? []);
         $this->condCamp = implode(', ', $conditions['camp'] ?? []);
-        $this->condAdSource = implode(', ', $conditions['ad_source'] ?? []);
         $this->condPage = implode(', ', $conditions['page'] ?? []);
         $this->targets = $rule->targets->map(fn ($t) => [
             'type' => $t->target_type, 'id' => (string) $t->target_id, 'weight' => (string) $t->weight,
@@ -120,7 +117,6 @@ new class extends Component
         $conditions = array_filter([
             'region' => $parse($this->condRegion),
             'camp' => $parse($this->condCamp),
-            'ad_source' => $parse($this->condAdSource),
             'page' => $parse($this->condPage),
         ]);
 
@@ -222,7 +218,7 @@ new class extends Component
                             @if ($section['level'] === 'team_to_user')<td class="px-5 py-3.5">{{ $rule->orgUnit?->name }}</td>@endif
                             <td class="px-5 py-3.5 text-xs text-ink/60">
                                 @forelse ($rule->conditions ?? [] as $field => $values)
-                                    <div><strong>{{ ['region' => 'Khu vực', 'camp' => 'Camp', 'ad_source' => 'Nguồn', 'page' => 'Page'][$field] ?? $field }}:</strong> {{ implode(', ', $values) }}</div>
+                                    <div><strong>{{ ['region' => 'Khu vực', 'camp' => 'Camp', 'page' => 'Page'][$field] ?? $field }}:</strong> {{ implode(', ', $values) }}</div>
                                 @empty
                                     <span class="italic text-ink/40">Khớp tất cả</span>
                                 @endforelse
@@ -328,10 +324,6 @@ new class extends Component
                         <div>
                             <label class="block text-xs text-ink/50 mb-1">Camp</label>
                             <input type="text" wire:model="condCamp" class="w-full border border-gold-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-gold-500">
-                        </div>
-                        <div>
-                            <label class="block text-xs text-ink/50 mb-1">Nguồn quảng cáo</label>
-                            <input type="text" wire:model="condAdSource" placeholder="Facebook Ads, Google Ads" class="w-full border border-gold-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-gold-500">
                         </div>
                         <div>
                             <label class="block text-xs text-ink/50 mb-1">Page</label>

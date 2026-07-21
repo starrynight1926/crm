@@ -131,12 +131,12 @@ class DistributionEngineTest extends TestCase
     public function test_condition_multiple_fields_all_must_match(): void
     {
         $this->makeRuleL1(
-            ['conditions' => ['region' => ['Hà Nội'], 'ad_source' => ['Facebook Ads']]],
+            ['conditions' => ['region' => ['Hà Nội'], 'insight' => ['VIP']]],
             [['org_unit', $this->teamA->id, 1]]
         );
 
-        $match = $this->makeLead(['region' => 'Hà Nội', 'ad_source' => 'Facebook Ads']);
-        $noMatch = $this->makeLead(['region' => 'Hà Nội', 'ad_source' => 'Google Ads']);
+        $match = $this->makeLead(['region' => 'Hà Nội', 'insight' => 'VIP']);
+        $noMatch = $this->makeLead(['region' => 'Hà Nội', 'insight' => 'normal']);
         $this->engine->distribute($match);
         $this->engine->distribute($noMatch);
 

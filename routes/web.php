@@ -22,6 +22,7 @@ Route::middleware('auth')->group(function () {
     Route::view('/dashboard', 'dashboard')->name('dashboard');
     Route::view('/settings/sessions', 'settings.sessions')->name('sessions.index');
     Route::view('/settings', 'settings.index')->name('settings.index');
+    Route::view('/settings/booking-connection', 'settings.booking-connection')->name('settings.booking-connection');
     Route::view('/settings/fields', 'settings.fields')->middleware('permission:field.manage')->name('settings.fields');
     Route::view('/settings/field-approvals', 'settings.field-approvals')->middleware('permission:field.approve')->name('settings.field-approvals');
     Route::view('/settings/staff', 'settings.staff')->middleware('permission:staff.manage')->name('settings.staff');
@@ -50,6 +51,7 @@ Route::middleware('auth')->group(function () {
         Route::view('/failed', 'leads.failed')->middleware('permission:lead.import')->name('leads.failed');
         Route::view('/approvals', 'leads.approvals')->middleware('permission:lead.approve_source')->name('leads.approvals');
         Route::get('/{lead}', fn (\App\Models\Lead $lead) => view('leads.show', ['lead' => $lead]))->name('leads.show');
+        Route::get('/{lead}/booking-callback', \App\Http\Controllers\BookingCallbackController::class)->name('leads.booking-callback');
         Route::get('/{lead}/edit', function (\App\Models\Lead $lead) {
             abort_unless($lead->canEditPersonalInfo(auth()->user()), 403,
                 'Bạn không có quyền sửa thông tin khách hàng ở phase ' . ($lead->pipeline_phase ?? 'sale') . '.');

@@ -32,8 +32,6 @@ new class extends Component
 
     public string $link = '';
 
-    public string $ad_source = '';
-
     public string $region = '';
 
     // --- INSIGHT ---
@@ -111,7 +109,6 @@ new class extends Component
         // Phase 6.20 — page/camp giờ trong custom_values, sẽ hiện trong section Trường bổ sung
         $this->insight = $lead->insight ?? '';
         $this->link = $lead->link ?? '';
-        $this->ad_source = $lead->ad_source ?? '';
         $this->region = $lead->region ?? '';
         $this->personId = $lead->owner_id;
         if ($lead->owner_id) {
@@ -427,7 +424,6 @@ new class extends Component
             // Phase 6.20 — page/camp: giờ ghi vào lead_custom_values qua form Trường bổ sung
             'insight' => $this->insight ?: null,
             'link' => $this->link ?: null,
-            'ad_source' => $this->ad_source ?: null,
             'region' => $this->region ?: null,
             'status_1' => $this->status_1 ?: null,
             'status_2' => $this->status_2 ?: null,
@@ -600,7 +596,7 @@ new class extends Component
         return User::where('status', User::STATUS_ACTIVE)
             ->whereHas('assignments', fn ($q) => $q->effective()
                 ->whereIn('org_unit_id', $allowedOrgIds)
-                ->whereHas('role.permissions', fn ($qq) => $qq->where('key', 'lead.update')))
+                ->whereHas('role.permissions', fn ($qq) => $qq->where('key', 'lead.consult')))
             ->orderBy('name')
             ->get()
             ->map(fn ($u) => ['id' => $u->id, 'name' => $u->name])
@@ -753,7 +749,8 @@ new class extends Component
                             <select wire:model.live="sourceGroup" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-gold-500">
                                 <option value="">— Chọn nhóm nguồn —</option>
                                 @foreach ($_allowedSources as $key => $label)
-                                    <option value="{{ $key }}">{{ $label }}</option>
+                                    @php($_code = \App\Models\Lead::SOURCE_GROUP_CODES[$key] ?? null)
+                                    <option value="{{ $key }}">{{ $label }}@if ($_code) ({{ $_code }})@endif</option>
                                 @endforeach
                             </select>
                             @error('sourceGroup')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
@@ -764,11 +761,7 @@ new class extends Component
                             @endif
                         </div>
                     </div>
-                    {{-- PAGE + Camp giờ hiển thị trong section "Trường bổ sung" (Phase 6.20); Link move sang tab Insight --}}
-                    <div>
-                        <label class="block text-sm font-medium mb-1.5">Nguồn QC</label>
-                        <input type="text" wire:model="ad_source" placeholder="VD: Facebook, Google..." class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
-                    </div>
+                    {{-- PAGE + Camp + Nguồn QC giờ là custom field phòng Marketing (Trường bổ sung); Link move sang tab Insight --}}
                     <div>
                         <label class="block text-sm font-medium mb-1.5">NOTE</label>
                         <textarea wire:model="note" rows="2" placeholder="Ghi chú thêm..." class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500"></textarea>
@@ -844,12 +837,11 @@ new class extends Component
             {{-- Tabbar horizontal text-only, gọn labels (Phase 6.17) --}}
             <div class="flex flex-wrap items-center border-b border-gold-200">
                 <?php $tabs = array_values(array_filter([
-                    ['key' => 'staff',        'label' => 'Nhân sự'],
-                    ['key' => 'insight',      'label' => 'Insight'],
-                    ['key' => 'treatment',    'label' => 'Liệu trình'],
+                    ['key' => 'staff',        'label' => 'Bác sĩ tư vấn'],
                     ['key' => 'status',       'label' => 'Trạng thái'],
-                    ['key' => 'upsell',       'label' => 'Dịch vụ'],
-                    $canDistribute ? ['key' => 'distribution', 'label' => 'Phân phối'] : null,
+                    ['key' => 'treatment',    'label' => 'Liệu trình'],
+                    ['key' => 'upsell',       'label' => 'Tiềm năng'],
+                    ['key' => 'insight',      'label' => 'Insight'],
                 ])); ?>
                 @foreach ($tabs as $t)
                     <button type="button" @click="tab = '{{ $t['key'] }}'"
@@ -860,11 +852,11 @@ new class extends Component
                 @endforeach
             </div>
 
-            {{-- Cơ sở & Nhân sự --}}
+            {{-- Bác sĩ tư vấn (bác sĩ + chuyên viên tư vấn) --}}
             <div x-show="tab === 'staff'" x-cloak class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
                 <h2 class="font-bold text-gold-700 mb-5 flex items-center gap-2">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z"/></svg>
-                    Cơ sở & Nhân sự
+                    Bác sĩ tư vấn
                 </h2>
                 <div class="space-y-4">
                     <div>
@@ -1059,9 +1051,25 @@ new class extends Component
                         Thêm chuyên viên tư vấn
                     </button>
 
+                    {{-- Dịch vụ chính (nhãn nhanh, hiện ở lead-detail) --}}
                     <div class="border-t border-gold-100 pt-4">
-                        <label class="block text-sm font-medium mb-1.5">DỊCH VỤ</label>
-                        <input type="text" wire:model="service_name" placeholder="Tên dịch vụ tổng" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
+                        <label class="block text-sm font-medium mb-1.5">DỊCH VỤ CHÍNH</label>
+                        <select wire:model="service_name" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-gold-500">
+                            <option value="">— Chọn dịch vụ —</option>
+                            @foreach ($serviceTree as $cat)
+                                <optgroup label="{{ $cat->name }}">
+                                    @foreach ($cat->children as $child)
+                                        @if ($child->children->isNotEmpty())
+                                            @foreach ($child->children as $leaf)
+                                                <option value="{{ $leaf->name }}">{{ $child->name }} · {{ $leaf->name }}</option>
+                                            @endforeach
+                                        @else
+                                            <option value="{{ $child->name }}">{{ $child->name }}</option>
+                                        @endif
+                                    @endforeach
+                                </optgroup>
+                            @endforeach
+                        </select>
                     </div>
                 </div>
             </div>
@@ -1198,6 +1206,77 @@ new class extends Component
                             <p class="text-xs text-ink/50 mt-1">Team booking đổi khi khách đồng ý gặp.</p>
                         </div>
                     </div>
+
+                    @if ($canDistribute)
+                        <div class="border-t border-gold-100 pt-4 mt-2">
+                            <h3 class="font-bold text-gold-700 mb-4 flex items-center gap-2 text-sm">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5"/></svg>
+                                Phân phối & Nguồn
+                            </h3>
+                            <div class="space-y-4">
+                                @if ($lead?->code)
+                                <div>
+                                    <label class="block text-sm font-medium mb-1.5">Mã khách hàng</label>
+                                    <p class="text-sm mt-2"><code class="font-mono text-gold-700">{{ $lead->code }}</code></p>
+                                    <p class="text-xs text-ink/50 mt-1.5">Mã tự sinh theo trường phân loại của phòng.</p>
+                                </div>
+                                @endif
+                                <div>
+                                    <label class="block text-sm font-medium mb-1.5">CHIA VÀO KHO</label>
+                                    <select wire:model.live="poolTarget" @disabled($selectedPerson) @class(['w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-gold-500', 'opacity-50 cursor-not-allowed' => $selectedPerson])>
+                                        <option value="">— Chọn —</option>
+                                        <option value="company">Kho chung công ty</option>
+                                        @if ($assignableOrgs->isNotEmpty())
+                                            <optgroup label="Kho chung phòng / team">
+                                                @foreach ($assignableOrgs as $o)
+                                                    <option value="org:{{ $o->id }}">{{ str_repeat('— ', $o->depth) }}Kho chung {{ $o->name }}</option>
+                                                @endforeach
+                                            </optgroup>
+                                        @endif
+                                    </select>
+                                    <p class="text-xs text-ink/50 mt-1.5">
+                                        @if ($selectedPerson)
+                                            Đã gán sale phụ trách → lead không nằm trong kho chung.
+                                        @else
+                                            Kho chung phòng/team: chỉ người trong phòng/team đó thấy được.
+                                        @endif
+                                    </p>
+                                    @error('poolTarget')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
+                                </div>
+                                <div x-data="{ open: false }" @click.outside="open = false">
+                                    <label class="block text-sm font-medium mb-1.5">SALE PHỤ TRÁCH</label>
+                                    @if ($selectedPerson)
+                                        <div class="flex items-center justify-between gap-2 border border-gold-300 bg-gold-50 rounded-md px-3 py-2.5">
+                                            <span class="text-sm font-semibold text-gold-800">{{ $selectedPerson->name }}</span>
+                                            <button type="button" wire:click="clearPerson" class="text-xs font-semibold text-ink/50 hover:text-red-600">Bỏ chọn ✕</button>
+                                        </div>
+                                        <p class="text-xs text-ink/50 mt-1.5">Lead rời kho chung, chuyển vào kho cá nhân của sale này.</p>
+                                    @else
+                                        <div class="relative">
+                                            <input type="text" wire:model.live.debounce.250ms="personSearch" @focus="open = true" placeholder="Gõ tên để tìm nhân sự..."
+                                                   class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
+                                            <div x-show="open" x-cloak class="absolute z-20 mt-1 w-full max-h-56 overflow-y-auto bg-white border border-gold-200 rounded-lg shadow-card">
+                                                @forelse ($personResults as $u)
+                                                    <button type="button" wire:click="selectPerson({{ $u->id }})" @click="open = false"
+                                                            class="block w-full text-left px-3 py-2 text-sm hover:bg-gold-50">
+                                                        {{ $u->name }}
+                                                        <span class="text-xs text-ink/40">{{ $u->email }}</span>
+                                                    </button>
+                                                @empty
+                                                    <p class="px-3 py-2 text-sm text-ink/40">Không tìm thấy nhân sự phù hợp.</p>
+                                                @endforelse
+                                            </div>
+                                        </div>
+                                        @error('personId')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
+                                    @endif
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium mb-1.5">KHU VỰC</label>
+                                    <input type="text" wire:model="region" placeholder="VD: TP. Hồ Chí Minh" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
+                                </div>
+                            </div>
+                        </div>
+                    @endif
                 </div>
             </div>
 
@@ -1208,77 +1287,25 @@ new class extends Component
                     Dịch vụ tiềm năng & UPSELL
                 </h2>
                 <div class="space-y-4">
-                    {{-- Dịch vụ tiềm năng — searchable tree --}}
-                    <div x-data="{
-                        tree: {{ $svcTreeJson }},
-                        search: '', open: false, selected: null,
-                        modelValue: @entangle('potential_service'),
-                        mode: 'name',
-                        init() { this.resolveSelected(); this.$watch('modelValue', () => this.resolveSelected()); },
-                        resolveSelected() {
-                            if (!this.modelValue) { this.selected = null; return; }
-                            for (const c of this.tree) for (const ch of c.children) {
-                                if (!ch.is_cat && ch.name === this.modelValue) { this.selected = ch.name; return; }
-                                for (const s of (ch.children||[])) if (s.name === this.modelValue) { this.selected = s.name; return; }
-                            }
-                        },
-                        get filtered() {
-                            const q = this.search.toLowerCase().trim();
-                            if (!q) return this.tree;
-                            return this.tree.map(cat => {
-                                const fc = cat.children.map(ch => {
-                                    if (ch.is_cat) { const fs = ch.children.filter(s => s.name.toLowerCase().includes(q)||(s.code&&s.code.toLowerCase().includes(q))); return fs.length?{...ch,children:fs}:null; }
-                                    return (ch.name.toLowerCase().includes(q)||(ch.code&&ch.code.toLowerCase().includes(q)))?ch:null;
-                                }).filter(Boolean);
-                                return fc.length?{...cat,children:fc}:null;
-                            }).filter(Boolean);
-                        },
-                        pick(item) { this.modelValue = item.name; this.selected = item.name; this.search = ''; this.open = false; },
-                        clear() { this.modelValue = ''; this.selected = null; this.search = ''; }
-                    }">
+                    {{-- Dịch vụ tiềm năng — chọn từ danh mục services --}}
+                    <div>
                         <label class="block text-sm font-medium mb-1.5">Dịch vụ tiềm năng</label>
-                        <div class="relative">
-                            <input type="text" x-model="search" @focus="open = true" @click="open = true"
-                                   :placeholder="selected ? selected : 'Tìm kiếm dịch vụ...'"
-                                   class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
-                            <template x-if="modelValue">
-                                <button type="button" @click="clear()" class="absolute right-2 top-1/2 -translate-y-1/2 text-ink/30 hover:text-red-500">
-                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
-                                </button>
-                            </template>
-                            <div x-show="open" @click.outside="open = false" x-cloak
-                                 class="absolute z-40 left-0 right-0 top-full mt-1 bg-white border border-gold-200 rounded-xl shadow-lg max-h-72 overflow-y-auto">
-                                <template x-for="cat in filtered" :key="cat.id">
-                                    <div>
-                                        <div class="px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-ink/40 bg-gold-50 sticky top-0" x-text="cat.name"></div>
-                                        <template x-for="child in cat.children" :key="child.id">
-                                            <div>
-                                                <template x-if="child.is_cat">
-                                                    <div>
-                                                        <div class="pl-5 pr-3 py-1 text-xs font-semibold text-ink/50" x-text="child.name"></div>
-                                                        <template x-for="sub in child.children" :key="sub.id">
-                                                            <button type="button" @click="pick(sub)"
-                                                                    class="w-full text-left pl-9 pr-3 py-1.5 text-sm hover:bg-gold-50 flex items-center justify-between">
-                                                                <span x-text="sub.name"></span>
-                                                                <span class="text-[10px] text-ink/30 font-mono" x-text="sub.code"></span>
-                                                            </button>
-                                                        </template>
-                                                    </div>
-                                                </template>
-                                                <template x-if="!child.is_cat">
-                                                    <button type="button" @click="pick(child)"
-                                                            class="w-full text-left pl-5 pr-3 py-1.5 text-sm hover:bg-gold-50 flex items-center justify-between">
-                                                        <span x-text="child.name"></span>
-                                                        <span class="text-[10px] text-ink/30 font-mono" x-text="child.code"></span>
-                                                    </button>
-                                                </template>
-                                            </div>
-                                        </template>
-                                    </div>
-                                </template>
-                                <div x-show="filtered.length === 0" class="px-3 py-3 text-sm text-ink/40 text-center">Không tìm thấy dịch vụ</div>
-                            </div>
-                        </div>
+                        <select wire:model="potential_service" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-gold-500">
+                            <option value="">— Chọn dịch vụ —</option>
+                            @foreach ($serviceTree as $cat)
+                                <optgroup label="{{ $cat->name }}">
+                                    @foreach ($cat->children as $child)
+                                        @if ($child->children->isNotEmpty())
+                                            @foreach ($child->children as $leaf)
+                                                <option value="{{ $leaf->name }}">{{ $child->name }} · {{ $leaf->name }}</option>
+                                            @endforeach
+                                        @else
+                                            <option value="{{ $child->name }}">{{ $child->name }}</option>
+                                        @endif
+                                    @endforeach
+                                </optgroup>
+                            @endforeach
+                        </select>
                     </div>
 
                     <div class="border-t border-gold-100 pt-4">
@@ -1395,77 +1422,7 @@ new class extends Component
                 </div>
             </div>
 
-            {{-- Phân phối & Nguồn (tab, chỉ admin) --}}
-            @if ($canDistribute)
-            <div x-show="tab === 'distribution'" x-cloak class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
-                <h2 class="font-bold text-gold-700 mb-5 flex items-center gap-2">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5"/></svg>
-                    Phân phối & Nguồn
-                </h2>
-                <div class="space-y-4">
-                    @if ($lead?->code)
-                    <div>
-                        <label class="block text-sm font-medium mb-1.5">Mã khách hàng</label>
-                        <p class="text-sm mt-2"><code class="font-mono text-gold-700">{{ $lead->code }}</code></p>
-                        <p class="text-xs text-ink/50 mt-1.5">Mã tự sinh theo trường phân loại của phòng.</p>
-                    </div>
-                    @endif
-                    <div>
-                        <label class="block text-sm font-medium mb-1.5">CHIA VÀO KHO</label>
-                        <select wire:model.live="poolTarget" @disabled($selectedPerson) @class(['w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-gold-500', 'opacity-50 cursor-not-allowed' => $selectedPerson])>
-                            <option value="">— Chọn —</option>
-                            <option value="company">Kho chung công ty</option>
-                            @if ($assignableOrgs->isNotEmpty())
-                                <optgroup label="Kho chung phòng / team">
-                                    @foreach ($assignableOrgs as $o)
-                                        <option value="org:{{ $o->id }}">{{ str_repeat('— ', $o->depth) }}Kho chung {{ $o->name }}</option>
-                                    @endforeach
-                                </optgroup>
-                            @endif
-                        </select>
-                        <p class="text-xs text-ink/50 mt-1.5">
-                            @if ($selectedPerson)
-                                Đã gán sale phụ trách → lead không nằm trong kho chung.
-                            @else
-                                Kho chung phòng/team: chỉ người trong phòng/team đó thấy được.
-                            @endif
-                        </p>
-                        @error('poolTarget')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
-                    </div>
-                    <div x-data="{ open: false }" @click.outside="open = false">
-                        <label class="block text-sm font-medium mb-1.5">SALE PHỤ TRÁCH</label>
-                        @if ($selectedPerson)
-                            <div class="flex items-center justify-between gap-2 border border-gold-300 bg-gold-50 rounded-md px-3 py-2.5">
-                                <span class="text-sm font-semibold text-gold-800">{{ $selectedPerson->name }}</span>
-                                <button type="button" wire:click="clearPerson" class="text-xs font-semibold text-ink/50 hover:text-red-600">Bỏ chọn ✕</button>
-                            </div>
-                            <p class="text-xs text-ink/50 mt-1.5">Lead rời kho chung, chuyển vào kho cá nhân của sale này.</p>
-                        @else
-                            <div class="relative">
-                                <input type="text" wire:model.live.debounce.250ms="personSearch" @focus="open = true" placeholder="Gõ tên để tìm nhân sự..."
-                                       class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
-                                <div x-show="open" x-cloak class="absolute z-20 mt-1 w-full max-h-56 overflow-y-auto bg-white border border-gold-200 rounded-lg shadow-card">
-                                    @forelse ($personResults as $u)
-                                        <button type="button" wire:click="selectPerson({{ $u->id }})" @click="open = false"
-                                                class="block w-full text-left px-3 py-2 text-sm hover:bg-gold-50">
-                                            {{ $u->name }}
-                                            <span class="text-xs text-ink/40">{{ $u->email }}</span>
-                                        </button>
-                                    @empty
-                                        <p class="px-3 py-2 text-sm text-ink/40">Không tìm thấy nhân sự phù hợp.</p>
-                                    @endforelse
-                                </div>
-                            </div>
-                            @error('personId')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
-                        @endif
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium mb-1.5">KHU VỰC</label>
-                        <input type="text" wire:model="region" placeholder="VD: TP. Hồ Chí Minh" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
-                    </div>
-                </div>
-            </div>
-            @endif
+            {{-- "Phân phối & Nguồn" đã gộp vào tab Trạng thái (khi $canDistribute). --}}
 
             {{-- Trường bổ sung — đã chuyển lên dưới "Thông tin khách hàng" (Phase 6.14) --}}
         </div>
