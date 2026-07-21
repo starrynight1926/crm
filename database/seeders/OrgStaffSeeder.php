@@ -130,7 +130,7 @@ class OrgStaffSeeder extends Seeder
             ],
             'Sale' => [
                 'desc' => 'Khai thác & chăm sóc khách hàng',
-                'perms' => ['lead.create','lead.update','lead.view','report.view'],
+                'perms' => ['lead.create','lead.update','lead.consult','lead.view','report.view'],
             ],
             'Observer' => [
                 'desc' => 'Xem toàn bộ, không thêm/sửa/xóa dịch vụ và nhân sự',

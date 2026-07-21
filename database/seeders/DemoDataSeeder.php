@@ -108,20 +108,31 @@ class DemoDataSeeder extends Seeder
                 ->whereIn('key', ['nguon_quang_cao'])
                 ->get()->each->delete();
 
-            // Các trạng thái funnel là TỪNG Ô TÍCH riêng (đúng như các cột trong mẫu)
-            $stages = [
-                'follow' => 'Follow', 'net' => 'Nét', 'tai_chinh_yeu' => 'Tài chính yếu',
-                'quan_tam' => 'Quan tâm', 'tham_khao' => 'Tham khảo', 'tim_hieu' => 'Tìm hiểu',
-                'goi_lai_sau' => 'Gọi lại sau', 'klld' => 'KLLD', 'missed' => 'Missed',
-                'booking' => 'Booking', 'show' => 'Show', 'close' => 'Close',
+            // 2026-07-21: gộp 12 tick funnel thành 2 select "Phân loại" + "Kết quả"
+            // (giống Team Hợi). Dọn sạch 12 tick cũ + values nếu còn.
+            $oldTickKeys = [
+                'tick_follow','tick_net','tick_tai_chinh_yeu','tick_quan_tam','tick_tham_khao',
+                'tick_tim_hieu','tick_goi_lai_sau','tick_klld','tick_missed',
+                'tick_booking','tick_show','tick_close',
             ];
-            $pos = 4;
-            foreach ($stages as $key => $label) {
-                $this->tickField($mkt->id, 'tick_' . $key, $label, $pos++);
+            $oldTickFieldIds = CustomField::where('org_unit_id', $mkt->id)
+                ->whereIn('key', $oldTickKeys)->pluck('id')->all();
+            if ($oldTickFieldIds) {
+                DB::table('lead_custom_values')->whereIn('custom_field_id', $oldTickFieldIds)->delete();
+                CustomField::whereIn('id', $oldTickFieldIds)->delete();
             }
-            // Bỏ các field seed cũ đã gộp nhầm thành dropdown
+
+            $this->selectField($mkt->id, 'phan_loai', 'Phân loại', $this->flat([
+                'Follow', 'Nét', 'Tài chính yếu', 'Quan tâm', 'Tham khảo',
+                'Tìm hiểu', 'Gọi lại sau', 'KLLD', 'Missed',
+            ]), 4);
+            $this->selectField($mkt->id, 'ket_qua', 'Kết quả', $this->flat([
+                'Booking', 'Show', 'Close',
+            ]), 5);
+
+            // Field seed cũ đã bỏ
             CustomField::where('org_unit_id', $mkt->id)
-                ->whereIn('key', ['phan_loai', 'phan_loai_cs', 'ket_qua'])
+                ->whereIn('key', ['phan_loai_cs'])
                 ->get()->each->delete();
         }
 

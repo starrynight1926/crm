@@ -21,6 +21,7 @@ class DatabaseSeeder extends Seeder
             ServiceSeeder::class,            // Bảng giá dịch vụ (gói khám, lẻ...)
             DemoDataSeeder::class,           // Leads/dịch vụ/payment demo (chỉ dùng phần data ngoài nhân sự)
             TeamHoiCustomFieldSeeder::class, // Custom fields cho Team Hợi
+            SyncCrmAccountsSeeder::class,    // Backfill username + 26 tài khoản booking-only (login bằng username)
         ]);
     }
 }
