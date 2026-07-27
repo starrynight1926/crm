@@ -3,6 +3,8 @@
 namespace App\Services;
 
 use App\Models\AuditLog;
+use App\Models\OrgUnit;
+use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -93,7 +95,11 @@ class DataBackupService
         try {
             $this->writeExcel($tmpDir . DIRECTORY_SEPARATOR . 'data_khach.xlsx', self::SHEETS_KHACH);
             $this->writeExcel($tmpDir . DIRECTORY_SEPARATOR . 'data_congty.xlsx', self::SHEETS_CONGTY);
-            $this->writeExcel($tmpDir . DIRECTORY_SEPARATOR . 'data_nhansu.xlsx', self::SHEETS_NHANSU);
+            $this->writeExcel(
+                $tmpDir . DIRECTORY_SEPARATOR . 'data_nhansu.xlsx',
+                self::SHEETS_NHANSU,
+                fn (Spreadsheet $ss) => $this->prependStaffOverviewSheet($ss),
+            );
             file_put_contents(
                 $tmpDir . DIRECTORY_SEPARATOR . 'config.json',
                 json_encode($this->configService->export(), JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT),
@@ -146,7 +152,7 @@ class DataBackupService
     }
 
     /** @param  array<string, array{conn:string, table:string}>  $sheets */
-    private function writeExcel(string $absolutePath, array $sheets): void
+    private function writeExcel(string $absolutePath, array $sheets, ?callable $beforeSave = null): void
     {
         $spreadsheet = new Spreadsheet();
         $spreadsheet->removeSheetByIndex(0);
@@ -190,10 +196,159 @@ class DataBackupService
             $sheet->freezePane('A2');
         }
 
+        if ($beforeSave) {
+            $beforeSave($spreadsheet);
+        }
+
         $spreadsheet->setActiveSheetIndex(0);
         (new Xlsx($spreadsheet))->save($absolutePath);
         $spreadsheet->disconnectWorksheets();
         unset($spreadsheet);
+    }
+
+    /**
+     * Sheet tổng quan "Danh sách nhân sự" — đặt làm sheet đầu tiên của data_nhansu.xlsx.
+     * Cột: id, họ tên, user (username), email, pass, chức vụ, cơ sở, vai trò, giải thích quyền.
+     * Cột "pass" hiển thị mật khẩu mặc định theo seeder — nếu người dùng đã tự đổi qua UI thì giá trị này không còn đúng.
+     */
+    private function prependStaffOverviewSheet(Spreadsheet $spreadsheet): void
+    {
+        $sheet = $spreadsheet->createSheet(0);
+        $sheet->setTitle('Danh sách nhân sự');
+
+        $headers = ['ID', 'Họ tên', 'Tên đăng nhập', 'Email', 'Mật khẩu mặc định',
+            'Chức vụ', 'Cơ sở', 'Vai trò', 'Giải thích quyền'];
+        $sheet->fromArray($headers, null, 'A1');
+        $sheet->getStyle('A1:I1')->getFont()->setBold(true);
+        $sheet->getStyle('A1:I1')->getFill()->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
+            ->getStartColor()->setRGB('F5EEDC');
+
+        // Map cơ sở: id branch (depth 1) → tên.
+        $branches = OrgUnit::where('depth', 1)->get()->keyBy('id');
+
+        // Lấy sẵn permission theo role để giải thích quyền.
+        $permsByRole = DB::table('permission_role')
+            ->join('permissions', 'permissions.id', '=', 'permission_role.permission_id')
+            ->select('permission_role.role_id', 'permissions.label', 'permissions.key')
+            ->orderBy('permissions.position')
+            ->get()
+            ->groupBy('role_id');
+
+        $users = User::with(['assignments' => fn ($q) => $q->effective()->with(['role', 'orgUnit'])])
+            ->orderBy('id')->get();
+
+        $row = 2;
+        foreach ($users as $u) {
+            $roleNames = [];
+            $branchNames = [];
+            $roleIds = [];
+            foreach ($u->assignments as $a) {
+                if ($a->role) {
+                    $roleNames[$a->role->name] = true;
+                    $roleIds[$a->role->id] = true;
+                }
+                if ($a->orgUnit) {
+                    $branchId = $this->branchIdFromPath($a->orgUnit->path);
+                    if ($branchId && isset($branches[$branchId])) {
+                        $branchNames[$branches[$branchId]->name] = true;
+                    } elseif ($a->orgUnit->code === 'company') {
+                        $branchNames['Công ty'] = true;
+                    }
+                }
+            }
+
+            $permLabels = [];
+            foreach (array_keys($roleIds) as $rid) {
+                foreach ($permsByRole->get($rid, collect()) as $p) {
+                    $permLabels[$p->key] = $p->label;
+                }
+            }
+
+            $sheet->fromArray([
+                $u->id,
+                $u->name,
+                $u->username,
+                $u->email,
+                $this->defaultPasswordFor($u),
+                $u->job_title,
+                implode(', ', array_keys($branchNames)),
+                implode(', ', array_keys($roleNames)),
+                implode("\n", array_values($permLabels)),
+            ], null, 'A' . $row);
+
+            $sheet->getStyle('I' . $row)->getAlignment()->setWrapText(true)->setVertical(Alignment::VERTICAL_TOP);
+            $row++;
+        }
+
+        // Kích thước cột.
+        $widths = ['A' => 6, 'B' => 26, 'C' => 18, 'D' => 30, 'E' => 20,
+            'F' => 22, 'G' => 20, 'H' => 28, 'I' => 60];
+        foreach ($widths as $col => $w) {
+            $sheet->getColumnDimension($col)->setWidth($w);
+        }
+        $sheet->freezePane('A2');
+
+        // Chèn ghi chú ở dòng dưới cùng để admin hiểu rõ nguồn mật khẩu.
+        $noteRow = $row + 1;
+        $sheet->setCellValue('A' . $noteRow,
+            'Ghi chú: cột "Mật khẩu mặc định" là mật khẩu được thiết lập lần đầu qua seeder. '
+            . 'Nếu người dùng đã đổi mật khẩu qua giao diện, giá trị này không còn đúng — '
+            . 'trong trường hợp cần cấp lại phải yêu cầu quản trị viên đặt lại mật khẩu.');
+        $sheet->mergeCells('A' . $noteRow . ':I' . $noteRow);
+        $sheet->getStyle('A' . $noteRow)->getFont()->setItalic(true)->getColor()->setRGB('7A6A3E');
+        $sheet->getStyle('A' . $noteRow)->getAlignment()->setWrapText(true);
+    }
+
+    /** Path dạng /1/2/3/ → id branch (depth 1) = segment thứ 2. */
+    private function branchIdFromPath(?string $path): ?int
+    {
+        $segs = array_values(array_filter(explode('/', (string) $path)));
+
+        return isset($segs[1]) ? (int) $segs[1] : null;
+    }
+
+    /**
+     * Suy mật khẩu mặc định theo seeder — dùng cho cột "pass" trong sheet tổng quan.
+     * Nguồn:
+     *   - admin@longevity.com.vn                            → admin@123
+     *   - 26 tài khoản trong SyncCrmAccountsSeeder          → 59@ntn / 207nvt / bacsi
+     *   - Test users (test.hn.*, test.dn.*, test.hcm.*)     → 123456
+     *   - Các user còn lại từ seeder                         → 123456
+     */
+    private function defaultPasswordFor(User $u): string
+    {
+        if ($u->email === 'admin@longevity.com.vn') {
+            return 'admin@123';
+        }
+
+        static $map = null;
+        if ($map === null) {
+            $pw59 = [
+                'adminvh', 'ktv_viet', 'ktv_tu', 'ktv_hoa', 'ktv_dong',
+                'ddt_trang', 'dd_thao', 'dd_quynh', 'ddt_nhan', 'dd_mi',
+                'ktv_tthao', 'ktv_huong', 'ktv_phuong', 'ktv_bach', 'ktv_vi',
+            ];
+            $pw207 = ['ktv_kieu', 'ktv_gam', 'ktv_huyen', 'ktv_thuan',
+                'ddt_loan', 'dd_tuan', 'dd_tien', 'ktv_tan', 'dd_thanh'];
+            $pwBs = ['bsi59ntn', 'bsi207nvt'];
+
+            $map = [];
+            foreach ($pw59 as $un) {
+                $map[$un] = '59@ntn';
+            }
+            foreach ($pw207 as $un) {
+                $map[$un] = '207nvt';
+            }
+            foreach ($pwBs as $un) {
+                $map[$un] = 'bacsi';
+            }
+        }
+
+        if ($u->username && isset($map[$u->username])) {
+            return $map[$u->username];
+        }
+
+        return '123456';
     }
 
     private function col(int $index): string
