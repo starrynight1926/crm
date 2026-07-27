@@ -24,21 +24,27 @@ class HnDnTestFlowSeeder extends Seeder
             return;
         }
 
-        $user = User::updateOrCreate(
-            ['email' => 'test.hn.cmsale@longevity.com.vn'],
-            [
-                'name' => 'Test HN CM Sale',
-                'username' => 'test.hn.cmsale',
+        // Tạo user theo pattern chuẩn: hncm.{id}. Dùng name làm khoá tra để giữ idempotent.
+        $user = User::firstWhere('name', 'CM Sale Team Giang');
+        if (! $user) {
+            $user = User::create([
+                'name' => 'CM Sale Team Giang',
+                'username' => 'tmp',
+                'email' => 'tmp-cmsale-giang@longevity.com.vn',
                 'password' => '123456',
                 'status' => User::STATUS_ACTIVE,
-            ],
-        );
+            ]);
+            $user->update([
+                'username' => 'hncm.' . $user->id,
+                'email' => 'hncm.' . $user->id . '@longevity.com.vn',
+            ]);
+        }
 
         Assignment::updateOrCreate(
             ['user_id' => $user->id, 'role_id' => $roleCmSale->id, 'org_unit_id' => $hnSale->id],
             ['data_scope' => Assignment::SCOPE_TEAM, 'active' => true],
         );
 
-        $this->command?->info('HnDnTestFlowSeeder: giữ 1 CM sale cho Team Sale Giang.');
+        $this->command?->info('HnDnTestFlowSeeder: giữ 1 CM sale cho Team Sale Giang (' . $user->username . ').');
     }
 }
