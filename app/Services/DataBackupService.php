@@ -308,47 +308,14 @@ class DataBackupService
     }
 
     /**
-     * Suy mật khẩu mặc định theo seeder — dùng cho cột "pass" trong sheet tổng quan.
-     * Nguồn:
-     *   - admin@longevity.com.vn                            → admin@123
-     *   - 26 tài khoản trong SyncCrmAccountsSeeder          → 59@ntn / 207nvt / bacsi
-     *   - Test users (test.hn.*, test.dn.*, test.hcm.*)     → 123456
-     *   - Các user còn lại từ seeder                         → 123456
+     * Mật khẩu mặc định theo quy ước hiện tại (2026-07-27, đồng bộ với Booking):
+     *   - admin  → 59ntn
+     *   - còn lại → 59@ntn
+     * Nếu người dùng đã tự đổi qua UI, giá trị này không còn đúng — ghi chú rõ trong file Excel.
      */
     private function defaultPasswordFor(User $u): string
     {
-        if ($u->email === 'admin@longevity.com.vn') {
-            return 'admin@123';
-        }
-
-        static $map = null;
-        if ($map === null) {
-            $pw59 = [
-                'adminvh', 'ktv_viet', 'ktv_tu', 'ktv_hoa', 'ktv_dong',
-                'ddt_trang', 'dd_thao', 'dd_quynh', 'ddt_nhan', 'dd_mi',
-                'ktv_tthao', 'ktv_huong', 'ktv_phuong', 'ktv_bach', 'ktv_vi',
-            ];
-            $pw207 = ['ktv_kieu', 'ktv_gam', 'ktv_huyen', 'ktv_thuan',
-                'ddt_loan', 'dd_tuan', 'dd_tien', 'ktv_tan', 'dd_thanh'];
-            $pwBs = ['bsi59ntn', 'bsi207nvt'];
-
-            $map = [];
-            foreach ($pw59 as $un) {
-                $map[$un] = '59@ntn';
-            }
-            foreach ($pw207 as $un) {
-                $map[$un] = '207nvt';
-            }
-            foreach ($pwBs as $un) {
-                $map[$un] = 'bacsi';
-            }
-        }
-
-        if ($u->username && isset($map[$u->username])) {
-            return $map[$u->username];
-        }
-
-        return '123456';
+        return $u->username === 'admin' ? '59ntn' : '59@ntn';
     }
 
     private function col(int $index): string
