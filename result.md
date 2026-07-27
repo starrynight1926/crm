@@ -791,3 +791,25 @@ User request tích hợp 2 chiều CRM ↔ Booking system (GET facilities/servic
   - Admin **KHÔNG** tự động nhận `lead.consult` (`Permission::where('key','!=','lead.consult')` khi sync). Muốn Admin tư vấn 1 lead → gán perm riêng qua Role Manager.
   - Sửa `consultantUsers()` ở lead-form: filter `lead.update` → `lead.consult`.
 - **Verify**: Bảo/Tú (Admin ops-run) không còn trong danh sách. Danh sách còn Team sale + CM sale.
+
+## 2026-07-22 — Phase 6.20: Tách quyền booking (read/write/book_action) + phân phối theo cấp pool
+- **Vấn đề**:
+  1. Team booking hiện có `lead.update_booking` → sửa được info khách; yêu cầu chuyển sang **chỉ đọc** ở màn Cập nhật, chỉ được bấm nút Đặt booking.
+  2. Nút "Đặt booking" (mở lara-sbooking) chỉ có ở màn Chi tiết; user booking phổ thông cần thấy cả ở màn Cập nhật.
+  3. Chia số hiện chỉ 1 perm `lead.distribute` — không phân biệt được ai chia kho công ty→team (CM cơ sở) vs ai chia kho team→sale (CM team). Muốn tách để một số cơ sở chưa có CM team, cấp cả 2 perm cho CM cơ sở.
+- **Sửa**:
+  - PermissionSeeder + migration `2026_07_22_120000_split_booking_and_distribute_perms`: thêm 4 perm mới `lead.read_booking`, `lead.book_action`, `lead.distribute_to_team`, `lead.distribute_to_sale`.
+  - Migrate role: Team booking bỏ `lead.update_booking`, thêm `read_booking` + `book_action`. CM booking / CM sale / TL / Manager / DM HCM / Admin auto-attach các perm mới tương ứng (idempotent, `syncWithoutDetaching`).
+  - `Lead.php`: thêm `canOpenEditForm()` (mở Cập nhật readonly) + `canBookAction()`.
+  - `lead-form.blade.php`: tính `$canWrite` / `$isReadonly` / `$canBookAction`, wrap toàn form trong `<fieldset :disabled>`, ẩn nút "Lưu" khi readonly, hiện banner xanh "chế độ chỉ đọc", thêm nút Đặt booking ở header + footer (chỉ khi phase Booking + có `book_action`), gate `save()` server-side bằng `canEditPersonalInfo()`.
+  - `lead-detail.blade.php`: `$canEditPersonalInfo` gate dùng `canOpenEditForm()` (Team booking vào được form readonly); `$canMoveToSale` gate dùng `canBookAction()`.
+  - `lead-pools.blade.php`: helper `canDistributeLead($lead)` — kho company cần `distribute_to_team` (hoặc `lead.distribute` compat); kho team cần `distribute_to_sale` (hoặc compat). Áp cho tất cả actions (auto/start/confirm assign/pool, bulkAssign, bulkPool). `canDistribute` UI đổi sang `hasAnyPermission([distribute, distribute_to_team, distribute_to_sale])`.
+  - `ops-rules.blade.php`: thêm 4 dòng hiển thị ai có `read_booking` / `book_action` / `distribute_to_team` / `distribute_to_sale`.
+- **Chạy**: `php artisan migrate` + `php artisan view:clear`.
+- **Verify**:
+  - Team booking user `book1@longevity.com.vn`: `update_booking=N | read_booking=Y | book_action=Y` ✓
+  - Migration idempotent (updateOrCreate perms, syncWithoutDetaching cho existing roles) — không mất perm khác đã cấp tay.
+- **Chưa làm (dời)**:
+  - Chưa cập nhật `scope.md` / `plan.md` — sẽ đồng bộ ở lần commit doc.
+  - Chưa viết test tự động cho readonly form + book_action gate — cần bổ sung ở QA phase.
+  - Q4 gate ở `lead-pools` giữ `lead.distribute` là fallback compat; nếu về sau muốn strict thì phải rà lại các role vẫn còn `lead.distribute` và quyết định giữ/gỡ.

@@ -32,24 +32,30 @@ class Phase66FlowSeeder extends Seeder
         $roleDefs = [
             'Team trực page' => [
                 'desc' => 'Team trực page marketing — up lead nguồn Marketing/Data lạnh/BDM',
-                'perms' => ['lead.create','lead.distribute_team'],
+                'perms' => ['lead.create','lead.distribute_booking'],
             ],
             'CM booking' => [
                 'desc' => 'CM Phòng Booking — up Data lạnh/BDM, chia lead trong kho booking cho team booking',
                 'perms' => [
-                    'lead.view', 'lead.view_phone', 'lead.create', 'lead.update', 'lead.update_booking',
-                    'lead.view_pool', 'lead.distribute', 'lead.distribute_booking', 'lead.recall', 'report.view',
+                    'lead.view', 'lead.view_phone', 'lead.create', 'lead.update',
+                    'lead.read_booking', 'lead.update_booking', 'lead.book_action',
+                    'lead.view_pool', 'lead.distribute', 'lead.distribute_booking', 'lead.distribute_to_sale',
+                    'lead.recall', 'report.view',
                 ],
             ],
             'Team booking' => [
-                'desc' => 'Team booking — gọi khách, cập nhật info cá nhân + đổi trạng thái đặt lịch',
-                'perms' => ['lead.view', 'lead.view_phone', 'lead.update', 'lead.update_booking'],
+                'desc' => 'Team booking — chỉ xem info khách (readonly) + bấm nút Đặt booking, không sửa được',
+                'perms' => [
+                    'lead.view', 'lead.view_phone', 'lead.update',
+                    'lead.read_booking', 'lead.book_action',
+                ],
             ],
             'CM sale' => [
                 'desc' => 'CM Phòng Kinh doanh — chia lead đã đồng ý sang sale + sửa info cá nhân khi ở phase Sale',
                 'perms' => [
                     'lead.view', 'lead.view_phone', 'lead.create', 'lead.update', 'lead.update_sale',
-                    'lead.view_pool', 'lead.distribute', 'lead.distribute_sale', 'lead.distribute_ctv', 'lead.recall', 'report.view',
+                    'lead.view_pool', 'lead.distribute', 'lead.distribute_sale', 'lead.distribute_to_sale',
+                    'lead.distribute_ctv', 'lead.recall', 'report.view',
                 ],
             ],
             'Team sale' => [

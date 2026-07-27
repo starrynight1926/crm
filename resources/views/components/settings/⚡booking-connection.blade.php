@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\AppSetting;
+use App\Models\Facility;
 use Illuminate\Support\Facades\Http;
 use Livewire\Component;
 
@@ -8,6 +9,8 @@ new class extends Component
 {
     public string $bookingUrl = '';
     public string $bookingApiToken = '';
+    /** @var array<int, string> facility_id => slug */
+    public array $facilitySlugs = [];
     public ?string $testResult = null;
     public ?string $testStatus = null; // 'ok' | 'err'
 
@@ -16,6 +19,8 @@ new class extends Component
         abort_unless(auth()->user()?->hasPermission('connection.manage'), 403);
         $this->bookingUrl = AppSetting::get('booking_url', (string) config('services.booking.url'));
         $this->bookingApiToken = AppSetting::get('booking_api_token', (string) config('services.booking.api_token'));
+        $this->facilitySlugs = Facility::roots()->orderBy('name')->pluck('booking_co_so_slug', 'id')
+            ->map(fn ($s) => (string) $s)->all();
     }
 
     public function save(): void
@@ -23,11 +28,20 @@ new class extends Component
         $this->validate([
             'bookingUrl' => ['required', 'url', 'max:255'],
             'bookingApiToken' => ['nullable', 'string', 'max:255'],
+            'facilitySlugs' => ['array'],
+            'facilitySlugs.*' => ['nullable', 'string', 'max:60', 'regex:/^[a-z0-9\-_]*$/i'],
+        ], [
+            'facilitySlugs.*.regex' => 'Slug chỉ được chứa chữ / số / dấu - _ (VD: 59ntn, 207nvt, dn).',
         ]);
 
         AppSetting::set('booking_url', rtrim($this->bookingUrl, '/'));
         AppSetting::set('booking_api_token', $this->bookingApiToken);
-        session()->flash('ok', 'Đã lưu cấu hình kết nối Booking.');
+
+        foreach ($this->facilitySlugs as $facilityId => $slug) {
+            Facility::where('id', $facilityId)->update(['booking_co_so_slug' => trim($slug) ?: null]);
+        }
+
+        session()->flash('ok', 'Đã lưu cấu hình kết nối Booking + mapping cơ sở.');
     }
 
     public function testConnection(): void
@@ -81,6 +95,22 @@ new class extends Component
                    class="w-full border border-gold-200 rounded-md px-3 py-2 text-sm font-mono">
             @error('bookingApiToken')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
             <p class="text-xs text-ink/50 mt-1">Phải trùng với <code>SCRM_API_TOKEN</code> bên lara-sbooking. Chỉ dùng cho API server-to-server; nút "Đặt booking" hiện tại không cần token.</p>
+        </div>
+
+        <div class="border-t border-gold-100 pt-5">
+            <h2 class="text-sm font-bold text-gold-700 mb-1">Mapping cơ sở SCRM ↔ Booking</h2>
+            <p class="text-xs text-ink/50 mb-3">Nhập <strong>slug URL cơ sở bên lara-sbooking</strong> cho từng cơ sở SCRM. Nút "Đặt booking" ở chi tiết khách hàng ghép URL theo: <code>{{ rtrim($bookingUrl ?: 'BOOKING_URL', '/') }}/&lt;slug&gt;/tao-moi</code>. Bỏ trống = chưa map, nút bị disable với khách của cơ sở đó.</p>
+            <div class="space-y-2">
+                @foreach (\App\Models\Facility::roots()->orderBy('name')->get() as $_fac)
+                    <div class="grid grid-cols-[1fr_auto] items-center gap-3">
+                        <label class="text-sm">{{ $_fac->name }}</label>
+                        <input type="text" wire:model="facilitySlugs.{{ $_fac->id }}"
+                               placeholder="VD: 59ntn, 207nvt, dn"
+                               class="w-40 border border-gold-200 rounded-md px-3 py-1.5 text-sm font-mono focus:outline-none focus:border-gold-500">
+                    </div>
+                    @error('facilitySlugs.' . $_fac->id)<p class="text-xs text-red-600 mt-0.5">{{ $message }}</p>@enderror
+                @endforeach
+            </div>
         </div>
 
         <div class="flex items-center gap-3">

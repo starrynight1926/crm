@@ -122,11 +122,11 @@ class OrgStaffSeeder extends Seeder
         $roles = [
             'Admin' => [
                 'desc' => 'Toàn quyền hệ thống',
-                'perms' => ['connection.manage','contribution.set','field.approve','field.manage','lead.approve_source','lead.create','lead.delete','lead.view_pool','lead.distribute','lead.distribute_booking','lead.distribute_sale','lead.distribute_ctv','lead.export','lead.import','lead.pull_pool','lead.recall','lead.update','lead.update_booking','lead.update_sale','lead.view','lead.view_phone','ops.manage','org.manage','payment.record','report.view','report.view_all','role.manage','rule.manage','service.manage','staff.manage','user.manage'],
+                'perms' => ['connection.manage','contribution.set','field.approve','field.manage','lead.approve_source','lead.book_action','lead.create','lead.delete','lead.view_pool','lead.distribute','lead.distribute_booking','lead.distribute_sale','lead.distribute_ctv','lead.distribute_to_team','lead.distribute_to_sale','lead.export','lead.import','lead.pull_pool','lead.read_booking','lead.recall','lead.update','lead.update_booking','lead.update_sale','lead.view','lead.view_phone','ops.manage','org.manage','payment.record','report.view','report.view_all','role.manage','rule.manage','service.manage','staff.manage','user.manage'],
             ],
             'Manager' => [
                 'desc' => 'Quản lý team & chia số',
-                'perms' => ['lead.approve_source','lead.create','lead.view_pool','lead.distribute','lead.distribute_booking','lead.distribute_sale','lead.recall','lead.update','lead.update_booking','lead.update_sale','lead.view','lead.view_phone','report.view'],
+                'perms' => ['lead.approve_source','lead.book_action','lead.create','lead.view_pool','lead.distribute','lead.distribute_booking','lead.distribute_sale','lead.distribute_to_team','lead.distribute_to_sale','lead.read_booking','lead.recall','lead.update','lead.update_booking','lead.update_sale','lead.view','lead.view_phone','report.view'],
             ],
             'Sale' => [
                 'desc' => 'Khai thác & chăm sóc khách hàng',
@@ -138,7 +138,7 @@ class OrgStaffSeeder extends Seeder
             ],
             'Team Leader' => [
                 'desc' => 'Trưởng nhóm — quyền như CM nhưng scope team, chia số cấp team',
-                'perms' => ['lead.approve_source','lead.create','lead.view_pool','lead.distribute','lead.distribute_booking','lead.distribute_sale','lead.recall','lead.update','lead.view','lead.view_phone','report.view'],
+                'perms' => ['lead.approve_source','lead.book_action','lead.create','lead.view_pool','lead.distribute','lead.distribute_booking','lead.distribute_sale','lead.distribute_to_sale','lead.read_booking','lead.recall','lead.update','lead.view','lead.view_phone','report.view'],
             ],
             'Trợ lý kinh doanh' => [
                 'desc' => 'Xem data cấp công ty, không thêm/sửa',
@@ -146,7 +146,7 @@ class OrgStaffSeeder extends Seeder
             ],
             'DM HCM' => [
                 'desc' => 'Directional Manager HCM — cao nhất khu vực HCM',
-                'perms' => ['contribution.set','field.approve','field.manage','lead.approve_source','lead.create','lead.delete','lead.view_pool','lead.distribute','lead.distribute_booking','lead.distribute_sale','lead.distribute_ctv','lead.export','lead.import','lead.recall','lead.update','lead.update_booking','lead.update_sale','lead.view','lead.view_phone','payment.record','report.view','report.view_all','rule.manage','service.manage','user.manage'],
+                'perms' => ['contribution.set','field.approve','field.manage','lead.approve_source','lead.book_action','lead.create','lead.delete','lead.view_pool','lead.distribute','lead.distribute_booking','lead.distribute_sale','lead.distribute_ctv','lead.distribute_to_team','lead.distribute_to_sale','lead.export','lead.import','lead.read_booking','lead.recall','lead.update','lead.update_booking','lead.update_sale','lead.view','lead.view_phone','payment.record','report.view','report.view_all','rule.manage','service.manage','user.manage'],
             ],
             'Team trực page' => [
                 'desc' => 'Team trực page marketing — up lead nguồn Marketing/Data lạnh/BDM',
@@ -154,19 +154,29 @@ class OrgStaffSeeder extends Seeder
             ],
             'CM booking' => [
                 'desc' => 'CM Phòng Booking — up Data lạnh/BDM, chia lead trong kho booking cho team booking',
-                'perms' => ['lead.create','lead.view_pool','lead.distribute','lead.distribute_booking','lead.recall','lead.update','lead.update_booking','lead.view','lead.view_phone','report.view'],
+                'perms' => ['lead.book_action','lead.create','lead.view_pool','lead.distribute','lead.distribute_booking','lead.distribute_to_sale','lead.read_booking','lead.recall','lead.update','lead.update_booking','lead.view','lead.view_phone','report.view'],
             ],
             'Team booking' => [
-                'desc' => 'Team booking — gọi khách, cập nhật info cá nhân + đổi trạng thái đặt lịch',
-                'perms' => ['lead.update','lead.update_booking','lead.view','lead.view_phone'],
+                'desc' => 'Team booking — chỉ xem info khách (readonly) + bấm nút Đặt booking, không sửa được',
+                'perms' => ['lead.book_action','lead.read_booking','lead.update','lead.view','lead.view_phone'],
             ],
             'CM sale' => [
                 'desc' => 'CM Phòng Kinh doanh — chia lead đã đồng ý sang sale + sửa info cá nhân khi ở phase Sale',
-                'perms' => ['lead.create','lead.distribute','lead.distribute_sale','lead.distribute_ctv','lead.recall','lead.update','lead.update_sale','lead.consult','lead.view','lead.view_phone','report.view'],
+                'perms' => ['lead.create','lead.distribute','lead.distribute_sale','lead.distribute_ctv','lead.distribute_to_sale','lead.recall','lead.update','lead.update_sale','lead.consult','lead.view','lead.view_phone','report.view'],
             ],
             'Team sale' => [
                 'desc' => 'Sale nhân viên — chăm sóc khách, ghi chú, phân loại, gắn dịch vụ',
                 'perms' => ['lead.update','lead.consult','lead.view','lead.view_phone','report.view'],
+            ],
+            // Đà Nẵng — team làm xuyên suốt tele+book+sale, giữ job_title HC/Tele
+            // nhưng có union perms Team sale + Team booking + book_action.
+            'Team sale ĐN' => [
+                'desc' => 'Team sale Đà Nẵng — làm xuyên suốt tele + booking + sale (union quyền)',
+                'perms' => [
+                    'lead.view','lead.view_phone','lead.create','lead.update','lead.consult','report.view',
+                    'lead.read_booking','lead.update_booking','lead.book_action',
+                    'lead.update_sale',
+                ],
             ],
         ];
 
@@ -199,8 +209,16 @@ class OrgStaffSeeder extends Seeder
             ['email' => 'baoit@longevity.com.vn', 'name' => 'Bảo', 'job_title' => 'IT hệ thống'],
             ['email' => 'tumod@longevity.com.vn', 'name' => 'Tú',  'job_title' => 'Kiểm soát hệ thống PK'],
 
-            // Marketing Đà Nẵng
-            ['email' => 'ltkp@longevity.com.vn', 'name' => 'Lương Thị Kim Phấn', 'job_title' => 'CM Marketing Đà Nẵng'],
+            // Marketing Đà Nẵng — CM (Kim Phấn) + TL (Bông) + 3 HC + 4 Tele, gán chung marketing-dn
+            ['email' => 'ltkp@longevity.com.vn', 'name' => 'Lương Thị Kim Phấn',      'job_title' => 'CM Marketing Đà Nẵng'],
+            ['email' => 'ntb@longevity.com.vn',  'name' => 'Nguyễn Thị Bông',         'job_title' => 'Team Leader Marketing Đà Nẵng'],
+            ['email' => 'ntan@longevity.com.vn', 'name' => 'Nguyễn Thị Ánh Nhung',    'job_title' => 'HC'],
+            ['email' => 'lthu@longevity.com.vn', 'name' => 'Lê Thị Hoàng Uyên',       'job_title' => 'HC'],
+            ['email' => 'ltkhi@longevity.com.vn','name' => 'Lương Thị Kim Hiếu',      'job_title' => 'HC'],
+            ['email' => 'stk@longevity.com.vn',  'name' => 'Sử Trung Kiên',           'job_title' => 'Tele'],
+            ['email' => 'lttv@longevity.com.vn', 'name' => 'Lương Thị Tường Vy',      'job_title' => 'Tele'],
+            ['email' => 'tnah@longevity.com.vn', 'name' => 'Trần Ngọc An Hoà',        'job_title' => 'Tele'],
+            ['email' => 'ntmh@longevity.com.vn', 'name' => 'Nguyễn Thị Mỹ Hạnh',      'job_title' => 'Tele'],
 
             // CM / TL / DM thật
             ['email' => 'ttg@longevity.com.vn',  'name' => 'Trần Thị Thu Giang',   'job_title' => 'Clinic Manager'],
@@ -298,7 +316,21 @@ class OrgStaffSeeder extends Seeder
             ['hbtl@longevity.com.vn', 'CM sale',     'team-ashley-sale', Assignment::SCOPE_TEAM, []],
             ['nmt@longevity.com.vn',  'CM sale',     'team-ashley-sale', Assignment::SCOPE_TEAM, []],
             ['lpt@longevity.com.vn',  'Trợ lý kinh doanh', 'company', Assignment::SCOPE_CUSTOM, ['company']],
-            ['ltkp@longevity.com.vn', 'CM sale',     'marketing-dn',  Assignment::SCOPE_TEAM,   []],
+            // Đà Nẵng — CM Kim Phấn kiêm cả 2 vai: CM sale + CM booking (Đà Nẵng chưa có CM booking riêng).
+            ['ltkp@longevity.com.vn', 'CM sale',      'marketing-dn',  Assignment::SCOPE_TEAM,   []],
+            ['ltkp@longevity.com.vn', 'CM booking',   'marketing-dn',  Assignment::SCOPE_TEAM,   []],
+
+            // TL Bông ở marketing-dn (quản cả booking + sale).
+            ['ntb@longevity.com.vn',  'Team Leader',  'marketing-dn',  Assignment::SCOPE_TEAM,   []],
+
+            // 3 HC + 4 Tele đều gộp về team-dn-sale, role "Team sale ĐN" — union perms tele+book+sale.
+            ['ntan@longevity.com.vn', 'Team sale ĐN', 'team-dn-sale',  Assignment::SCOPE_SELF, []],
+            ['lthu@longevity.com.vn', 'Team sale ĐN', 'team-dn-sale',  Assignment::SCOPE_SELF, []],
+            ['ltkhi@longevity.com.vn','Team sale ĐN', 'team-dn-sale',  Assignment::SCOPE_SELF, []],
+            ['stk@longevity.com.vn',  'Team sale ĐN', 'team-dn-sale',  Assignment::SCOPE_SELF, []],
+            ['lttv@longevity.com.vn', 'Team sale ĐN', 'team-dn-sale',  Assignment::SCOPE_SELF, []],
+            ['tnah@longevity.com.vn', 'Team sale ĐN', 'team-dn-sale',  Assignment::SCOPE_SELF, []],
+            ['ntmh@longevity.com.vn', 'Team sale ĐN', 'team-dn-sale',  Assignment::SCOPE_SELF, []],
 
             // Sale Team Hợi HN
             ['thk@longevity.com.vn', 'Sale', 'team-hoi-booking', Assignment::SCOPE_SELF, []],
@@ -328,6 +360,18 @@ class OrgStaffSeeder extends Seeder
             ['book2@longevity.com.vn',  'Team booking',   'team-hoi-booking',   Assignment::SCOPE_SELF, []],
             ['cmsale@longevity.com.vn', 'CM sale',        'team-hoi-sale',      Assignment::SCOPE_TEAM, []],
         ];
+
+        // Cleanup: nhân sự Đà Nẵng lần trước từng được gán role Team sale/Team booking @ marketing-dn.
+        // Giờ chuyển sang role "Team sale ĐN" @ team-dn-sale — xoá các assignment cũ để tránh union.
+        $dnEmails = ['ntan@longevity.com.vn','lthu@longevity.com.vn','ltkhi@longevity.com.vn',
+                     'stk@longevity.com.vn','lttv@longevity.com.vn','tnah@longevity.com.vn','ntmh@longevity.com.vn'];
+        $dnUserIds = User::whereIn('email', $dnEmails)->pluck('id');
+        $marketingDnId = OrgUnit::where('code', 'marketing-dn')->value('id');
+        if ($dnUserIds->isNotEmpty() && $marketingDnId) {
+            Assignment::whereIn('user_id', $dnUserIds)
+                ->where('org_unit_id', $marketingDnId)
+                ->delete();
+        }
 
         foreach ($assignments as [$email, $roleName, $orgCode, $scope, $scopeCodes]) {
             $user = User::firstWhere('email', $email);

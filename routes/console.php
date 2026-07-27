@@ -16,6 +16,9 @@ Schedule::command('leads:process-recalls')->hourly();
 Schedule::command('leads:process-escalates')->dailyAt('02:00');
 Schedule::command('leads:mark-overdue-booking')->dailyAt('02:15');
 
+// Miền Nam: recall lead phase Booking idle về kho team booking. Bật/tắt + số ngày cấu hình qua Vận hành › Cài đặt.
+Schedule::command('leads:recall-idle-booking-hcm')->dailyAt('02:30');
+
 // Aggregate hôm nay mỗi 2 phút (độ tươi dashboard 1–3 phút); chốt cứng hôm qua sau nửa đêm
 Schedule::command('stats:aggregate')->everyTwoMinutes();
 Schedule::command('stats:aggregate', ['--from' => now()->subDay()->toDateString()])->dailyAt('00:30');

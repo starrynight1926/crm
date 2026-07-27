@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\AppSetting;
 use App\Models\AuditLog;
 use App\Models\Contribution;
 use App\Models\ContributionTemplate;
@@ -8,12 +9,15 @@ use App\Models\LeadStatusLog;
 use App\Models\Payment;
 use App\Services\ContributionService;
 use App\Services\DistributionEngine;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Livewire\Component;
 use Livewire\WithFileUploads;
+use Livewire\WithPagination;
 
 new class extends Component
 {
-    use WithFileUploads;
+    use WithFileUploads, WithPagination;
 
     public Lead $lead;
 
@@ -104,6 +108,15 @@ new class extends Component
     public function addNote(): void
     {
         abort_unless($this->canAddNote(), 403);
+        // Khách đã có ghi chú "Lần đầu" trước đó → bỏ cờ, tránh double-mark do race/devtools.
+        // Khách đã tới/tới trễ/đã xong (từ booking) → bỏ cờ luôn (không phải "lần đầu" nữa).
+        $visitedStatuses = [Lead::BOOKING_KHACH_DA_TOI, Lead::BOOKING_KHACH_TOI_TRE, Lead::BOOKING_DA_XONG];
+        if ($this->noteIsFirstVisit && (
+            LeadStatusLog::where('lead_id', $this->lead->id)->where('is_first_visit', true)->exists()
+            || in_array($this->lead->booking_status, $visitedStatuses, true)
+        )) {
+            $this->noteIsFirstVisit = false;
+        }
         $this->validate([
             'newNote' => 'nullable|string|max:2000',
             'noteImages' => 'array|max:10',
@@ -141,6 +154,90 @@ new class extends Component
     public function returnCount(): int
     {
         return LeadStatusLog::where('lead_id', $this->lead->id)->where('is_return', true)->count();
+    }
+
+    /**
+     * Đồng bộ booking từ lara-sbooking về CRM: gọi API /api/bookings?so_dien_thoai=...
+     * Nếu tìm thấy booking mới nhất → update lead giống flow callback (booking_status/ma, classification, log).
+     */
+    public function syncFromBooking(): void
+    {
+        abort_unless($this->lead->isVisibleTo(auth()->user()), 403);
+
+        $baseUrl = AppSetting::get('booking_url', config('services.booking.url'));
+        $token   = AppSetting::get('booking_api_token', config('services.booking.api_token'));
+        if (! $baseUrl || ! $token) {
+            session()->flash('error', 'Chưa cấu hình Booking URL/Token — vào Cài đặt › Kết nối Booking.');
+            return;
+        }
+
+        try {
+            $r = Http::withToken($token)->acceptJson()->timeout(8)
+                ->get(rtrim($baseUrl, '/') . '/api/bookings', [
+                    'so_dien_thoai' => $this->lead->phone,
+                    'per_page' => 5,
+                ]);
+        } catch (\Throwable $e) {
+            session()->flash('error', 'Lỗi kết nối Booking: ' . $e->getMessage());
+            return;
+        }
+
+        if (! $r->successful()) {
+            session()->flash('error', 'Booking trả lỗi HTTP ' . $r->status() . '.');
+            return;
+        }
+
+        $items = $r->json('data', []);
+        if (empty($items)) {
+            session()->flash('status', 'Bên Booking chưa có lịch nào cho SĐT này.');
+            return;
+        }
+
+        $latest = $items[0]; // đã sort desc theo updated_at bên booking
+        $bookingMa = $latest['ma_booking'] ?? $latest['ma'] ?? $latest['booking_ma'] ?? ('BKG-' . ($latest['id'] ?? '?'));
+
+        // Map trạng thái từ booking → CRM. Ưu tiên trang_thai_khach (Khách đã tới/tới trễ/hủy),
+        // rồi trang_thai=da_xong, cuối cùng fallback = "đã đặt".
+        $ttk = $latest['trang_thai_khach'] ?? null;
+        $tt  = $latest['trang_thai'] ?? null;
+        // Ưu tiên: Đã xong > Khách hủy > Tới trễ > Đã tới > Booked.
+        $newBookingStatus = match (true) {
+            $tt  === 'da_xong'  => Lead::BOOKING_DA_XONG,
+            $ttk === 'huy'      => Lead::BOOKING_KHACH_HUY,
+            $ttk === 'toi_tre'  => Lead::BOOKING_KHACH_TOI_TRE,
+            $ttk === 'da_toi'   => Lead::BOOKING_KHACH_DA_TOI,
+            default             => Lead::BOOKING_BOOKED,
+        };
+
+        DB::transaction(function () use ($bookingMa, $latest, $newBookingStatus) {
+            $bookingBefore = $this->lead->booking_status;
+            $classificationBefore = $this->lead->classification;
+
+            $this->lead->fill([
+                'booking_status' => $newBookingStatus,
+                'booking_ma'     => $bookingMa,
+                'booked_at'      => now(),
+                'classification' => 'booking',
+                'last_care_at'   => now(),
+            ])->save();
+
+            AuditLog::record('booking_synced', $this->lead, [
+                'booking_ma' => $bookingMa,
+                'booking_id' => $latest['id'] ?? null,
+                'booking_status_before' => $bookingBefore,
+                'classification_before' => $classificationBefore,
+                'source' => 'manual_sync',
+            ]);
+
+            LeadStatusLog::record($this->lead, 'booking_status', $bookingBefore, $newBookingStatus, auth()->id());
+            LeadStatusLog::record($this->lead, 'note', null, 'Đồng bộ từ Booking: ' . $bookingMa . ' — ' . (Lead::BOOKING_STATUSES[$newBookingStatus] ?? $newBookingStatus) . '.', auth()->id());
+            if ($classificationBefore !== 'booking') {
+                LeadStatusLog::record($this->lead, 'classification', $classificationBefore, 'booking', auth()->id());
+            }
+        });
+
+        $this->lead->refresh();
+        session()->flash('status', 'Đã đồng bộ booking ' . $bookingMa . ' từ hệ thống Booking.');
     }
 
     public function updateClassification(string $value): void
@@ -274,19 +371,24 @@ new class extends Component
             ->pluck('total', 'method');
 
         return [
-            'logs' => $this->lead->statusLogs()->with('user')->paginate(15, pageName: 'logPage'),
+            'logs' => $this->lead->statusLogs()->with('user')->paginate(6, pageName: 'logPage'),
             'canEdit' => $this->canEditLead(),
             'canAddNote' => $this->canAddNote(),
             'isPastHandlerOnly' => $this->isPastHandlerOnly(auth()->user()),
-            'canEditPersonalInfo' => $this->lead->canEditPersonalInfo(auth()->user()),
-            'canMoveToSale' => $this->lead->pipeline_phase === Lead::PHASE_BOOKING
-                && auth()->user()->hasAnyPermission(['lead.update_booking', 'lead.distribute_booking'])
-                && $this->lead->isVisibleTo(auth()->user()),
+            'canEditPersonalInfo' => $this->lead->canOpenEditForm(auth()->user()),
+            'canMoveToSale' => $this->lead->canBookAction(auth()->user()),
             'canRecall' => auth()->user()->hasPermission('lead.recall') && $this->lead->isVisibleTo(auth()->user()),
             'customFields' => $customFields,
             'customValues' => $customValues,
             'contributions' => Contribution::with('user')->where('lead_id', $this->lead->id)->orderByDesc('percent')->get(),
             'canSetContribution' => auth()->user()->hasPermission('contribution.set'),
+            'hasFirstVisit' => \App\Models\LeadStatusLog::where('lead_id', $this->lead->id)->where('is_first_visit', true)->exists(),
+            // Khách đã đến rồi (đến/trễ/xong) → không được tick "Lần đầu" nữa. Khách hủy không tính.
+            'customerHasVisited' => in_array($this->lead->booking_status, [
+                \App\Models\Lead::BOOKING_KHACH_DA_TOI,
+                \App\Models\Lead::BOOKING_KHACH_TOI_TRE,
+                \App\Models\Lead::BOOKING_DA_XONG,
+            ], true),
             'lastPayment' => $lastPayment,
             'totalPaid' => $totalPaid,
             'paymentMethods' => $paymentMethods,
@@ -338,36 +440,50 @@ new class extends Component
             @endif
             @if ($canMoveToSale)
                 @php
-                    // Lấy slug cơ sở bên booking từ facility đã map. Nếu chưa map → nút disabled.
+                    // Lấy slug qua helper: facility → parent facility → branch owner (mapping branch-hn/hcm/dn → slug facility gốc).
                     $facility = $lead->facility;
-                    $coSoSlug = $facility?->booking_co_so_slug;
+                    $coSoSlug = $lead->resolvedBookingSlug();
                     $bookingBaseUrl = \App\Models\AppSetting::get('booking_url', config('services.booking.url'));
-                    $bookingHandoffUrl = $coSoSlug
-                        ? rtrim($bookingBaseUrl, '/') . '/' . $coSoSlug . '/tao-moi?' . http_build_query([
-                            'ho_ten' => $lead->name,
-                            'so_dien_thoai' => $lead->phone,
-                            'return_url' => route('leads.booking-callback', $lead),
-                        ])
-                        : null;
+                    $bookingQuery = http_build_query([
+                        'ho_ten' => $lead->name,
+                        'so_dien_thoai' => $lead->phone,
+                        'khach_ma' => $lead->code,
+                        'return_url' => route('leads.booking-callback', $lead),
+                    ]);
+                    $bookingBase = $coSoSlug ? rtrim($bookingBaseUrl, '/') . '/' . $coSoSlug : null;
+                    $bookingClinicUrl = $bookingBase ? $bookingBase . '/tao-moi?' . $bookingQuery : null;
+                    $bookingServiceUrl = $bookingBase ? $bookingBase . '/dat-lich-dich-vu?' . $bookingQuery : null;
                 @endphp
-                @if ($bookingHandoffUrl)
-                    <a href="{{ $bookingHandoffUrl }}" target="_blank" rel="noopener"
-                       class="flex items-center gap-2 text-sm font-semibold text-ink/70 border border-gold-200 px-5 py-2.5 rounded-md hover:bg-gold-50"
-                       title="Mở form đặt lịch bên hệ thống Booking, sau khi đặt xong sẽ tự cập nhật khách">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3.75 8.25h16.5M4.5 6h15a.75.75 0 01.75.75v12a.75.75 0 01-.75.75h-15a.75.75 0 01-.75-.75v-12A.75.75 0 014.5 6z"/>
-                        </svg>
-                        Đặt booking
-                    </a>
+                @if ($bookingClinicUrl)
+                    <div x-data="{ open: false }" @click.outside="open = false" class="relative">
+                        <button type="button" @click="open = !open"
+                                class="flex items-center gap-2 text-sm font-semibold text-ink/70 border border-gold-200 px-5 py-2.5 rounded-md hover:bg-gold-50"
+                                title="Mở form đặt lịch bên hệ thống Booking, sau khi đặt xong sẽ tự cập nhật khách">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3.75 8.25h16.5M4.5 6h15a.75.75 0 01.75.75v12a.75.75 0 01-.75.75h-15a.75.75 0 01-.75-.75v-12A.75.75 0 014.5 6z"/></svg>
+                            Đặt booking
+                            <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"/></svg>
+                        </button>
+                        <div x-show="open" x-cloak x-transition class="absolute z-20 mt-1 right-0 w-56 bg-white border border-gold-200 rounded-lg shadow-card overflow-hidden">
+                            <a href="{{ $bookingClinicUrl }}" target="_blank" rel="noopener" @click="open = false"
+                               class="block px-4 py-2.5 text-sm hover:bg-gold-50 border-b border-gold-100">🏥 Đặt phòng khám</a>
+                            <a href="{{ $bookingServiceUrl }}" target="_blank" rel="noopener" @click="open = false"
+                               class="block px-4 py-2.5 text-sm hover:bg-gold-50">💆 Đặt dịch vụ</a>
+                        </div>
+                    </div>
                 @else
                     <span class="flex items-center gap-2 text-sm font-semibold text-ink/40 border border-ink/10 px-5 py-2.5 rounded-md cursor-not-allowed"
-                          title="Cơ sở '{{ $facility?->name ?? 'chưa gán' }}' chưa map sang cơ sở bên Booking. Admin vào Cài đặt › Cơ sở & Nhân sự để nhập slug.">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3.75 8.25h16.5M4.5 6h15a.75.75 0 01.75.75v12a.75.75 0 01-.75.75h-15a.75.75 0 01-.75-.75v-12A.75.75 0 014.5 6z"/>
-                        </svg>
+                          title="Cơ sở '{{ $facility?->name ?? 'chưa gán' }}' chưa map sang cơ sở bên Booking. Admin vào Cài đặt › Kết nối Booking để nhập slug.">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3.75 8.25h16.5M4.5 6h15a.75.75 0 01.75.75v12a.75.75 0 01-.75.75h-15a.75.75 0 01-.75-.75v-12A.75.75 0 014.5 6z"/></svg>
                         Đặt booking (chưa map cơ sở)
                     </span>
                 @endif
+                <button type="button" wire:click="syncFromBooking" wire:loading.attr="disabled" wire:target="syncFromBooking"
+                        class="flex items-center gap-2 text-sm font-semibold text-ink/70 border border-gold-200 px-4 py-2.5 rounded-md hover:bg-gold-50 disabled:opacity-50 disabled:cursor-wait"
+                        title="Kiểm tra bên hệ thống Booking xem SĐT khách này đã có lịch chưa. Nếu có, cập nhật CRM về trạng thái Đã đặt + phân loại Booking.">
+                    <svg class="w-4 h-4" wire:loading.class="animate-spin" wire:target="syncFromBooking" fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/></svg>
+                    <span wire:loading.remove wire:target="syncFromBooking">Đồng bộ Booking</span>
+                    <span wire:loading wire:target="syncFromBooking">Đang kiểm tra…</span>
+                </button>
                 <button type="button"
                         wire:click="moveToSalePhase"
                         wire:confirm="Xác nhận: khách đã đồng ý gặp. Chuyển lead sang phase Sale (Chờ chia) để CM sale phân bổ?"
@@ -508,7 +624,7 @@ new class extends Component
                         @endif
                         <div class="mt-3">
                             <dt class="text-xs uppercase tracking-wider text-ink/40 mb-1">Phân loại kết quả</dt>
-                            <dd>
+                            <dd class="flex flex-wrap items-center gap-2">
                                 @if ($canEdit)
                                     <select wire:change="updateClassification($event.target.value)"
                                             class="border border-gold-200 rounded-full px-3 py-1.5 text-sm bg-gold-50 text-gold-800 font-semibold focus:outline-none focus:border-gold-500">
@@ -519,6 +635,19 @@ new class extends Component
                                 @else
                                     <span class="text-sm bg-gold-50 border border-gold-200 text-gold-800 font-semibold px-3 py-1 rounded-full">{{ $lead->classificationLabel() }}</span>
                                 @endif
+                                @php
+                                    $_bs = $lead->booking_status;
+                                    $_bsIcon = \App\Models\Lead::BOOKING_STATUS_ICONS[$_bs] ?? 'schedule';
+                                    $_bsColor = \App\Models\Lead::BOOKING_STATUS_COLORS[$_bs] ?? 'bg-ink/5 text-ink/50 border-ink/10';
+                                    $_bsLabel = \App\Models\Lead::BOOKING_STATUSES[$_bs] ?? $_bs;
+                                @endphp
+                                <span class="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full border {{ $_bsColor }}" title="Trạng thái đặt lịch (sync từ Booking)">
+                                    <span>{{ $_bsIcon }}</span>
+                                    {{ $_bsLabel }}
+                                    @if ($lead->booking_ma)
+                                        <span class="text-[10px] opacity-70">· {{ $lead->booking_ma }}</span>
+                                    @endif
+                                </span>
                             </dd>
                         </div>
                     </div>
@@ -720,8 +849,10 @@ new class extends Component
 
                 <div class="flex flex-wrap items-center justify-between gap-3">
                     <div class="flex flex-wrap items-center gap-3">
-                        <label class="flex items-center gap-2 text-sm cursor-pointer">
-                            <input type="checkbox" wire:model.live="noteIsFirstVisit" class="rounded border-gold-300 text-green-600 w-4 h-4">
+                        @php $firstVisitLocked = $hasFirstVisit || $customerHasVisited; @endphp
+                        <label class="flex items-center gap-2 text-sm {{ $firstVisitLocked ? 'cursor-not-allowed opacity-50' : 'cursor-pointer' }}"
+                               title="{{ $firstVisitLocked ? ($hasFirstVisit ? 'Khách đã có ghi chú Lần đầu.' : 'Khách đã tới/tới trễ/đã xong → không phải lần đầu.') : '' }}">
+                            <input type="checkbox" wire:model.live="noteIsFirstVisit" {{ $firstVisitLocked ? 'disabled' : '' }} class="rounded border-gold-300 text-green-600 w-4 h-4 disabled:cursor-not-allowed">
                             <span class="font-semibold text-green-700">🆕 Lần đầu</span>
                         </label>
                         <label class="flex items-center gap-2 text-sm cursor-pointer">

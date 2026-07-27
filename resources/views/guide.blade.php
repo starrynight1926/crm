@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Hướng dẫn sử dụng — Longevity CRM</title>
+    <title>Hướng dẫn sử dụng — Longevity Data Source</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
@@ -26,7 +26,7 @@
 <header class="bg-white border-b border-gold-200 shadow-sm sticky top-0 z-40">
     <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
         <div class="flex items-center gap-3">
-            <span class="font-bold text-gold-700 text-lg tracking-tight">Longevity CRM</span>
+            <span class="font-bold text-gold-700 text-lg tracking-tight">Longevity Data Source</span>
             <span class="text-sm text-ink/50">Hướng dẫn sử dụng</span>
         </div>
         <a href="{{ route('login') }}" class="text-sm px-4 py-2 rounded-lg bg-gold-600 text-white hover:bg-gold-700 font-semibold">Đăng nhập hệ thống</a>
@@ -104,7 +104,7 @@
 <main class="max-w-5xl mx-auto px-4 py-8" x-data="{ role: 'cm' }">
 
     <div class="text-center mb-8">
-        <h1 class="text-3xl font-extrabold text-gold-700 mb-2">Hướng dẫn sử dụng hệ thống CRM</h1>
+        <h1 class="text-3xl font-extrabold text-gold-700 mb-2">Hướng dẫn sử dụng hệ thống Data Source</h1>
         <p class="text-ink/60 max-w-2xl mx-auto">Chọn vai trò của bạn để xem hướng dẫn chi tiết về quyền hạn và luồng thao tác thường ngày.</p>
     </div>
 
@@ -116,7 +116,7 @@
         </h2>
         <div class="bg-white border border-gold-200 rounded-xl shadow-card p-3">
             <button type="button" @click="zoom = true" class="block w-full">
-                <img src="{{ asset('images/flow.jpg') }}" alt="Sơ đồ luồng hệ thống CRM"
+                <img src="{{ asset('images/flow.jpg') }}" alt="Sơ đồ luồng hệ thống Data Source"
                      class="w-full h-auto rounded-lg cursor-zoom-in hover:opacity-95 transition">
             </button>
             <p class="text-xs text-ink/50 mt-2 text-center">Nhấn vào ảnh để xem full-size</p>
@@ -127,6 +127,67 @@
              class="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 cursor-zoom-out">
             <img src="{{ asset('images/flow.jpg') }}" alt="Sơ đồ luồng"
                  class="max-w-full max-h-full rounded-lg shadow-2xl">
+        </div>
+    </section>
+
+    {{-- Ghi chú Recall / Escalate + đặc thù cơ sở --}}
+    <section class="mb-10">
+        <h2 class="text-lg font-bold text-gold-700 mb-3 flex items-center gap-2">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 2m6-2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            Ghi chú Recall / Escalate
+        </h2>
+        <div class="bg-amber-50 border border-amber-200 rounded-lg p-5 space-y-4 text-sm">
+            <div>
+                <h3 class="font-bold text-amber-900 mb-1">🔁 Recall (Thu hồi)</h3>
+                <p class="mb-2 text-ink/80">Recall = deadline hết + (tuỳ chọn) các điều kiện bổ sung THỎA HẾT (AND).</p>
+                <ul class="list-disc list-inside space-y-1 text-ink/80">
+                    <li><strong>Deadline</strong>: <code>recall_at = assigned_at + N ngày</code> (N cấu hình theo cơ sở).</li>
+                    <li><strong>Điều kiện bổ sung</strong> (admin tick trong "Vận hành › Quy tắc vận hành"):
+                        <ul class="list-disc list-inside ml-4">
+                            <li><em>no_activity</em>: sale không update <code>last_care_at</code> từ lúc chia.</li>
+                            <li><em>no_booking</em>: <code>booking_status</code> chưa vào booked/khách_đã_tới/tới_trễ/đã_xong.</li>
+                            <li><em>no_progress</em>: <code>classification</code> vẫn ở Mới/Lead/Missed/Gọi lại sau/KLLD.</li>
+                        </ul>
+                    </li>
+                    <li>Không tick điều kiện → chỉ dùng deadline.</li>
+                    <li>Cron <code>leads:process-recalls</code> chạy <strong>mỗi giờ</strong>.</li>
+                    <li>Muốn tránh recall hoàn toàn: CM tick "Chia vĩnh viễn" lúc chia (không có deadline).</li>
+                </ul>
+            </div>
+            <div>
+                <h3 class="font-bold text-amber-900 mb-1">⬆️ Escalate</h3>
+                <ul class="list-disc list-inside space-y-1 text-ink/80">
+                    <li>Lead bị recall về kho team mà không ai nhận tiếp trong <strong>M ngày</strong> → cron <code>leads:process-escalates</code> (chạy 02:00 hằng ngày) chuyển sang <strong>org cha trực tiếp</strong> (ancestor).</li>
+                    <li>Không phải "kho trước đó theo lịch sử" — mà là <strong>đi lên 1 tầng</strong> trong cây tổ chức (team → phòng → cơ sở → công ty).</li>
+                    <li>Ví dụ: <code>team-ashley-sale</code> → <code>team-ashley</code> → <code>marketing-hcm</code> → <code>branch-hcm</code> → <code>company</code>.</li>
+                    <li>Root (Công ty) → dừng, không escalate được nữa.</li>
+                </ul>
+            </div>
+            <div>
+                <h3 class="font-bold text-amber-900 mb-1">🌊 Job cron riêng: Recall idle booking (miền Nam)</h3>
+                <ul class="list-disc list-inside space-y-1 text-ink/80">
+                    <li>Áp dụng cho lead phase Booking đã có owner. Sau N ngày (mặc định 1) mà <strong>không update</strong> + <strong>không có lịch đặt</strong> → auto recall về kho team booking.</li>
+                    <li>Khác với recall_at ở trên: cơ chế này <strong>không phụ thuộc</strong> CM tick gì, chạy dựa trên activity + booking_status.</li>
+                    <li>Bật/tắt + đổi số ngày ở tab <em>Vận hành › Quy tắc vận hành › Job cron</em>.</li>
+                </ul>
+            </div>
+        </div>
+    </section>
+
+    {{-- Đặc thù cơ sở Đà Nẵng --}}
+    <section class="mb-10">
+        <h2 class="text-lg font-bold text-gold-700 mb-3 flex items-center gap-2">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 2C8 6 8 10 12 14c4-4 4-8 0-12zM12 22c-4-4-4-8 0-12"/></svg>
+            Đặc thù cơ sở Đà Nẵng
+        </h2>
+        <div class="bg-blue-50 border border-blue-200 rounded-lg p-5 text-sm space-y-3">
+            <p><strong>Cơ sở Đà Nẵng chưa có team booking riêng</strong> — cả đội sale (role <code>Team sale ĐN</code>) làm <strong>xuyên suốt cả 3 giai đoạn</strong>:</p>
+            <ol class="list-decimal list-inside space-y-1.5 text-ink/80">
+                <li><strong>Tự up số</strong>: sale nhập lead mới (nguồn Bạn giới thiệu / Khách tự đến / các nguồn khác nếu có quyền), lead auto-owner = chính sale đó.</li>
+                <li><strong>Tự book</strong>: bấm nút "Đặt booking" bên chi tiết khách → mở form lara-sbooking (login username=<code>ltkhi</code>/<code>ntb</code>/…, pass <code>123456</code>) → tạo lịch. Callback tự cập nhật <code>booking_status</code> + phân loại "Booking".</li>
+                <li><strong>Tự điền quá trình sale</strong>: sau khi khách đã tới → ghi chú Lịch sử tương tác, đổi phân loại (Show/Close), gắn dịch vụ, ghi doanh thu.</li>
+            </ol>
+            <p>Kim Phấn (CM) kiêm cả CM Sale + CM Booking để duyệt/phân bổ khi cần. Team này có full quyền (<code>lead.read_booking</code> + <code>lead.update_booking</code> + <code>lead.book_action</code> + <code>lead.update_sale</code>) — không cần override phân quyền.</p>
         </div>
     </section>
 

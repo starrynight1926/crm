@@ -27,10 +27,12 @@ class RecallPolicyResolver
         $defaults = self::systemDefaults();
 
         if ($policy) {
+            $conditions = $policy->recall_conditions ? json_decode($policy->recall_conditions, true) : [];
             return [
                 'recall_after_days' => $policy->recall_after_days !== null ? (int) $policy->recall_after_days : $defaults['recall_after_days'],
                 'escalate_after_days' => $policy->escalate_after_days !== null ? (int) $policy->escalate_after_days : $defaults['escalate_after_days'],
                 'allow_permanent_assignment' => (bool) $policy->allow_permanent_assignment,
+                'recall_conditions' => is_array($conditions) ? $conditions : [],
                 'source' => 'org:' . $policy->source_id,
             ];
         }
@@ -39,9 +41,17 @@ class RecallPolicyResolver
             'recall_after_days' => $defaults['recall_after_days'],
             'escalate_after_days' => $defaults['escalate_after_days'],
             'allow_permanent_assignment' => $defaults['allow_permanent_assignment'],
+            'recall_conditions' => [],
             'source' => 'system',
         ];
     }
+
+    /** Danh sách điều kiện recall hỗ trợ (key => label). */
+    public const CONDITION_LABELS = [
+        'no_activity' => 'Không cập nhật trường nào (last_care_at cũ)',
+        'no_booking'  => 'Chưa đặt lịch booking',
+        'no_progress' => 'Chưa tiến triển phân loại (còn ở Mới/Lead/Missed/Gọi lại sau/KLLD)',
+    ];
 
     private static function ancestorIds(OrgUnit $orgUnit): array
     {

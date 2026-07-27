@@ -49,7 +49,7 @@
                     <svg class="w-7 h-7 text-gold-600" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M12 3l9 5.25v1.5H3v-1.5L12 3zM4.5 11.25h2v7.5h-2v-7.5zm6.5 0h2v7.5h-2v-7.5zm6.5 0h2v7.5h-2v-7.5zM3 20.25h18v1.5H3v-1.5z"/>
                     </svg>
-                    <span class="text-lg md:text-xl font-bold text-gold-700 tracking-tight">Longevity CRM</span>
+                    <span class="text-lg md:text-xl font-bold text-gold-700 tracking-tight">Longevity Data Source</span>
                 </a>
 
                 <nav class="hidden md:flex items-center gap-0.5 lg:gap-1 text-sm font-medium">
@@ -154,12 +154,48 @@
         </main>
 
         <footer class="py-6 text-center text-xs tracking-widest text-gold-400 uppercase border-t border-gold-100">
-            Longevity CRM · Quản lý quan hệ khách hàng
+            Longevity Data Source · Quản lý dữ liệu khách hàng
         </footer>
 
         {{-- Toast realtime (Reverb) --}}
         <div id="toast-container" class="fixed bottom-6 right-6 z-[60] space-y-2"></div>
     </div>
+
+    {{-- SortableJS — drag & drop mượt cho picker cột báo cáo, kanban… --}}
+    <script src="{{ asset('vendor/sortable/Sortable.min.js') }}"></script>
+
+    {{-- Column resizer — kéo mép phải header table để đổi chiều rộng cột. --}}
+    <script>
+        window.enableColumnResize = function (table) {
+            const ths = table.querySelectorAll('thead th');
+            ths.forEach((th) => {
+                if (! th.style.width) th.style.width = th.offsetWidth + 'px';
+                const handle = th.querySelector('[data-col-resizer]');
+                if (! handle) return;
+                let startX = 0, startWidth = 0;
+                const onMove = (e) => {
+                    const dx = (e.clientX || e.touches?.[0]?.clientX) - startX;
+                    const newW = Math.max(60, startWidth + dx);
+                    th.style.width = newW + 'px';
+                };
+                const onUp = () => {
+                    document.removeEventListener('mousemove', onMove);
+                    document.removeEventListener('mouseup', onUp);
+                    document.body.style.cursor = '';
+                    document.body.style.userSelect = '';
+                };
+                handle.addEventListener('mousedown', (e) => {
+                    e.preventDefault();
+                    startX = e.clientX;
+                    startWidth = th.offsetWidth;
+                    document.body.style.cursor = 'col-resize';
+                    document.body.style.userSelect = 'none';
+                    document.addEventListener('mousemove', onMove);
+                    document.addEventListener('mouseup', onUp);
+                });
+            });
+        };
+    </script>
 
     {{-- Echo + Reverb: thông báo lead mới realtime; chuông vẫn poll 10s làm phương án phụ --}}
     <script src="https://cdn.jsdelivr.net/npm/pusher-js@8.4.0/dist/web/pusher.min.js"></script>

@@ -113,10 +113,24 @@ new class extends Component
 
     // ---------- Thao tác đơn ----------
 
+    /**
+     * Phase 6.20 — Gate chia lead theo cấp pool:
+     * - Kho công ty (POOL_COMMON) → cần lead.distribute_to_team (CM cơ sở) hoặc lead.distribute (compat).
+     * - Kho team (POOL_TEAM) → cần lead.distribute_to_sale (CM team) hoặc lead.distribute (compat).
+     */
+    private function canDistributeLead(Lead $lead): bool
+    {
+        $user = auth()->user();
+        if ($user->hasPermission('lead.distribute')) return true;
+        if ($lead->pool_level === Lead::POOL_COMMON) return $user->hasPermission('lead.distribute_to_team');
+        if ($lead->pool_level === Lead::POOL_TEAM) return $user->hasPermission('lead.distribute_to_sale');
+        return false;
+    }
+
     public function autoDistribute(int $leadId): void
     {
-        abort_unless(auth()->user()->hasPermission('lead.distribute'), 403);
         $lead = Lead::findOrFail($leadId);
+        abort_unless($this->canDistributeLead($lead), 403);
         app(DistributionEngine::class)->distribute($lead);
 
         $lead->refresh();
@@ -129,7 +143,7 @@ new class extends Component
 
     public function startAssign(int $leadId): void
     {
-        abort_unless(auth()->user()->hasPermission('lead.distribute'), 403);
+        abort_unless($this->canDistributeLead(Lead::findOrFail($leadId)), 403);
         $this->assigningLeadId = $leadId;
         $this->poolingLeadId = null;
         $this->assignUserId = '';
@@ -137,10 +151,10 @@ new class extends Component
 
     public function confirmAssign(): void
     {
-        abort_unless(auth()->user()->hasPermission('lead.distribute'), 403);
         $this->validate(['assignUserId' => 'required|exists:users,id'], [], ['assignUserId' => 'sale nhận']);
 
         $lead = Lead::findOrFail($this->assigningLeadId);
+        abort_unless($this->canDistributeLead($lead), 403);
         $user = User::findOrFail((int) $this->assignUserId);
         app(DistributionEngine::class)->manualAssign($lead, $user, auth()->id());
 
@@ -166,7 +180,7 @@ new class extends Component
 
     public function startPool(int $leadId): void
     {
-        abort_unless(auth()->user()->hasPermission('lead.distribute'), 403);
+        abort_unless($this->canDistributeLead(Lead::findOrFail($leadId)), 403);
         $this->poolingLeadId = $leadId;
         $this->assigningLeadId = null;
         $this->poolOrgId = '';
@@ -174,13 +188,13 @@ new class extends Component
 
     public function confirmPool(): void
     {
-        abort_unless(auth()->user()->hasPermission('lead.distribute'), 403);
         if ($this->poolOrgId === '') {
             $this->addError('poolOrgId', 'Chọn kho để chuyển.');
             return;
         }
 
         $lead = Lead::findOrFail($this->poolingLeadId);
+        abort_unless($this->canDistributeLead($lead), 403);
         $this->moveOne($lead, $this->poolOrgId, auth()->id());
 
         $this->poolingLeadId = null;
@@ -218,13 +232,13 @@ new class extends Component
 
     public function bulkAssign(): void
     {
-        abort_unless(auth()->user()->hasPermission('lead.distribute'), 403);
         $this->validate(['bulkUserId' => 'required|exists:users,id'], [], ['bulkUserId' => 'sale nhận']);
 
         $user = User::findOrFail((int) $this->bulkUserId);
         $engine = app(DistributionEngine::class);
         $n = 0;
         foreach ($this->selectedLeads() as $lead) {
+            abort_unless($this->canDistributeLead($lead), 403);
             $engine->manualAssign($lead, $user, auth()->id());
             $n++;
         }
@@ -235,7 +249,7 @@ new class extends Component
 
     public function bulkPool(): void
     {
-        abort_unless(auth()->user()->hasPermission('lead.distribute'), 403);
+        // Gate per-lead in the loop below via canDistributeLead().
         if ($this->bulkOrgId === '') {
             $this->addError('bulkOrgId', 'Chọn kho để chuyển.');
             return;
@@ -243,6 +257,7 @@ new class extends Component
 
         $n = 0;
         foreach ($this->selectedLeads() as $lead) {
+            abort_unless($this->canDistributeLead($lead), 403);
             $this->moveOne($lead, $this->bulkOrgId, auth()->id());
             $n++;
         }
@@ -282,7 +297,7 @@ new class extends Component
                 ->whereDoesntHave('assignments.role.permissions', fn ($q) => $q->whereIn('key', ['lead.distribute', 'lead.distribute_booking', 'lead.distribute_sale']))
                 ->orderBy('name')
                 ->get(),
-            'canDistribute' => $user->hasPermission('lead.distribute'),
+            'canDistribute' => $user->hasAnyPermission(['lead.distribute', 'lead.distribute_to_team', 'lead.distribute_to_sale']),
             'canRecall' => $user->hasPermission('lead.recall'),
             'canPull' => $user->hasPermission('lead.pull_pool'),
             'detailLead' => $this->detailLeadId

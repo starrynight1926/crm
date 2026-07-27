@@ -24,6 +24,9 @@ new class extends Component
     /** Mẫu báo cáo đang chọn cho team đó. */
     public ?int $templateId = null;
 
+    /** Filter per-column (list mode) kiểu Excel: [column_key => [value1, value2]]. Empty = all. */
+    public array $columnFilters = [];
+
     public string $tab = 'funnel'; // funnel / marketing / performance / distribution
 
     public string $from = '';
@@ -137,9 +140,10 @@ new class extends Component
         $this->selectedFieldIds = array_map('intval', $prefs['lead_fields']
             ?? $this->availableReportFields()->pluck('id')->all());
 
-        // Team mặc định: Team Hợi nếu thấy được, ngược lại team đầu tiên trong danh sách.
+        // Team mặc định: Team Hợi nếu thấy được, ngược lại team đầu tiên CÓ báo cáo trong cây.
         $teams = $this->visibleTeams();
-        $this->teamId = $teams->firstWhere('code', 'team-hoi')?->id ?? $teams->first()?->id;
+        $this->teamId = $teams->firstWhere('code', 'team-hoi')?->id
+            ?? $teams->firstWhere('has_report', true)?->id;
         $this->templateId = $this->teamTemplates()->first()?->id;
     }
 
@@ -147,6 +151,46 @@ new class extends Component
     public function updatedTeamId(): void
     {
         $this->templateId = $this->teamTemplates()->first()?->id;
+        $this->applyTemplateDateRange();
+    }
+
+    /** Đổi mẫu → auto set Từ/Đến theo date_range của mẫu (list mode); user vẫn override được sau đó. */
+    public function updatedTemplateId(): void
+    {
+        $this->columnFilters = [];
+        $this->applyTemplateDateRange();
+    }
+
+    public function toggleColumnFilter(string $col, string $val): void
+    {
+        $curr = $this->columnFilters[$col] ?? [];
+        if (in_array($val, $curr, true)) {
+            $curr = array_values(array_filter($curr, fn ($v) => $v !== $val));
+        } else {
+            $curr[] = $val;
+        }
+        if (empty($curr)) {
+            unset($this->columnFilters[$col]);
+        } else {
+            $this->columnFilters[$col] = array_values($curr);
+        }
+    }
+
+    public function clearColumnFilter(string $col): void
+    {
+        unset($this->columnFilters[$col]);
+    }
+
+    private function applyTemplateDateRange(): void
+    {
+        if (! $this->templateId) return;
+        $tpl = ReportTemplate::where('org_unit_id', $this->teamId)->find($this->templateId);
+        if (! $tpl || ! $tpl->isList()) return;
+        $range = $tpl->filters()['date_range'] ?? null;
+        if (! $range || $range === 'custom') return;
+        [$from, $to] = $this->resolveDateRange($range);
+        $this->from = $from->format('Y-m-d');
+        $this->to = $to->format('Y-m-d');
     }
 
     /** Sau khi lưu/xóa mẫu ở modal → làm mới danh sách, giữ mẫu hợp lệ. */
@@ -168,12 +212,15 @@ new class extends Component
     }
 
     /**
-     * Chỉ những team CÓ trường báo cáo riêng (select ≥2 option định nghĩa tại chính team)
-     * mới hiện trong dropdown — không liệt kê cả cây tổ chức.
+     * Trả cả cây org units (theo path) — mỗi node kèm cờ:
+     *   - has_report: có custom field báo cáo riêng ở node đó → chọn được.
+     *   - depth: dùng để indent trong <option>.
+     * Node không có báo cáo vẫn hiện (dạng tiêu đề, disabled) để user thấy cấu trúc.
      */
     private function visibleTeams()
     {
-        $teamIds = CustomField::query()
+        // Tập org có field báo cáo trực tiếp gắn vào chính nó.
+        $directReportOrgIds = CustomField::query()
             ->where('active', true)
             ->where('status', CustomField::STATUS_ACTIVE)
             ->whereIn('field_type', ['select', 'tick'])
@@ -184,14 +231,35 @@ new class extends Component
             ->unique()
             ->all();
 
-        return OrgUnit::query()
-            ->whereIn('id', $teamIds ?: [-1])
+        $orgs = OrgUnit::query()
             ->when(! $this->seesAllReports(), function ($q) {
                 $ids = auth()->user()->visibleOrgUnitIds();
                 $q->whereIn('id', $ids ?: [-1]);
             })
-            ->orderBy('name')
-            ->get(['id', 'name', 'code']);
+            ->orderBy('path')
+            ->get(['id', 'name', 'code', 'depth', 'path']);
+
+        // Node "chọn được" nếu bất kỳ đâu trên nhánh (subtree hoặc ancestor) có field
+        // — template-manager sẽ tự pull field theo cùng logic (subtree → fallback ancestor gần nhất).
+        $orgPathById = $orgs->keyBy('id')->map(fn ($o) => $o->path);
+        $reportableIds = collect();
+        foreach ($directReportOrgIds as $fieldOrgId) {
+            $fieldPath = $orgPathById[$fieldOrgId] ?? null;
+            if (! $fieldPath) continue;
+            foreach ($orgs as $o) {
+                // Bật nếu: field nằm trong subtree của node ($fieldPath bắt đầu bằng $o->path)
+                // HOẶC field nằm trên ancestor của node ($o->path bắt đầu bằng $fieldPath).
+                if (str_starts_with($fieldPath, $o->path) || str_starts_with($o->path, $fieldPath)) {
+                    $reportableIds[$o->id] = true;
+                }
+            }
+        }
+
+        return $orgs->map(function ($o) use ($reportableIds) {
+            $o->has_report = isset($reportableIds[$o->id]);
+            $o->display_name = str_repeat('— ', max(0, (int) $o->depth)) . $o->name;
+            return $o;
+        });
     }
 
     /**
@@ -215,6 +283,11 @@ new class extends Component
             return ['team' => $team, 'no_template' => true];
         }
 
+        // List mode: render bảng từng khách theo filter riêng của template (không dùng from/to global).
+        if ($template->isList()) {
+            return $this->buildListReport($team, $template);
+        }
+
         $leadIds = $this->reportLeadQuery()
             ->whereIn('org_unit_id', $team->subtreeIds())
             ->whereBetween('received_date', [$this->from, $this->to])
@@ -222,15 +295,39 @@ new class extends Component
         $total = $leadIds->count();
 
         $fieldIds = collect($template->columns())->pluck('field_id')->filter()->unique();
-        $fields = CustomField::whereIn('id', $fieldIds)->get()->keyBy('id');
+        $customIds = $fieldIds->filter(fn ($id) => $id > 0);
+        $systemIds = $fieldIds->filter(fn ($id) => $id < 0);
+        $fields = CustomField::whereIn('id', $customIds)->get()->keyBy('id');
+        // Định nghĩa field hệ thống — đồng bộ với template-manager.
+        $sysDefs = [
+            -1  => ['label' => 'Lần đầu',        'source' => 'first_visit',          'type' => 'tick'],
+            -2  => ['label' => 'Trở lại',        'source' => 'return',               'type' => 'tick'],
+            -3  => ['label' => 'Đã đặt booking', 'source' => 'booked',               'type' => 'tick'],
+            -4  => ['label' => 'Show',           'source' => 'classification_show',  'type' => 'tick'],
+            -5  => ['label' => 'Close',          'source' => 'classification_close', 'type' => 'tick'],
+            -10 => ['label' => 'Phân loại kết quả', 'source' => 'classification',    'type' => 'select', 'labels' => \App\Models\Lead::CLASSIFICATIONS],
+            -11 => ['label' => 'Trạng thái đặt lịch','source' => 'booking_status',    'type' => 'select', 'labels' => \App\Models\Lead::BOOKING_STATUSES],
+        ];
 
-        // Metric = 1 cột: select→(field,option) | tick→(field). key nhận diện cột trong bảng đếm.
+        // Metric = 1 cột: select→(field,option) | tick→(field) | system→(field_id âm).
         $metrics = [];
         foreach ($template->columns() as $col) {
-            $f = $fields->get($col['field_id']);
-            if (! $f) {
+            $fid = (int) ($col['field_id'] ?? 0);
+            if ($fid < 0) {
+                $def = $sysDefs[$fid] ?? null;
+                if (! $def) continue;
+                if ($def['type'] === 'tick') {
+                    $metrics[] = ['label' => $def['label'], 'field_id' => $fid, 'type' => 'system_tick', 'source' => $def['source'], 'value' => null];
+                } else {
+                    foreach ($col['options'] ?? [] as $opt) {
+                        $label = $def['labels'][$opt] ?? $opt;
+                        $metrics[] = ['label' => $def['label'] . ': ' . $label, 'field_id' => $fid, 'type' => 'system_select', 'source' => $def['source'], 'value' => $opt];
+                    }
+                }
                 continue;
             }
+            $f = $fields->get($fid);
+            if (! $f) continue;
             if (($col['type'] ?? '') === 'tick') {
                 $metrics[] = ['label' => $f->label, 'field_id' => $f->id, 'type' => 'tick', 'value' => null];
             } else {
@@ -240,22 +337,85 @@ new class extends Component
             }
         }
 
-        // Đếm lead theo (owner, field, value) một lần — phục vụ cả bảng tổng lẫn theo người.
+        // Đếm CustomField theo (owner, field, value).
         $grouped = $leadIds->isEmpty() ? collect() : DB::table('leads')
             ->join('lead_custom_values as v', 'v.lead_id', '=', 'leads.id')
             ->whereIn('leads.id', $leadIds)
-            ->whereIn('v.custom_field_id', $fieldIds->all() ?: [-1])
+            ->whereIn('v.custom_field_id', $customIds->all() ?: [-1])
             ->selectRaw('leads.owner_id, v.custom_field_id, v.value, count(*) c')
             ->groupBy('leads.owner_id', 'v.custom_field_id', 'v.value')
             ->get();
 
-        // Đếm 1 metric trong tập rows (đã lọc theo owner nếu cần).
-        $countMetric = function (array $m, $rows): int {
+        // Chỉ số hệ thống theo owner — đếm distinct lead_id per (owner, source).
+        $sysCounts = collect();
+        if ($systemIds->isNotEmpty() && $leadIds->isNotEmpty()) {
+            $needFirstVisit = $systemIds->contains(-1);
+            $needReturn = $systemIds->contains(-2);
+            $needBooked = $systemIds->contains(-3);
+            $needShow = $systemIds->contains(-4);
+            $needClose = $systemIds->contains(-5);
+
+            if ($needBooked || $needShow || $needClose) {
+                $leadRows = DB::table('leads')->whereIn('id', $leadIds)
+                    ->selectRaw("owner_id, sum(booking_status = 'booked') booked, sum(classification = 'show') show_c, sum(classification = 'close') close_c")
+                    ->groupBy('owner_id')->get();
+                foreach ($leadRows as $r) {
+                    if ($needBooked && $r->booked > 0) $sysCounts->push(['owner_id' => $r->owner_id, 'source' => 'booked', 'c' => (int) $r->booked]);
+                    if ($needShow && $r->show_c > 0) $sysCounts->push(['owner_id' => $r->owner_id, 'source' => 'classification_show', 'c' => (int) $r->show_c]);
+                    if ($needClose && $r->close_c > 0) $sysCounts->push(['owner_id' => $r->owner_id, 'source' => 'classification_close', 'c' => (int) $r->close_c]);
+                }
+            }
+            if ($needFirstVisit) {
+                $rows = DB::table('lead_status_logs')
+                    ->join('leads', 'leads.id', '=', 'lead_status_logs.lead_id')
+                    ->whereIn('leads.id', $leadIds)
+                    ->where('lead_status_logs.is_first_visit', true)
+                    ->selectRaw('leads.owner_id, count(distinct leads.id) c')
+                    ->groupBy('leads.owner_id')->get();
+                foreach ($rows as $r) $sysCounts->push(['owner_id' => $r->owner_id, 'source' => 'first_visit', 'c' => (int) $r->c]);
+            }
+            if ($needReturn) {
+                $rows = DB::table('lead_status_logs')
+                    ->join('leads', 'leads.id', '=', 'lead_status_logs.lead_id')
+                    ->whereIn('leads.id', $leadIds)
+                    ->where('lead_status_logs.is_return', true)
+                    ->selectRaw('leads.owner_id, count(distinct leads.id) c')
+                    ->groupBy('leads.owner_id')->get();
+                foreach ($rows as $r) $sysCounts->push(['owner_id' => $r->owner_id, 'source' => 'return', 'c' => (int) $r->c]);
+            }
+
+            // System select breakdown: classification (-10) và booking_status (-11).
+            if ($systemIds->contains(-10)) {
+                $rows = DB::table('leads')->whereIn('id', $leadIds)
+                    ->selectRaw('owner_id, classification as v, count(*) c')
+                    ->groupBy('owner_id', 'classification')->get();
+                foreach ($rows as $r) $sysCounts->push(['owner_id' => $r->owner_id, 'source' => 'classification', 'value' => $r->v, 'c' => (int) $r->c]);
+            }
+            if ($systemIds->contains(-11)) {
+                $rows = DB::table('leads')->whereIn('id', $leadIds)
+                    ->selectRaw('owner_id, booking_status as v, count(*) c')
+                    ->groupBy('owner_id', 'booking_status')->get();
+                foreach ($rows as $r) $sysCounts->push(['owner_id' => $r->owner_id, 'source' => 'booking_status', 'value' => $r->v, 'c' => (int) $r->c]);
+            }
+        }
+
+        // Đếm 1 metric: custom → tính từ $customRows; system → tính từ $sysCounts, filter theo $ownerId nếu truyền.
+        $countMetric = function (array $m, $customRows, $ownerId = null) use ($sysCounts): int {
+            if ($m['type'] === 'system_tick') {
+                $q = $sysCounts->where('source', $m['source']);
+                if ($ownerId !== null) $q = $q->where('owner_id', $ownerId);
+                return (int) $q->sum('c');
+            }
+            if ($m['type'] === 'system_select') {
+                $q = $sysCounts->where('source', $m['source'])->where('value', $m['value']);
+                if ($ownerId !== null) $q = $q->where('owner_id', $ownerId);
+                return (int) $q->sum('c');
+            }
             if ($m['type'] === 'tick') {
-                return (int) $rows->where('custom_field_id', $m['field_id'])
+                return (int) $customRows->where('custom_field_id', $m['field_id'])
                     ->reject(fn ($r) => $r->value === null || $r->value === '')->sum('c');
             }
-            return (int) $rows->where('custom_field_id', $m['field_id'])->where('value', $m['value'])->sum('c');
+            return (int) $customRows->where('custom_field_id', $m['field_id'])->where('value', $m['value'])->sum('c');
         };
 
         // Bảng tổng
@@ -277,7 +437,7 @@ new class extends Component
                 $ownerRows[] = [
                     'name' => $ownerId ? ($names[$ownerId] ?? '#' . $ownerId) : 'Chưa chia',
                     'total' => (int) $cnt,
-                    'cells' => array_map(fn ($m) => $countMetric($m, $rows), $metrics),
+                    'cells' => array_map(fn ($m) => $countMetric($m, $rows, $ownerId), $metrics),
                 ];
             }
             usort($ownerRows, fn ($a, $b) => $b['total'] <=> $a['total']);
@@ -293,6 +453,162 @@ new class extends Component
             'showByOwner' => $template->showByOwner(),
             'ownerRows' => $ownerRows,
         ];
+    }
+
+    /**
+     * List mode — build danh sách lead theo filter template, resolve các cột hiển thị.
+     */
+    private function buildListReport(OrgUnit $team, ReportTemplate $template): array
+    {
+        $filters = $template->filters();
+        $dateField = $filters['date_field'] ?? 'received_date';
+        // Global Từ/Đến (picker) luôn thắng — template.date_range chỉ là default lúc load mẫu.
+        $from = \Carbon\Carbon::parse($this->from)->startOfDay();
+        $to = \Carbon\Carbon::parse($this->to)->endOfDay();
+
+        $q = $this->reportLeadQuery()
+            ->whereIn('leads.org_unit_id', $team->subtreeIds())
+            ->whereBetween('leads.' . $dateField, [$from, $to]);
+
+        if (! empty($filters['classification'])) {
+            $q->whereIn('leads.classification', $filters['classification']);
+        }
+        if (! empty($filters['source_group'])) {
+            $q->whereIn('leads.source_group', $filters['source_group']);
+        }
+        if (! empty($filters['booking_status'])) {
+            $q->whereIn('leads.booking_status', $filters['booking_status']);
+        }
+
+        $leads = $q->with(['owner:id,name', 'receiver:id,name', 'facility.parent'])
+            ->orderBy('leads.' . $dateField)->get();
+
+        // Distinct values cho từng cột filterable — dùng cho dropdown Excel-like.
+        $filterable = ['classification', 'source_group', 'booking_status', 'facility', 'owner', 'receiver'];
+        $distinctValues = [];
+        foreach ($filterable as $col) {
+            if (! in_array($col, $template->columns(), true)) continue;
+            $vals = $leads->map(fn ($l) => $this->getFilterValue($l, $col))
+                ->unique()->filter(fn ($v) => $v !== null && $v !== '')->sort()->values();
+            $distinctValues[$col] = $vals->all();
+        }
+
+        // Apply column filters — post-query (in-memory).
+        $filteredLeads = $leads;
+        foreach ($this->columnFilters as $col => $vals) {
+            if (empty($vals)) continue;
+            $filteredLeads = $filteredLeads->filter(fn ($l) => in_array($this->getFilterValue($l, $col), $vals, true));
+        }
+
+        return [
+            'team' => $team,
+            'template' => $template,
+            'list_mode' => true,
+            'leads' => $filteredLeads->values(),
+            'columns' => $template->columns(),
+            'date_from' => $from,
+            'date_to' => $to,
+            'date_field_label' => ReportTemplate::DATE_FIELDS[$dateField] ?? $dateField,
+            'distinct_values' => $distinctValues,
+            'filterable_cols' => $filterable,
+        ];
+    }
+
+    /** Value dùng để filter/hiển thị trong dropdown per column. */
+    private function getFilterValue($lead, string $col)
+    {
+        return match ($col) {
+            'classification' => Lead::CLASSIFICATIONS[$lead->classification] ?? $lead->classification,
+            'source_group'   => Lead::SOURCE_GROUPS[$lead->source_group] ?? $lead->source_group,
+            'booking_status' => Lead::BOOKING_STATUSES[$lead->booking_status] ?? $lead->booking_status,
+            'facility'       => $lead->rootFacilityName(),
+            'owner'          => $lead->owner?->name,
+            'receiver'       => $lead->receiver?->name,
+            default          => null,
+        };
+    }
+
+    private function resolveDateRange(string $range): array
+    {
+        return match ($range) {
+            'today'      => [now()->startOfDay(), now()->endOfDay()],
+            'yesterday'  => [now()->subDay()->startOfDay(), now()->subDay()->endOfDay()],
+            'this_week'  => [now()->startOfWeek(), now()->endOfWeek()],
+            'this_month' => [now()->startOfMonth(), now()->endOfMonth()],
+            'last_month' => [now()->subMonth()->startOfMonth(), now()->subMonth()->endOfMonth()],
+            default      => [$this->from, $this->to], // 'custom' → dùng date picker global
+        };
+    }
+
+    /** Export list-mode template ra Excel. */
+    public function exportListTemplate()
+    {
+        $team = $this->teamId ? OrgUnit::find($this->teamId) : null;
+        $template = $this->templateId ? ReportTemplate::where('org_unit_id', $team?->id)->find($this->templateId) : null;
+        abort_unless($template && $template->isList(), 404);
+
+        $report = $this->buildListReport($team, $template);
+        $columns = $report['columns'];
+        $colLabels = ReportTemplate::LIST_COLUMNS;
+
+        $ss = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+        $sheet = $ss->getActiveSheet();
+        $sheet->setTitle(mb_substr($template->name, 0, 31));
+
+        // Header row
+        foreach ($columns as $idx => $col) {
+            $sheet->setCellValue(chr(65 + $idx) . '1', $colLabels[$col] ?? $col);
+        }
+        $sheet->getStyle('A1:' . chr(64 + count($columns)) . '1')->applyFromArray([
+            'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
+            'fill' => ['fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID, 'startColor' => ['rgb' => '8B6F47']],
+            'alignment' => ['horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER],
+        ]);
+
+        $renderCell = function ($lead, $col, $stt) {
+            return match ($col) {
+                'stt'            => $stt,
+                'code'           => $lead->code,
+                'received_date'  => optional($lead->received_date)->format('d/m/Y'),
+                'facility'       => $lead->rootFacilityName() ?? '',
+                'name'           => $lead->name,
+                'phone'          => $lead->phone,
+                'birthday'       => optional($lead->birthday)->format('d/m/Y'),
+                'address'        => $lead->address,
+                'occupation'     => $lead->occupation,
+                'owner'          => $lead->owner?->name ?? '',
+                'receiver'       => $lead->receiver?->name ?? '',
+                'source_group'   => Lead::SOURCE_GROUPS[$lead->source_group] ?? '',
+                'classification' => Lead::CLASSIFICATIONS[$lead->classification] ?? '',
+                'booking_status' => Lead::BOOKING_STATUSES[$lead->booking_status] ?? '',
+                'booking_ma'     => $lead->booking_ma,
+                'booked_at'      => optional($lead->booked_at)->format('d/m/Y'),
+                'note'           => $lead->note,
+                default          => '',
+            };
+        };
+
+        $row = 2;
+        foreach ($report['leads'] as $stt => $lead) {
+            foreach ($columns as $idx => $col) {
+                $sheet->setCellValueExplicit(
+                    chr(65 + $idx) . $row,
+                    (string) $renderCell($lead, $col, $stt + 1),
+                    \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING
+                );
+            }
+            $row++;
+        }
+        foreach (range('A', chr(64 + count($columns))) as $col) {
+            $sheet->getColumnDimension($col)->setAutoSize(true);
+        }
+        $sheet->freezePane('A2');
+
+        $filename = 'baocao_' . preg_replace('/\s+/', '_', $template->name) . '_' . now()->format('YmdHi') . '.xlsx';
+        $tmp = tempnam(sys_get_temp_dir(), 'xlsx_');
+        (new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($ss))->save($tmp);
+
+        return response()->download($tmp, $filename)->deleteFileAfterSend(true);
     }
 
     private function persistReportPrefs(): void
@@ -513,7 +829,7 @@ new class extends Component
             <label class="text-xs font-semibold text-ink/50 ml-2">Team</label>
             <select wire:model.live="teamId" class="border border-gold-200 rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:border-gold-500">
                 @forelse ($teams as $t)
-                    <option value="{{ $t->id }}">{{ $t->name }}</option>
+                    <option value="{{ $t->id }}" {{ $t->has_report ? '' : 'disabled' }}>{{ $t->display_name }}{{ $t->has_report ? '' : ' — (không có báo cáo)' }}</option>
                 @empty
                     <option value="">Chưa có team nào có trường báo cáo</option>
                 @endforelse
@@ -557,9 +873,109 @@ new class extends Component
             <div class="flex items-center gap-2 mb-4">
                 <h2 class="font-bold">{{ $tr['template']->name }}</h2>
                 <span class="text-xs text-ink/40">— {{ $tr['team']->name }}</span>
+                @if (! empty($tr['list_mode']))
+                    <span class="ml-auto text-xs text-ink/50">{{ $tr['date_field_label'] }}: {{ $tr['date_from']->format('d/m/Y') }} → {{ $tr['date_to']->format('d/m/Y') }}</span>
+                    <button wire:click="exportListTemplate" class="bg-green-600 hover:bg-green-700 text-white text-sm font-semibold px-4 py-2 rounded-md">📥 Export Excel</button>
+                @endif
             </div>
 
-            {{-- Bảng tổng (thống kê theo funnel) --}}
+            {{-- LIST MODE — bảng từng khách --}}
+            @if (! empty($tr['list_mode']))
+                @php
+                    $colLabels = \App\Models\ReportTemplate::LIST_COLUMNS;
+                    $renderCell = function ($lead, $col, $stt) {
+                        return match ($col) {
+                            'stt'            => $stt,
+                            'code'           => $lead->code,
+                            'received_date'  => optional($lead->received_date)->format('d/m/Y'),
+                            'facility'       => $lead->rootFacilityName() ?? '',
+                            'name'           => $lead->name,
+                            'phone'          => $lead->phone,
+                            'birthday'       => optional($lead->birthday)->format('d/m/Y'),
+                            'address'        => $lead->address,
+                            'occupation'     => $lead->occupation,
+                            'owner'          => $lead->owner?->name ?? '',
+                            'receiver'       => $lead->receiver?->name ?? '',
+                            'source_group'   => \App\Models\Lead::SOURCE_GROUPS[$lead->source_group] ?? '',
+                            'classification' => \App\Models\Lead::CLASSIFICATIONS[$lead->classification] ?? '',
+                            'booking_status' => \App\Models\Lead::BOOKING_STATUSES[$lead->booking_status] ?? '',
+                            'booking_ma'     => $lead->booking_ma,
+                            'booked_at'      => optional($lead->booked_at)->format('d/m/Y'),
+                            'note'           => $lead->note,
+                            default          => '',
+                        };
+                    };
+                @endphp
+                <div class="bg-white border border-gold-200 rounded-xl shadow-card p-5 mb-6">
+                    <p class="text-sm text-ink/60 mb-3">Tổng số: <strong>{{ $tr['leads']->count() }}</strong> khách hàng. <span class="text-ink/40 text-xs">(Kéo mép phải header để đổi chiều rộng cột)</span></p>
+                    <div class="overflow-x-auto">
+                        <table x-data x-init="window.enableColumnResize && window.enableColumnResize($el)"
+                               class="text-sm border border-gold-200 resizable-table" style="table-layout: fixed;">
+                            <thead>
+                                <tr class="bg-gold-100 text-xs uppercase tracking-wider">
+                                    @foreach ($tr['columns'] as $col)
+                                        @php
+                                            $isFilterable = in_array($col, $tr['filterable_cols'] ?? [], true);
+                                            $activeFilter = $columnFilters[$col] ?? [];
+                                            $distinct = $tr['distinct_values'][$col] ?? [];
+                                        @endphp
+                                        <th class="px-3 py-2 font-semibold border border-gold-200 text-left relative" style="min-width: 80px;">
+                                            <div class="flex items-center gap-1.5">
+                                                <span class="block truncate flex-1">{{ $colLabels[$col] ?? $col }}</span>
+                                                @if ($isFilterable && count($distinct) > 0)
+                                                    <div x-data="{ open: false }" @click.outside="open = false" class="relative flex-shrink-0">
+                                                        <button type="button" @click.stop="open = !open"
+                                                                class="p-0.5 rounded hover:bg-gold-200 {{ $activeFilter ? 'text-blue-600 bg-blue-100' : 'text-ink/40 hover:text-gold-700' }}"
+                                                                title="{{ $activeFilter ? 'Đang lọc ' . count($activeFilter) . ' giá trị' : 'Lọc cột này' }}">
+                                                            <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 4h18M6 12h12M10 20h4"/></svg>
+                                                        </button>
+                                                        <div x-show="open" x-cloak x-transition
+                                                             class="absolute z-30 mt-1 right-0 w-56 bg-white border border-gold-200 rounded-lg shadow-lg normal-case tracking-normal">
+                                                            <div class="flex items-center justify-between px-3 py-2 border-b border-gold-100">
+                                                                <span class="text-xs font-semibold text-gold-700">Lọc {{ $colLabels[$col] ?? $col }}</span>
+                                                                @if ($activeFilter)
+                                                                    <button wire:click="clearColumnFilter('{{ $col }}')" @click="open = false" class="text-[10px] text-red-600 hover:underline">Xoá</button>
+                                                                @endif
+                                                            </div>
+                                                            <div class="max-h-64 overflow-y-auto py-1">
+                                                                @foreach ($distinct as $val)
+                                                                    <label class="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-gold-50 cursor-pointer">
+                                                                        <input type="checkbox"
+                                                                               wire:click="toggleColumnFilter('{{ $col }}', @js($val))"
+                                                                               @if (in_array($val, $activeFilter, true)) checked @endif
+                                                                               class="rounded border-gold-300 text-gold-600 w-3.5 h-3.5">
+                                                                        <span class="truncate">{{ $val }}</span>
+                                                                    </label>
+                                                                @endforeach
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                @endif
+                                            </div>
+                                            <span class="col-resizer absolute top-0 right-0 h-full w-1.5 cursor-col-resize hover:bg-gold-500/40 select-none" data-col-resizer></span>
+                                        </th>
+                                    @endforeach
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @forelse ($tr['leads'] as $stt => $lead)
+                                    <tr class="hover:bg-gold-50/40">
+                                        @foreach ($tr['columns'] as $col)
+                                            <td class="px-3 py-2 border border-gold-100 align-top">
+                                                <div class="whitespace-pre-wrap break-words">{{ $renderCell($lead, $col, $stt + 1) }}</div>
+                                            </td>
+                                        @endforeach
+                                    </tr>
+                                @empty
+                                    <tr><td colspan="{{ count($tr['columns']) }}" class="text-center text-ink/40 py-8">Không có lead nào khớp filter.</td></tr>
+                                @endforelse
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            @else
+
+            {{-- AGGREGATE — Bảng tổng (thống kê theo funnel) --}}
             @if ($tr['showTotals'])
                 <div class="bg-white border border-gold-200 rounded-xl shadow-card p-5 mb-6">
                     <div class="overflow-x-auto">
@@ -624,6 +1040,7 @@ new class extends Component
                     </div>
                 </div>
             @endif
+            @endif  {{-- end aggregate mode block --}}
         @endif
     @endif
 

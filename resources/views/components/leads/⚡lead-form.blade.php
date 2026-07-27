@@ -354,6 +354,13 @@ new class extends Component
 
     public function save(): void
     {
+        // Phase 6.20 — Gate write: readonly user (VD Team booking chỉ có lead.read_booking) không được phép lưu.
+        if ($this->lead) {
+            abort_unless($this->lead->canEditPersonalInfo(auth()->user()), 403);
+        } else {
+            abort_unless(auth()->user()->hasPermission('lead.create'), 403);
+        }
+
         $this->duplicateLeadId = null;
 
         $allowedSources = Lead::allowedSourceGroupsFor(auth()->user());
@@ -382,9 +389,14 @@ new class extends Component
         ], ['name' => 'tên khách hàng', 'phone' => 'SĐT', 'received_date' => 'ngày', 'sourceGroup' => 'nhóm nguồn']);
 
         // Bạn giới thiệu bắt buộc phải chọn sale nhận ngay (không qua duyệt).
+        // Sale nhân viên không có quyền chia số → tự động nhận lead do chính họ up.
         if ($this->sourceGroup === Lead::SOURCE_REFERRAL && ! $this->personId) {
-            $this->addError('personId', 'Nguồn "Bạn giới thiệu": bắt buộc chọn sale nhận.');
-            return;
+            if (! auth()->user()->hasPermission('lead.distribute')) {
+                $this->personId = auth()->id();
+            } else {
+                $this->addError('personId', 'Nguồn "Bạn giới thiệu": bắt buộc chọn sale nhận.');
+                return;
+            }
         }
 
         if ($this->personId && ! $this->assignableUserIds()->contains($this->personId)) {
@@ -572,6 +584,17 @@ new class extends Component
             return ['owner_id' => null, 'org_unit_id' => (int) substr($this->poolTarget, 4), 'pool_level' => Lead::POOL_TEAM, 'assigned_at' => null];
         }
 
+        // Fallback: nguồn "sale nhận trực tiếp" mà user không có perm distribute (VD Sale up walk_in
+        // hoặc referral chưa auto-set personId) → auto về kho team của user thao tác, chờ CM team chia.
+        // Khớp với hint text "Bước tiếp theo: chia về kho team, chờ CM team sale chia."
+        if (in_array($this->sourceGroup, [Lead::SOURCE_WALK_IN, Lead::SOURCE_REFERRAL], true)
+            && ! auth()->user()->hasPermission('lead.distribute')) {
+            $userTeamOrg = $this->userOrgId(auth()->id());
+            if ($userTeamOrg) {
+                return ['owner_id' => null, 'org_unit_id' => $userTeamOrg, 'pool_level' => Lead::POOL_TEAM, 'assigned_at' => null];
+            }
+        }
+
         return ['owner_id' => null, 'org_unit_id' => null, 'pool_level' => Lead::POOL_COMMON, 'assigned_at' => null];
     }
 
@@ -705,17 +728,108 @@ new class extends Component
 ?>
 
 <div x-data="{ extraConsultants: {{ $consultant3Id ? 2 : ($consultant2Id ? 1 : 0) }} }">
-<?php $canDistribute = auth()->user()->hasPermission('lead.distribute'); ?>
+<?php
+    $canDistribute = auth()->user()->hasPermission('lead.distribute');
+    // Phase 6.20 — readonly mode cho user chỉ có lead.read_booking (Team booking).
+    $canWrite = $lead
+        ? $lead->canEditPersonalInfo(auth()->user())
+        : auth()->user()->hasPermission('lead.create');
+    $isReadonly = ! $canWrite;
+    $canBookAction = $lead && $lead->canBookAction(auth()->user());
+    // Nút Đặt booking chỉ dùng khi phase Booking + có perm; tính URL sang lara-sbooking.
+    $bookingClinicUrl = null;
+    $bookingServiceUrl = null;
+    if ($canBookAction) {
+        $_facility = $lead->facility;
+        $_coSoSlug = $lead->resolvedBookingSlug();
+        $_bookingBase = \App\Models\AppSetting::get('booking_url', config('services.booking.url'));
+        if ($_coSoSlug) {
+            $_query = http_build_query([
+                'ho_ten' => $lead->name,
+                'so_dien_thoai' => $lead->phone,
+                'khach_ma' => $lead->code,
+                'return_url' => route('leads.booking-callback', $lead),
+            ]);
+            $_base = rtrim($_bookingBase, '/') . '/' . $_coSoSlug;
+            $bookingClinicUrl = $_base . '/tao-moi?' . $_query;
+            $bookingServiceUrl = $_base . '/dat-lich-dich-vu?' . $_query;
+        }
+    }
+?>
     <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
         <div>
-            <h1 class="text-3xl font-bold mb-1">{{ $lead ? 'Cập nhật Khách Hàng' : 'Thêm Mới Khách Hàng' }}</h1>
-            <p class="text-sm text-ink/60">Vui lòng điền đầy đủ thông tin để cập nhật vào hệ thống sales pipeline.</p>
+            <div class="text-sm text-ink/50 mb-1">
+                @if (auth()->user()->hasPermission('lead.view'))
+                    <a href="{{ route('leads.index') }}" class="hover:text-gold-600">Khách hàng</a>
+                    <span class="mx-1">›</span>
+                @endif
+                @if ($lead)
+                    <a href="{{ route('leads.show', $lead) }}" class="hover:text-gold-600">Chi tiết khách hàng</a>
+                    <span class="mx-1">›</span>
+                    <span class="text-gold-700 font-medium">Cập nhật</span>
+                @else
+                    <span class="text-gold-700 font-medium">Thêm mới</span>
+                @endif
+            </div>
+            <h1 class="text-3xl font-bold mb-1">{{ $lead ? 'Cập nhật - ' . ($lead->name ?: 'Khách hàng') : 'Thêm Mới Khách Hàng' }}</h1>
+            @if ($lead)
+                @php
+                    $isBooking = $lead->pipeline_phase === \App\Models\Lead::PHASE_BOOKING;
+                    $isWaiting = $lead->pipeline_status === \App\Models\Lead::PSTATUS_WAITING;
+                    $badgeClass = $isBooking
+                        ? ($isWaiting ? 'bg-amber-100 text-amber-800 border-amber-200' : 'bg-blue-100 text-blue-800 border-blue-200')
+                        : ($isWaiting ? 'bg-purple-100 text-purple-800 border-purple-200' : 'bg-green-100 text-green-800 border-green-200');
+                @endphp
+                @if ($lead->code)
+                    <div class="font-mono text-sm text-gold-700 mt-1">{{ $lead->code }}</div>
+                @endif
+                <span class="inline-block mt-2 text-xs font-semibold px-2.5 py-1 rounded-full border {{ $badgeClass }}"
+                      title="Phase & trạng thái lifecycle">
+                    {{ $lead->pipelineLabel() }}
+                </span>
+            @else
+                <p class="text-sm text-ink/60">Vui lòng điền đầy đủ thông tin để cập nhật vào hệ thống sales pipeline.</p>
+            @endif
         </div>
-        <div class="flex items-center gap-3">
+        <div class="flex flex-wrap items-center gap-3">
             <a href="{{ $lead ? route('leads.show', $lead) : (auth()->user()->hasPermission('lead.view') ? route('leads.index') : route('dashboard')) }}" class="text-sm font-semibold text-ink/60 border border-gold-200 px-5 py-2.5 rounded-md hover:bg-gold-50">Hủy</a>
-            <button wire:click="save" class="bg-gold-600 hover:bg-gold-700 text-white font-semibold text-sm px-6 py-2.5 rounded-md">Lưu thông tin</button>
+            @if ($canBookAction)
+                @if ($bookingClinicUrl)
+                    <div x-data="{ open: false }" @click.outside="open = false" class="relative">
+                        <button type="button" @click="open = !open"
+                                class="flex items-center gap-2 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 px-5 py-2.5 rounded-md"
+                                title="Mở form đặt lịch bên hệ thống Booking">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3.75 8.25h16.5M4.5 6h15a.75.75 0 01.75.75v12a.75.75 0 01-.75.75h-15a.75.75 0 01-.75-.75v-12A.75.75 0 014.5 6z"/></svg>
+                            Đặt booking
+                            <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"/></svg>
+                        </button>
+                        <div x-show="open" x-cloak x-transition class="absolute z-20 mt-1 right-0 w-56 bg-white border border-gold-200 rounded-lg shadow-card overflow-hidden">
+                            <a href="{{ $bookingClinicUrl }}" target="_blank" rel="noopener" @click="open = false"
+                               class="block px-4 py-2.5 text-sm text-ink/70 hover:bg-gold-50 border-b border-gold-100">🏥 Đặt phòng khám</a>
+                            <a href="{{ $bookingServiceUrl }}" target="_blank" rel="noopener" @click="open = false"
+                               class="block px-4 py-2.5 text-sm text-ink/70 hover:bg-gold-50">💆 Đặt dịch vụ</a>
+                        </div>
+                    </div>
+                @else
+                    <span class="flex items-center gap-2 text-sm font-semibold text-ink/40 border border-ink/10 px-5 py-2.5 rounded-md cursor-not-allowed"
+                          title="Cơ sở '{{ $lead->facility?->name ?? 'chưa gán' }}' chưa map sang cơ sở bên Booking. Admin vào Cài đặt › Kết nối Booking để nhập slug.">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3.75 8.25h16.5M4.5 6h15a.75.75 0 01.75.75v12a.75.75 0 01-.75.75h-15a.75.75 0 01-.75-.75v-12A.75.75 0 014.5 6z"/></svg>
+                        Đặt booking (chưa map cơ sở)
+                    </span>
+                @endif
+            @endif
+            @if (! $isReadonly)
+                <button wire:click="save" class="bg-gold-600 hover:bg-gold-700 text-white font-semibold text-sm px-6 py-2.5 rounded-md">Lưu thông tin</button>
+            @endif
         </div>
     </div>
+
+    @if ($isReadonly)
+        <div class="mb-5 bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 text-sm text-blue-700 flex items-center gap-2">
+            <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"/></svg>
+            <span>Bạn đang xem ở chế độ chỉ đọc — không có quyền chỉnh sửa thông tin ở phase này. @if ($canBookAction)Có thể bấm nút <strong>Đặt booking</strong> để chuyển sang hệ thống đặt lịch.@endif</span>
+        </div>
+    @endif
 
     @if ($errors->has('phone') && $duplicateLeadId)
         <div class="mb-5 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">
@@ -723,6 +837,7 @@ new class extends Component
         </div>
     @endif
 
+    <fieldset {{ $isReadonly ? 'disabled' : '' }} class="min-w-0 border-0 p-0 m-0 {{ $isReadonly ? 'opacity-80' : '' }}">
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
         {{-- CỘT TRÁI --}}
         <div class="space-y-6">
@@ -759,19 +874,36 @@ new class extends Component
                         </div>
                         <div>
                             <label class="block text-sm font-medium mb-1.5">Nhóm nguồn <span class="text-red-500">*</span></label>
-                            @php($_allowedSources = \App\Models\Lead::allowedSourceGroupsFor(auth()->user()))
+                            @php
+                                $_allowedSources = \App\Models\Lead::allowedSourceGroupsFor(auth()->user());
+                                $_allSources = \App\Models\Lead::SOURCE_GROUPS;
+                                $_sourceCodes = \App\Models\Lead::SOURCE_GROUP_CODES;
+                            @endphp
                             <select wire:model.live="sourceGroup" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-gold-500">
                                 <option value="">— Chọn nhóm nguồn —</option>
-                                @foreach ($_allowedSources as $key => $label)
-                                    @php($_code = \App\Models\Lead::SOURCE_GROUP_CODES[$key] ?? null)
-                                    <option value="{{ $key }}">{{ $label }}@if ($_code) ({{ $_code }})@endif</option>
+                                @foreach ($_allSources as $key => $label)
+                                    @php
+                                        $_code = $_sourceCodes[$key] ?? null;
+                                        $_disabled = ! isset($_allowedSources[$key]);
+                                        $_text = $label . ($_code ? ' (' . $_code . ')' : '') . ($_disabled ? ' - (không có quyền)' : '');
+                                        $_title = $_disabled ? 'Bạn không có quyền up nguồn này' : '';
+                                    @endphp
+                                    <option value="{{ $key }}" {{ $_disabled ? 'disabled' : '' }} title="{{ $_title }}">{{ $_text }}</option>
                                 @endforeach
                             </select>
                             @error('sourceGroup')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
                             @if ($sourceGroup === \App\Models\Lead::SOURCE_REFERRAL)
-                                <p class="text-xs text-amber-700 mt-1">Chọn sale nhận ở khối "Chia cho" bên dưới (bắt buộc).</p>
+                                @if (! auth()->user()->hasPermission('lead.distribute'))
+                                    <p class="text-xs text-amber-700 mt-1">Bước tiếp theo: lead sẽ tự động chia cho <strong>bạn ({{ auth()->user()->name }})</strong> (không qua duyệt).</p>
+                                @else
+                                    <p class="text-xs text-amber-700 mt-1">Bước tiếp theo: chọn sale nhận ở khối "Phân phối & Nguồn" bên dưới (bắt buộc, không qua duyệt).</p>
+                                @endif
                             @elseif ($sourceGroup === \App\Models\Lead::SOURCE_WALK_IN)
-                                <p class="text-xs text-amber-700 mt-1">Lead sẽ ở trạng thái "chờ CM cơ sở duyệt".</p>
+                                <p class="text-xs text-amber-700 mt-1">Bước tiếp theo: chia về kho team, chờ CM team sale chia.</p>
+                            @elseif (in_array($sourceGroup, [\App\Models\Lead::SOURCE_MARKETING, \App\Models\Lead::SOURCE_DATA_COLD, \App\Models\Lead::SOURCE_BDM], true))
+                                <p class="text-xs text-amber-700 mt-1">Bước tiếp theo: chia về kho team, chờ CM chia cho nhân viên booking.</p>
+                            @elseif ($sourceGroup === \App\Models\Lead::SOURCE_CTV)
+                                <p class="text-xs text-amber-700 mt-1">Bước tiếp theo: chia về kho team, chờ CM chia cho nhân viên booking.</p>
                             @endif
                         </div>
                     </div>
@@ -847,12 +979,12 @@ new class extends Component
             window.__staffTree = {!! $staffTreeJson !!};
             window.__consultantUsers = {!! $consultantUsersJson !!};
         </script>
-        <div class="space-y-4" x-data="{ tab: 'staff' }">
+        <div class="space-y-4" x-data="{ tab: 'status' }">
             {{-- Tabbar horizontal text-only, gọn labels (Phase 6.17) --}}
             <div class="flex flex-wrap items-center border-b border-gold-200">
                 <?php $tabs = array_values(array_filter([
-                    ['key' => 'staff',        'label' => 'Bác sĩ tư vấn'],
                     ['key' => 'status',       'label' => 'Trạng thái'],
+                    ['key' => 'staff',        'label' => 'Bác sĩ tư vấn'],
                     ['key' => 'treatment',    'label' => 'Liệu trình'],
                     ['key' => 'upsell',       'label' => 'Tiềm năng'],
                     ['key' => 'insight',      'label' => 'Insight'],
@@ -1225,7 +1357,7 @@ new class extends Component
                         <div class="border-t border-gold-100 pt-4 mt-2">
                             <h3 class="font-bold text-gold-700 mb-4 flex items-center gap-2 text-sm">
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5"/></svg>
-                                Phân phối & Nguồn
+                                Phân phối & Nguồn (Do CM chia)
                             </h3>
                             <div class="space-y-4">
                                 @if ($lead?->code)
@@ -1344,7 +1476,7 @@ new class extends Component
                                                             class="w-full border border-gold-200 rounded-md px-2.5 py-2 text-sm bg-white focus:outline-none focus:border-gold-500">
                                                         <option value="">— Chọn CVTV —</option>
                                                         @foreach ($assignedConsultants as $cv)
-                                                            <option value="{{ $cv->id }}">{{ $cv->name }}</option>
+                                                            <option value="{{ $cv['id'] }}">{{ $cv['name'] }}</option>
                                                         @endforeach
                                                     </select>
                                                 </div>
@@ -1441,10 +1573,29 @@ new class extends Component
             {{-- Trường bổ sung — đã chuyển lên dưới "Thông tin khách hàng" (Phase 6.14) --}}
         </div>
     </div>
+    </fieldset>
 
-    <div class="border-t border-gold-100 mt-6 pt-5 flex justify-end gap-3">
+    <div class="border-t border-gold-100 mt-6 pt-5 flex flex-wrap justify-end gap-3">
         <a href="{{ $lead ? route('leads.show', $lead) : (auth()->user()->hasPermission('lead.view') ? route('leads.index') : route('dashboard')) }}" class="text-sm font-semibold text-ink/60 border border-gold-200 px-5 py-2.5 rounded-md hover:bg-gold-50">Hủy</a>
-        <button wire:click="save" class="bg-gold-600 hover:bg-gold-700 text-white font-semibold text-sm px-6 py-2.5 rounded-md">Lưu thông tin khách hàng</button>
+        @if ($canBookAction && $bookingClinicUrl)
+            <div x-data="{ open: false }" @click.outside="open = false" class="relative">
+                <button type="button" @click="open = !open"
+                        class="flex items-center gap-2 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 px-5 py-2.5 rounded-md">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3.75 8.25h16.5M4.5 6h15a.75.75 0 01.75.75v12a.75.75 0 01-.75.75h-15a.75.75 0 01-.75-.75v-12A.75.75 0 014.5 6z"/></svg>
+                    Đặt booking
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"/></svg>
+                </button>
+                <div x-show="open" x-cloak x-transition class="absolute z-20 mb-1 bottom-full right-0 w-56 bg-white border border-gold-200 rounded-lg shadow-card overflow-hidden">
+                    <a href="{{ $bookingClinicUrl }}" target="_blank" rel="noopener" @click="open = false"
+                       class="block px-4 py-2.5 text-sm text-ink/70 hover:bg-gold-50 border-b border-gold-100">🏥 Đặt phòng khám</a>
+                    <a href="{{ $bookingServiceUrl }}" target="_blank" rel="noopener" @click="open = false"
+                       class="block px-4 py-2.5 text-sm text-ink/70 hover:bg-gold-50">💆 Đặt dịch vụ</a>
+                </div>
+            </div>
+        @endif
+        @if (! $isReadonly)
+            <button wire:click="save" class="bg-gold-600 hover:bg-gold-700 text-white font-semibold text-sm px-6 py-2.5 rounded-md">Lưu thông tin khách hàng</button>
+        @endif
     </div>
 </div>
 

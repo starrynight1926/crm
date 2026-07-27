@@ -43,4 +43,56 @@ class ReportTemplate extends Model
     {
         return (bool) ($this->config['views']['by_owner'] ?? false);
     }
+
+    /** Kiểu báo cáo: 'aggregate' (đếm option, mặc định) hoặc 'list' (bảng từng khách). */
+    public function mode(): string
+    {
+        return $this->config['mode'] ?? 'aggregate';
+    }
+
+    public function isList(): bool
+    {
+        return $this->mode() === 'list';
+    }
+
+    public function filters(): array
+    {
+        return $this->config['filters'] ?? [];
+    }
+
+    /** Cột lead hỗ trợ trong list mode. */
+    public const LIST_COLUMNS = [
+        'stt'            => 'STT',
+        'code'           => 'Mã KH',
+        'received_date'  => 'Ngày thu thập',
+        'facility'       => 'Cơ sở',
+        'name'           => 'Họ tên',
+        'phone'          => 'SĐT',
+        'birthday'       => 'DOB',
+        'address'        => 'Địa chỉ',
+        'occupation'     => 'Nghề nghiệp',
+        'owner'          => 'Sale Book (owner)',
+        'receiver'       => 'Sale Care (receiver)',
+        'source_group'   => 'Nguồn',
+        'classification' => 'Phân loại',
+        'booking_status' => 'Trạng thái đặt lịch',
+        'booking_ma'     => 'Mã booking',
+        'booked_at'      => 'Ngày đặt lịch',
+        'note'           => 'Note',
+    ];
+
+    public const DATE_FIELDS = [
+        'received_date' => 'Ngày thu thập',
+        'booked_at'     => 'Ngày đặt lịch',
+        'last_care_at'  => 'Ngày chăm sóc gần nhất',
+    ];
+
+    public const DATE_RANGES = [
+        'today'      => 'Hôm nay',
+        'yesterday'  => 'Hôm qua',
+        'this_week'  => 'Tuần này',
+        'this_month' => 'Tháng này',
+        'last_month' => 'Tháng trước',
+        'custom'     => 'Tuỳ chỉnh',
+    ];
 }

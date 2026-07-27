@@ -121,10 +121,87 @@ class Lead extends Model
             : 'lead.update_sale';
     }
 
+    /**
+     * True nếu lead thuộc nhóm nguồn "sale nhận trực tiếp" (không qua team booking):
+     * Bạn giới thiệu + Khách tự đến.
+     */
+    public function isDirectSaleSource(): bool
+    {
+        return in_array($this->source_group, [self::SOURCE_REFERRAL, self::SOURCE_WALK_IN], true);
+    }
+
+    /**
+     * True nếu $user là chủ sở hữu trực tiếp của lead (owner hoặc receiver).
+     * Dùng cho các override quyền theo quan hệ sở hữu.
+     */
+    public function isOwnedBy(User $user): bool
+    {
+        return $this->owner_id === $user->id || $this->receiver_id === $user->id;
+    }
+
     /** Gate: user này có được sửa info cá nhân của lead không (đúng phase + trong scope). */
     public function canEditPersonalInfo(User $user): bool
     {
-        return $user->hasPermission($this->personalInfoPermission()) && $this->isVisibleTo($user);
+        if (! $this->isVisibleTo($user)) return false;
+        if ($user->hasPermission($this->personalInfoPermission())) return true;
+        // Override: nguồn "sale nhận trực tiếp" (referral/walk_in) → owner tự sửa được dù role không có update_sale/update_booking.
+        return $this->isDirectSaleSource() && $this->isOwnedBy($user) && $user->hasPermission('lead.update');
+    }
+
+    /**
+     * Gate: user có được mở màn Cập nhật (dù chỉ readonly) không.
+     * Phase 6.20 — Team booking chỉ có lead.read_booking (readonly) — vẫn phải mở được form để bấm Đặt booking.
+     */
+    public function canOpenEditForm(User $user): bool
+    {
+        if (! $this->isVisibleTo($user)) return false;
+        if ($this->canEditPersonalInfo($user)) return true;
+        return $this->pipeline_phase === self::PHASE_BOOKING && $user->hasPermission('lead.read_booking');
+    }
+
+    /**
+     * Gate: user có được bấm nút "Đặt booking" (chuyển sang lara-sbooking) không.
+     * Override: nguồn "sale nhận trực tiếp" + owner → luôn được bấm (họ tự đặt lịch cho khách).
+     */
+    public function canBookAction(User $user): bool
+    {
+        if (! $this->isVisibleTo($user)) return false;
+        if ($user->hasPermission('lead.book_action')) return true;
+        return $this->isDirectSaleSource() && $this->isOwnedBy($user);
+    }
+
+    /**
+     * Slug cơ sở bên lara-sbooking dùng cho URL nút "Đặt booking".
+     * Thứ tự fallback:
+     *   1) Lead có facility → dùng slug facility (hoặc parent facility nếu là dept).
+     *   2) Lead chưa gán facility → suy từ branch org của owner (mapping code branch → slug facility cùng tên).
+     */
+    public function resolvedBookingSlug(): ?string
+    {
+        $f = $this->facility;
+        if ($f) {
+            $slug = $f->booking_co_so_slug ?: $f->parent?->booking_co_so_slug;
+            if ($slug) return $slug;
+        }
+        $owner = $this->owner ?? $this->receiver;
+        if (! $owner) return null;
+        foreach ($owner->assignments()->with('orgUnit')->get() as $a) {
+            $org = $a->orgUnit;
+            while ($org?->parent && $org->parent->code !== 'company') {
+                $org = $org->parent;
+            }
+            if (! $org) continue;
+            $facilityName = match ($org->code) {
+                'branch-hn'  => 'Hà Nội',
+                'branch-hcm' => 'HCM',
+                'branch-dn'  => 'Đà Nẵng',
+                default      => null,
+            };
+            if (! $facilityName) continue;
+            $slug = \App\Models\Facility::whereNull('parent_id')->where('name', $facilityName)->value('booking_co_so_slug');
+            if ($slug) return $slug;
+        }
+        return null;
     }
 
     /** Nhãn phase-status đọc được (VD "Booking · Chờ CM booking chia"). */
@@ -173,11 +250,42 @@ class Lead extends Model
     public const BOOKING_NOT_BOOKED = 'not_booked';
     public const BOOKING_BOOKED = 'booked';
     public const BOOKING_RESCHEDULED = 'rescheduled';
+    // Phase 6.21 — 4 trạng thái sync từ lara-sbooking (trang_thai_khach + trang_thai=da_xong).
+    public const BOOKING_KHACH_DA_TOI = 'khach_da_toi';
+    public const BOOKING_KHACH_TOI_TRE = 'khach_toi_tre';
+    public const BOOKING_KHACH_HUY = 'khach_huy';
+    public const BOOKING_DA_XONG = 'da_xong';
 
     public const BOOKING_STATUSES = [
-        self::BOOKING_NOT_BOOKED => 'Chưa đặt',
-        self::BOOKING_BOOKED => 'Đã đặt',
-        self::BOOKING_RESCHEDULED => 'Hẹn lại',
+        self::BOOKING_NOT_BOOKED    => 'Chưa đặt',
+        self::BOOKING_BOOKED        => 'Đã đặt',
+        self::BOOKING_RESCHEDULED   => 'Hẹn lại',
+        self::BOOKING_KHACH_DA_TOI  => 'Khách đã tới',
+        self::BOOKING_KHACH_TOI_TRE => 'Khách tới trễ',
+        self::BOOKING_KHACH_HUY     => 'Khách hủy',
+        self::BOOKING_DA_XONG       => 'Đã xong',
+    ];
+
+    /** Emoji cho từng trạng thái booking (hiển thị badge — không cần font ngoài). */
+    public const BOOKING_STATUS_ICONS = [
+        self::BOOKING_NOT_BOOKED    => '🕐',
+        self::BOOKING_BOOKED        => '📅',
+        self::BOOKING_RESCHEDULED   => '🔄',
+        self::BOOKING_KHACH_DA_TOI  => '✅',
+        self::BOOKING_KHACH_TOI_TRE => '⏰',
+        self::BOOKING_KHACH_HUY     => '❌',
+        self::BOOKING_DA_XONG       => '🎉',
+    ];
+
+    /** Class Tailwind cho badge theo trạng thái. */
+    public const BOOKING_STATUS_COLORS = [
+        self::BOOKING_NOT_BOOKED    => 'bg-ink/5 text-ink/50 border-ink/10',
+        self::BOOKING_BOOKED        => 'bg-blue-100 text-blue-800 border-blue-200',
+        self::BOOKING_RESCHEDULED   => 'bg-amber-100 text-amber-800 border-amber-200',
+        self::BOOKING_KHACH_DA_TOI  => 'bg-green-100 text-green-800 border-green-200',
+        self::BOOKING_KHACH_TOI_TRE => 'bg-amber-100 text-amber-800 border-amber-200',
+        self::BOOKING_KHACH_HUY     => 'bg-red-100 text-red-800 border-red-200',
+        self::BOOKING_DA_XONG       => 'bg-purple-100 text-purple-800 border-purple-200',
     ];
 
     public const APPROVAL_NONE = 'none';
@@ -227,6 +335,11 @@ class Lead extends Model
     /** Danh sách nguồn user hiện tại được phép chọn khi tạo lead. */
     public static function allowedSourceGroupsFor(User $user): array
     {
+        // Perm bypass — user có `lead.source_all` thấy & chọn được mọi nguồn.
+        if ($user->hasPermission('lead.source_all')) {
+            return self::SOURCE_GROUPS;
+        }
+
         $out = [];
         foreach (self::SOURCE_GROUPS as $key => $label) {
             $perm = self::SOURCE_PERMISSIONS[$key];
@@ -256,6 +369,14 @@ class Lead extends Model
     public function facility(): BelongsTo
     {
         return $this->belongsTo(Facility::class);
+    }
+
+    /** Tên cơ sở gốc (root — parent_id null) — walk up từ facility trực tiếp. */
+    public function rootFacilityName(): ?string
+    {
+        $f = $this->facility;
+        while ($f?->parent) $f = $f->parent;
+        return $f?->name;
     }
 
     public function doctor(): BelongsTo

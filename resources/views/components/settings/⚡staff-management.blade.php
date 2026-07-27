@@ -200,7 +200,16 @@ new class extends Component
 
     public function with(): array
     {
-        $facilities = Facility::with('parent')->orderBy('parent_id')->orderBy('name')->get();
+        // Sắp xếp tree: mỗi cha xong đến các con nằm ngay dưới (depth-first).
+        $all = Facility::with('parent')->orderBy('name')->get();
+        $facilities = collect();
+        $walk = function ($parentId) use (&$walk, $all, $facilities) {
+            foreach ($all->where('parent_id', $parentId)->sortBy('name') as $node) {
+                $facilities->push($node);
+                $walk($node->id);
+            }
+        };
+        $walk(null);
 
         $q = StaffMember::with('facility.parent')->orderBy('name');
         if ($this->filterFacilityId) $q->where('facility_id', $this->filterFacilityId);
@@ -392,13 +401,7 @@ new class extends Component
                             @endforeach
                         </select>
                     </div>
-                    <div>
-                        <label class="block text-xs font-semibold text-ink/70 mb-1">Slug cơ sở bên Booking</label>
-                        <input type="text" wire:model="facilityBookingSlug" placeholder="VD: 59ntn, 207nvt"
-                               class="w-full border border-gold-200 rounded-md px-3 py-2 text-sm font-mono">
-                        <p class="text-xs text-ink/50 mt-0.5">Slug URL cơ sở trong lara-sbooking. Trống = nút Đặt booking bị vô hiệu.</p>
-                        @error('facilityBookingSlug')<p class="text-xs text-red-600 mt-0.5">{{ $message }}</p>@enderror
-                    </div>
+                    <p class="text-xs text-ink/50">Slug cơ sở bên Booking đã chuyển sang mục <a href="{{ route('settings.booking-connection') }}" class="text-gold-700 underline">Kết nối Booking</a> để quản lý tập trung.</p>
                     <label class="flex items-center gap-2 text-sm">
                         <input type="checkbox" wire:model="facilityActive" class="rounded border-gold-300">
                         <span>Đang hoạt động</span>
