@@ -27,7 +27,10 @@ new class extends Component
     /** Filter per-column (list mode) kiểu Excel: [column_key => [value1, value2]]. Empty = all. */
     public array $columnFilters = [];
 
-    public string $tab = 'funnel'; // funnel / marketing / performance / distribution
+    public string $tab = 'funnel'; // funnel / marketing / performance / distribution / leads / daily
+
+    /** Ngày báo cáo cho tab "GR Daily Report" (Y-m-d). Mặc định hôm nay. */
+    public string $dailyDate = '';
 
     public string $from = '';
 
@@ -132,6 +135,7 @@ new class extends Component
     {
         $this->from = now()->startOfMonth()->toDateString();
         $this->to = now()->toDateString();
+        $this->dailyDate = now()->toDateString();
 
         $prefs = auth()->user()->report_prefs ?? [];
         $this->codeMode = in_array($prefs['code_mode'] ?? null, array_keys(self::CODE_MODES), true)
@@ -652,6 +656,31 @@ new class extends Component
             ->first();
     }
 
+    /**
+     * GR Daily Report — báo cáo hàng ngày theo mẫu công ty.
+     * Cột: STT | Date check-in | Location (fix "Medical") | Fullname | DOB | Địa chỉ | Sale Book | Sale Care | Nguồn | Note.
+     * Sale Book = receiver_id (người nhận & book). Sale Care = owner_id (sale chăm sóc).
+     */
+    private function dailyReportData(): array
+    {
+        $date = $this->dailyDate ?: now()->toDateString();
+        $leads = $this->reportLeadQuery()
+            ->with(['owner:id,name', 'receiver:id,name'])
+            ->whereDate('received_date', $date)
+            ->orderBy('id')
+            ->get([
+                'leads.id', 'leads.code', 'leads.name', 'leads.phone', 'leads.birthday',
+                'leads.address', 'leads.region', 'leads.received_date', 'leads.source_group',
+                'leads.owner_id', 'leads.receiver_id', 'leads.note',
+            ]);
+
+        return [
+            'date' => $date,
+            'traffic' => $leads->count(),
+            'leads' => $leads,
+        ];
+    }
+
     /** Tab marketing: group theo camp/nguồn/page. Phase 6.20: camp+page là custom_values. */
     private function marketingData()
     {
@@ -754,6 +783,48 @@ new class extends Component
                 );
             })->all();
             $sheet->fromArray([$header, ...$rows]);
+        } elseif ($this->tab === 'daily') {
+            $data = $this->dailyReportData();
+            $sheet->setTitle('T' . (int) date('n', strtotime($data['date'])) . '.' . date('Y', strtotime($data['date'])));
+            // Tiêu đề + summary phía trên bảng.
+            $sheet->setCellValue('A1', 'GR Daily Report — ngày ' . date('d/m/Y', strtotime($data['date'])));
+            $sheet->mergeCells('A1:I1');
+            $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(14);
+            $sheet->setCellValue('A2', 'Daily traffic (Số lượng khách mới): ' . $data['traffic']);
+            $sheet->mergeCells('A2:I2');
+            $sheet->getStyle('A2')->getFont()->setItalic(true);
+
+            $headers = ['STT', 'Date check-in', 'Location', 'Fullname', 'DOB',
+                'Địa chỉ ( nếu có )', 'Sale Book', 'Sale Care', 'Nguồn', 'Note'];
+            $sheet->fromArray($headers, null, 'A4');
+            $sheet->getStyle('A4:J4')->getFont()->setBold(true)->getColor()->setRGB('FFFFFF');
+            $sheet->getStyle('A4:J4')->getFill()->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
+                ->getStartColor()->setRGB('7F6000');
+
+            $r = 5;
+            foreach ($data['leads'] as $i => $lead) {
+                $addr = trim(($lead->address ?? '') . ($lead->region ? (', ' . $lead->region) : ''), ', ');
+                $sheet->fromArray([[
+                    $i + 1,
+                    $lead->received_date?->format('d/m/Y'),
+                    'Medical',
+                    $lead->name,
+                    $lead->birthday ? \Illuminate\Support\Carbon::parse($lead->birthday)->format('d/m/Y') : '',
+                    $addr,
+                    (string) $lead->receiver?->name,
+                    (string) $lead->owner?->name,
+                    (string) $lead->source_group,
+                    (string) $lead->note,
+                ]], null, "A$r");
+                $sheet->getStyle("A$r:J$r")->getBorders()->getAllBorders()
+                    ->setBorderStyle(\PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN);
+                $r++;
+            }
+            $sheet->getStyle('A4:J4')->getBorders()->getAllBorders()
+                ->setBorderStyle(\PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN);
+            foreach (['A' => 6, 'B' => 14, 'C' => 12, 'D' => 30, 'E' => 12, 'F' => 40, 'G' => 22, 'H' => 22, 'I' => 14, 'J' => 30] as $c => $w) {
+                $sheet->getColumnDimension($c)->setWidth($w);
+            }
         } else {
             $d = $this->distributionData();
             $sheet->fromArray([['Hành động', 'Số lượt'],
@@ -782,6 +853,7 @@ new class extends Component
             'teams' => $this->section === 'team' ? $this->visibleTeams() : collect(),
             'teamTemplates' => $this->section === 'team' ? $this->teamTemplates() : collect(),
             'funnel' => $this->tab === 'funnel' ? $this->funnelData() : null,
+            'daily' => $this->tab === 'daily' ? $this->dailyReportData() : null,
             'marketing' => $this->tab === 'marketing' ? $this->marketingData() : collect(),
             'performance' => $this->tab === 'performance' ? $this->performanceData() : collect(),
             'userNames' => User::pluck('name', 'id'),
@@ -849,7 +921,7 @@ new class extends Component
         @endif
         <div class="flex-1"></div>
         @if ($section === 'overall')
-            @foreach (['funnel' => 'Funnel theo kỳ', 'marketing' => 'Hiệu quả marketing', 'performance' => 'Hiệu suất sale', 'distribution' => 'Chia số & tồn kho', 'leads' => 'Chi tiết lead'] as $key => $label)
+            @foreach (['funnel' => 'Funnel theo kỳ', 'marketing' => 'Hiệu quả marketing', 'performance' => 'Hiệu suất sale', 'distribution' => 'Chia số & tồn kho', 'leads' => 'Chi tiết lead', 'daily' => 'GR Daily Report'] as $key => $label)
                 <button wire:click="$set('tab', '{{ $key }}')"
                         class="text-sm font-semibold px-4 py-2 rounded-md {{ $tab === $key ? 'bg-gold-600 text-white' : 'text-ink/60 border border-gold-200 hover:bg-gold-50' }}">
                     {{ $label }}
@@ -1275,6 +1347,62 @@ new class extends Component
                             </tr>
                         @empty
                             <tr><td colspan="{{ 11 + $leadCustomFields->count() }}" class="px-5 py-8 text-center text-ink/40">Không có lead trong kỳ.</td></tr>
+                        @endforelse
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    @endif
+
+    {{-- ============ TAB: GR DAILY REPORT ============ --}}
+    @if ($tab === 'daily' && $daily)
+        <div class="bg-white border border-gold-200 rounded-xl shadow-card overflow-hidden">
+            <div class="px-6 py-5 border-b border-gold-100 flex flex-wrap items-end gap-4">
+                <div>
+                    <label class="block text-xs font-semibold text-ink/50 uppercase tracking-wider mb-1">Ngày báo cáo</label>
+                    <input type="date" wire:model.live="dailyDate"
+                           class="border border-gold-300 rounded-md px-3 py-2 text-sm">
+                </div>
+                <div class="flex-1">
+                    <p class="text-2xl font-bold text-gold-700">GR Daily Report — ngày {{ \Illuminate\Support\Carbon::parse($daily['date'])->format('d/m/Y') }}</p>
+                    <p class="text-sm text-ink/60">Daily traffic (Số lượng khách mới): <strong class="text-gold-700">{{ $daily['traffic'] }}</strong></p>
+                </div>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="text-left text-xs uppercase tracking-wider text-white" style="background-color:#7F6000">
+                            <th class="px-3 py-2.5 font-semibold">STT</th>
+                            <th class="px-3 py-2.5 font-semibold">Date check-in</th>
+                            <th class="px-3 py-2.5 font-semibold">Location</th>
+                            <th class="px-3 py-2.5 font-semibold">Fullname</th>
+                            <th class="px-3 py-2.5 font-semibold">DOB</th>
+                            <th class="px-3 py-2.5 font-semibold">Địa chỉ ( nếu có )</th>
+                            <th class="px-3 py-2.5 font-semibold">Sale Book</th>
+                            <th class="px-3 py-2.5 font-semibold">Sale Care</th>
+                            <th class="px-3 py-2.5 font-semibold">Nguồn</th>
+                            <th class="px-3 py-2.5 font-semibold">Note</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gold-100">
+                        @forelse ($daily['leads'] as $i => $lead)
+                            @php
+                                $addr = trim(($lead->address ?? '') . ($lead->region ? (', ' . $lead->region) : ''), ', ');
+                            @endphp
+                            <tr class="hover:bg-gold-50/40">
+                                <td class="px-3 py-2 text-ink/50">{{ $i + 1 }}</td>
+                                <td class="px-3 py-2 whitespace-nowrap">{{ $lead->received_date?->format('d/m/Y') }}</td>
+                                <td class="px-3 py-2 font-semibold">Medical</td>
+                                <td class="px-3 py-2 font-medium">{{ $lead->name }}</td>
+                                <td class="px-3 py-2 whitespace-nowrap">{{ $lead->birthday ? \Illuminate\Support\Carbon::parse($lead->birthday)->format('d/m/Y') : '' }}</td>
+                                <td class="px-3 py-2">{{ $addr }}</td>
+                                <td class="px-3 py-2">{{ $lead->receiver?->name }}</td>
+                                <td class="px-3 py-2">{{ $lead->owner?->name }}</td>
+                                <td class="px-3 py-2 text-xs">{{ $lead->source_group }}</td>
+                                <td class="px-3 py-2 text-xs text-ink/60">{{ $lead->note }}</td>
+                            </tr>
+                        @empty
+                            <tr><td colspan="10" class="px-3 py-6 text-center text-ink/40">Không có khách mới ngày này.</td></tr>
                         @endforelse
                     </tbody>
                 </table>
