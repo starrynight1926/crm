@@ -21,8 +21,9 @@ class DatabaseSeeder extends Seeder
             ServiceSeeder::class,            // Bảng giá dịch vụ (gói khám, lẻ...)
             DemoDataSeeder::class,           // Leads/dịch vụ/payment demo (chỉ dùng phần data ngoài nhân sự)
             TeamHoiCustomFieldSeeder::class, // Custom fields cho Team Hợi
-            // 2026-07-27: bỏ SyncCrmAccountsSeeder khỏi chuỗi mặc định — sau khi normalize_usernames migration
-            // chạy, username hệ thống theo pattern {branch}{role}.{id} sinh động, không cần backfill hardcode.
+            SyncCrmAccountsSeeder::class,    // Đồng bộ username + password với Booking (admin=59ntn, user=59@ntn)
+            HnDnTestFlowSeeder::class,       // 1 CM sale cho team-giang-sale (team này chưa có CM real)
+            HcmTestFlowSeeder::class,        // 1 CM booking cho team-ashley-booking (team này chưa có CM real)
         ]);
     }
 }
