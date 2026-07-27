@@ -24,7 +24,7 @@ use Illuminate\Database\Seeder;
  */
 class RealCmStaffSeeder extends Seeder
 {
-    private const PASSWORD = '123456';
+    private const PASSWORD = '59@ntn';
 
     public function run(): void
     {

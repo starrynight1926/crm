@@ -4,6 +4,7 @@ use App\Jobs\ProcessRawLead;
 use App\Models\CustomField;
 use App\Models\ImportBatch;
 use App\Models\ImportTemplate;
+use App\Models\Lead;
 use App\Models\RawLead;
 use App\Support\SpreadsheetReader;
 use Livewire\Component;
@@ -17,7 +18,21 @@ new class extends Component
 
     public array $headers = [];
 
+    /** @var array<int, array> Toàn bộ dòng trong file (không giới hạn 5). */
     public array $preview = [];
+
+    /**
+     * Lỗi validate theo dòng.
+     * Format: [rowIndex => ['name' => 'Thiếu tên', 'phone' => 'SĐT không hợp lệ: abc123', '_row' => 'Trùng dòng #3']].
+     * `_row` = lỗi mức dòng (không gắn 1 cột cụ thể).
+     */
+    public array $rowErrors = [];
+
+    public int $errorRowCount = 0;
+
+    public int $validRowCount = 0;
+
+    public bool $validated = false;
 
     public ?string $storedPath = null;
 
@@ -118,7 +133,11 @@ new class extends Component
 
         $data = SpreadsheetReader::read(storage_path('app/private/' . $this->storedPath), $this->storedExtension);
         $this->headers = $data['headers'];
-        $this->preview = array_slice($data['rows'], 0, 5);
+        $this->preview = $data['rows']; // Load TOÀN BỘ dòng để validate + hiển thị.
+        $this->rowErrors = [];
+        $this->errorRowCount = 0;
+        $this->validRowCount = 0;
+        $this->validated = false;
 
         $this->initMappingDefaults();
 
@@ -305,21 +324,30 @@ new class extends Component
         }, "mau-import-{$slug}.xlsx");
     }
 
-    public function import()
+    /**
+     * Chỉ validate — KHÔNG ghi DB. Sau khi bấm gọi này, `rowErrors` + `errorRowCount` được điền để UI bôi đỏ.
+     * All-or-nothing: chỉ khi validate 100% sạch mới cho phép bấm "Import" (button riêng).
+     */
+    public function validateFile(): void
     {
         abort_unless(auth()->user()->hasPermission('lead.import'), 403);
 
-        if (! $this->storedPath) {
+        $this->resetErrorBag();
+        $this->rowErrors = [];
+        $this->errorRowCount = 0;
+        $this->validRowCount = 0;
+        $this->validated = false;
+
+        if (! $this->storedPath || ! $this->preview) {
             $this->addError('file', 'Chưa chọn file.');
             return;
         }
         if (($this->mapping['name'] ?? '') === '' || ($this->mapping['phone'] ?? '') === '') {
-            $this->addError('mapping', 'Bắt buộc map cột Tên và SĐT.');
+            $this->addError('mapping', 'Bắt buộc map cột Tên và SĐT trước khi kiểm tra.');
             return;
         }
 
-        // Kiểm tra trường tùy biến bắt buộc đã được map hoặc có giá trị mặc định
-        $missing = [];
+        // Trường tùy biến bắt buộc — nếu chưa map và không có default, coi như file thiếu.
         foreach ($this->customFields() as $f) {
             if (! $f->required) continue;
             $target = 'cf_' . $f->id;
@@ -327,46 +355,111 @@ new class extends Component
             $hasDefault = trim((string) ($this->defaults[$target] ?? '')) !== '';
             if (! $mapped && ! $hasDefault) {
                 $code = $f->import_code ? " (#{$f->import_code})" : '';
-                $missing[] = $f->label . $code;
+                $this->addError('mapping', 'Trường bắt buộc chưa map hoặc chưa có mặc định: ' . $f->label . $code);
+                return;
             }
         }
-        if ($missing !== []) {
-            $this->addError('mapping', 'Trường bắt buộc chưa map hoặc chưa có mặc định: ' . implode(', ', $missing));
-            return;
-        }
 
-        $data = SpreadsheetReader::read(storage_path('app/private/' . $this->storedPath), $this->storedExtension);
-
-        // Chặn cứng file quá lớn — pipeline hiện chưa scale được (block Livewire request).
-        $rowCount = count($data['rows']);
+        $rowCount = count($this->preview);
         if ($rowCount > self::MAX_ROWS_PER_IMPORT) {
             $this->addError('file', sprintf(
-                'File có %s dòng, vượt giới hạn %s dòng/lần import. Vui lòng chia nhỏ file rồi import từng phần.',
+                'File có %s dòng, vượt giới hạn %s dòng/lần import. Vui lòng chia nhỏ file rồi upload lại.',
                 number_format($rowCount),
                 number_format(self::MAX_ROWS_PER_IMPORT),
             ));
             return;
         }
 
-        $batch = ImportBatch::create([
-            'file_name' => $this->storedName,
-            'uploaded_by' => auth()->id(),
-            'column_mapping' => $this->mapping,
-            'total' => count($data['rows']),
-            'created_at' => now(),
-        ]);
+        $nameCol = (int) $this->mapping['name'];
+        $phoneCol = (int) $this->mapping['phone'];
+
+        // Chuẩn hoá + dò trùng theo SĐT.
+        $normalizedByRow = [];
+        $existingPhones = []; // phone => leadId đã có trong DB
+        foreach ($this->preview as $i => $row) {
+            $nameV = trim((string) ($row[$nameCol] ?? ''));
+            $phoneV = trim((string) ($row[$phoneCol] ?? ''));
+
+            if ($nameV === '' && $phoneV === '') {
+                // Bỏ qua dòng rác — không tính vào tổng cần import.
+                continue;
+            }
+
+            if ($nameV === '') {
+                $this->rowErrors[$i]['name'] = 'Thiếu tên khách hàng.';
+            }
+            if ($phoneV === '') {
+                $this->rowErrors[$i]['phone'] = 'Thiếu số điện thoại.';
+                continue;
+            }
+
+            $norm = Lead::normalizePhone($phoneV);
+            if ($norm === null) {
+                $this->rowErrors[$i]['phone'] = 'SĐT không hợp lệ.';
+                continue;
+            }
+            $normalizedByRow[$i] = $norm;
+        }
+
+        // Trùng SĐT với lead có sẵn trong DB.
+        $normList = array_values(array_unique($normalizedByRow));
+        if ($normList) {
+            $existingPhones = Lead::whereIn('phone', $normList)->pluck('id', 'phone')->all();
+        }
+        // Trùng nội bộ trong cùng file: dòng nào xuất hiện sau lần đầu → đánh dấu.
+        $seenPhone = [];
+        foreach ($normalizedByRow as $rowIdx => $phone) {
+            if (isset($existingPhones[$phone])) {
+                $this->rowErrors[$rowIdx]['phone'] = 'Trùng SĐT với lead #' . $existingPhones[$phone] . ' đã có.';
+                continue;
+            }
+            if (isset($seenPhone[$phone])) {
+                $this->rowErrors[$rowIdx]['phone'] = 'Trùng SĐT với dòng #' . ($seenPhone[$phone] + 1) . ' trong file.';
+                continue;
+            }
+            $seenPhone[$phone] = $rowIdx;
+        }
+
+        // Tính tổng thực (bỏ dòng rác).
+        $totalReal = 0;
+        foreach ($this->preview as $i => $row) {
+            $nameV = trim((string) ($row[$nameCol] ?? ''));
+            $phoneV = trim((string) ($row[$phoneCol] ?? ''));
+            if ($nameV === '' && $phoneV === '') continue;
+            $totalReal++;
+        }
+
+        $this->errorRowCount = count($this->rowErrors);
+        $this->validRowCount = $totalReal - $this->errorRowCount;
+        $this->validated = true;
+    }
+
+    public function import()
+    {
+        abort_unless(auth()->user()->hasPermission('lead.import'), 403);
+
+        // Bắt buộc validate trước, và không được có lỗi.
+        $this->validateFile();
+        if (! $this->validated || $this->errorRowCount > 0) {
+            return;
+        }
 
         $nameCol = (int) $this->mapping['name'];
         $phoneCol = (int) $this->mapping['phone'];
 
+        $batch = ImportBatch::create([
+            'file_name' => $this->storedName,
+            'uploaded_by' => auth()->id(),
+            'column_mapping' => $this->mapping,
+            'total' => 0,
+            'created_at' => now(),
+        ]);
+
         $count = 0;
-        foreach ($data['rows'] as $row) {
-            // Bỏ dòng mà Tên và SĐT đều trống (rác/dòng đệm)
+        foreach ($this->preview as $row) {
             $nameV = trim((string) ($row[$nameCol] ?? ''));
             $phoneV = trim((string) ($row[$phoneCol] ?? ''));
-            if ($nameV === '' && $phoneV === '') {
-                continue;
-            }
+            if ($nameV === '' && $phoneV === '') continue;
 
             $payload = [];
             foreach ($this->mapping as $target => $columnIndex) {
@@ -392,9 +485,58 @@ new class extends Component
         }
 
         $batch->update(['total' => $count]);
-
-        session()->flash('status', "Đã import {$count} khách hàng (batch #{$batch->id}).");
+        session()->flash('status', "Đã nạp {$count} khách hàng vào pipeline (batch #{$batch->id}).");
         return $this->redirect(route('leads.index'), navigate: true);
+    }
+
+    /**
+     * Xuất Excel chứa các dòng lỗi + cột Lý do (mỗi lỗi 1 dòng gộp theo dòng gốc).
+     */
+    public function downloadErrorRows()
+    {
+        abort_unless(auth()->user()->hasPermission('lead.import'), 403);
+        if ($this->errorRowCount === 0 || ! $this->preview) {
+            session()->flash('status', 'Không có dòng lỗi để tải.');
+            return;
+        }
+
+        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('Dòng lỗi');
+
+        // Header = header file gốc + cột "Lý do lỗi".
+        $headers = $this->headers;
+        $headers[] = 'Lý do lỗi';
+        foreach ($headers as $i => $h) {
+            $col = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($i + 1);
+            $sheet->setCellValue($col . '1', $h);
+        }
+        $sheet->getStyle('A1:' . \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex(count($headers)) . '1')
+            ->getFont()->setBold(true);
+
+        $r = 2;
+        foreach ($this->rowErrors as $rowIdx => $errs) {
+            $original = $this->preview[$rowIdx] ?? [];
+            $reasons = [];
+            foreach ($errs as $field => $msg) {
+                $label = match ($field) {
+                    'name' => 'Tên', 'phone' => 'SĐT', default => $field,
+                };
+                $reasons[] = "[$label] $msg";
+            }
+            $rowOut = array_values($original);
+            $rowOut[count($headers) - 1] = implode(' | ', $reasons);
+            foreach ($rowOut as $ci => $val) {
+                $col = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($ci + 1);
+                $sheet->setCellValue($col . $r, is_scalar($val) ? $val : json_encode($val, JSON_UNESCAPED_UNICODE));
+            }
+            $r++;
+        }
+
+        $filename = 'loi-import-' . now()->format('Ymd-His') . '.xlsx';
+        return response()->streamDownload(function () use ($spreadsheet) {
+            (new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet))->save('php://output');
+        }, $filename);
     }
 
     public function with(): array
@@ -425,9 +567,9 @@ new class extends Component
             @foreach ([
                 ['icon' => '1', 'label' => 'Chọn mẫu import', 'desc' => 'Chọn phòng/team để tải file mẫu đúng bộ trường'],
                 ['icon' => '2', 'label' => 'Điền thông tin', 'desc' => 'Nhập dữ liệu khách hàng vào file mẫu đã tải'],
-                ['icon' => '3', 'label' => 'Upload lên hệ thống', 'desc' => 'Chọn file → map cột → bấm Import'],
-                ['icon' => '4', 'label' => 'Sửa các lỗi sai nếu có', 'desc' => 'Xem mục "Lead lỗi" để sửa dữ liệu thiếu/sai'],
-                ['icon' => '5', 'label' => 'Đăng tải', 'desc' => 'Lead sạch tự vào kho chung, engine chia số xử lý'],
+                ['icon' => '3', 'label' => 'Upload lên hệ thống', 'desc' => 'Chọn file → map cột → bấm Kiểm tra dữ liệu'],
+                ['icon' => '4', 'label' => 'Sửa lỗi nếu có', 'desc' => 'Ô sai bôi đỏ; tải file lỗi, sửa trên máy, upload lại'],
+                ['icon' => '5', 'label' => 'Import', 'desc' => 'File 100% sạch mới cho Import; pipeline chia số tự xử lý'],
             ] as $i => $step)
                 @if ($i > 0)
                     <svg class="w-5 h-5 shrink-0 text-gold-300" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
@@ -572,35 +714,97 @@ new class extends Component
                     @endforeach
                 </div>
 
-                <button wire:click="import" wire:loading.attr="disabled"
-                        class="mt-6 w-full bg-gold-600 hover:bg-gold-700 text-white font-semibold py-3 rounded-md">
-                    4. Import ngay
-                </button>
+                <div class="mt-6 grid grid-cols-2 gap-2">
+                    <button wire:click="validateFile" wire:loading.attr="disabled"
+                            class="border border-gold-400 text-gold-700 hover:bg-gold-50 font-semibold py-3 rounded-md">
+                        Kiểm tra dữ liệu
+                    </button>
+                    <button wire:click="import" wire:loading.attr="disabled"
+                            @if($validated && $errorRowCount > 0) disabled @endif
+                            class="bg-gold-600 hover:bg-gold-700 disabled:bg-ink/20 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-md">
+                        Import
+                    </button>
+                </div>
+                <p class="text-[11px] text-ink/50 mt-2">
+                    Kiểm tra trước để bôi đỏ các dòng sai. Chỉ khi file 100% hợp lệ, nút <strong>Import</strong> mới có tác dụng.
+                </p>
             @endif
         </div>
 
-        {{-- Preview --}}
+        {{-- Preview + validate --}}
         <div class="bg-white border border-gold-200 rounded-xl shadow-card p-6 overflow-x-auto">
-            <h2 class="font-bold text-gold-700 mb-4">Xem trước (5 dòng đầu)</h2>
+            @php $nameColIdx = ($mapping['name'] ?? '') !== '' ? (int) $mapping['name'] : null; @endphp
+            @php $phoneColIdx = ($mapping['phone'] ?? '') !== '' ? (int) $mapping['phone'] : null; @endphp
+
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="font-bold text-gold-700">
+                    Xem trước ({{ count($preview) }} dòng)
+                    @if ($validated)
+                        <span class="ml-2 text-xs font-normal">
+                            <span class="text-emerald-700">Hợp lệ: {{ $validRowCount }}</span> ·
+                            <span class="text-red-600">Lỗi: {{ $errorRowCount }}</span>
+                        </span>
+                    @endif
+                </h2>
+            </div>
+
+            @if ($validated && $errorRowCount > 0)
+                <div class="mb-4 flex items-center gap-3 bg-red-50 border border-red-200 text-red-700 rounded-md px-4 py-3">
+                    <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/></svg>
+                    <div class="flex-1">
+                        <p class="text-sm font-semibold">Dữ liệu sai format, kiểm tra lại</p>
+                        <p class="text-xs">Có {{ $errorRowCount }} / {{ $errorRowCount + $validRowCount }} dòng lỗi. Sửa file gốc rồi upload lại — hệ thống không cho phép nhập file có lỗi.</p>
+                    </div>
+                    <button wire:click="downloadErrorRows"
+                            class="shrink-0 text-xs font-semibold bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded-md">
+                        Tải file lỗi
+                    </button>
+                </div>
+            @elseif ($validated && $errorRowCount === 0)
+                <div class="mb-4 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-md px-4 py-3 text-sm">
+                    ✓ Tất cả {{ $validRowCount }} dòng đều hợp lệ. Bấm <strong>Import</strong> để đưa vào hệ thống.
+                </div>
+            @endif
+
             @if ($preview)
-                <table class="w-full text-xs whitespace-nowrap">
-                    <thead>
-                        <tr class="text-left bg-gold-50/60 text-ink/50 uppercase tracking-wider">
-                            @foreach ($headers as $header)
-                                <th class="px-2.5 py-2 font-semibold">{{ $header }}</th>
-                            @endforeach
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-gold-100">
-                        @foreach ($preview as $row)
-                            <tr>
-                                @foreach ($headers as $index => $_)
-                                    <td class="px-2.5 py-2">{{ $row[$index] ?? '' }}</td>
+                <div class="max-h-[420px] overflow-auto border border-gold-100 rounded">
+                    <table class="w-full text-xs whitespace-nowrap">
+                        <thead class="sticky top-0 z-10">
+                            <tr class="text-left bg-gold-50 text-ink/60 uppercase tracking-wider">
+                                <th class="px-2 py-2 font-semibold w-10 text-center">#</th>
+                                @foreach ($headers as $index => $header)
+                                    <th class="px-2.5 py-2 font-semibold">
+                                        {{ $header }}
+                                        @if ($index === $nameColIdx)<span class="ml-1 text-[9px] text-gold-700">TÊN</span>@endif
+                                        @if ($index === $phoneColIdx)<span class="ml-1 text-[9px] text-gold-700">SĐT</span>@endif
+                                    </th>
                                 @endforeach
                             </tr>
-                        @endforeach
-                    </tbody>
-                </table>
+                        </thead>
+                        <tbody class="divide-y divide-gold-100">
+                            @foreach ($preview as $rowIdx => $row)
+                                @php $errs = $rowErrors[$rowIdx] ?? []; @endphp
+                                <tr class="{{ $errs ? 'bg-red-50/40' : '' }}">
+                                    <td class="px-2 py-1.5 text-center text-ink/40 tabular-nums">{{ $rowIdx + 1 }}</td>
+                                    @foreach ($headers as $index => $_)
+                                        @php
+                                            $errMsg = null;
+                                            if ($index === $nameColIdx && isset($errs['name'])) $errMsg = $errs['name'];
+                                            elseif ($index === $phoneColIdx && isset($errs['phone'])) $errMsg = $errs['phone'];
+                                        @endphp
+                                        <td class="px-2.5 py-1.5 {{ $errMsg ? 'bg-red-200/70 text-red-900 font-medium' : '' }}"
+                                            @if ($errMsg) title="{{ $errMsg }}" @endif>
+                                            {{ $row[$index] ?? '' }}
+                                            @if ($errMsg)
+                                                <span class="block text-[10px] text-red-700 font-normal">⚠ {{ $errMsg }}</span>
+                                            @endif
+                                        </td>
+                                    @endforeach
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
             @else
                 <p class="text-sm text-ink/40">Chọn file để xem trước nội dung.</p>
             @endif
