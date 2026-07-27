@@ -153,7 +153,7 @@ class extends Component {
 <div class="max-w-6xl mx-auto px-6 py-8">
     <div class="mb-6">
         <h1 class="text-3xl font-bold mb-1">Quy tắc vận hành</h1>
-        <p class="text-sm text-ink/60">Giám sát phân bổ, cấu hình thời gian thu hồi/escalate, danh sách overdue.</p>
+        <p class="text-sm text-ink/60">Giám sát phân bổ, cấu hình thời gian thu hồi lead / escalate, danh sách overdue.</p>
     </div>
 
     @if (session('status'))
@@ -161,7 +161,7 @@ class extends Component {
     @endif
 
     <div class="border-b border-gold-200 mb-5 flex gap-1 text-sm font-semibold uppercase tracking-wide">
-        @foreach (['roles' => 'Phân bổ', 'policies' => 'Thời gian recall/escalate', 'overdue' => 'Overdue booking', 'jobs' => 'Job cron'] as $key => $label)
+        @foreach (['roles' => 'Phân bổ', 'policies' => 'Thời gian thu hồi/escalate', 'overdue' => 'Overdue booking', 'jobs' => 'Job cron'] as $key => $label)
             <button wire:click="switchTab('{{ $key }}')" class="px-4 py-3 border-b-2 -mb-px {{ $tab === $key ? 'border-gold-600 text-gold-700' : 'border-transparent text-ink/50 hover:text-gold-700' }}">{{ $label }}</button>
         @endforeach
     </div>
@@ -194,19 +194,19 @@ class extends Component {
         </div>
     @elseif ($tab === 'policies')
         <div class="bg-blue-50 border border-blue-200 rounded-md px-4 py-3 mb-4 text-sm text-blue-900">
-            <p class="font-semibold mb-1">Điều kiện kích hoạt "Thu hồi":</p>
+            <p class="font-semibold mb-1">Điều kiện kích hoạt "Thu hồi lead":</p>
             <ul class="list-disc list-inside space-y-0.5 text-xs">
-                <li><strong>Deadline</strong>: sau <strong>N ngày</strong> kể từ `assigned_at`, `recall_at` hết hạn. Cron chạy mỗi giờ.</li>
-                <li><strong>Điều kiện bổ sung</strong> (tick khi Sửa): chỉ recall nếu THỎA HẾT các điều kiện đã tick:
+                <li>Sau khoảng thời gian <strong>X ngày</strong> (do trưởng bộ phận quy định ở cột "Thu hồi (ngày)" bên dưới) mà lead <strong>không đáp ứng yêu cầu</strong> → hệ thống <strong>tự thu hồi về kho team</strong> vào <strong>00:30 sáng</strong> hôm sau, để CM hoặc người có quyền phân bổ (<code>lead.distribute</code>) chia lại cho sale khác.</li>
+                <li><strong>Điều kiện bổ sung</strong> (tick khi Sửa): chỉ thu hồi nếu THỎA HẾT các điều kiện đã tick:
                     <ul class="list-disc list-inside ml-4 mt-1">
-                        <li><em>Không cập nhật trường nào</em>: sale chưa động vào lead từ lúc chia (last_care_at ≤ assigned_at).</li>
-                        <li><em>Chưa đặt lịch booking</em>: booking_status không phải booked/khách_đã_tới/tới_trễ/đã_xong.</li>
+                        <li><em>Không cập nhật trường nào</em>: sale chưa động vào lead từ lúc chia.</li>
+                        <li><em>Chưa đặt lịch booking</em>: <code>booking_status</code> không phải booked/khách_đã_tới/tới_trễ/đã_xong.</li>
                         <li><em>Chưa tiến triển phân loại</em>: vẫn ở Mới/Lead/Missed/Gọi lại sau/KLLD.</li>
                     </ul>
                 </li>
-                <li>Không tick điều kiện nào → chỉ dùng deadline (hành vi cũ). Có tick → deadline hết vẫn có thể bị bỏ qua nếu sale đang cày.</li>
-                <li>CM tick "Chia vĩnh viễn" ở form chia → hoàn toàn miễn recall.</li>
-                <li>Team con không cấu hình → thừa hưởng từ ancestor gần nhất.</li>
+                <li>Không tick điều kiện nào → chỉ dùng deadline. Có tick → deadline hết vẫn có thể bỏ qua nếu sale đang cày.</li>
+                <li>CM tick <strong>"Chia vĩnh viễn"</strong> ở form chia → hoàn toàn miễn thu hồi.</li>
+                <li>Team con không cấu hình → thừa hưởng từ ancestor gần nhất (ancestor cấp cao có cấu hình sẽ thắng).</li>
             </ul>
         </div>
         <div class="bg-white border border-gold-200 rounded-xl shadow-card overflow-x-auto">
@@ -223,8 +223,10 @@ class extends Component {
                 </thead>
                 <tbody class="divide-y divide-gold-100">
                     @foreach ($orgs as $org)
-                        @php($p = $policies[$org->id] ?? null)
-                        @php($resolved = \App\Services\RecallPolicyResolver::for($org))
+                        @php
+                            $p = $policies[$org->id] ?? null;
+                            $resolved = \App\Services\RecallPolicyResolver::for($org);
+                        @endphp
                         <tr class="{{ $editOrgId === $org->id ? 'bg-gold-50' : '' }}">
                             <td class="px-4 py-3">
                                 <span style="padding-left:{{ $org->depth * 12 }}px" class="font-semibold">{{ $org->name }}</span>

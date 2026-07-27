@@ -22,6 +22,13 @@ Route::middleware('auth')->group(function () {
     Route::view('/dashboard', 'dashboard')->name('dashboard');
     Route::view('/settings/sessions', 'settings.sessions')->name('sessions.index');
     Route::view('/settings', 'settings.index')->name('settings.index');
+
+    // Thông báo (in-app)
+    Route::view('/thong-bao', 'notifications.index')->name('notifications.index');
+    Route::view('/settings/notifications', 'settings.notifications')
+        ->middleware('permission:role.manage')->name('settings.notifications');
+    Route::view('/settings/notification-log', 'settings.notification-log')
+        ->middleware('permission:role.manage')->name('settings.notification-log');
     Route::view('/settings/booking-connection', 'settings.booking-connection')->name('settings.booking-connection');
     Route::view('/settings/fields', 'settings.fields')->middleware('permission:field.manage')->name('settings.fields');
     Route::view('/settings/field-approvals', 'settings.field-approvals')->middleware('permission:field.approve')->name('settings.field-approvals');
@@ -61,4 +68,8 @@ Route::middleware('auth')->group(function () {
 
     // Phase 6.6 — Quy tắc vận hành (chỉ admin hệ thống)
     Route::view('/ops/rules', 'ops.rules')->middleware('permission:ops.manage')->name('ops.rules');
+
+    // Sao lưu & khôi phục cấu hình / dữ liệu hệ thống
+    Route::view('/settings/backup', 'settings.backup')
+        ->middleware('permission:system.backup')->name('settings.backup');
 });

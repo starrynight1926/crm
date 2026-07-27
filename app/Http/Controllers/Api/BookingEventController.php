@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
 use App\Models\Lead;
 use App\Models\LeadStatusLog;
+use App\Services\NotificationDispatcher;
+use App\Support\NotificationEvents;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -79,6 +81,46 @@ class BookingEventController extends Controller
             }
         });
 
+        $this->dispatchNotification($lead, $data, $bookingMa, $actorId);
+
         return response()->json(['ok' => true, 'lead_code' => $lead->code]);
+    }
+
+    protected function dispatchNotification(Lead $lead, array $data, ?string $bookingMa, ?int $actorId): void
+    {
+        [$eventKey, $tieuDe, $noiDung] = match ($data['type']) {
+            'status'  => [
+                NotificationEvents::BOOKING_STATUS_CHANGED,
+                'Booking đổi trạng thái',
+                $lead->name.' — '.(Lead::BOOKING_STATUSES[$lead->fresh()->booking_status] ?? $lead->booking_status).($bookingMa ? " ($bookingMa)" : ''),
+            ],
+            'comment' => [
+                NotificationEvents::BOOKING_NOTE_ADDED,
+                'Booking có ghi chú mới',
+                $lead->name.' — '.\Illuminate\Support\Str::limit(trim((string) ($data['comment'] ?? '')), 100),
+            ],
+            'edit'    => [
+                NotificationEvents::BOOKING_RESCHEDULED,
+                'Booking đổi lịch',
+                $lead->name.' — '.($data['summary'] ?? 'không mô tả'),
+            ],
+        };
+
+        $payload = [
+            'tieu_de'    => $tieuDe,
+            'noi_dung'   => $noiDung,
+            'link'       => '/leads/'.$lead->id,
+            'lead_id'    => $lead->id,
+            'booking_ma' => $bookingMa,
+        ];
+
+        $dispatcher = app(NotificationDispatcher::class);
+        if ($lead->owner_id && $lead->owner_id !== $actorId) {
+            $dispatcher->send($eventKey, [$lead->owner_id], $payload);
+        }
+        $dispatcher->sendToRoles($eventKey, $payload, [
+            'owner_id'    => $lead->owner_id,
+            'org_unit_id' => $lead->org_unit_id,
+        ]);
     }
 }

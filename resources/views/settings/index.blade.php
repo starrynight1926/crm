@@ -33,6 +33,9 @@
         ['label'=>'Báo cáo','desc'=>'Funnel, marketing, hiệu suất, chi tiết lead — xuất Excel.','route'=>'reports.index','perm'=>['report.view','report.view_all'],'scope'=>'org','icon'=>'chart'],
         ['label'=>'Quản lý phiên','desc'=>'Thiết bị đăng nhập & thu hồi phiên từ xa.','route'=>'sessions.index','perm'=>null,'scope'=>'me','icon'=>'device'],
         ['label'=>'Kết nối Booking','desc'=>'URL &amp; token API của hệ thống lara-sbooking; nút Đặt booking dùng cấu hình này.','route'=>'settings.booking-connection','perm'=>'connection.manage','scope'=>'system','icon'=>'plug'],
+        ['label'=>'Thiết lập thông báo','desc'=>'Tick từng vai trò → sẽ nhận loại thông báo nào (lead mới, chuyển lead, booking, ghi chú, thu hồi...).','route'=>'settings.notifications','perm'=>'role.manage','scope'=>'system','icon'=>'shield'],
+        ['label'=>'Nhật ký thông báo','desc'=>'Xem toàn bộ thông báo hệ thống đã gửi — kể cả những cái user đã ẩn.','route'=>'settings.notification-log','perm'=>'role.manage','scope'=>'system','icon'=>'chart'],
+        ['label'=>'Sao lưu & khôi phục','desc'=>'Xuất cấu hình ra JSON để backup, nhập lại để rollback; xuất toàn bộ dữ liệu ra file ZIP kèm Excel.','route'=>'settings.backup','perm'=>'system.backup','scope'=>'system','icon'=>'box'],
     ];
 
     $badges = [

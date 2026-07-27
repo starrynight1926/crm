@@ -153,6 +153,17 @@ class ProcessRawLead implements ShouldQueue
 
         LeadStatusLog::record($lead, 'created', null, 'Pipeline từ nguồn ' . $raw->source_type . ($raw->source_ref ? " ({$raw->source_ref})" : ''), null);
 
+        app(\App\Services\NotificationDispatcher::class)->sendToRoles(
+            \App\Support\NotificationEvents::LEAD_CREATED,
+            [
+                'tieu_de'  => 'Lead mới vào hệ thống',
+                'noi_dung' => $lead->name . ($lead->code ? " ({$lead->code})" : ''),
+                'link'     => '/leads/'.$lead->id,
+                'lead_id'  => $lead->id,
+            ],
+            ['owner_id' => $lead->owner_id, 'org_unit_id' => $lead->org_unit_id]
+        );
+
         $raw->update([
             'status' => RawLead::STATUS_PROCESSED,
             'clean_lead_id' => $lead->id,

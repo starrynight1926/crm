@@ -59,6 +59,7 @@ class PermissionSeeder extends Seeder
         ],
         'system' => [
             'connection.manage' => 'Quản lý kết nối nguồn lead (Ads API, webhook)',
+            'system.backup' => 'Sao lưu & khôi phục cấu hình / dữ liệu hệ thống',
         ],
     ];
 

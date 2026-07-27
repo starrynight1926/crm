@@ -146,6 +146,24 @@ new class extends Component
         );
         $this->lead->update(['note' => $this->newNote ?: $this->lead->note, 'last_care_at' => now()]);
 
+        if (trim($this->newNote) !== '') {
+            $payload = [
+                'tieu_de'  => 'Lead có ghi chú mới',
+                'noi_dung' => $this->lead->name.' — '.\Illuminate\Support\Str::limit(trim($this->newNote), 80),
+                'link'     => '/leads/'.$this->lead->id,
+                'lead_id'  => $this->lead->id,
+                'actor'    => auth()->user()?->name,
+            ];
+            $dispatcher = app(\App\Services\NotificationDispatcher::class);
+            if ($this->lead->owner_id && $this->lead->owner_id !== auth()->id()) {
+                $dispatcher->send(\App\Support\NotificationEvents::LEAD_NOTE_ADDED, [$this->lead->owner_id], $payload);
+            }
+            $dispatcher->sendToRoles(\App\Support\NotificationEvents::LEAD_NOTE_ADDED, $payload, [
+                'owner_id'    => $this->lead->owner_id,
+                'org_unit_id' => $this->lead->org_unit_id,
+            ]);
+        }
+
         $this->reset(['newNote', 'noteImages', 'noteIsReturn', 'noteIsFirstVisit', 'noteReceptionCode']);
         $this->lead->refresh();
     }

@@ -12,6 +12,8 @@ use App\Models\RuleTarget;
 use App\Models\User;
 use App\Models\UserLeadSetting;
 use App\Notifications\LeadAssigned;
+use App\Support\NotificationEvents;
+use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -266,7 +268,36 @@ class DistributionEngine
             'assigned_at' => now(),
         ]);
 
-        User::find($target->target_id)?->notify(new LeadAssigned($lead));
+        $this->notifyAssigned($lead, (int) $target->target_id);
+    }
+
+    protected function notifyAssigned(Lead $lead, int $userId, ?int $fromOwnerId = null): void
+    {
+        $payload = [
+            'tieu_de'    => 'Bạn vừa nhận lead mới',
+            'noi_dung'   => $lead->name.($lead->code ? " ({$lead->code})" : ''),
+            'link'       => '/leads/'.$lead->id,
+            'lead_id'    => $lead->id,
+            'lead_code'  => $lead->code,
+            'lead_name'  => $lead->name,
+        ];
+        App::make(NotificationDispatcher::class)
+            ->send(NotificationEvents::LEAD_ASSIGNED, [$userId], $payload);
+
+        if ($fromOwnerId && $fromOwnerId !== $userId) {
+            App::make(NotificationDispatcher::class)->send(
+                NotificationEvents::LEAD_TRANSFERRED,
+                [$fromOwnerId, $userId],
+                [
+                    'tieu_de'  => 'Lead đã được chuyển',
+                    'noi_dung' => $lead->name.($lead->code ? " ({$lead->code})" : ''),
+                    'link'     => '/leads/'.$lead->id,
+                    'lead_id'  => $lead->id,
+                    'from_owner_id' => $fromOwnerId,
+                    'to_owner_id'   => $userId,
+                ]
+            );
+        }
     }
 
     // ---------- Thao tác ngoài luồng tự động ----------
@@ -275,6 +306,8 @@ class DistributionEngine
     public function recall(Lead $lead, string $recallTo = Lead::POOL_TEAM, ?int $actorId = null): void
     {
         $toCommon = $recallTo === Lead::POOL_COMMON || $lead->org_unit_id === null;
+        $prevOwnerId = $lead->owner_id;
+        $orgUnitId = $lead->org_unit_id;
 
         LeadDistributionLog::create([
             'lead_id' => $lead->id,
@@ -292,6 +325,22 @@ class DistributionEngine
             'assigned_at' => null,
             'pool_level' => $toCommon ? Lead::POOL_COMMON : Lead::POOL_TEAM,
             'org_unit_id' => $toCommon ? null : $lead->org_unit_id,
+        ]);
+
+        $payload = [
+            'tieu_de'    => 'Lead bị thu hồi về kho',
+            'noi_dung'   => $lead->name.($lead->code ? " ({$lead->code})" : '').' — quá hạn xử lý',
+            'link'       => '/leads/'.$lead->id,
+            'lead_id'    => $lead->id,
+            'from_owner_id' => $prevOwnerId,
+        ];
+        $dispatcher = App::make(NotificationDispatcher::class);
+        if ($prevOwnerId) {
+            $dispatcher->send(NotificationEvents::LEAD_RECALLED, [$prevOwnerId], $payload);
+        }
+        $dispatcher->sendToRoles(NotificationEvents::LEAD_RECALLED, $payload, [
+            'owner_id'    => $prevOwnerId,
+            'org_unit_id' => $orgUnitId,
         ]);
     }
 
@@ -320,6 +369,8 @@ class DistributionEngine
     /** Chia thủ công cho 1 sale cụ thể (quyền lead.distribute). */
     public function manualAssign(Lead $lead, User $user, int $actorId): void
     {
+        $prevOwnerId = $lead->owner_id;
+
         LeadDistributionLog::create([
             'lead_id' => $lead->id,
             'action' => LeadDistributionLog::ACTION_MANUAL,
@@ -338,7 +389,7 @@ class DistributionEngine
             'assigned_at' => now(),
         ]);
 
-        $user->notify(new LeadAssigned($lead));
+        $this->notifyAssigned($lead, $user->id, $prevOwnerId);
     }
 
     /** Sale tự kéo lead từ kho về mình (quyền lead.pull_pool). */

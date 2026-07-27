@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Models\AuditLog;
 use App\Models\Lead;
 use App\Models\LeadStatusLog;
+use App\Services\NotificationDispatcher;
+use App\Support\NotificationEvents;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -51,6 +53,23 @@ class BookingCallbackController extends Controller
                 LeadStatusLog::record($lead, 'classification', $classificationBefore, 'booking', auth()->id());
             }
         });
+
+        $payload = [
+            'tieu_de'   => 'Lead có booking mới',
+            'noi_dung'  => $lead->name.' — mã booking '.$data['booking_ma'],
+            'link'      => '/leads/'.$lead->id,
+            'lead_id'   => $lead->id,
+            'booking_ma'=> $data['booking_ma'],
+            'actor'     => auth()->user()?->name,
+        ];
+        $dispatcher = app(NotificationDispatcher::class);
+        if ($lead->owner_id && $lead->owner_id !== auth()->id()) {
+            $dispatcher->send(NotificationEvents::LEAD_BOOKED, [$lead->owner_id], $payload);
+        }
+        $dispatcher->sendToRoles(NotificationEvents::LEAD_BOOKED, $payload, [
+            'owner_id'    => $lead->owner_id,
+            'org_unit_id' => $lead->org_unit_id,
+        ]);
 
         return redirect()->route('leads.show', $lead)
             ->with('status', 'Đã đặt booking ' . $data['booking_ma'] . ' cho khách ' . $lead->name . '.');

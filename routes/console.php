@@ -12,7 +12,7 @@ Artisan::command('inspire', function () {
 Schedule::command('leads:recall-overdue')->everyTenMinutes();
 
 // Phase 6.6 — 3 job vòng đời lead
-Schedule::command('leads:process-recalls')->hourly();
+Schedule::command('leads:process-recalls')->dailyAt('00:30');
 Schedule::command('leads:process-escalates')->dailyAt('02:00');
 Schedule::command('leads:mark-overdue-booking')->dailyAt('02:15');
 

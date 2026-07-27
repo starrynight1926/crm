@@ -130,47 +130,92 @@
         </div>
     </section>
 
-    {{-- Ghi chú Recall / Escalate + đặc thù cơ sở --}}
+    {{-- Ghi chú Thu hồi lead / Escalate — đồng bộ với "Vận hành › Quy tắc vận hành" --}}
     <section class="mb-10">
         <h2 class="text-lg font-bold text-gold-700 mb-3 flex items-center gap-2">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 2m6-2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-            Ghi chú Recall / Escalate
+            Thu hồi lead & Escalate
         </h2>
+        <p class="text-xs text-ink/50 mb-3">Nội dung dưới đây trùng khớp với hộp hướng dẫn ở <em>Vận hành › Quy tắc vận hành › Thời gian recall/escalate</em>. Sửa 1 chỗ nhớ sửa cả 2.</p>
         <div class="bg-amber-50 border border-amber-200 rounded-lg p-5 space-y-4 text-sm">
             <div>
-                <h3 class="font-bold text-amber-900 mb-1">🔁 Recall (Thu hồi)</h3>
-                <p class="mb-2 text-ink/80">Recall = deadline hết + (tuỳ chọn) các điều kiện bổ sung THỎA HẾT (AND).</p>
+                <h3 class="font-bold text-amber-900 mb-1">🔁 Điều kiện kích hoạt "Thu hồi lead"</h3>
                 <ul class="list-disc list-inside space-y-1 text-ink/80">
-                    <li><strong>Deadline</strong>: <code>recall_at = assigned_at + N ngày</code> (N cấu hình theo cơ sở).</li>
-                    <li><strong>Điều kiện bổ sung</strong> (admin tick trong "Vận hành › Quy tắc vận hành"):
-                        <ul class="list-disc list-inside ml-4">
-                            <li><em>no_activity</em>: sale không update <code>last_care_at</code> từ lúc chia.</li>
-                            <li><em>no_booking</em>: <code>booking_status</code> chưa vào booked/khách_đã_tới/tới_trễ/đã_xong.</li>
-                            <li><em>no_progress</em>: <code>classification</code> vẫn ở Mới/Lead/Missed/Gọi lại sau/KLLD.</li>
+                    <li>Sau khoảng thời gian <strong>X ngày</strong> (do trưởng bộ phận quy định trong tab "Thời gian thu hồi/escalate") mà lead <strong>không đáp ứng yêu cầu</strong> → hệ thống tự thu hồi về kho team vào <strong>00:30 sáng</strong> hôm sau, để CM hoặc người có quyền phân bổ (<code>lead.distribute</code>) chia lại cho sale khác.</li>
+                    <li><strong>Điều kiện bổ sung</strong> (tick khi Sửa policy): chỉ thu hồi nếu THỎA HẾT các điều kiện đã tick:
+                        <ul class="list-disc list-inside ml-4 mt-1">
+                            <li><em>Không cập nhật trường nào</em>: sale chưa động vào lead từ lúc chia.</li>
+                            <li><em>Chưa đặt lịch booking</em>: <code>booking_status</code> không phải booked/khách_đã_tới/tới_trễ/đã_xong.</li>
+                            <li><em>Chưa tiến triển phân loại</em>: vẫn ở Mới / Lead / Missed / Gọi lại sau / KLLD.</li>
                         </ul>
                     </li>
-                    <li>Không tick điều kiện → chỉ dùng deadline.</li>
-                    <li>Cron <code>leads:process-recalls</code> chạy <strong>mỗi giờ</strong>.</li>
-                    <li>Muốn tránh recall hoàn toàn: CM tick "Chia vĩnh viễn" lúc chia (không có deadline).</li>
+                    <li>Không tick điều kiện nào → chỉ dùng deadline. Có tick → deadline hết vẫn có thể bỏ qua nếu sale đang cày.</li>
+                    <li>CM tick <strong>"Chia vĩnh viễn"</strong> ở form chia → hoàn toàn miễn thu hồi.</li>
+                    <li>Team con không cấu hình → thừa hưởng từ ancestor gần nhất (ancestor cấp cao có cấu hình sẽ thắng).</li>
                 </ul>
             </div>
             <div>
                 <h3 class="font-bold text-amber-900 mb-1">⬆️ Escalate</h3>
                 <ul class="list-disc list-inside space-y-1 text-ink/80">
-                    <li>Lead bị recall về kho team mà không ai nhận tiếp trong <strong>M ngày</strong> → cron <code>leads:process-escalates</code> (chạy 02:00 hằng ngày) chuyển sang <strong>org cha trực tiếp</strong> (ancestor).</li>
+                    <li>Lead bị thu hồi về kho team mà không ai nhận tiếp trong <strong>M ngày</strong> → cron <code>leads:process-escalates</code> (chạy 02:00 hằng ngày) chuyển sang <strong>org cha trực tiếp</strong> (ancestor).</li>
                     <li>Không phải "kho trước đó theo lịch sử" — mà là <strong>đi lên 1 tầng</strong> trong cây tổ chức (team → phòng → cơ sở → công ty).</li>
                     <li>Ví dụ: <code>team-ashley-sale</code> → <code>team-ashley</code> → <code>marketing-hcm</code> → <code>branch-hcm</code> → <code>company</code>.</li>
                     <li>Root (Công ty) → dừng, không escalate được nữa.</li>
                 </ul>
             </div>
             <div>
-                <h3 class="font-bold text-amber-900 mb-1">🌊 Job cron riêng: Recall idle booking (miền Nam)</h3>
+                <h3 class="font-bold text-amber-900 mb-1">🌊 Job cron riêng: Thu hồi lead booking idle (miền Nam)</h3>
                 <ul class="list-disc list-inside space-y-1 text-ink/80">
-                    <li>Áp dụng cho lead phase Booking đã có owner. Sau N ngày (mặc định 1) mà <strong>không update</strong> + <strong>không có lịch đặt</strong> → auto recall về kho team booking.</li>
-                    <li>Khác với recall_at ở trên: cơ chế này <strong>không phụ thuộc</strong> CM tick gì, chạy dựa trên activity + booking_status.</li>
+                    <li>Áp dụng cho lead phase Booking đã có owner. Sau N ngày (mặc định 1) mà <strong>không update</strong> + <strong>không có lịch đặt</strong> → tự thu hồi về kho team booking.</li>
+                    <li>Khác với <code>recall_at</code> ở trên: cơ chế này <strong>không phụ thuộc</strong> CM tick gì, chạy dựa trên activity + booking_status.</li>
                     <li>Bật/tắt + đổi số ngày ở tab <em>Vận hành › Quy tắc vận hành › Job cron</em>.</li>
                 </ul>
             </div>
+        </div>
+    </section>
+
+    {{-- Luồng đặt booking (CRM → sbooking → callback) --}}
+    <section class="mb-10">
+        <h2 class="text-lg font-bold text-gold-700 mb-3 flex items-center gap-2">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3.75 8.25h16.5M4.5 6h15a.75.75 0 01.75.75v12a.75.75 0 01-.75.75h-15a.75.75 0 01-.75-.75v-12A.75.75 0 014.5 6z"/></svg>
+            Luồng đặt booking (CRM ↔ sbooking)
+        </h2>
+        <div class="bg-emerald-50 border border-emerald-200 rounded-lg p-5 text-sm space-y-4">
+            <p>Nút <strong>"Đặt booking"</strong> ở chi tiết lead <em>không</em> tạo booking bên CRM — nó nhảy sang hệ thống <strong>lara-sbooking</strong> để sale tạo lịch, sau đó sbooking tự đẩy kết quả về CRM. Chi tiết:</p>
+
+            <ol class="list-decimal list-inside space-y-2 text-ink/85">
+                <li>
+                    <strong>Trong CRM</strong> — vào chi tiết lead → bấm <strong>Đặt booking</strong> → dropdown chọn:
+                    <ul class="list-disc list-inside ml-6 mt-1 text-ink/70">
+                        <li>🏥 <em>Đặt phòng khám</em> (khám lâm sàng / tư vấn)</li>
+                        <li>💆 <em>Đặt dịch vụ</em> (xông hơi, YHCT, các dịch vụ khác)</li>
+                    </ul>
+                </li>
+                <li>
+                    <strong>Tab mới mở sang sbooking</strong> — URL đã đính kèm sẵn <code>ho_ten</code>, <code>so_dien_thoai</code>, <code>khach_ma</code>, <code>return_url</code>. Sale <strong>không phải gõ lại</strong> tên/SĐT.
+                    <ul class="list-disc list-inside ml-6 mt-1 text-ink/70">
+                        <li>Nếu chưa login sbooking → nhập tài khoản (mỗi cơ sở dùng username riêng, pass mặc định <code>123456</code>).</li>
+                        <li>Cơ sở nào <strong>chưa map slug</strong> sang sbooking → nút hiện xám "Đặt booking (chưa map cơ sở)" — admin vào <em>Cài đặt › Kết nối Booking</em> nhập slug.</li>
+                    </ul>
+                </li>
+                <li>
+                    <strong>Sale bên sbooking</strong> — chọn ngày/giờ, bác sĩ (form phòng khám) hoặc kỹ thuật viên/phòng (form dịch vụ), điền ghi chú nếu cần → bấm <strong>Xác nhận</strong>. Sbooking tạo booking, sinh <code>booking_ma</code> (vd <code>HN-2607-001</code>).
+                </li>
+                <li>
+                    <strong>Sbooking redirect về CRM</strong> — bằng <code>return_url</code> đã đính, kèm query <code>booking_ma</code> và <code>booking_id</code>. Endpoint CRM (<code>BookingCallbackController</code>) tự động cập nhật lead:
+                    <ul class="list-disc list-inside ml-6 mt-1 text-ink/70">
+                        <li><code>booking_status = booked</code>, <code>booked_at = now()</code>, lưu <code>booking_ma</code>.</li>
+                        <li><code>classification = booking</code> (nếu trước đó chưa phải).</li>
+                        <li>Ghi Lịch sử tương tác: "Đã đặt booking XXX bên hệ thống Booking.".</li>
+                        <li>Bắn thông báo <em>lead.booked</em> tới owner + role được cấu hình trong <em>Cài đặt › Thiết lập thông báo</em>.</li>
+                    </ul>
+                </li>
+                <li>
+                    <strong>Đồng bộ ngược khi lỡ đặt trực tiếp trên sbooking</strong> — nếu sale tạo booking bên sbooking mà không qua nút CRM (vd. tạo cho khách khác), bấm nút <strong>Đồng bộ từ Booking</strong> ở chi tiết lead → CRM gọi API sbooking bằng SĐT, lấy booking mới nhất và cập nhật giống flow callback ở bước 4.
+                </li>
+            </ol>
+
+            <p class="text-xs text-ink/60 italic">Lưu ý: quyền bấm nút này gắn với <code>lead.book_action</code>. Team trực page không có quyền này — chỉ team booking / team ĐN có.</p>
         </div>
     </section>
 
