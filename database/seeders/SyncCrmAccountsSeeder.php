@@ -16,7 +16,7 @@ class SyncCrmAccountsSeeder extends Seeder
         // Map: email hiện tại -> username (khớp với booking cho user trùng người,
         // còn lại lấy prefix email).
         $usernameByEmail = [
-            'admin@longevity.com.vn'    => 'admincrm',
+            'admin@longevity.com.vn'    => 'admin',
             'nvkd@longevity.com.vn'     => 'nvkd',
             'nvmkt@longevity.com.vn'    => 'nvmkt',
             'huyently@longevity.com.vn' => 'huyently',
@@ -72,11 +72,10 @@ class SyncCrmAccountsSeeder extends Seeder
         // Password giữ nguyên như booking:
         //   - 59ntn (KTV/ĐD/team hỗ trợ) + adminvh -> '59@ntn'
         //   - 207nvt (KTV/ĐD)                       -> '207nvt'
-        //   - BS chung (bsi59ntn, bsi207nvt)         -> 'bacsi'
-        // Chưa gán role/org — admin sẽ gán sau qua UI.
+        // 2026-07-27: đồng bộ mật khẩu — admin dùng '59ntn', mọi user thường dùng '59@ntn'.
         $pw59  = Hash::make('59@ntn');
-        $pw207 = Hash::make('207nvt');
-        $pwBs  = Hash::make('bacsi');
+        $pw207 = Hash::make('59@ntn');
+        $pwBs  = Hash::make('59@ntn');
 
         $bookingOnly = [
             ['username' => 'adminvh',    'name' => 'Admin Vận hành',            'password' => $pw59],

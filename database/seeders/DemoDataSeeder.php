@@ -291,7 +291,7 @@ class DemoDataSeeder extends Seeder
     {
         $user = User::updateOrCreate(
             ['email' => $email],
-            ['name' => $name, 'password' => '123456', 'status' => User::STATUS_ACTIVE]
+            ['name' => $name, 'password' => '59@ntn', 'status' => User::STATUS_ACTIVE]
         );
 
         if ($role && $org && ! Assignment::where('user_id', $user->id)->exists()) {

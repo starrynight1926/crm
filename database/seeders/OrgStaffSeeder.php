@@ -269,7 +269,7 @@ class OrgStaffSeeder extends Seeder
                     'name'      => $u['name'],
                     'email'     => $u['email'],
                     'job_title' => $u['job_title'],
-                    'password'  => $u['email'] === 'admin@longevity.com.vn' ? 'admin@123' : '123456',
+                    'password'  => $u['email'] === 'admin@longevity.com.vn' ? '59ntn' : '59@ntn',
                     'status'    => User::STATUS_ACTIVE,
                 ]);
             } else {

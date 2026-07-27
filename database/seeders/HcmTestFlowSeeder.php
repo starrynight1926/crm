@@ -24,20 +24,15 @@ class HcmTestFlowSeeder extends Seeder
             return;
         }
 
-        $user = User::firstWhere('name', 'CM Booking Team Ashley');
-        if (! $user) {
-            $user = User::create([
+        $user = User::updateOrCreate(
+            ['username' => 'cmbooking_ashley'],
+            [
                 'name' => 'CM Booking Team Ashley',
-                'username' => 'tmp',
-                'email' => 'tmp-cmbooking-ashley@longevity.com.vn',
-                'password' => '123456',
+                'email' => 'cmbooking_ashley@longevity.com.vn',
+                'password' => '59@ntn',
                 'status' => User::STATUS_ACTIVE,
-            ]);
-            $user->update([
-                'username' => 'hcmcm.' . $user->id,
-                'email' => 'hcmcm.' . $user->id . '@longevity.com.vn',
-            ]);
-        }
+            ],
+        );
 
         Assignment::updateOrCreate(
             ['user_id' => $user->id, 'role_id' => $roleCmBooking->id, 'org_unit_id' => $bookingOrg->id],
