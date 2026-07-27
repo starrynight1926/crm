@@ -19,8 +19,9 @@ class HnDnTestFlowSeeder extends Seeder
 {
     public function run(): void
     {
-        // ─── HN accounts (via team-giang subtree) ─────────────────
-        $hnPage    = OrgUnit::where('code', 'team-giang-page')->firstOrFail();
+        // ─── HN accounts ─────────────────
+        // Team Trực Page dùng chung cho Marketing HN (không thuộc team-giang nữa).
+        $hnPage    = OrgUnit::where('code', 'team-truc-page')->firstOrFail();
         $hnBooking = OrgUnit::where('code', 'team-giang-booking')->firstOrFail();
         $hnSale    = OrgUnit::where('code', 'team-giang-sale')->firstOrFail();
 

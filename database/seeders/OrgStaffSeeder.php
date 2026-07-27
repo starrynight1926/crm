@@ -35,13 +35,13 @@ class OrgStaffSeeder extends Seeder
             ['code' => 'company', 'name' => 'Công ty', 'children' => [
                 ['code' => 'branch-hn', 'name' => 'Cơ sở Hà Nội: 59 Ngô Thì Nhậm', 'children' => [
                     ['code' => 'marketing-hn', 'name' => 'Marketing', 'children' => [
+                        // Team Trực Page dùng chung cho Marketing HN — chia số xuống các team sale.
+                        ['code' => 'team-truc-page', 'name' => 'Team Trực Page'],
                         ['code' => 'team-giang', 'name' => 'Team Trần Thị Thu Giang', 'children' => [
-                            ['code' => 'team-giang-page', 'name' => 'Team Trực Page'],
                             ['code' => 'team-giang-booking', 'name' => 'Team Booking'],
                             ['code' => 'team-giang-sale', 'name' => 'Team Sale'],
                         ]],
                         ['code' => 'team-hoi-hn', 'name' => 'Team Tạ Văn Hợi', 'children' => [
-                            ['code' => 'team-hoi-page', 'name' => 'Team Trực Page'],
                             ['code' => 'team-hoi-booking', 'name' => 'Team Booking'],
                             ['code' => 'team-hoi-sale', 'name' => 'Team Sale'],
                         ]],
@@ -50,6 +50,8 @@ class OrgStaffSeeder extends Seeder
                 ]],
                 ['code' => 'branch-hcm', 'name' => 'Cơ sở HCM: 207 Nguyễn Văn Thụ', 'children' => [
                     ['code' => 'marketing-hcm', 'name' => 'Marketing', 'children' => [
+                        // Team Trực Page dùng chung cho Marketing HCM — chia số xuống team sale.
+                        ['code' => 'team-truc-page-hcm', 'name' => 'Team Trực Page'],
                         ['code' => 'team-ashley', 'name' => 'Team Ms. Ashley', 'children' => [
                             ['code' => 'team-ashley-booking', 'name' => 'Team Booking'],
                             ['code' => 'team-ashley-sale', 'name' => 'Team Sale'],
@@ -354,7 +356,7 @@ class OrgStaffSeeder extends Seeder
             ['lpd@longevity.com.vn',  'Sale', 'team-ashley-sale', Assignment::SCOPE_SELF, []],
 
             // Luồng 6 nguồn Phase 6.6
-            ['page1@longevity.com.vn',  'Team trực page', 'team-giang-page', Assignment::SCOPE_SELF, []],
+            ['page1@longevity.com.vn',  'Team trực page', 'team-truc-page', Assignment::SCOPE_SELF, []],
             ['cmbktg@longevity.com.vn',   'CM booking',     'team-giang-booking', Assignment::SCOPE_TEAM, []],
             ['book1@longevity.com.vn',  'Team booking',   'team-giang-booking', Assignment::SCOPE_SELF, []],
             ['book2@longevity.com.vn',  'Team booking',   'team-hoi-booking',   Assignment::SCOPE_SELF, []],

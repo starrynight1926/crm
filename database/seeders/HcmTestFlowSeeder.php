@@ -19,17 +19,14 @@ use Illuminate\Database\Seeder;
  *   - test.hcm.cmsale     → CM sale         (chia lead cho sale)
  *   - test.hcm.sale1/2    → Team sale (role "Sale")
  *
- * Cũng tạo org 'team-ashley-page' cho Team trực page HCM.
+ * Team Trực Page HCM (team-truc-page-hcm) nằm thẳng dưới marketing-hcm, dùng chung.
  */
 class HcmTestFlowSeeder extends Seeder
 {
     public function run(): void
     {
-        // 1) Tạo org team-ashley-page nếu chưa có.
-        $teamAshley = OrgUnit::where('code', 'team-ashley')->firstOrFail();
-        $pageOrg = OrgUnit::firstWhere('code', 'team-ashley-page')
-            ?? OrgUnit::createNode(['code' => 'team-ashley-page', 'name' => 'Team Trực Page'], $teamAshley);
-
+        // Team Trực Page HCM dùng chung — không đặt dưới team-ashley.
+        $pageOrg = OrgUnit::where('code', 'team-truc-page-hcm')->firstOrFail();
         $bookingOrg = OrgUnit::where('code', 'team-ashley-booking')->firstOrFail();
         $saleOrg    = OrgUnit::where('code', 'team-ashley-sale')->firstOrFail();
 
