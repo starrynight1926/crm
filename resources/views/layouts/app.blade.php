@@ -109,6 +109,7 @@
                         @if (auth()->user()->hasAnyPermission($adminPerms))
                             <a href="{{ route('settings.index') }}" class="block px-4 py-2 hover:bg-gold-50">Cài đặt</a>
                         @endif
+                        <a href="{{ route('settings.password') }}" class="block px-4 py-2 hover:bg-gold-50">Đổi mật khẩu</a>
                         <a href="{{ route('sessions.index') }}" class="block px-4 py-2 hover:bg-gold-50">Quản lý phiên đăng nhập</a>
                         @if (auth()->user()->hasPermission('connection.manage'))
                             <a href="{{ route('sources.index') }}" class="block px-4 py-2 hover:bg-gold-50">Kết nối nguồn lead</a>

@@ -21,6 +21,7 @@ Route::middleware('auth')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
     Route::view('/dashboard', 'dashboard')->name('dashboard');
     Route::view('/settings/sessions', 'settings.sessions')->name('sessions.index');
+    Route::view('/settings/password', 'settings.password')->name('settings.password');
     Route::view('/settings', 'settings.index')->name('settings.index');
 
     // Thông báo (in-app)
@@ -49,7 +50,7 @@ Route::middleware('auth')->group(function () {
     Route::view('/reports', 'reports.index')->middleware('permission:report.view,report.view_all')->name('reports.index');
     Route::view('/sources', 'sources.connections')->middleware('permission:connection.manage')->name('sources.index');
 
-    // /leads/create chỉ cần lead.create (Team trực page dùng để up lead nhưng không xem danh sách)
+    // /leads/create chỉ cần lead.create (Team nhập lead dùng để up lead nhưng không xem danh sách)
     Route::view('/leads/create', 'leads.create')->middleware('permission:lead.create')->name('leads.create');
 
     Route::prefix('leads')->middleware('permission:lead.view')->group(function () {
