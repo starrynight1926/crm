@@ -289,10 +289,17 @@ class DemoDataSeeder extends Seeder
 
     private function staff(string $email, string $name, ?Role $role, ?OrgUnit $org, string $scope = Assignment::SCOPE_SELF): void
     {
-        $user = User::updateOrCreate(
-            ['email' => $email],
-            ['name' => $name, 'password' => '59@ntn', 'status' => User::STATUS_ACTIVE]
-        );
+        // Fallback qua name nếu email đã bị rename sang format vị trí.
+        $existing = User::firstWhere('email', $email) ?? User::firstWhere('name', $name);
+        if ($existing) {
+            $existing->update(['name' => $name, 'status' => User::STATUS_ACTIVE]);
+            $user = $existing;
+        } else {
+            $user = User::create([
+                'email' => $email, 'name' => $name,
+                'password' => '59@ntn', 'status' => User::STATUS_ACTIVE,
+            ]);
+        }
 
         if ($role && $org && ! Assignment::where('user_id', $user->id)->exists()) {
             Assignment::create([

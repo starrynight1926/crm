@@ -24,16 +24,18 @@ class HnDnTestFlowSeeder extends Seeder
             return;
         }
 
-        // Tạo user theo pattern chuẩn: hncm.{id}. Dùng name làm khoá tra để giữ idempotent.
-        $user = User::updateOrCreate(
-            ['username' => 'cmsale_giang'],
-            [
-                'name' => 'CM Sale Team Giang',
+        // Fallback qua name nếu username đã đổi sang format vị trí (hn.cms##).
+        $user = User::firstWhere('username', 'cmsale_giang')
+            ?? User::firstWhere('name', 'CM Sale Team Giang');
+        if ($user) {
+            $user->update(['name' => 'CM Sale Team Giang', 'status' => User::STATUS_ACTIVE]);
+        } else {
+            $user = User::create([
+                'username' => 'cmsale_giang', 'name' => 'CM Sale Team Giang',
                 'email' => 'cmsale_giang@longevity.com.vn',
-                'password' => '59@ntn',
-                'status' => User::STATUS_ACTIVE,
-            ],
-        );
+                'password' => '59@ntn', 'status' => User::STATUS_ACTIVE,
+            ]);
+        }
 
         Assignment::updateOrCreate(
             ['user_id' => $user->id, 'role_id' => $roleCmSale->id, 'org_unit_id' => $hnSale->id],

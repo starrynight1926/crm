@@ -8,6 +8,25 @@ use Illuminate\Database\Seeder;
 
 class OrgUnitManagerSeeder extends Seeder
 {
+    /**
+     * Email cũ → Tên đầy đủ. Dùng làm fallback nếu email đã bị rename
+     * sang format vị trí (hn.sale01@...) — match lại qua tên.
+     */
+    private const EMAIL_TO_NAME = [
+        'mstuyet@longevity.com.vn' => 'Tuyết',
+        'msan@longevity.com.vn'    => 'An',
+        'tnkn@longevity.com.vn'    => 'Trần Nguyễn Kim Ngân',
+        'ltkp@longevity.com.vn'    => 'Lương Thị Kim Phấn',
+        'ttg@longevity.com.vn'     => 'Trần Thị Thu Giang',
+        'tvh@longevity.com.vn'     => 'Tạ Văn Hợi',
+        'nhd@longevity.com.vn'     => 'Nguyễn Hoành Đức',
+        'tbt@longevity.com.vn'     => 'Trần Thị Bích Trâm',
+        'hbtl@longevity.com.vn'    => 'Huỳnh Bùi Thanh Lan',
+        'ptkq@longevity.com.vn'    => 'Phan Trần Khánh Quỳn',
+        'baoit@longevity.com.vn'   => 'Bảo',
+        'tumod@longevity.com.vn'   => 'Tú',
+    ];
+
     public function run(): void
     {
         // org unit code => list email người quản lý (nhiều người được)
@@ -30,9 +49,15 @@ class OrgUnitManagerSeeder extends Seeder
                 $this->command?->warn("Bỏ qua manager: không thấy org '$code'");
                 continue;
             }
-            $ids = User::whereIn('email', $emails)->pluck('id')->all();
+            // Match qua email; fallback qua tên nếu email đã rename.
+            $names = array_values(array_filter(array_map(fn ($e) => self::EMAIL_TO_NAME[$e] ?? null, $emails)));
+            $ids = User::where(function ($q) use ($emails, $names) {
+                $q->whereIn('email', $emails);
+                if ($names) $q->orWhereIn('name', $names);
+            })->pluck('id')->unique()->all();
+
             if (empty($ids)) {
-                $this->command?->warn("Bỏ qua manager cho '$code': không thấy user nào trong " . implode(',', $emails));
+                $this->command?->warn("Bỏ qua manager cho '$code': không thấy user nào");
                 continue;
             }
             $unit->managers()->syncWithoutDetaching($ids);

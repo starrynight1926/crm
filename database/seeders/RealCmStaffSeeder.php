@@ -99,15 +99,19 @@ class RealCmStaffSeeder extends Seeder
         ];
 
         foreach ($staff as [$email, $name, $role, $org, $scope, $scopeNodes, $jobTitle]) {
-            $user = User::updateOrCreate(
-                ['email' => $email],
-                [
-                    'name' => $name,
-                    'job_title' => $jobTitle,
-                    'password' => self::PASSWORD,
-                    'status' => User::STATUS_ACTIVE,
-                ]
-            );
+            // Match qua email; fallback qua name nếu email đã bị rename sang format vị trí.
+            $existing = User::firstWhere('email', $email) ?? User::firstWhere('name', $name);
+            if ($existing) {
+                $existing->update([
+                    'name' => $name, 'job_title' => $jobTitle, 'status' => User::STATUS_ACTIVE,
+                ]);
+                $user = $existing;
+            } else {
+                $user = User::create([
+                    'email' => $email, 'name' => $name, 'job_title' => $jobTitle,
+                    'password' => self::PASSWORD, 'status' => User::STATUS_ACTIVE,
+                ]);
+            }
 
             if (! $role || ! $org) {
                 continue;
@@ -163,15 +167,16 @@ class RealCmStaffSeeder extends Seeder
                 continue;
             }
 
-            $user = User::updateOrCreate(
-                ['email' => $email],
-                [
-                    'name' => $userName,
-                    'job_title' => 'CM Team',
-                    'password' => self::PASSWORD,
-                    'status' => User::STATUS_ACTIVE,
-                ]
-            );
+            $existing = User::firstWhere('email', $email) ?? User::firstWhere('name', $userName);
+            if ($existing) {
+                $existing->update(['name' => $userName, 'job_title' => 'CM Team', 'status' => User::STATUS_ACTIVE]);
+                $user = $existing;
+            } else {
+                $user = User::create([
+                    'email' => $email, 'name' => $userName, 'job_title' => 'CM Team',
+                    'password' => self::PASSWORD, 'status' => User::STATUS_ACTIVE,
+                ]);
+            }
 
             $assignment = Assignment::where('user_id', $user->id)
                 ->where('role_id', $roleTl->id)

@@ -24,15 +24,18 @@ class HcmTestFlowSeeder extends Seeder
             return;
         }
 
-        $user = User::updateOrCreate(
-            ['username' => 'cmbooking_ashley'],
-            [
-                'name' => 'CM Booking Team Ashley',
+        // Fallback qua name nếu username đã bị đổi sang format vị trí (hcm.cmb##).
+        $user = User::firstWhere('username', 'cmbooking_ashley')
+            ?? User::firstWhere('name', 'CM Booking Team Ashley');
+        if ($user) {
+            $user->update(['name' => 'CM Booking Team Ashley', 'status' => User::STATUS_ACTIVE]);
+        } else {
+            $user = User::create([
+                'username' => 'cmbooking_ashley', 'name' => 'CM Booking Team Ashley',
                 'email' => 'cmbooking_ashley@longevity.com.vn',
-                'password' => '59@ntn',
-                'status' => User::STATUS_ACTIVE,
-            ],
-        );
+                'password' => '59@ntn', 'status' => User::STATUS_ACTIVE,
+            ]);
+        }
 
         Assignment::updateOrCreate(
             ['user_id' => $user->id, 'role_id' => $roleCmBooking->id, 'org_unit_id' => $bookingOrg->id],

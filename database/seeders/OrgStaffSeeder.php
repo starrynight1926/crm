@@ -194,9 +194,10 @@ class OrgStaffSeeder extends Seeder
     // ---------------------------------------------------------------------
     // 3) Users (nhân sự + chức danh)
     // ---------------------------------------------------------------------
-    private function seedUsers(): void
+    /** Danh sách user seed — dùng cho cả seedUsers() và seedAssignments() (fallback match qua name). */
+    private function userDefs(): array
     {
-        $users = [
+        return [
             // Hệ thống / demo
             ['email' => 'admin@longevity.com.vn',  'name' => 'Quản trị viên',       'job_title' => null],
             ['email' => 'nvkd@longevity.com.vn',   'name' => 'NV Kinh Doanh',        'job_title' => null],
@@ -266,6 +267,11 @@ class OrgStaffSeeder extends Seeder
             ['email' => 'book2@longevity.com.vn',  'name' => 'Trần Booking 2',    'job_title' => null],
             ['email' => 'cmsale@longevity.com.vn', 'name' => 'CM Sale',           'job_title' => null],
         ];
+    }
+
+    private function seedUsers(): void
+    {
+        $users = $this->userDefs();
 
         // Cleanup: user demo cũ "Phạm Trực Page 1" — xoá assignment + user nếu còn.
         $legacyPage = User::firstWhere('email', 'page1@longevity.com.vn');
@@ -275,7 +281,9 @@ class OrgStaffSeeder extends Seeder
         }
 
         foreach ($users as $u) {
-            $existing = User::firstWhere('email', $u['email']);
+            // Match theo email cũ; nếu không thấy (đã bị rename sang format vị trí), match qua tên.
+            $existing = User::firstWhere('email', $u['email'])
+                ?? User::firstWhere('name', $u['name']);
             if (! $existing) {
                 User::create([
                     'name'      => $u['name'],
@@ -381,7 +389,10 @@ class OrgStaffSeeder extends Seeder
         // Giờ chuyển sang role "Team sale ĐN" @ team-dn-sale — xoá các assignment cũ để tránh union.
         $dnEmails = ['ntan@longevity.com.vn','lthu@longevity.com.vn','ltkhi@longevity.com.vn',
                      'stk@longevity.com.vn','lttv@longevity.com.vn','tnah@longevity.com.vn','ntmh@longevity.com.vn'];
-        $dnUserIds = User::whereIn('email', $dnEmails)->pluck('id');
+        // Fallback qua name nếu email đã bị rename.
+        $dnNames = ['Nguyễn Thị Ánh Nhung','Lê Thị Hoàng Uyên','Lương Thị Kim Hiếu',
+                    'Sử Trung Kiên','Lương Thị Tường Vy','Trần Ngọc An Hoà','Nguyễn Thị Mỹ Hạnh'];
+        $dnUserIds = User::whereIn('email', $dnEmails)->orWhereIn('name', $dnNames)->pluck('id');
         $marketingDnId = OrgUnit::where('code', 'marketing-dn')->value('id');
         if ($dnUserIds->isNotEmpty() && $marketingDnId) {
             Assignment::whereIn('user_id', $dnUserIds)
@@ -389,8 +400,12 @@ class OrgStaffSeeder extends Seeder
                 ->delete();
         }
 
+        // Map email cũ → tên (fallback nếu email đã bị rename sang format vị trí).
+        $emailToName = collect($this->userDefs())->pluck('name', 'email')->all();
+
         foreach ($assignments as [$email, $roleName, $orgCode, $scope, $scopeCodes]) {
-            $user = User::firstWhere('email', $email);
+            $user = User::firstWhere('email', $email)
+                ?? (isset($emailToName[$email]) ? User::firstWhere('name', $emailToName[$email]) : null);
             $role = Role::firstWhere('name', $roleName);
             $org  = OrgUnit::firstWhere('code', $orgCode);
             if (! $user || ! $role || ! $org) {

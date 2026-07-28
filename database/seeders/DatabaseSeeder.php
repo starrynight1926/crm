@@ -24,6 +24,7 @@ class DatabaseSeeder extends Seeder
             SyncCrmAccountsSeeder::class,    // Đồng bộ username + password với Booking (admin=59ntn, user=59@ntn)
             HnDnTestFlowSeeder::class,       // 1 CM sale cho team-giang-sale (team này chưa có CM real)
             HcmTestFlowSeeder::class,        // 1 CM booking cho team-ashley-booking (team này chưa có CM real)
+            RenameUsersToPositionFormatSeeder::class, // Đổi username+email sang <cơ_sở>.<chức_vụ>NN — CHẠY CUỐI
         ]);
     }
 }
