@@ -253,7 +253,7 @@ class RealCmStaffSeeder extends Seeder
                         'received_date' => now()->toDateString(),
                         'classification' => 'new',
                         'pool_level' => Lead::POOL_TEAM,
-                        'source_group' => Lead::SOURCE_MARKETING,
+                        'source_group' => Lead::SOURCE_MKT,
                         'approval_status' => 'none',
                         'receiver_id' => $admin?->id,
                         'org_unit_id' => $unit->id,

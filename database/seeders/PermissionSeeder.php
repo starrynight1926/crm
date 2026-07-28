@@ -33,7 +33,6 @@ class PermissionSeeder extends Seeder
             'lead.distribute_sale' => 'Chia số ở kho Sale (CM team sale)',
             'lead.distribute_to_team' => 'CM cơ sở: chia lead từ kho công ty/cơ sở xuống kho team',
             'lead.distribute_to_sale' => 'CM team: chia lead từ kho team xuống sale (owner)',
-            'lead.distribute_ctv' => 'Phân bổ nguồn Cộng tác viên (theo khu vực)',
             'lead.recall' => 'Thu hồi lead + đặt mốc thu hồi khi chia',
             'lead.approve_source' => 'Duyệt lead từ luồng "Khách tự đến"',
             'lead.pull_pool' => 'Kéo lead từ kho (legacy — chỉ hiện khi role tick tay)',

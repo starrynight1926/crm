@@ -44,35 +44,24 @@ class Phase66FlowsTest extends TestCase
         ]);
     }
 
-    public function test_admin_thay_du_6_nhom_nguon(): void
+    public function test_admin_thay_du_7_nhom_nguon(): void
     {
         $sources = Lead::allowedSourceGroupsFor($this->admin);
-        $this->assertCount(6, $sources);
+        $this->assertCount(7, $sources);
     }
 
-    public function test_nv_thuong_chi_thay_2_nhom_khong_can_permission(): void
+    public function test_nv_thuong_chi_thay_4_nhom_khong_can_permission(): void
     {
+        // Nhóm 2 (BOD/SA/BA) + Nhóm 3 (WI) đều mở cho ai cũng nhập được.
         $sources = Lead::allowedSourceGroupsFor($this->regular);
-        $this->assertArrayHasKey(Lead::SOURCE_REFERRAL, $sources);
-        $this->assertArrayHasKey(Lead::SOURCE_WALK_IN, $sources);
-        $this->assertArrayNotHasKey(Lead::SOURCE_MARKETING, $sources);
-        $this->assertArrayNotHasKey(Lead::SOURCE_CTV, $sources);
-        $this->assertCount(2, $sources);
-    }
-
-    public function test_cm_khu_vuc_thay_them_nhom_ctv(): void
-    {
-        $cmRole = Role::create(['name' => 'CM Hà Nội', 'is_system' => true]);
-        $cmRole->permissions()->sync(Permission::where('key', 'lead.distribute_ctv')->pluck('id'));
-        $cm = User::factory()->create();
-        Assignment::create([
-            'user_id' => $cm->id, 'role_id' => $cmRole->id,
-            'org_unit_id' => $this->company->id, 'data_scope' => Assignment::SCOPE_SELF,
-        ]);
-
-        $sources = Lead::allowedSourceGroupsFor($cm);
-        $this->assertArrayHasKey(Lead::SOURCE_CTV, $sources);
-        $this->assertArrayNotHasKey(Lead::SOURCE_MARKETING, $sources);
+        $this->assertArrayHasKey(Lead::SOURCE_BOD, $sources);
+        $this->assertArrayHasKey(Lead::SOURCE_SA, $sources);
+        $this->assertArrayHasKey(Lead::SOURCE_BA, $sources);
+        $this->assertArrayHasKey(Lead::SOURCE_WI, $sources);
+        $this->assertArrayNotHasKey(Lead::SOURCE_MKT, $sources);
+        $this->assertArrayNotHasKey(Lead::SOURCE_MKT_BR, $sources);
+        $this->assertArrayNotHasKey(Lead::SOURCE_BDM, $sources);
+        $this->assertCount(4, $sources);
     }
 
     public function test_route_leads_approvals_can_permission(): void
@@ -95,7 +84,7 @@ class Phase66FlowsTest extends TestCase
             'name' => 'Khách walk-in', 'phone' => '0900000001',
             'received_date' => now()->toDateString(),
             'classification' => 'new', 'pool_level' => Lead::POOL_COMMON,
-            'source_group' => Lead::SOURCE_WALK_IN,
+            'source_group' => Lead::SOURCE_WI,
             'approval_status' => Lead::APPROVAL_PENDING,
             'org_unit_id' => $this->company->id,
         ]);

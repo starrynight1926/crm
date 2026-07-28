@@ -30,7 +30,7 @@ class SyncFromBookingTest extends TestCase
             'phone' => '0900018888',
             'received_date' => now(),
             'classification' => 'new',
-            'source_group' => 'referral',
+            'source_group' => 'bod',
             'pipeline_phase' => Lead::PHASE_SALE,
             'pipeline_status' => Lead::PSTATUS_IN_CARE,
             'booking_status' => Lead::BOOKING_NOT_BOOKED,

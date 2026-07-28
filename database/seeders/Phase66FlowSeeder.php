@@ -10,8 +10,8 @@ use App\Models\User;
 use Illuminate\Database\Seeder;
 
 /**
- * Phase 6.6+ — seed 4 role + org units + user demo cho luồng 6 nguồn:
- * Team trực page / CM booking / Team booking / CM sale.
+ * Phase 6.6+ — seed 4 role + org units + user demo cho luồng 7 nguồn:
+ * Team nhập lead / CM booking / Team booking / CM sale.
  * Idempotent — chạy lại không nhân đôi.
  */
 class Phase66FlowSeeder extends Seeder
@@ -30,12 +30,12 @@ class Phase66FlowSeeder extends Seeder
 
         // 2) 4 role mới. Permissions gán theo SOURCE_PERMISSIONS + nhu cầu luồng.
         $roleDefs = [
-            'Team trực page' => [
-                'desc' => 'Team trực page marketing — up lead nguồn Marketing/Data lạnh/BDM',
+            'Team nhập lead' => [
+                'desc' => 'Team nhập lead marketing — up lead nguồn MKT / MKT BR / BDM',
                 'perms' => ['lead.create','lead.distribute_booking'],
             ],
             'CM booking' => [
-                'desc' => 'CM Phòng Booking — up Data lạnh/BDM, chia lead trong kho booking cho team booking',
+                'desc' => 'CM Phòng Booking — up nguồn nhóm 1 (MKT / MKT BR / BDM), chia lead trong kho booking cho team booking',
                 'perms' => [
                     'lead.view', 'lead.view_phone', 'lead.create', 'lead.update',
                     'lead.read_booking', 'lead.update_booking', 'lead.book_action',
@@ -55,7 +55,7 @@ class Phase66FlowSeeder extends Seeder
                 'perms' => [
                     'lead.view', 'lead.view_phone', 'lead.create', 'lead.update', 'lead.update_sale',
                     'lead.view_pool', 'lead.distribute', 'lead.distribute_sale', 'lead.distribute_to_sale',
-                    'lead.distribute_ctv', 'lead.recall', 'report.view',
+                    'lead.recall', 'report.view',
                 ],
             ],
             'Team sale' => [
@@ -77,7 +77,7 @@ class Phase66FlowSeeder extends Seeder
         // 3) User demo (pw = 123456). Idempotent.
         $userDefs = [
             // email => [name, role, org, scope]
-            'page1@longevity.com.vn' => ['Phạm Trực Page 1', 'Team trực page', $pageGiang, Assignment::SCOPE_SELF],
+            'page1@longevity.com.vn' => ['Phạm Nhập Lead 1', 'Team nhập lead', $pageGiang, Assignment::SCOPE_SELF],
             'cmbktg@longevity.com.vn' => ['CM Booking Team Giang', 'CM booking', $bookingGiang, Assignment::SCOPE_TEAM],
             'book1@longevity.com.vn' => ['Nguyễn Booking 1', 'Team booking', $bookingGiang, Assignment::SCOPE_SELF],
             'book2@longevity.com.vn' => ['Trần Booking 2', 'Team booking', $bookingHoi, Assignment::SCOPE_SELF],

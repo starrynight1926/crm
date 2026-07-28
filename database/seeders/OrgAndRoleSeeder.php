@@ -70,7 +70,7 @@ class OrgAndRoleSeeder extends Seeder
             'lead.import', 'lead.export',
             'lead.view_pool', 'lead.distribute', 'lead.distribute_booking', 'lead.distribute_sale',
             'lead.distribute_to_team', 'lead.distribute_to_sale',
-            'lead.distribute_ctv', 'lead.recall', 'lead.approve_source',
+            'lead.recall', 'lead.approve_source',
             'user.manage', 'rule.manage',
             'service.manage', 'payment.record', 'contribution.set',
             'field.manage', 'field.approve',
@@ -98,7 +98,7 @@ class OrgAndRoleSeeder extends Seeder
 
         // (Đã bỏ 3 role vùng CM Hà Nội/Đà Nẵng/HCM — 2026-07-16.
         //  Role chỉ nên là "CM sale" chung, khu vực do assignment quyết định.
-        //  Permission `lead.distribute_ctv` được gộp vào role "CM sale" ở Phase66FlowSeeder.)
+        //  Role chỉ còn "CM sale" chung; permission theo nguồn được cấu hình ở Phase66FlowSeeder.)
 
         // Phase 6.6: seed default system_settings (nếu chưa có)
         foreach ([

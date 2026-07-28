@@ -8,7 +8,7 @@ use App\Models\OrgUnit;
 use Illuminate\Console\Command;
 
 /**
- * Miền Nam (HCM): lead từ Team Trực Page → chia cho Team Booking. Sau X ngày:
+ * Miền Nam (HCM): lead từ Team Nhập Lead → chia cho Team Booking. Sau X ngày:
  *  - Không phát sinh dữ liệu mới (last_care_at KHÔNG update sau assigned_at) VÀ
  *  - Không có lịch đặt (booking_status != booked, khach_da_toi, khach_toi_tre, da_xong)
  *  → recall về kho team booking (owner_id = null, pool_level = TEAM), chờ CM booking chia tay khác.

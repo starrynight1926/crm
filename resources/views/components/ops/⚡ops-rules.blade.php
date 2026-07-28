@@ -129,12 +129,11 @@ class extends Component {
                 'lead.distribute_to_sale' => ['CM team: chia kho team → sale', $this->usersWithPermission('lead.distribute_to_sale')],
                 'lead.distribute_booking' => ['Chia số kho Booking (phase)', $this->usersWithPermission('lead.distribute_booking')],
                 'lead.distribute_sale' => ['Chia số kho Sale (phase)', $this->usersWithPermission('lead.distribute_sale')],
-                'lead.distribute_ctv' => ['Phân bổ nguồn CTV', $this->usersWithPermission('lead.distribute_ctv')],
                 'lead.read_booking' => ['Xem info Cập nhật khi phase Booking (readonly)', $this->usersWithPermission('lead.read_booking')],
                 'lead.update_booking' => ['Sửa info khi Booking phase', $this->usersWithPermission('lead.update_booking')],
                 'lead.book_action' => ['Bấm nút Đặt booking', $this->usersWithPermission('lead.book_action')],
                 'lead.update_sale' => ['Sửa info khi Sale phase', $this->usersWithPermission('lead.update_sale')],
-                'lead.approve_source' => ['Duyệt Khách tự đến', $this->usersWithPermission('lead.approve_source')],
+                'lead.approve_source' => ['Duyệt Walk-in', $this->usersWithPermission('lead.approve_source')],
                 'lead.recall' => ['Thu hồi số', $this->usersWithPermission('lead.recall')],
             ];
         } elseif ($this->tab === 'policies') {

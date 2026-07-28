@@ -36,7 +36,7 @@ class RenameUsersToPositionFormatSeeder extends Seeder
         'Sale'               => 'sale',
         'Team sale ĐN'       => 'sale',   // ĐN gộp chung
         'Team booking'       => 'book',
-        'Team trực page'     => 'page',
+        'Team nhập lead'     => 'page',
         'DM HCM'             => 'dm',
         'Observer'           => 'obs',
         'Trợ lý kinh doanh'  => 'tlkd',

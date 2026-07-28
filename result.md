@@ -2,6 +2,37 @@
 
 > Làm xong phase nào ghi vào đây: ngày hoàn thành, việc đã làm, việc dời lại/chưa xong, ghi chú & quyết định phát sinh. Mẫu bên dưới.
 
+## 2026-07-28 — Chuyển sang mô hình 7 nguồn khách + rename Team Trực Page ✅
+- **Cũ (6 nguồn)**: marketing / data_cold / bdm / referral / ctv / walk_in.
+- **Mới (7 nguồn)** — chia 3 luồng:
+  - Nhóm 1 (qua Team Booking): **MKT / MKT BR / BDM**
+  - Nhóm 2 (lối tắt qua CM Sale): **BOD / SA / BA**
+  - Nhóm 3 (walk-in): **WI**
+- **Đã làm**:
+  - `Lead` model: đổi 7 constants + SOURCE_GROUPS + SOURCE_GROUP_CODES + SOURCE_PERMISSIONS; `isDirectSaleSource()` cover BOD/SA/BA/WI; `initialPipelineFor()` route Nhóm 1 → PHASE_BOOKING, còn lại → PHASE_SALE.
+  - Migration `2026_07_28_120000_...`: xóa lead cũ data_cold/referral/ctv, rename marketing→mkt / walk_in→wi, đổi comment cột, rename org_units + role "Team trực page" → "Team nhập lead", xóa perm `lead.distribute_ctv`.
+  - Đổi tên **Team Trực Page → Team Nhập Lead** ở toàn bộ hệ thống: OrgStaffSeeder (code + name), Phase66FlowSeeder, RenameUsersToPositionFormatSeeder, guide.blade, ⚡lead-form, ⚡lead-pools, ⚡ops-rules, routes/web.
+  - Cập nhật `MarkOverdueBookingLeads`, `RecallIdleBookingLeads` (comment), DemoDataSeeder (seed 7 nguồn mới ở kho chung + team pool), RealCmStaffSeeder, PermissionSeeder (bỏ `lead.distribute_ctv`), OrgAndRoleSeeder.
+  - Cập nhật tests: rename mkt/wi trong H1MktFlowTest, T1MktFlowTest, T5WalkInFlowTest, D1FullFlowTest, Phase66FlowsTest, Phase66JobsTest, T7PermGatesTest; XÓA T2ColdFlowTest, T4ReferralFlowTest, H4ReferralFlowTest (nguồn không còn); sửa 2 test Feature dùng `'referral'` → `'bod'`.
+  - **lara-sbooking**: cập nhật dropdown `nguon` ở 2 view create (booking + lịch hẹn) sang 7 mã mới. `nguon` vẫn là string tự do (chưa enum-hóa).
+- **Kiểm tra sau migration**:
+  - `Lead::selectRaw('source_group, count(*)')->groupBy(...)` → `{bdm:6, mkt:21, wi:5, mkt_br:3, bod:1, ba:1}` (seed đã bơm nguồn mới, dữ liệu cũ đã rename).
+  - OrgUnit codes: `team-nhap-lead`, `team-nhap-lead-hcm`, `team-nhap-lead-dn` (name = "Team Nhập Lead").
+  - Role: "Team nhập lead" ✓
+- **Ghi chú & rủi ro**:
+  - Data cũ `data_cold`, `referral`, `ctv` đã **xóa hẳn** (theo yêu cầu user "cái cũ xóa đi"). Nếu cần khôi phục → restore từ backup.
+  - Sbooking `nguon` vẫn free-text — data cũ ("Fanpage", "Hotline", …) không bị đụng, chỉ dropdown mới cho phép chọn 7 mã.
+  - Tests browser đã update nhưng **chưa chạy** (cần Dusk env) — Phase 8 QA sẽ verify.
+  - BDM subtype (BDM_BIDV, …) chưa có trường tùy biến sẵn — cần user tự add ở Trường tùy biến cấp Team Nhập Lead khi cần.
+
+## 2026-07-28 — Pass 2: hoàn thiện seed + hiển thị 7 nguồn cả 2 app ✅
+- **SCRM**: đổi `DemoDataSeeder` từ `firstOrCreate` → `updateOrCreate` cho 7 lead demo → seed re-run áp đúng nguồn mới cho phone conflict cũ. Kết quả DB: đủ 7 nguồn `{mkt:21, mkt_br:3, bdm:6, bod:1, sa:1, ba:1, wi:4}`.
+- **SBOOKING**:
+  - `PageController::bookings` + `LichHenController::list` — dropdown filter `nguons` prepend 7 mã master + union distinct DB (giữ tương thích data cũ "Fanpage"/"Hotline").
+  - 3 seeder (`LichThang6Seeder`, `LichTuVanThang6Seeder`, `LichDatMauSeeder`): đổi field `nguon` từ sentinel `seed-t6`/`seed-tv-t6`/`seed` → random 1 trong 7 mã thật. Marker cleanup chuyển sang `ghi_chu LIKE '[seed-…]%'`, giữ fallback query cũ để dọn data legacy.
+  - Sau re-seed: 1199 booking + 1608 lich_hen phân bố đều 7 nguồn (145–245 record/nguồn).
+- **Sweep cuối**: 0 ref cũ trong scrm/app|resources|database|routes|scripts|tests và sbooking/seeders|resources. Kịch bản seed idempotent 2 chiều (data legacy + data mới).
+
 ## Phase 6.20 — Refactor page/camp thành custom field cấp công ty ✅
 - **Ngày hoàn thành**: 2026-07-19
 - **Đã làm** (A→D):

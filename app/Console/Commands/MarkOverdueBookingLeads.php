@@ -9,7 +9,7 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 
 #[Signature('leads:mark-overdue-booking {--days=7 : Số ngày ở kho booking coi là quá hạn}')]
-#[Description('Phase 6.6 — đánh dấu overdue cho lead nhóm marketing/data_cold/bdm chưa được chia sau X ngày (không xóa).')]
+#[Description('Phase 6.6 — đánh dấu overdue cho lead nhóm 1 (MKT / MKT BR / BDM) chưa được chia sau X ngày (không xóa).')]
 class MarkOverdueBookingLeads extends Command
 {
     public function handle(): int
@@ -18,7 +18,7 @@ class MarkOverdueBookingLeads extends Command
         $marked = 0;
 
         Lead::query()
-            ->whereIn('source_group', [Lead::SOURCE_MARKETING, Lead::SOURCE_DATA_COLD, Lead::SOURCE_BDM])
+            ->whereIn('source_group', [Lead::SOURCE_MKT, Lead::SOURCE_MKT_BR, Lead::SOURCE_BDM])
             ->where('pool_level', Lead::POOL_COMMON)
             ->whereNull('overdue_marked_at')
             ->where('created_at', '<=', now()->subDays($days))

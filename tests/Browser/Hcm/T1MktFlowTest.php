@@ -26,10 +26,10 @@ class T1MktFlowTest extends DuskTestCase
 
     public function testT1_MktFullFlow(): void
     {
-        // ─── T1.1: Trực page up lead ──────────────────────────────
+        // ─── T1.1: Team Nhập Lead up lead ─────────────────────────
         $this->browse(function (Browser $browser) {
             $this->loginAs($browser, 'test.hcm.trucpage@longevity.com.vn');
-            $this->fillLeadForm($browser, self::NAME, self::PHONE, 'marketing');
+            $this->fillLeadForm($browser, self::NAME, self::PHONE, 'mkt');
             $browser->assertSee('Bước tiếp theo: chia về kho team, chờ CM chia cho nhân viên booking.')
                     ->press('Lưu thông tin')
                     ->pause(2000);
@@ -37,7 +37,7 @@ class T1MktFlowTest extends DuskTestCase
 
         $lead = $this->findLeadByPhone(self::PHONE);
         $this->assertNotNull($lead, 'T1.1: lead phải được tạo');
-        $this->assertEquals('marketing', $lead->source_group);
+        $this->assertEquals('mkt', $lead->source_group);
         $this->assertEquals(Lead::PHASE_BOOKING, $lead->pipeline_phase);
         $this->assertEquals(Lead::PSTATUS_WAITING, $lead->pipeline_status);
         $this->assertStringEndsWith('-MKT', $lead->code);

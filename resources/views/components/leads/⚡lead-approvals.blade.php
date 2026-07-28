@@ -72,7 +72,7 @@ class extends Component {
         $user = auth()->user();
         return [
             'leads' => Lead::query()
-                ->where('source_group', Lead::SOURCE_WALK_IN)
+                ->where('source_group', Lead::SOURCE_WI)
                 ->where('approval_status', Lead::APPROVAL_PENDING)
                 ->visibleTo($user)
                 ->with('receiver')

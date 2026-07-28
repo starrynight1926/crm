@@ -27,7 +27,7 @@ class T5WalkInFlowTest extends DuskTestCase
     {
         $this->browse(function (Browser $browser) {
             $this->loginAs($browser, 'test.hcm.sale2@longevity.com.vn');
-            $this->fillLeadForm($browser, self::NAME, self::PHONE, 'walk_in');
+            $this->fillLeadForm($browser, self::NAME, self::PHONE, 'wi');
             $browser->assertSee('Bước tiếp theo: chia về kho team, chờ CM team sale chia.')
                     ->press('Lưu thông tin')
                     ->pause(2000);
@@ -35,11 +35,11 @@ class T5WalkInFlowTest extends DuskTestCase
 
         $lead = $this->findLeadByPhone(self::PHONE);
         $this->assertNotNull($lead);
-        $this->assertEquals('walk_in', $lead->source_group);
+        $this->assertEquals('wi', $lead->source_group);
         $this->assertStringEndsWith('-WI', $lead->code);
-        $this->assertEquals(Lead::PHASE_SALE, $lead->pipeline_phase, 'walk_in vào phase Sale');
-        $this->assertNull($lead->owner_id, 'walk_in chưa có owner, chờ CM sale chia');
-        // Phase 6.22 — walk_in auto vào kho team của sale (team-ashley-sale).
+        $this->assertEquals(Lead::PHASE_SALE, $lead->pipeline_phase, 'WI vào phase Sale');
+        $this->assertNull($lead->owner_id, 'WI chưa có owner, chờ CM sale chia');
+        // Phase 6.22 — WI auto vào kho team của sale (team-ashley-sale).
         $this->assertEquals(Lead::POOL_TEAM, $lead->pool_level);
         $this->assertEquals(
             \App\Models\OrgUnit::where('code', 'team-ashley-sale')->value('id'),

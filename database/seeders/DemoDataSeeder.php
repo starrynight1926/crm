@@ -45,20 +45,24 @@ class DemoDataSeeder extends Seeder
             'cmhn@longevity.com.vn', 'cmdn@longevity.com.vn', 'cmhcm@longevity.com.vn',
         ])->delete();
 
-        // ── Khách hàng demo (5 nguồn khác nhau, minh họa 6 luồng Phase 6.6) ──
+        // ── Khách hàng demo (7 nguồn, minh họa 3 luồng xử lý) ──
         $receiver = User::firstWhere('email', 'admin@longevity.com.vn');
         // [sourceGroup, poolLevel, ghi chú]
         $demo = [
-            ['marketing', 'common', 'Marketing → kho chung'],
-            ['data_cold', 'common', 'Data lạnh → kho chung'],
-            ['bdm', 'common', 'BDM → kho chung'],
-            ['referral', 'common', 'Bạn giới thiệu — người up tự chia sale'],
-            ['walk_in', 'common', 'Khách tự đến — chờ CM cơ sở duyệt'],
+            ['mkt',    'common', 'MKT — Marketing → kho chung'],
+            ['mkt_br', 'common', 'MKT BR — Marketing BR → kho chung'],
+            ['bdm',    'common', 'BDM → kho chung'],
+            ['bod',    'common', 'BOD — Ban lãnh đạo giới thiệu'],
+            ['sa',     'common', 'SA — Sale Appointment'],
+            ['ba',     'common', 'BA — Booking Appointment'],
+            ['wi',     'common', 'Walk-in — chờ CM cơ sở duyệt'],
         ];
         foreach ($demo as $i => [$sg, $pool, $note]) {
             $n = $i + 1;
             $phone = Lead::normalizePhone('091558800' . $n) ?? '091558800' . $n;
-            Lead::firstOrCreate(
+            // updateOrCreate để đảm bảo source_group khớp mô hình 7 nguồn kể cả khi
+            // seed chạy đè trên lead cũ (đã có phone 091558800X từ mô hình 6 nguồn).
+            $lead = Lead::updateOrCreate(
                 ['phone' => $phone],
                 [
                     'name' => 'Khách test' . $n,
@@ -66,12 +70,13 @@ class DemoDataSeeder extends Seeder
                     'classification' => 'new',
                     'pool_level' => $pool,
                     'source_group' => $sg,
-                    'approval_status' => $sg === 'walk_in' ? 'pending' : 'none',
+                    'approval_status' => $sg === 'wi' ? 'pending' : 'none',
                     'receiver_id' => $receiver?->id,
                     'org_unit_id' => null,
                     'note' => $note,
                 ]
-            )->generateCode();
+            );
+            $lead->generateCode();
         }
 
         // ── Seed lead demo cho 3 kho (2026-07-16) — phục vụ demo luồng CM/Booking/Sale ──
@@ -180,7 +185,7 @@ class DemoDataSeeder extends Seeder
             $lead = Lead::firstOrCreate(['phone' => $phone], array_merge([
                 'received_date' => now()->toDateString(),
                 'classification' => 'new',
-                'source_group' => 'marketing',
+                'source_group' => 'mkt',
                 'pool_level' => 'common',
                 'receiver_id' => $admin?->id,
                 'approval_status' => 'none',
@@ -195,11 +200,11 @@ class DemoDataSeeder extends Seeder
 
         // 1) Kho chung công ty — 5 lead nhiều nguồn, chưa chia
         foreach ([
-            ['0917100001', 'Khách kho chung công ty 1 (Marketing)', 'marketing', 'none'],
-            ['0917100002', 'Khách kho chung công ty 2 (Marketing)', 'marketing', 'none'],
-            ['0917100003', 'Khách kho chung công ty 3 (Data lạnh)', 'data_cold', 'none'],
-            ['0917100004', 'Khách kho chung công ty 4 (BDM)',       'bdm',       'none'],
-            ['0917100005', 'Khách kho chung công ty 5 (Khách tự đến, chờ duyệt)', 'walk_in', 'pending'],
+            ['0917100001', 'Khách kho chung công ty 1 (MKT)',    'mkt',    'none'],
+            ['0917100002', 'Khách kho chung công ty 2 (MKT BR)', 'mkt_br', 'none'],
+            ['0917100003', 'Khách kho chung công ty 3 (BDM)',    'bdm',    'none'],
+            ['0917100004', 'Khách kho chung công ty 4 (BOD)',    'bod',    'none'],
+            ['0917100005', 'Khách kho chung công ty 5 (Walk-in, chờ duyệt)', 'wi', 'pending'],
         ] as [$p, $n, $sg, $ap]) {
             $mk(['phone' => $p, 'name' => $n, 'source_group' => $sg, 'pool_level' => 'common',
                  'org_unit_id' => null, 'approval_status' => $ap,
@@ -221,9 +226,9 @@ class DemoDataSeeder extends Seeder
 
         // 3) Kho team booking — Booking · Chờ CM booking chia
         foreach ([
-            ['0917300001', 'Khách team Giang chờ CM booking chia 1',  'marketing', $orgId('team-giang-booking')],
-            ['0917300002', 'Khách team Hợi chờ CM booking chia 1',    'data_cold', $orgId('team-hoi-booking')],
-            ['0917300003', 'Khách team Ashley chờ CM booking chia 1', 'bdm',       $orgId('team-ashley-booking')],
+            ['0917300001', 'Khách team Giang chờ CM booking chia 1',  'mkt',    $orgId('team-giang-booking')],
+            ['0917300002', 'Khách team Hợi chờ CM booking chia 1',    'mkt_br', $orgId('team-hoi-booking')],
+            ['0917300003', 'Khách team Ashley chờ CM booking chia 1', 'bdm',    $orgId('team-ashley-booking')],
         ] as [$p, $n, $sg, $org]) {
             $mk(['phone' => $p, 'name' => $n, 'source_group' => $sg, 'pool_level' => 'team',
                  'org_unit_id' => $org,
@@ -232,10 +237,10 @@ class DemoDataSeeder extends Seeder
 
         // 4) Kho team CM sale — Sale · Chờ CM sale chia
         foreach ([
-            ['0917400001', 'Khách team Giang chờ CM sale chia 1',  'follow',  'marketing', $orgId('team-giang')],
-            ['0917400002', 'Khách team Giang chờ CM sale chia 2',  'net',     'marketing', $orgId('team-giang')],
-            ['0917400003', 'Khách team Hợi chờ CM sale chia 1',    'follow',  'data_cold', $orgId('team-hoi-hn')],
-            ['0917400004', 'Khách team Hợi chờ CM sale chia 2',    'booking', 'bdm',       $orgId('team-hoi-hn')],
+            ['0917400001', 'Khách team Giang chờ CM sale chia 1',  'follow',  'mkt',    $orgId('team-giang')],
+            ['0917400002', 'Khách team Giang chờ CM sale chia 2',  'net',     'mkt',    $orgId('team-giang')],
+            ['0917400003', 'Khách team Hợi chờ CM sale chia 1',    'follow',  'mkt_br', $orgId('team-hoi-hn')],
+            ['0917400004', 'Khách team Hợi chờ CM sale chia 2',    'booking', 'bdm',    $orgId('team-hoi-hn')],
         ] as [$p, $n, $cls, $sg, $org]) {
             $mk(['phone' => $p, 'name' => $n, 'source_group' => $sg, 'classification' => $cls,
                  'pool_level' => 'team', 'org_unit_id' => $org,

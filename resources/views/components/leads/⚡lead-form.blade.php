@@ -74,7 +74,7 @@ new class extends Component
     /** Trạng thái đặt lịch booking (Chưa đặt / Đã đặt / Hẹn lại). */
     public string $bookingStatus = 'not_booked';
 
-    /** Phase 6.6 — 1 trong 6 nhóm nguồn (Marketing / Data lạnh / BDM / Bạn giới thiệu / CTV / Khách tự đến). */
+    /** 1 trong 7 nhóm nguồn (MKT / MKT BR / BDM / BOD / SA / BA / WI). */
     public string $sourceGroup = '';
 
     public ?int $facilityId = null;
@@ -388,13 +388,13 @@ new class extends Component
             'upsellRows.*.amount.required' => 'Nhập số tiền cho dòng upsell.',
         ], ['name' => 'tên khách hàng', 'phone' => 'SĐT', 'received_date' => 'ngày', 'sourceGroup' => 'nhóm nguồn']);
 
-        // Bạn giới thiệu bắt buộc phải chọn sale nhận ngay (không qua duyệt).
+        // Nhóm 2 (BOD/SA/BA) — sale nhận trực tiếp, không qua duyệt.
         // Sale nhân viên không có quyền chia số → tự động nhận lead do chính họ up.
-        if ($this->sourceGroup === Lead::SOURCE_REFERRAL && ! $this->personId) {
+        if (in_array($this->sourceGroup, [Lead::SOURCE_BOD, Lead::SOURCE_SA, Lead::SOURCE_BA], true) && ! $this->personId) {
             if (! auth()->user()->hasPermission('lead.distribute')) {
                 $this->personId = auth()->id();
             } else {
-                $this->addError('personId', 'Nguồn "Bạn giới thiệu": bắt buộc chọn sale nhận.');
+                $this->addError('personId', 'Nguồn ' . (Lead::SOURCE_GROUPS[$this->sourceGroup] ?? '') . ': bắt buộc chọn sale nhận.');
                 return;
             }
         }
@@ -455,7 +455,7 @@ new class extends Component
             'service_name' => $this->service_name ?: null,
             'potential_service' => $this->potential_service ?: null,
             'source_group' => $this->sourceGroup,
-            'approval_status' => $this->sourceGroup === Lead::SOURCE_WALK_IN ? Lead::APPROVAL_PENDING : Lead::APPROVAL_NONE,
+            'approval_status' => $this->sourceGroup === Lead::SOURCE_WI ? Lead::APPROVAL_PENDING : Lead::APPROVAL_NONE,
         ];
 
         if ($this->lead) {
@@ -491,7 +491,7 @@ new class extends Component
         if ($user->hasPermission('lead.view')) {
             $this->redirectRoute('leads.show', $lead);
         } else {
-            // Team trực page: không có quyền xem → quay lại form tạo mới.
+            // Team nhập lead: không có quyền xem → quay lại form tạo mới.
             $this->redirectRoute('leads.create');
         }
     }
@@ -584,10 +584,10 @@ new class extends Component
             return ['owner_id' => null, 'org_unit_id' => (int) substr($this->poolTarget, 4), 'pool_level' => Lead::POOL_TEAM, 'assigned_at' => null];
         }
 
-        // Fallback: nguồn "sale nhận trực tiếp" mà user không có perm distribute (VD Sale up walk_in
-        // hoặc referral chưa auto-set personId) → auto về kho team của user thao tác, chờ CM team chia.
+        // Fallback: nguồn "sale nhận trực tiếp" mà user không có perm distribute
+        // (VD Sale up WI hoặc BOD/SA/BA chưa auto-set personId) → auto về kho team của user thao tác, chờ CM team chia.
         // Khớp với hint text "Bước tiếp theo: chia về kho team, chờ CM team sale chia."
-        if (in_array($this->sourceGroup, [Lead::SOURCE_WALK_IN, Lead::SOURCE_REFERRAL], true)
+        if (in_array($this->sourceGroup, [Lead::SOURCE_WI, Lead::SOURCE_BOD, Lead::SOURCE_SA, Lead::SOURCE_BA], true)
             && ! auth()->user()->hasPermission('lead.distribute')) {
             $userTeamOrg = $this->userOrgId(auth()->id());
             if ($userTeamOrg) {
@@ -892,17 +892,15 @@ new class extends Component
                                 @endforeach
                             </select>
                             @error('sourceGroup')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
-                            @if ($sourceGroup === \App\Models\Lead::SOURCE_REFERRAL)
+                            @if (in_array($sourceGroup, [\App\Models\Lead::SOURCE_BOD, \App\Models\Lead::SOURCE_SA, \App\Models\Lead::SOURCE_BA], true))
                                 @if (! auth()->user()->hasPermission('lead.distribute'))
                                     <p class="text-xs text-amber-700 mt-1">Bước tiếp theo: lead sẽ tự động chia cho <strong>bạn ({{ auth()->user()->name }})</strong> (không qua duyệt).</p>
                                 @else
                                     <p class="text-xs text-amber-700 mt-1">Bước tiếp theo: chọn sale nhận ở khối "Phân phối & Nguồn" bên dưới (bắt buộc, không qua duyệt).</p>
                                 @endif
-                            @elseif ($sourceGroup === \App\Models\Lead::SOURCE_WALK_IN)
+                            @elseif ($sourceGroup === \App\Models\Lead::SOURCE_WI)
                                 <p class="text-xs text-amber-700 mt-1">Bước tiếp theo: chia về kho team, chờ CM team sale chia.</p>
-                            @elseif (in_array($sourceGroup, [\App\Models\Lead::SOURCE_MARKETING, \App\Models\Lead::SOURCE_DATA_COLD, \App\Models\Lead::SOURCE_BDM], true))
-                                <p class="text-xs text-amber-700 mt-1">Bước tiếp theo: chia về kho team, chờ CM chia cho nhân viên booking.</p>
-                            @elseif ($sourceGroup === \App\Models\Lead::SOURCE_CTV)
+                            @elseif (in_array($sourceGroup, [\App\Models\Lead::SOURCE_MKT, \App\Models\Lead::SOURCE_MKT_BR, \App\Models\Lead::SOURCE_BDM], true))
                                 <p class="text-xs text-amber-700 mt-1">Bước tiếp theo: chia về kho team, chờ CM chia cho nhân viên booking.</p>
                             @endif
                         </div>

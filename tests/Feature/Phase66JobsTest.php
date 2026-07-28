@@ -123,20 +123,22 @@ class Phase66JobsTest extends TestCase
         $this->assertSame($this->teamA->id, $lead->org_unit_id);
     }
 
-    public function test_mark_overdue_booking_chi_ap_dung_nhom_1_2_3(): void
+    public function test_mark_overdue_booking_chi_ap_dung_nhom_1(): void
     {
-        $mkt = $this->makeLead(['source_group' => Lead::SOURCE_MARKETING]);
-        $dc = $this->makeLead(['source_group' => Lead::SOURCE_DATA_COLD]);
-        $ref = $this->makeLead(['source_group' => Lead::SOURCE_REFERRAL]);
-        $recent = $this->makeLead(['source_group' => Lead::SOURCE_MARKETING]);
-        Lead::whereIn('id', [$mkt->id, $dc->id, $ref->id])->update(['created_at' => now()->subDays(10)]);
+        // Nhóm 1 (mkt/mkt_br/bdm) qua Team Booking → bị mark overdue nếu quá hạn chưa chia.
+        // Nhóm 2 (bod/sa/ba) không qua booking → không mark.
+        $mkt = $this->makeLead(['source_group' => Lead::SOURCE_MKT]);
+        $mktBr = $this->makeLead(['source_group' => Lead::SOURCE_MKT_BR]);
+        $bod = $this->makeLead(['source_group' => Lead::SOURCE_BOD]);
+        $recent = $this->makeLead(['source_group' => Lead::SOURCE_MKT]);
+        Lead::whereIn('id', [$mkt->id, $mktBr->id, $bod->id])->update(['created_at' => now()->subDays(10)]);
         Lead::where('id', $recent->id)->update(['created_at' => now()->subDay()]);
 
         $this->artisan('leads:mark-overdue-booking', ['--days' => 7])->assertSuccessful();
 
         $this->assertNotNull($mkt->refresh()->overdue_marked_at);
-        $this->assertNotNull($dc->refresh()->overdue_marked_at);
-        $this->assertNull($ref->refresh()->overdue_marked_at, 'Referral không thuộc nhóm booking');
+        $this->assertNotNull($mktBr->refresh()->overdue_marked_at);
+        $this->assertNull($bod->refresh()->overdue_marked_at, 'BOD không thuộc nhóm booking');
         $this->assertNull($recent->refresh()->overdue_marked_at, 'Lead mới không bị mark');
     }
 }

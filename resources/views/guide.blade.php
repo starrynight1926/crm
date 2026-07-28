@@ -39,14 +39,13 @@
             'icon' => '⬧',
             'name' => 'CM',
             'summary' => 'Clinic Manager — điều phối team',
-            'intro' => 'Người quản lý một team hoặc phòng — chia lead cho nhân viên booking/sale trong team, duyệt lead khách tự đến, thu hồi lead khi cần điều phối lại. Gồm 2 vai chính: <strong>CM booking</strong> (điều phối kho booking, up lead Data lạnh/BDM) và <strong>CM sale</strong> (chia lead khách đã đồng ý sang sale, kiêm chia nguồn CTV theo khu vực).',
+            'intro' => 'Người quản lý một team hoặc phòng — chia lead cho nhân viên booking/sale trong team, duyệt lead walk-in, thu hồi lead khi cần điều phối lại. Gồm 2 vai chính: <strong>CM booking</strong> (điều phối kho booking, up lead nhóm 1 MKT / MKT BR / BDM) và <strong>CM sale</strong> (chia lead khách đã đồng ý sang sale, nhận trực tiếp các nguồn BOD / SA / BA / WI).',
             'steps' => [
-                ['Xem kho lead của team', 'Vào <strong>Chia số &gt; Kho lead</strong> — chọn tab <strong>Kho team</strong>. Filter theo nguồn (Marketing/Data lạnh/BDM) hoặc phân loại để tìm lead cần chia.'],
+                ['Xem kho lead của team', 'Vào <strong>Chia số &gt; Kho lead</strong> — chọn tab <strong>Kho team</strong>. Filter theo nguồn (MKT / MKT BR / BDM …) hoặc phân loại để tìm lead cần chia.'],
                 ['Chia lead cho nhân viên', 'Tick chọn lead → bấm <strong>Chia thủ công</strong> chọn người nhận, hoặc <strong>Chia tự động</strong> chạy rule (round-robin, doanh thu, close rate).'],
                 ['Đặt "Thu hồi sau XX ngày"', 'Khi chia, chọn dropdown: <strong>Mặc định</strong> (theo policy) / <strong>Tùy chọn N ngày</strong> / <strong>Chia vĩnh viễn</strong>. Hết hạn → lead tự về kho team để chia lại.'],
-                ['Duyệt lead "Khách tự đến"', 'Vào <strong>Duyệt lead</strong> — xem lead nguồn walk_in nhân viên up lên. Bấm <strong>Duyệt</strong> để chuyển sang kho chia; <strong>Từ chối</strong> phải nhập lý do.'],
-                ['Up lead Data lạnh / BDM (CM booking)', 'Vào <strong>Khách hàng &gt; Thêm mới</strong>, chọn nhóm nguồn Data lạnh/BDM. Có thể import file Excel qua <strong>Import</strong> cho batch lớn.'],
-                ['Chia nguồn CTV (CM sale khu vực)', 'Ở form thêm lead, chọn nhóm nguồn <strong>Cộng tác viên</strong> → chia thẳng cho sale khu vực mình phụ trách (không qua kho booking).'],
+                ['Duyệt lead Walk-in', 'Vào <strong>Duyệt lead</strong> — xem lead nguồn WI nhân viên up lên. Bấm <strong>Duyệt</strong> để chuyển sang kho chia; <strong>Từ chối</strong> phải nhập lý do.'],
+                ['Up lead nhóm 1 (CM booking)', 'Vào <strong>Khách hàng &gt; Thêm mới</strong>, chọn nhóm nguồn MKT / MKT BR / BDM. Có thể import file Excel qua <strong>Import</strong> cho batch lớn.'],
                 ['Thu hồi & chuyển người', 'Chi tiết lead → <strong>Thu hồi</strong> để đưa về kho team, hoặc <strong>Chuyển người phụ trách</strong> khi cần điều phối lại (VD sale nghỉ / quá SLA).'],
                 ['Xem báo cáo team', 'Vào <strong>Báo cáo</strong> — xem funnel team, hiệu suất từng nhân viên, doanh thu, xếp hạng.'],
             ],
@@ -55,9 +54,9 @@
             'icon' => '📅',
             'name' => 'Booking',
             'summary' => 'Team booking & trực page',
-            'intro' => 'Nhân viên tuyến đầu — up lead từ page marketing HOẶC gọi khách trong kho booking để chốt lịch gặp. Không đụng khâu chăm sóc dài hạn (sale làm). Gồm 2 vai: <strong>Team trực page</strong> (up lead Marketing từ inbox/comment) và <strong>Team booking</strong> (gọi khách trong kho booking, đặt lịch).',
+            'intro' => 'Nhân viên tuyến đầu — up lead từ page marketing HOẶC gọi khách trong kho booking để chốt lịch gặp. Không đụng khâu chăm sóc dài hạn (sale làm). Gồm 2 vai: <strong>Team nhập lead</strong> (up lead nguồn MKT / MKT BR / BDM từ inbox/comment) và <strong>Team booking</strong> (gọi khách trong kho booking, đặt lịch).',
             'steps' => [
-                ['Up lead từ page (Team trực page)', 'Vào <strong>Khách hàng &gt; Thêm mới</strong>, chọn nhóm nguồn <strong>Marketing</strong>. Điền Tên/SĐT/PAGE/Camp/Insight/Link inbox. Sau khi lưu, lead tự vào kho booking cho CM booking chia.'],
+                ['Up lead từ page (Team nhập lead)', 'Vào <strong>Khách hàng &gt; Thêm mới</strong>, chọn nhóm nguồn <strong>MKT</strong> (hoặc MKT BR / BDM). Điền Tên/SĐT/PAGE/Camp/Insight/Link inbox. Sau khi lưu, lead tự vào kho booking cho CM booking chia.'],
                 ['Import batch từ file', 'Nếu có danh sách tổng hợp từ inbox trong ngày, dùng <strong>Import</strong> Excel/CSV để bulk up thay vì nhập từng lead.'],
                 ['Nhận lead & gọi khách (Team booking)', 'Chuông navbar báo khi có lead mới. Vào <strong>Khách hàng</strong> để xem list. Mở chi tiết → gọi số → cập nhật phân loại: <strong>Follow / Quan tâm / Missed / KLLD</strong>.'],
                 ['Ghi nội dung cuộc gọi', 'Trong chi tiết lead → phần <strong>Ghi chú</strong> — viết tường minh: khách nói gì, hẹn giờ nào, cần chuẩn bị gì. Timeline lưu lại đầy đủ.'],
@@ -75,8 +74,8 @@
                 ['Nhận lead qua thông báo', 'Chuông navbar báo <strong>"Bạn nhận N lead mới"</strong> — bấm để mở danh sách lead vừa được CM chia.'],
                 ['Gọi khách & cập nhật phân loại', 'Chi tiết lead → đổi <strong>Phân loại kết quả</strong> theo funnel: Follow → Nét → Booking → Show → Close, hoặc rẽ nhánh KLLD/Missed/Gọi lại sau.'],
                 ['Ghi note & lịch sử chăm', 'Bấm <strong>Ghi chú</strong> để thêm nội dung cuộc gọi. Mỗi lần đổi phân loại đều ghi timeline.'],
-                ['Up lead "Bạn giới thiệu"', 'Có khách quen giới thiệu → <strong>Khách hàng &gt; Thêm mới</strong>, chọn nhóm nguồn <strong>Bạn giới thiệu</strong> → chọn chính mình làm sale nhận. Lead vào thẳng kho cá nhân.'],
-                ['Up lead "Khách tự đến"', 'Khách tự đến clinic → chọn nhóm <strong>Khách tự đến</strong>. Lead vào trạng thái <strong>chờ CM duyệt</strong>, được duyệt thì CM chia lại.'],
+                ['Up lead nhóm 2 (BOD / SA / BA)', 'Có khách do Ban lãnh đạo giới thiệu (BOD), cuộc hẹn sale (SA) hoặc cuộc hẹn booking (BA) → <strong>Khách hàng &gt; Thêm mới</strong>, chọn đúng mã nguồn → chọn chính mình làm sale nhận. Lead vào thẳng kho cá nhân.'],
+                ['Up lead Walk-in (WI)', 'Khách tự đến clinic → chọn nhóm <strong>Walk-in</strong>. Lead vào trạng thái <strong>chờ CM duyệt</strong>, được duyệt thì CM chia lại.'],
                 ['Gắn dịch vụ & theo dõi phase', 'Trong chi tiết KH, khối <strong>Dịch vụ & Tiến độ</strong> — chọn dịch vụ, chốt giá, tick từng phase khi làm xong, ghi note bàn giao cho người kế tiếp.'],
                 ['Thu tiền & công nợ', 'Bấm <strong>Thu tiền</strong> ở khối dịch vụ → nhập số tiền, phương thức. Công nợ tự tính = giá chốt − đã thu.'],
                 ['Đóng deal & % đóng góp', 'Đổi phân loại sang <strong>Close</strong> → popup % đóng góp tự mở. Chốt tỉ lệ giữa những người tham gia (thu thập / care 1 / care 2 / làm phase — tổng 100%).'],
@@ -215,7 +214,7 @@
                 </li>
             </ol>
 
-            <p class="text-xs text-ink/60 italic">Lưu ý: quyền bấm nút này gắn với <code>lead.book_action</code>. Team trực page không có quyền này — chỉ team booking / team ĐN có.</p>
+            <p class="text-xs text-ink/60 italic">Lưu ý: quyền bấm nút này gắn với <code>lead.book_action</code>. Team nhập lead không có quyền này — chỉ team booking / team ĐN có.</p>
         </div>
     </section>
 
@@ -228,7 +227,7 @@
         <div class="bg-blue-50 border border-blue-200 rounded-lg p-5 text-sm space-y-3">
             <p><strong>Cơ sở Đà Nẵng chưa có team booking riêng</strong> — cả đội sale (role <code>Team sale ĐN</code>) làm <strong>xuyên suốt cả 3 giai đoạn</strong>:</p>
             <ol class="list-decimal list-inside space-y-1.5 text-ink/80">
-                <li><strong>Tự up số</strong>: sale nhập lead mới (nguồn Bạn giới thiệu / Khách tự đến / các nguồn khác nếu có quyền), lead auto-owner = chính sale đó.</li>
+                <li><strong>Tự up số</strong>: sale nhập lead mới (nguồn BOD / SA / BA / Walk-in / các nguồn khác nếu có quyền), lead auto-owner = chính sale đó.</li>
                 <li><strong>Tự book</strong>: bấm nút "Đặt booking" bên chi tiết khách → mở form lara-sbooking (login username=<code>ltkhi</code>/<code>ntb</code>/…, pass <code>123456</code>) → tạo lịch. Callback tự cập nhật <code>booking_status</code> + phân loại "Booking".</li>
                 <li><strong>Tự điền quá trình sale</strong>: sau khi khách đã tới → ghi chú Lịch sử tương tác, đổi phân loại (Show/Close), gắn dịch vụ, ghi doanh thu.</li>
             </ol>

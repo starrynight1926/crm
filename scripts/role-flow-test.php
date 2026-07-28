@@ -30,7 +30,7 @@ $actAs = function (string $email) {
 };
 
 // ===================================================================
-// TEST 1: Team trực page (page1@) — chỉ được tạo lead
+// TEST 1: Team nhập lead (page1@) — chỉ được tạo lead
 // ===================================================================
 $page1 = $actAs('page1@longevity.com.vn');
 $mark('page1 has lead.create', $page1->hasPermission('lead.create'));

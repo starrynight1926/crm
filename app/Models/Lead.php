@@ -53,31 +53,37 @@ class Lead extends Model
     public const POOL_TEAM = 'team';
     public const POOL_PERSONAL = 'personal';
 
-    // Phase 6.6 — 6 nhóm nguồn
-    public const SOURCE_MARKETING = 'marketing';
-    public const SOURCE_DATA_COLD = 'data_cold';
+    // 7 nhóm nguồn — chia 3 luồng xử lý:
+    //   Nhóm 1 (qua Team Booking): MKT, MKT_BR, BDM
+    //   Nhóm 2 (lối tắt qua CM Sale): BOD, SA, BA
+    //   Nhóm 3 (khách đến trực tiếp): WI
+    public const SOURCE_MKT = 'mkt';
+    public const SOURCE_MKT_BR = 'mkt_br';
     public const SOURCE_BDM = 'bdm';
-    public const SOURCE_REFERRAL = 'referral';
-    public const SOURCE_CTV = 'ctv';
-    public const SOURCE_WALK_IN = 'walk_in';
+    public const SOURCE_BOD = 'bod';
+    public const SOURCE_SA = 'sa';
+    public const SOURCE_BA = 'ba';
+    public const SOURCE_WI = 'wi';
 
     public const SOURCE_GROUPS = [
-        self::SOURCE_MARKETING => 'Marketing',
-        self::SOURCE_DATA_COLD => 'Data lạnh',
+        self::SOURCE_MKT => 'Marketing',
+        self::SOURCE_MKT_BR => 'Marketing BR',
         self::SOURCE_BDM => 'BDM',
-        self::SOURCE_REFERRAL => 'Bạn giới thiệu',
-        self::SOURCE_CTV => 'Cộng tác viên',
-        self::SOURCE_WALK_IN => 'Khách tự đến',
+        self::SOURCE_BOD => 'BOD - Ban lãnh đạo giới thiệu',
+        self::SOURCE_SA => 'SA - Sale Appointment',
+        self::SOURCE_BA => 'BA - Booking Appointment',
+        self::SOURCE_WI => 'Walk-in',
     ];
 
     // Mã nối vào mã KH theo nhóm nguồn: KH-{id}-{SOURCE_CODE}-...
     public const SOURCE_GROUP_CODES = [
-        self::SOURCE_MARKETING => 'MKT',
-        self::SOURCE_DATA_COLD => 'COLD',
+        self::SOURCE_MKT => 'MKT',
+        self::SOURCE_MKT_BR => 'MKTBR',
         self::SOURCE_BDM => 'BDM',
-        self::SOURCE_REFERRAL => 'REF',
-        self::SOURCE_CTV => 'CTV',
-        self::SOURCE_WALK_IN => 'WI',
+        self::SOURCE_BOD => 'BOD',
+        self::SOURCE_SA => 'SA',
+        self::SOURCE_BA => 'BA',
+        self::SOURCE_WI => 'WI',
     ];
 
     public function sourceGroupCode(): string
@@ -85,15 +91,17 @@ class Lead extends Model
         return self::SOURCE_GROUP_CODES[$this->source_group] ?? '';
     }
 
-    // Permission tương ứng cần có để thấy nhóm nguồn đó ở form thêm lead.
-    // referral + walk_in: ai cũng thấy (giá trị null = mọi user tạo lead).
+    // Permission cần có để thấy nhóm nguồn đó ở form thêm lead.
+    // Nhóm 1 → cần lead.distribute_booking (Team Nhập Lead + QL Booking).
+    // Nhóm 2 + 3 → null: ai tạo lead cũng thấy được.
     public const SOURCE_PERMISSIONS = [
-        self::SOURCE_MARKETING => 'lead.distribute_booking',
-        self::SOURCE_DATA_COLD => 'lead.distribute_booking',
+        self::SOURCE_MKT => 'lead.distribute_booking',
+        self::SOURCE_MKT_BR => 'lead.distribute_booking',
         self::SOURCE_BDM => 'lead.distribute_booking',
-        self::SOURCE_CTV => 'lead.distribute_ctv',
-        self::SOURCE_REFERRAL => null,
-        self::SOURCE_WALK_IN => null,
+        self::SOURCE_BOD => null,
+        self::SOURCE_SA => null,
+        self::SOURCE_BA => null,
+        self::SOURCE_WI => null,
     ];
 
     // Phase 6.8 — Trục lifecycle: phase (giai đoạn) + status (trạng thái trong giai đoạn)
@@ -123,11 +131,13 @@ class Lead extends Model
 
     /**
      * True nếu lead thuộc nhóm nguồn "sale nhận trực tiếp" (không qua team booking):
-     * Bạn giới thiệu + Khách tự đến.
+     * BOD / SA / BA (lối tắt qua CM Sale) + WI (walk-in).
      */
     public function isDirectSaleSource(): bool
     {
-        return in_array($this->source_group, [self::SOURCE_REFERRAL, self::SOURCE_WALK_IN], true);
+        return in_array($this->source_group, [
+            self::SOURCE_BOD, self::SOURCE_SA, self::SOURCE_BA, self::SOURCE_WI,
+        ], true);
     }
 
     /**
@@ -144,7 +154,7 @@ class Lead extends Model
     {
         if (! $this->isVisibleTo($user)) return false;
         if ($user->hasPermission($this->personalInfoPermission())) return true;
-        // Override: nguồn "sale nhận trực tiếp" (referral/walk_in) → owner tự sửa được dù role không có update_sale/update_booking.
+        // Override: nguồn "sale nhận trực tiếp" (BOD/SA/BA/WI) → owner tự sửa được dù role không có update_sale/update_booking.
         return $this->isDirectSaleSource() && $this->isOwnedBy($user) && $user->hasPermission('lead.update');
     }
 
@@ -235,12 +245,12 @@ class Lead extends Model
     /** Suy ra phase/status khởi tạo cho lead mới dựa trên source_group + owner_id. */
     public static function initialPipelineFor(?string $sourceGroup, ?int $ownerId): array
     {
-        // Nhóm 1-3 (Marketing / Data lạnh / BDM) → vào kho booking, chờ QL booking chia.
-        if (in_array($sourceGroup, [self::SOURCE_MARKETING, self::SOURCE_DATA_COLD, self::SOURCE_BDM], true)) {
+        // Nhóm 1 (MKT / MKT BR / BDM) → vào kho booking, chờ QL booking chia.
+        if (in_array($sourceGroup, [self::SOURCE_MKT, self::SOURCE_MKT_BR, self::SOURCE_BDM], true)) {
             return [self::PHASE_BOOKING, self::PSTATUS_WAITING];
         }
-        // Nhóm 4 (Bạn giới thiệu) & 5 (CTV): đã có owner từ lúc up → sale/in_care.
-        // Nếu chưa có owner (nhóm 6 Khách tự đến, hoặc CTV chưa chia) → sale/waiting.
+        // Nhóm 2 (BOD/SA/BA) + Nhóm 3 (WI): sale nhận trực tiếp.
+        // Có owner → sale/in_care; chưa có → sale/waiting (chờ CM sale chia).
         return $ownerId
             ? [self::PHASE_SALE, self::PSTATUS_IN_CARE]
             : [self::PHASE_SALE, self::PSTATUS_WAITING];
