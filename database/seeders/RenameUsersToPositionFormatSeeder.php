@@ -30,16 +30,23 @@ class RenameUsersToPositionFormatSeeder extends Seeder
 
     /** Prefix chức vụ theo tên Role. */
     private const ROLE_MAP = [
-        'CM sale'         => 'cms',
-        'CM booking'      => 'cmb',
-        'Team Leader'     => 'tl',
-        'Sale'            => 'sale',
-        'Team sale ĐN'    => 'sale',   // ĐN gộp chung
-        'Team booking'    => 'book',
-        'Team trực page'  => 'page',
-        'DM HCM'          => 'dm',
+        'CM sale'            => 'cms',
+        'CM booking'         => 'cmb',
+        'Team Leader'        => 'tl',
+        'Sale'               => 'sale',
+        'Team sale ĐN'       => 'sale',   // ĐN gộp chung
+        'Team booking'       => 'book',
+        'Team trực page'     => 'page',
+        'DM HCM'             => 'dm',
+        'Observer'           => 'obs',
+        'Trợ lý kinh doanh'  => 'tlkd',
         'Nhân viên vận hành' => 'nvvh',
         'Nhân viên giám sát' => 'nvgs',
+    ];
+
+    /** Role gán cứng vào branch cụ thể (bỏ qua org thật của assignment). */
+    private const ROLE_FORCED_BRANCH = [
+        'Trợ lý kinh doanh' => 'hn', // 1 user duy nhất, assign @ company nhưng ngồi ở HN
     ];
 
     public function run(): void
@@ -57,8 +64,9 @@ class RenameUsersToPositionFormatSeeder extends Seeder
             $rolePrefix = self::ROLE_MAP[$a->role->name] ?? null;
             if (! $rolePrefix) continue;
 
-            $branchCode = $this->branchCodeOf($a->orgUnit);
-            $branchPrefix = self::BRANCH_MAP[$branchCode] ?? null;
+            // Role gán cứng branch (ví dụ Trợ lý kinh doanh @ company → luôn hn)
+            $branchPrefix = self::ROLE_FORCED_BRANCH[$a->role->name]
+                ?? self::BRANCH_MAP[$this->branchCodeOf($a->orgUnit)] ?? null;
             if (! $branchPrefix) continue;
 
             $key = "$branchPrefix.$rolePrefix";
