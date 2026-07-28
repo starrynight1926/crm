@@ -24,6 +24,14 @@
   - Sbooking `nguon` vẫn free-text — data cũ ("Fanpage", "Hotline", …) không bị đụng, chỉ dropdown mới cho phép chọn 7 mã.
   - Tests browser đã update nhưng **chưa chạy** (cần Dusk env) — Phase 8 QA sẽ verify.
   - BDM subtype (BDM_BIDV, …) chưa có trường tùy biến sẵn — cần user tự add ở Trường tùy biến cấp Team Nhập Lead khi cần.
+- **Rà soát vòng 2 (cùng ngày)**:
+  - DemoDataSeeder chuyển `firstOrCreate` → `updateOrCreate` cho khối demo 7 nguồn, đảm bảo re-seed đè source_group đúng mô hình mới. DB verify sau seed: `mkt(21) mkt_br(3) bdm(6) bod(1) sa(1) ba(1) wi(4)` — đủ 7 nguồn.
+  - PermissionSeeder: label `lead.approve_source` đổi "Khách tự đến" → "Walk-in (WI)".
+  - Trang Duyệt (⚡lead-approvals + settings/approvals): tiêu đề + mô tả đổi "Duyệt Khách tự đến" → "Duyệt Walk-in (WI)".
+  - Lara-sbooking seeders (LichThang6, LichTuVanThang6, LichDatMau): danh sách `$nguons` cập nhật thành 7 mã mới.
+  - Grep final `SOURCE_MARKETING|SOURCE_CTV|Team trực page|team-truc-page|Cộng tác viên|Bạn giới thiệu|Data lạnh|distribute_ctv` ở scrm ngoài migration đã tạo: **sạch**.
+  - Grep sbooking `Fanpage|Hotline|Website|Khách quen|Giới thiệu|Trực tiếp` trong views/app: **sạch**.
+  - Verify runtime: `SOURCE_GROUPS` / `SOURCE_GROUP_CODES` / `SOURCE_PERMISSIONS` khớp 7 nguồn; `isDirectSaleSource()` trả true cho BOD/SA/BA/WI, false cho MKT; `initialPipelineFor()` route đúng phase.
 
 ## 2026-07-28 — Pass 2: hoàn thiện seed + hiển thị 7 nguồn cả 2 app ✅
 - **SCRM**: đổi `DemoDataSeeder` từ `firstOrCreate` → `updateOrCreate` cho 7 lead demo → seed re-run áp đúng nguồn mới cho phone conflict cũ. Kết quả DB: đủ 7 nguồn `{mkt:21, mkt_br:3, bdm:6, bod:1, sa:1, ba:1, wi:4}`.

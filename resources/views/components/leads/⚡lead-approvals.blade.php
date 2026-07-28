@@ -9,7 +9,7 @@ use Livewire\Component;
 use Livewire\WithPagination;
 
 new #[Layout('layouts.app')]
-#[Title('Duyệt Khách tự đến')]
+#[Title('Duyệt Walk-in (WI)')]
 class extends Component {
     use WithPagination;
 
@@ -84,8 +84,8 @@ class extends Component {
 
 <div class="max-w-6xl mx-auto px-6 py-8">
     <div class="mb-6">
-        <h1 class="text-3xl font-bold mb-1">Duyệt Khách tự đến</h1>
-        <p class="text-sm text-ink/60">Danh sách lead nhóm "Khách tự đến" đang chờ CM duyệt.</p>
+        <h1 class="text-3xl font-bold mb-1">Duyệt Walk-in (WI)</h1>
+        <p class="text-sm text-ink/60">Danh sách lead nhóm Walk-in (WI) đang chờ CM duyệt.</p>
     </div>
 
     @if (session('status'))

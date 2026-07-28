@@ -1,6 +1,6 @@
 @extends('layouts.app')
 
-@section('title', 'Duyệt Khách tự đến')
+@section('title', 'Duyệt Walk-in (WI)')
 
 @section('content')
     <livewire:leads.lead-approvals />
