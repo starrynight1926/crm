@@ -60,6 +60,8 @@ class OrgStaffSeeder extends Seeder
                 ]],
                 ['code' => 'branch-dn', 'name' => 'Cơ sở Đà Nẵng', 'children' => [
                     ['code' => 'marketing-dn', 'name' => 'Marketing', 'children' => [
+                        // Team Trực Page dùng chung cho Marketing ĐN.
+                        ['code' => 'team-truc-page-dn', 'name' => 'Team Trực Page'],
                         ['code' => 'team-dn-booking', 'name' => 'Team Booking'],
                         ['code' => 'team-dn-sale', 'name' => 'Team Sale'],
                     ]],
@@ -255,12 +257,22 @@ class OrgStaffSeeder extends Seeder
             ['email' => 'lpd@longevity.com.vn',  'name' => 'Lê Phát Đạt',         'job_title' => 'SHC'],
 
             // Nhân sự luồng 6 nguồn (Phase 6.6) — không có job_title
-            ['email' => 'page1@longevity.com.vn',  'name' => 'Phạm Trực Page 1', 'job_title' => null],
+            // Tài khoản Trực Page: mỗi cơ sở 1 account dùng chung cho team trực page.
+            ['email' => 'hn.trucpage@longevity.com.vn',  'name' => 'Tài khoản Trực Page cơ sở HN',  'job_title' => null],
+            ['email' => 'hcm.trucpage@longevity.com.vn', 'name' => 'Tài khoản Trực Page cơ sở HCM', 'job_title' => null],
+            ['email' => 'dn.trucpage@longevity.com.vn',  'name' => 'Tài khoản Trực Page cơ sở ĐN',  'job_title' => null],
             ['email' => 'cmbktg@longevity.com.vn',   'name' => 'CM Booking Team Giang',        'job_title' => null],
             ['email' => 'book1@longevity.com.vn',  'name' => 'Nguyễn Booking 1',  'job_title' => null],
             ['email' => 'book2@longevity.com.vn',  'name' => 'Trần Booking 2',    'job_title' => null],
             ['email' => 'cmsale@longevity.com.vn', 'name' => 'CM Sale',           'job_title' => null],
         ];
+
+        // Cleanup: user demo cũ "Phạm Trực Page 1" — xoá assignment + user nếu còn.
+        $legacyPage = User::firstWhere('email', 'page1@longevity.com.vn');
+        if ($legacyPage) {
+            Assignment::where('user_id', $legacyPage->id)->delete();
+            $legacyPage->delete();
+        }
 
         foreach ($users as $u) {
             $existing = User::firstWhere('email', $u['email']);
@@ -356,7 +368,9 @@ class OrgStaffSeeder extends Seeder
             ['lpd@longevity.com.vn',  'Sale', 'team-ashley-sale', Assignment::SCOPE_SELF, []],
 
             // Luồng 6 nguồn Phase 6.6
-            ['page1@longevity.com.vn',  'Team trực page', 'team-truc-page', Assignment::SCOPE_SELF, []],
+            ['hn.trucpage@longevity.com.vn',  'Team trực page', 'team-truc-page',     Assignment::SCOPE_SELF, []],
+            ['hcm.trucpage@longevity.com.vn', 'Team trực page', 'team-truc-page-hcm', Assignment::SCOPE_SELF, []],
+            ['dn.trucpage@longevity.com.vn',  'Team trực page', 'team-truc-page-dn',  Assignment::SCOPE_SELF, []],
             ['cmbktg@longevity.com.vn',   'CM booking',     'team-giang-booking', Assignment::SCOPE_TEAM, []],
             ['book1@longevity.com.vn',  'Team booking',   'team-giang-booking', Assignment::SCOPE_SELF, []],
             ['book2@longevity.com.vn',  'Team booking',   'team-hoi-booking',   Assignment::SCOPE_SELF, []],
