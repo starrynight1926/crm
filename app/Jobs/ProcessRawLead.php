@@ -182,16 +182,26 @@ class ProcessRawLead implements ShouldQueue
     }
 
     /**
-     * Khớp giá trị cột CHIA CHO với 1 user (chỉ nhận khi DUY NHẤT, tránh gán nhầm):
-     * ưu tiên trùng đúng họ tên → trùng phần đuôi (tên gọi) → chứa chuỗi.
+     * Khớp giá trị cột CHIA CHO với 1 user active.
+     * - Có "@" → coi là email, khớp chính xác (unique, không mơ hồ).
+     * - Ngược lại → khớp theo tên: đủ họ tên → đuôi tên → chứa chuỗi; trùng nhiều thì bỏ qua.
      */
-    private function resolveOwner(string $name): ?User
+    private function resolveOwner(string $value): ?User
     {
-        if ($name === '') {
+        $value = trim($value);
+        if ($value === '') {
             return null;
         }
+
+        if (str_contains($value, '@')) {
+            return User::query()
+                ->where('status', User::STATUS_ACTIVE)
+                ->whereRaw('LOWER(email) = ?', [mb_strtolower($value)])
+                ->first();
+        }
+
         $norm = fn ($s) => mb_strtolower(trim(preg_replace('/\s+/u', ' ', (string) $s)));
-        $target = $norm($name);
+        $target = $norm($value);
         $users = User::query()->where('status', User::STATUS_ACTIVE)->get(['id', 'name']);
 
         foreach ([
@@ -204,7 +214,7 @@ class ProcessRawLead implements ShouldQueue
                 return User::find($hit->first()->id);
             }
             if ($hit->count() > 1) {
-                return null; // mơ hồ (VD nhiều "Giang") → bỏ qua, không đoán
+                return null; // mơ hồ (VD nhiều "Giang") → user phải điền email để chắc chắn
             }
         }
 

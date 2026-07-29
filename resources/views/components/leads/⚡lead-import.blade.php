@@ -74,7 +74,7 @@ new class extends Component
         'link' => 'Link',
         'region' => 'Khu vực',
         'note' => 'NOTE',
-        'owner' => 'CHIA CHO (gán cho sale)',
+        'owner' => 'CHIA CHO (tên hoặc email sale)',
     ];
 
     private const GUESS = [
@@ -378,7 +378,7 @@ new class extends Component
             $sheet->setCellValueExplicit("C{$r}", $row['email'], \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
             $norm = mb_strtolower(trim(preg_replace('/\s+/u', ' ', $row['name'])));
             if (in_array($norm, $duplicateNames, true)) {
-                $sheet->setCellValue("D{$r}", 'TRÙNG TÊN — phải điền đầy đủ họ tên, nếu không hệ thống bỏ qua');
+                $sheet->setCellValue("D{$r}", 'TRÙNG TÊN — nên điền email (cột C) thay vì tên để chắc chắn khớp đúng người');
                 $sheet->getStyle("A{$r}:D{$r}")->getFill()
                     ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
                     ->getStartColor()->setRGB('FFF3CD');
@@ -390,10 +390,11 @@ new class extends Component
         $note->setTitle('Hướng dẫn');
         $note->setCellValue('A1', 'Cột CHIA CHO (gán cho sale)');
         $note->getStyle('A1')->getFont()->setBold(true);
-        $note->setCellValue('A2', 'Điền TÊN sale (không phải mã/ID). Copy đúng từ sheet "DS Sale".');
-        $note->setCellValue('A3', 'Hệ thống khớp theo: trùng đủ họ tên → trùng phần đuôi tên → chứa chuỗi.');
-        $note->setCellValue('A4', 'Nếu có nhiều người cùng khớp (VD nhiều "Giang") → dòng đó bỏ qua, lead vào kho chung để engine chia số.');
-        $note->setCellValue('A5', 'Bỏ trống cột này → lead vào kho chung, engine chia số tự chia.');
+        $note->setCellValue('A2', 'Điền TÊN hoặc EMAIL của sale. Copy đúng từ sheet "DS Sale".');
+        $note->setCellValue('A3', 'Ưu tiên điền EMAIL — chắc chắn không nhầm, đặc biệt khi có nhiều sale trùng tên.');
+        $note->setCellValue('A4', 'Nếu điền tên: hệ thống khớp theo trùng đủ họ tên → trùng phần đuôi tên → chứa chuỗi.');
+        $note->setCellValue('A5', 'Nếu có nhiều người cùng khớp tên → dòng đó bỏ qua (lead vào kho chung). Muốn tránh, điền email.');
+        $note->setCellValue('A6', 'Bỏ trống cột này → lead vào kho chung, engine chia số tự chia.');
         $note->getColumnDimension('A')->setWidth(90);
 
         $spreadsheet->setActiveSheetIndex(0);
