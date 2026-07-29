@@ -6,6 +6,7 @@ use App\Models\ImportBatch;
 use App\Models\ImportTemplate;
 use App\Models\Lead;
 use App\Models\RawLead;
+use App\Models\User;
 use App\Support\SpreadsheetReader;
 use Livewire\Component;
 use Livewire\WithFileUploads;
@@ -281,6 +282,8 @@ new class extends Component
             $sheet->getStyle($col . '1')->getFont()->setBold(true);
         }
 
+        $this->appendSalesReferenceSheet($spreadsheet);
+
         $filename = 'mau-import-' . \Illuminate\Support\Str::slug($tpl->name) . '.xlsx';
 
         return response()->streamDownload(function () use ($spreadsheet) {
@@ -319,9 +322,81 @@ new class extends Component
             $sheet->getStyle($col . '1')->getFont()->setBold(true);
         }
 
+        $this->appendSalesReferenceSheet($spreadsheet);
+
         return response()->streamDownload(function () use ($spreadsheet) {
             (new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet))->save('php://output');
         }, "mau-import-{$slug}.xlsx");
+    }
+
+    /**
+     * Thêm sheet "DS Sale" liệt kê user active + phòng ban → người điền cột CHIA CHO biết
+     * tên chính xác, biết tên nào bị trùng để phải ghi đủ họ tên. Phạm vi khớp với resolveOwner
+     * trong ProcessRawLead (User active toàn công ty).
+     */
+    private function appendSalesReferenceSheet(\PhpOffice\PhpSpreadsheet\Spreadsheet $spreadsheet): void
+    {
+        $users = User::query()
+            ->where('status', User::STATUS_ACTIVE)
+            ->with(['assignments' => fn ($q) => $q->where('active', true)->with('orgUnit')])
+            ->orderBy('name')
+            ->get(['id', 'name', 'email']);
+
+        $rows = $users->map(function (User $u) {
+            $orgs = $u->assignments
+                ->map(fn ($a) => $a->orgUnit?->name)
+                ->filter()->unique()->values()->implode(', ');
+            return [
+                'name' => $u->name,
+                'org' => $orgs,
+                'email' => $u->email,
+            ];
+        })->values();
+
+        $duplicateNames = $rows
+            ->groupBy(fn ($r) => mb_strtolower(trim(preg_replace('/\s+/u', ' ', $r['name']))))
+            ->filter(fn ($g) => $g->count() > 1)
+            ->keys()
+            ->all();
+
+        $sheet = $spreadsheet->createSheet();
+        $sheet->setTitle('DS Sale');
+
+        $sheet->setCellValue('A1', 'Tên sale (điền vào cột CHIA CHO)');
+        $sheet->setCellValue('B1', 'Phòng / Team');
+        $sheet->setCellValue('C1', 'Email');
+        $sheet->setCellValue('D1', 'Ghi chú');
+        $sheet->getStyle('A1:D1')->getFont()->setBold(true);
+        foreach (['A', 'B', 'C', 'D'] as $col) {
+            $sheet->getColumnDimension($col)->setAutoSize(true);
+        }
+
+        $r = 2;
+        foreach ($rows as $row) {
+            $sheet->setCellValueExplicit("A{$r}", $row['name'], \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+            $sheet->setCellValueExplicit("B{$r}", $row['org'], \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+            $sheet->setCellValueExplicit("C{$r}", $row['email'], \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+            $norm = mb_strtolower(trim(preg_replace('/\s+/u', ' ', $row['name'])));
+            if (in_array($norm, $duplicateNames, true)) {
+                $sheet->setCellValue("D{$r}", 'TRÙNG TÊN — phải điền đầy đủ họ tên, nếu không hệ thống bỏ qua');
+                $sheet->getStyle("A{$r}:D{$r}")->getFill()
+                    ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
+                    ->getStartColor()->setRGB('FFF3CD');
+            }
+            $r++;
+        }
+
+        $note = $spreadsheet->createSheet();
+        $note->setTitle('Hướng dẫn');
+        $note->setCellValue('A1', 'Cột CHIA CHO (gán cho sale)');
+        $note->getStyle('A1')->getFont()->setBold(true);
+        $note->setCellValue('A2', 'Điền TÊN sale (không phải mã/ID). Copy đúng từ sheet "DS Sale".');
+        $note->setCellValue('A3', 'Hệ thống khớp theo: trùng đủ họ tên → trùng phần đuôi tên → chứa chuỗi.');
+        $note->setCellValue('A4', 'Nếu có nhiều người cùng khớp (VD nhiều "Giang") → dòng đó bỏ qua, lead vào kho chung để engine chia số.');
+        $note->setCellValue('A5', 'Bỏ trống cột này → lead vào kho chung, engine chia số tự chia.');
+        $note->getColumnDimension('A')->setWidth(90);
+
+        $spreadsheet->setActiveSheetIndex(0);
     }
 
     /**
