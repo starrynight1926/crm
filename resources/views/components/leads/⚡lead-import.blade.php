@@ -5,6 +5,7 @@ use App\Models\CustomField;
 use App\Models\ImportBatch;
 use App\Models\ImportTemplate;
 use App\Models\Lead;
+use App\Models\OrgUnit;
 use App\Models\RawLead;
 use App\Models\User;
 use App\Support\SpreadsheetReader;
@@ -55,6 +56,63 @@ new class extends Component
     public string $selectedOrgTemplate = '';
 
     public ?int $lastBatchId = null;
+
+    public function mount(): void
+    {
+        // Default: chọn sẵn cơ sở của user để nút "Tải file mẫu" ra đúng bộ trường theo phòng.
+        $orgs = $this->visibleOrgOptions();
+        if ($orgs->isNotEmpty()) {
+            $this->selectedOrgTemplate = 'org:' . $orgs->first()->id;
+        }
+    }
+
+    /**
+     * Danh sách phòng/team được phép chọn để tải mẫu.
+     * User chỉ thấy org trong phạm vi của mình (tránh HN tải nhầm mẫu HCM). Hợp union:
+     * - visibleOrgUnitIds() — dùng cho user có scope xem (manager/admin thấy nhiều nhánh).
+     * - Descendants của cơ sở gần nhất từ assignment anchor — dùng cho data-entry (SELF scope,
+     *   visibleOrgUnitIds rỗng nhưng vẫn cần nhập cho các team trong cùng cơ sở).
+     */
+    private function visibleOrgOptions(): \Illuminate\Support\Collection
+    {
+        $user = auth()->user();
+        if (! $user) return collect();
+
+        $ids = $user->visibleOrgUnitIds();
+
+        $anchorIds = $user->assignments()
+            ->where('active', true)
+            ->pluck('org_unit_id')
+            ->unique()
+            ->all();
+        $basePaths = collect();
+        if ($anchorIds) {
+            $anchors = OrgUnit::whereIn('id', $anchorIds)->get(['id', 'depth', 'path']);
+            $basePaths = $anchors->map(function (OrgUnit $o) {
+                if ($o->depth <= 1) {
+                    return $o->path;
+                }
+                $parts = array_values(array_filter(explode('/', $o->path)));
+                return '/' . $parts[0] . '/' . $parts[1] . '/';
+            })->unique()->values();
+        }
+
+        if (! $ids && $basePaths->isEmpty()) {
+            return collect();
+        }
+
+        return OrgUnit::query()
+            ->where(function ($q) use ($ids, $basePaths) {
+                if ($ids) {
+                    $q->orWhereIn('id', $ids);
+                }
+                foreach ($basePaths as $p) {
+                    $q->orWhere('path', 'like', $p . '%');
+                }
+            })
+            ->orderBy('path')
+            ->get();
+    }
 
     /**
      * Giới hạn dòng mỗi lần import. Pipeline hiện dispatch từng job đồng bộ trong request Livewire —
@@ -624,7 +682,7 @@ new class extends Component
             'batches' => $batches,
             'targets' => $this->allTargets(),
             'templates' => ImportTemplate::orderByDesc('id')->get(),
-            'orgOptions' => \App\Models\OrgUnit::orderBy('path')->get(),
+            'orgOptions' => $this->visibleOrgOptions(),
         ];
     }
 };
@@ -676,7 +734,7 @@ new class extends Component
             <div class="min-w-[240px]">
                 <label class="block text-xs font-semibold text-ink/60 mb-1">Phòng / Team</label>
                 <select wire:model.live="selectedOrgTemplate" class="w-full border border-gold-200 rounded-md px-3 py-2 text-sm bg-white">
-                    <option value="">Mức công ty (trường chung)</option>
+                    <option value="">— Chỉ trường chung công ty (KHÔNG có trường riêng của team nào) —</option>
                     @foreach ($orgOptions as $o)
                         <option value="org:{{ $o->id }}">{{ str_repeat('— ', $o->depth) }}{{ $o->name }}</option>
                     @endforeach
