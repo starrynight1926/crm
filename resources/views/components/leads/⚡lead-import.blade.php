@@ -649,8 +649,8 @@ new class extends Component
         }
 
         $batch->update(['total' => $count]);
-        session()->flash('status', "Đã nạp {$count} khách hàng vào pipeline (batch #{$batch->id}).");
-        return $this->redirect(route('leads.index'), navigate: true);
+        session()->flash('status', "Đã nạp {$count} khách hàng vào pipeline (batch #{$batch->id}). Xem tiến độ ở mục Lịch sử import bên dưới.");
+        return $this->redirect(route('leads.import'), navigate: true);
     }
 
     /**
