@@ -217,6 +217,12 @@ class Lead extends Model
     /** Nhãn phase-status đọc được (VD "Booking · Chờ CM booking chia"). */
     public function pipelineLabel(): string
     {
+        // Chưa chia cho ai + vẫn ở kho chung → phase/status chỉ là default DB,
+        // hiển thị "Sale · Đang chăm sóc" gây hiểu nhầm là đã có sale phụ trách.
+        if ($this->owner_id === null && $this->pool_level === self::POOL_COMMON) {
+            return 'Kho chung · Chưa chia';
+        }
+
         $phase = self::PHASES[$this->pipeline_phase] ?? $this->pipeline_phase;
         // Với PSTATUS_WAITING, hiển thị rõ ai đang phải chia (CM booking hay CM sale)
         // để phân biệt trong 2 phase.
