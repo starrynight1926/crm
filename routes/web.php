@@ -53,7 +53,7 @@ Route::middleware('auth')->group(function () {
     // /leads/create chỉ cần lead.create (Team nhập lead dùng để up lead nhưng không xem danh sách)
     Route::view('/leads/create', 'leads.create')->middleware('permission:lead.create')->name('leads.create');
 
-    Route::prefix('leads')->middleware('permission:lead.view')->group(function () {
+    Route::prefix('leads')->middleware('permission:lead.view,lead.import')->group(function () {
         Route::view('/', 'leads.index')->name('leads.index');
         Route::view('/import', 'leads.import')->middleware('permission:lead.import')->name('leads.import');
         Route::view('/failed', 'leads.failed')->middleware('permission:lead.import')->name('leads.failed');

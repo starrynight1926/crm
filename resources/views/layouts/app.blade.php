@@ -4,8 +4,8 @@
     @php
         $u = auth()->user();
         $customerChildren = array_values(array_filter([
-            ['label' => 'Danh sách khách hàng', 'route' => $u->hasPermission('lead.view') ? 'leads.index' : null, 'match' => 'leads.index'],
-            ['label' => 'Thêm khách hàng', 'route' => (!$u->hasPermission('lead.view') && $u->hasPermission('lead.create')) ? 'leads.create' : null, 'match' => 'leads.create'],
+            ['label' => 'Danh sách khách hàng', 'route' => $u->hasAnyPermission(['lead.view', 'lead.import']) ? 'leads.index' : null, 'match' => 'leads.index'],
+            ['label' => 'Thêm khách hàng', 'route' => (!$u->hasAnyPermission(['lead.view', 'lead.import']) && $u->hasPermission('lead.create')) ? 'leads.create' : null, 'match' => 'leads.create'],
             ['label' => 'Chia số', 'route' => $u->hasPermission('rule.manage') ? 'distribution.rules' : ($u->hasPermission('lead.view') ? 'distribution.pools' : null), 'match' => 'distribution.*'],
             ['label' => 'Duyệt Lead', 'route' => $u->hasPermission('lead.approve_source') ? 'leads.approvals' : null, 'match' => 'leads.approvals'],
         ], fn ($i) => $i['route']));
