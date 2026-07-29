@@ -340,7 +340,7 @@ new class extends Component
             $sheet->getStyle($col . '1')->getFont()->setBold(true);
         }
 
-        $this->appendSalesReferenceSheet($spreadsheet);
+        $this->appendSalesReferenceSheet($spreadsheet, null);
 
         $filename = 'mau-import-' . \Illuminate\Support\Str::slug($tpl->name) . '.xlsx';
 
@@ -380,7 +380,7 @@ new class extends Component
             $sheet->getStyle($col . '1')->getFont()->setBold(true);
         }
 
-        $this->appendSalesReferenceSheet($spreadsheet);
+        $this->appendSalesReferenceSheet($spreadsheet, $orgUnit);
 
         return response()->streamDownload(function () use ($spreadsheet) {
             (new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet))->save('php://output');
@@ -389,16 +389,26 @@ new class extends Component
 
     /**
      * Thêm sheet "DS Sale" liệt kê user active + phòng ban → người điền cột CHIA CHO biết
-     * tên chính xác, biết tên nào bị trùng để phải ghi đủ họ tên. Phạm vi khớp với resolveOwner
-     * trong ProcessRawLead (User active toàn công ty).
+     * tên chính xác, biết tên nào bị trùng để chuyển sang điền email.
+     * $scope null → list tất cả sale active (mẫu công ty).
+     * $scope là OrgUnit → chỉ list user assigned vào org đó hoặc descendant (VD team Hợi
+     * kèm sub-team Booking/Sale).
      */
-    private function appendSalesReferenceSheet(\PhpOffice\PhpSpreadsheet\Spreadsheet $spreadsheet): void
+    private function appendSalesReferenceSheet(\PhpOffice\PhpSpreadsheet\Spreadsheet $spreadsheet, ?OrgUnit $scope): void
     {
-        $users = User::query()
+        $query = User::query()
             ->where('status', User::STATUS_ACTIVE)
             ->with(['assignments' => fn ($q) => $q->where('active', true)->with('orgUnit')])
-            ->orderBy('name')
-            ->get(['id', 'name', 'email']);
+            ->orderBy('name');
+
+        if ($scope) {
+            $scopeOrgIds = OrgUnit::where('path', 'like', $scope->path . '%')->pluck('id');
+            $query->whereHas('assignments', function ($q) use ($scopeOrgIds) {
+                $q->where('active', true)->whereIn('org_unit_id', $scopeOrgIds);
+            });
+        }
+
+        $users = $query->get(['id', 'name', 'email']);
 
         $rows = $users->map(function (User $u) {
             $orgs = $u->assignments
