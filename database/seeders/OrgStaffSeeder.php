@@ -134,7 +134,7 @@ class OrgStaffSeeder extends Seeder
             ],
             'Sale' => [
                 'desc' => 'Khai thác & chăm sóc khách hàng',
-                'perms' => ['lead.create','lead.update','lead.consult','lead.view','report.view'],
+                'perms' => ['lead.create','lead.update','lead.consult','lead.view','report.view','payment.record'],
             ],
             'Observer' => [
                 'desc' => 'Xem toàn bộ, không thêm/sửa/xóa dịch vụ và nhân sự',
@@ -142,7 +142,7 @@ class OrgStaffSeeder extends Seeder
             ],
             'Team Leader' => [
                 'desc' => 'Trưởng nhóm — quyền như CM nhưng scope team, chia số cấp team',
-                'perms' => ['lead.approve_source','lead.book_action','lead.create','lead.view_pool','lead.distribute','lead.distribute_booking','lead.distribute_sale','lead.distribute_to_sale','lead.read_booking','lead.recall','lead.update','lead.view','lead.view_phone','report.view'],
+                'perms' => ['lead.approve_source','lead.book_action','lead.create','lead.view_pool','lead.distribute','lead.distribute_booking','lead.distribute_sale','lead.distribute_to_sale','lead.read_booking','lead.recall','lead.update','lead.view','lead.view_phone','payment.record','report.view'],
             ],
             'Trợ lý kinh doanh' => [
                 'desc' => 'Xem data cấp công ty, không thêm/sửa',
@@ -157,20 +157,20 @@ class OrgStaffSeeder extends Seeder
                 'perms' => ['lead.create','lead.import','lead.view','lead.distribute_booking','lead.distribute_to_team','lead.distribute_to_sale'],
             ],
             'CM booking' => [
-                'desc' => 'CM Phòng Booking — up nguồn nhóm 1 (MKT / MKT BR / BDM), chia lead trong kho booking cho team booking',
-                'perms' => ['lead.book_action','lead.create','lead.view_pool','lead.distribute','lead.distribute_booking','lead.distribute_to_sale','lead.read_booking','lead.recall','lead.update','lead.update_booking','lead.view','lead.view_phone','report.view'],
+                'desc' => 'CM Phòng Booking — up nguồn nhóm 1 (MKT / MKT BR / BDM), chia lead trong kho booking cho team booking, thu deposit booking (nếu cơ sở áp dụng)',
+                'perms' => ['lead.book_action','lead.create','lead.view_pool','lead.distribute','lead.distribute_booking','lead.distribute_to_sale','lead.read_booking','lead.recall','lead.update','lead.update_booking','lead.view','lead.view_phone','payment.record','report.view'],
             ],
             'Team booking' => [
                 'desc' => 'Team booking — sửa được info khách khi phase=booking, bấm nút Đặt booking. Chuyển sang phase Sale sau khi có data booking (không ghi note dịch vụ).',
                 'perms' => ['lead.book_action','lead.read_booking','lead.update','lead.update_booking','lead.view','lead.view_phone'],
             ],
             'CM sale' => [
-                'desc' => 'CM Phòng Kinh doanh — chia lead đã đồng ý sang sale + sửa info cá nhân khi ở phase Sale',
-                'perms' => ['lead.create','lead.distribute','lead.distribute_sale','lead.distribute_to_sale','lead.recall','lead.update','lead.update_sale','lead.consult','lead.view','lead.view_phone','report.view'],
+                'desc' => 'CM Phòng Kinh doanh — chia lead đã đồng ý sang sale + sửa info cá nhân khi ở phase Sale + duyệt/ghi thu tiền hộ team sale',
+                'perms' => ['lead.create','lead.distribute','lead.distribute_sale','lead.distribute_to_sale','lead.recall','lead.update','lead.update_sale','lead.consult','lead.view','lead.view_phone','payment.record','report.view'],
             ],
             'Team sale' => [
-                'desc' => 'Sale nhân viên — chăm sóc khách, ghi chú, phân loại, gắn dịch vụ',
-                'perms' => ['lead.update','lead.consult','lead.view','lead.view_phone','report.view'],
+                'desc' => 'Sale nhân viên — chăm sóc khách, ghi chú, phân loại, gắn dịch vụ, thu tiền khách trực tiếp cho lead mình phụ trách',
+                'perms' => ['lead.update','lead.consult','lead.view','lead.view_phone','payment.record','report.view'],
             ],
             // Đà Nẵng — team làm xuyên suốt tele+book+sale, giữ job_title HC/Tele
             // nhưng có union perms Team sale + Team booking + book_action.
@@ -180,6 +180,7 @@ class OrgStaffSeeder extends Seeder
                     'lead.view','lead.view_phone','lead.create','lead.update','lead.consult','report.view',
                     'lead.read_booking','lead.update_booking','lead.book_action',
                     'lead.update_sale',
+                    'payment.record',
                 ],
             ],
         ];
