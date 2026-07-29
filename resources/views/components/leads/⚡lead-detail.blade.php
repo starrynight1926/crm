@@ -608,18 +608,35 @@ new class extends Component
                         </div>
                     </div>
 
-                    {{-- Phân phối --}}
+                    {{-- 3 người phụ trách vòng đời lead --}}
+                    @php $trio = $lead->handlerTrio(); @endphp
                     <div class="border-t border-gold-100 pt-3 mt-1">
-                        <div class="grid grid-cols-2 gap-3">
+                        <dt class="text-xs uppercase tracking-wider text-ink/40 mb-2">Người phụ trách</dt>
+                        <div class="grid grid-cols-3 gap-3">
                             <div>
-                                <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Lead chia cho</dt>
-                                <dd class="font-medium text-gold-700">{{ $lead->owner?->name ?: 'Chưa chia' }}</dd>
+                                <div class="text-[10px] uppercase tracking-wider text-ink/40">Nhập</div>
+                                <div class="text-sm font-medium">{{ $trio['importer']?->name ?: '—' }}</div>
                             </div>
                             <div>
-                                <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Người nhận</dt>
-                                <dd class="font-medium">{{ $lead->receiver?->name ?: 'Hệ thống' }}</dd>
+                                <div class="text-[10px] uppercase tracking-wider text-ink/40">Booking</div>
+                                <div class="text-sm font-medium">
+                                    @if ($trio['booking'])
+                                        {{ $trio['booking']->name }}
+                                    @elseif ($lead->isDirectSaleSource())
+                                        <span class="text-ink/40 italic">Không qua booking</span>
+                                    @else
+                                        —
+                                    @endif
+                                </div>
+                            </div>
+                            <div>
+                                <div class="text-[10px] uppercase tracking-wider text-ink/40">Sale</div>
+                                <div class="text-sm font-medium text-gold-700">{{ $trio['sale']?->name ?: '—' }}</div>
                             </div>
                         </div>
+                        @if (! $trio['sale'] && $lead->pool_level === \App\Models\Lead::POOL_COMMON)
+                            <p class="text-[11px] text-ink/40 mt-2">Lead đang ở kho chung, chưa chia cho sale.</p>
+                        @endif
                     </div>
 
                     {{-- Trạng thái --}}

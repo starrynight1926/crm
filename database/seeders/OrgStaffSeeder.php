@@ -153,8 +153,8 @@ class OrgStaffSeeder extends Seeder
                 'perms' => ['contribution.set','field.approve','field.manage','lead.approve_source','lead.book_action','lead.create','lead.delete','lead.view_pool','lead.distribute','lead.distribute_booking','lead.distribute_sale','lead.distribute_to_team','lead.distribute_to_sale','lead.export','lead.import','lead.read_booking','lead.recall','lead.update','lead.update_booking','lead.update_sale','lead.view','lead.view_phone','payment.record','report.view','report.view_all','rule.manage','service.manage','user.manage'],
             ],
             'Team nhập lead' => [
-                'desc' => 'Team nhập lead marketing — up lead nguồn MKT / MKT BR / BDM',
-                'perms' => ['lead.create','lead.distribute_booking'],
+                'desc' => 'Team nhập lead marketing — up lead nguồn MKT / MKT BR / BDM. Xem lại được data đã up (imported_by) và chia lại sale khi cần.',
+                'perms' => ['lead.create','lead.import','lead.view','lead.distribute_booking','lead.distribute_to_sale'],
             ],
             'CM booking' => [
                 'desc' => 'CM Phòng Booking — up nguồn nhóm 1 (MKT / MKT BR / BDM), chia lead trong kho booking cho team booking',

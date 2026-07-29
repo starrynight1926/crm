@@ -132,6 +132,12 @@ class ProcessRawLead implements ShouldQueue
         }
 
         // --- Tạo lead sạch ---
+        // Người nhập lead: lấy từ import_batch (nếu raw đến từ import Excel/CSV).
+        $importedBy = null;
+        if ($raw->import_batch_id) {
+            $importedBy = \App\Models\ImportBatch::where('id', $raw->import_batch_id)->value('uploaded_by');
+        }
+
         $lead = Lead::create([
             'raw_lead_id' => $raw->id,
             'received_date' => $this->parseDate($payload['received_date'] ?? null) ?? $raw->created_at?->toDateString() ?? now()->toDateString(),
@@ -142,6 +148,7 @@ class ProcessRawLead implements ShouldQueue
             'region' => $payload['region'] ?? null,
             'note' => $payload['note'] ?? null,
             'classification' => 'new',
+            'imported_by' => $importedBy,
             'pool_level' => Lead::POOL_COMMON, // vào kho chung, chờ engine chia số (Phase 4)
         ]);
         // Trường tùy biến map từ file (payload key 'cf_<id>') — ghi trước khi sinh mã

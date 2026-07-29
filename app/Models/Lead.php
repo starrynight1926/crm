@@ -13,7 +13,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
     'raw_lead_id', 'code', 'received_date',
     'insight', 'link', 'name', 'phone', 'region', 'classification',
     'status_1', 'status_2', 'note',
-    'pool_level', 'owner_id', 'receiver_id', 'org_unit_id',
+    'pool_level', 'owner_id', 'receiver_id', 'imported_by', 'org_unit_id',
     'past_org_unit_ids',
     'facility_id', 'doctor_id', 'consultant_1_id', 'consultant_2_id', 'consultant_3_id',
     'assigned_at', 'last_care_at',
@@ -371,6 +371,34 @@ class Lead extends Model
         return $this->belongsTo(User::class, 'receiver_id');
     }
 
+    public function importer(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'imported_by');
+    }
+
+    /**
+     * 3 người theo dõi vòng đời lead: nhập → booking → sale.
+     * Nguồn "sale nhận trực tiếp" (BOD/SA/BA/WI) không qua booking → slot booking null.
+     * Nếu 1 người kiêm nhiều vai (VD Team ĐN xuyên suốt) → cùng user trong nhiều slot,
+     * đúng luồng thực tế.
+     *
+     * @return array{importer: ?User, booking: ?User, sale: ?User}
+     */
+    public function handlerTrio(): array
+    {
+        $importer = $this->importer;
+        $sale = $this->pipeline_phase === self::PHASE_SALE ? $this->owner : null;
+        if ($this->pipeline_phase === self::PHASE_BOOKING) {
+            $booking = $this->owner;
+        } elseif ($this->pipeline_phase === self::PHASE_SALE) {
+            // Sale nhận trực tiếp: không qua booking.
+            $booking = $this->isDirectSaleSource() ? null : $this->receiver;
+        } else {
+            $booking = null;
+        }
+        return ['importer' => $importer, 'booking' => $booking, 'sale' => $sale];
+    }
+
     public function orgUnit(): BelongsTo
     {
         return $this->belongsTo(OrgUnit::class);
@@ -532,8 +560,13 @@ class Lead extends Model
             if ($user->hasSelfScope()) {
                 $q->orWhere('owner_id', $user->id)->orWhere('receiver_id', $user->id);
             }
+            // Người nhập lead: luôn thấy được data mình đã up, kể cả sau khi engine
+            // chia số cho sale khác (dùng để "trực page" theo dõi + chia lại nếu cần).
+            $q->orWhere('imported_by', $user->id);
             if ($orgIds === [] && $memberOrgIds === [] && ! $user->hasSelfScope()) {
-                $q->whereRaw('1 = 0');
+                // whereRaw('1=0') cũ chặn hết — giờ vẫn phải OR nhánh imported_by ở trên,
+                // nên không cần chặn cứng nữa. Nếu user không import gì → nhánh imported_by
+                // rỗng tự nhiên.
             }
         });
     }
@@ -556,6 +589,11 @@ class Lead extends Model
     /** Lead này có nằm trong scope của user không (dùng cho chi tiết / mask SĐT). */
     public function isVisibleTo(User $user): bool
     {
+        // Người nhập lead: luôn được xem đầy đủ (đã thấy dữ liệu khi up file).
+        if ($this->imported_by === $user->id) {
+            return true;
+        }
+
         if ($user->hasSelfScope() && ($this->owner_id === $user->id || $this->receiver_id === $user->id)) {
             return true;
         }
