@@ -851,6 +851,7 @@ new class extends Component
         {{-- ═══ CỘT PHẢI: Tương tác + Dịch vụ ═══ --}}
         <div class="space-y-6">
             {{-- Thêm ghi chú --}}
+            @if (auth()->user()->hasPermission('lead.update'))
             <div class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
                 <h2 class="font-bold flex items-center gap-2 mb-4">
                     <span class="w-9 h-9 rounded-full bg-gold-50 border border-gold-200 text-gold-600 flex items-center justify-center">
@@ -905,6 +906,7 @@ new class extends Component
                     <button wire:click="addNote" class="bg-gold-600 hover:bg-gold-700 text-white font-semibold text-sm px-5 py-2 rounded-md">Lưu Ghi chú</button>
                 </div>
             </div>
+            @endif
 
             {{-- Timeline lịch sử --}}
             <div class="bg-white border border-gold-200 rounded-xl shadow-card p-6">

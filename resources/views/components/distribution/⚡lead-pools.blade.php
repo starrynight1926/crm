@@ -117,12 +117,19 @@ new class extends Component
      * Phase 6.20 — Gate chia lead theo cấp pool:
      * - Kho công ty (POOL_COMMON) → cần lead.distribute_to_team (CM cơ sở) hoặc lead.distribute (compat).
      * - Kho team (POOL_TEAM) → cần lead.distribute_to_sale (CM team) hoặc lead.distribute (compat).
+     *
+     * Ngoại lệ (trực page): user có distribute_to_team NHƯNG không có lead.distribute
+     * (không phải CM cơ sở toàn quyền) → chỉ chia được lead CHÍNH MÌNH đã import
+     * (imported_by = user). Lead do nguồn khác vào kho chung vẫn chờ CM chia.
      */
-    private function canDistributeLead(Lead $lead): bool
+    public function canDistributeLead(Lead $lead): bool
     {
         $user = auth()->user();
         if ($user->hasPermission('lead.distribute')) return true;
-        if ($lead->pool_level === Lead::POOL_COMMON) return $user->hasPermission('lead.distribute_to_team');
+        if ($lead->pool_level === Lead::POOL_COMMON) {
+            if (! $user->hasPermission('lead.distribute_to_team')) return false;
+            return $lead->imported_by === $user->id;
+        }
         if ($lead->pool_level === Lead::POOL_TEAM) return $user->hasPermission('lead.distribute_to_sale');
         return false;
     }
@@ -391,7 +398,11 @@ new class extends Component
                 @forelse ($leads as $lead)
                     <tr class="hover:bg-gold-50/40">
                         @if ($tab !== 'personal' && $canDistribute)
-                            <td class="px-4 py-3"><input type="checkbox" value="{{ $lead->id }}" wire:model.live="selected" class="rounded border-gold-300 text-gold-600 focus:ring-gold-500 w-4 h-4"></td>
+                            <td class="px-4 py-3">
+                                @if ($this->canDistributeLead($lead))
+                                    <input type="checkbox" value="{{ $lead->id }}" wire:model.live="selected" class="rounded border-gold-300 text-gold-600 focus:ring-gold-500 w-4 h-4">
+                                @endif
+                            </td>
                         @endif
                         <td class="px-4 py-3 font-mono text-xs text-gold-700">
                             <a href="{{ route('leads.show', $lead) }}" class="hover:underline">{{ $lead->code ?: '#' . $lead->id }}</a>
@@ -439,7 +450,7 @@ new class extends Component
                                 </span>
                                 @error('poolOrgId')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
                             @else
-                                @if ($tab !== 'personal' && $canDistribute)
+                                @if ($tab !== 'personal' && $canDistribute && $this->canDistributeLead($lead))
                                     <button wire:click="autoDistribute({{ $lead->id }})" class="text-xs font-semibold text-gold-700 border border-gold-300 hover:bg-gold-50 px-3 py-1.5 rounded-md" title="Chạy engine theo rule">Chia tự động</button>
                                     <button wire:click="startAssign({{ $lead->id }})" class="text-xs font-semibold text-ink/60 border border-gold-200 hover:bg-gold-50 px-3 py-1.5 rounded-md">Chia thủ công</button>
                                     <button wire:click="startPool({{ $lead->id }})" class="text-xs font-semibold text-ink/60 border border-gold-200 hover:bg-gold-50 px-3 py-1.5 rounded-md">Chia về kho</button>
