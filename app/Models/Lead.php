@@ -217,9 +217,11 @@ class Lead extends Model
     /** Nhãn phase-status đọc được (VD "Booking · Chờ CM booking chia"). */
     public function pipelineLabel(): string
     {
-        // Chưa chia cho ai + vẫn ở kho chung → phase/status chỉ là default DB,
-        // hiển thị "Sale · Đang chăm sóc" gây hiểu nhầm là đã có sale phụ trách.
-        if ($this->owner_id === null && $this->pool_level === self::POOL_COMMON) {
+        // Lead mới nhập chưa qua vòng nào (chưa có receiver_id) + đang ở kho chung
+        // → dùng label rõ ràng thay vì "Sale · Đang chăm sóc" sai lệch. Lead đã từng
+        // có owner (receiver_id != null) mà trở lại kho chung là chờ chia phase kế tiếp
+        // → giữ label phase-status như cũ (VD "Sale · Chờ CM sale chia").
+        if ($this->owner_id === null && $this->pool_level === self::POOL_COMMON && $this->receiver_id === null) {
             return 'Kho chung · Chưa chia';
         }
 
@@ -242,9 +244,18 @@ class Lead extends Model
      */
     public function moveToSaleWaiting(): void
     {
+        // Đưa lead về kho chung để CM sale chia số ở kho Sale.
+        // Owner cũ (booking user) → chuyển vào receiver_id để giữ lịch sử người vừa bàn giao;
+        // owner_id null + pool_level=common → CM sale thấy trong pool để chia.
+        $prevOwner = $this->owner_id;
         $this->update([
             'pipeline_phase'  => self::PHASE_SALE,
             'pipeline_status' => self::PSTATUS_WAITING,
+            'receiver_id'     => $prevOwner,
+            'owner_id'        => null,
+            'pool_level'      => self::POOL_COMMON,
+            'org_unit_id'     => null,
+            'assigned_at'     => null,
         ]);
     }
 

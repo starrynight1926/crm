@@ -138,6 +138,12 @@ class ProcessRawLead implements ShouldQueue
             $importedBy = \App\Models\ImportBatch::where('id', $raw->import_batch_id)->value('uploaded_by');
         }
 
+        // Nhóm nguồn: excel import từ trực page marketing default = MKT (nhóm 1) → phase=booking
+        // (kho booking chờ CM booking chia). Nguồn direct-sale từ file phải khai qua source_group
+        // trong payload, còn không thì fallback MKT là an toàn nhất cho trực page.
+        $sourceGroup = $payload['source_group'] ?? Lead::SOURCE_MKT;
+        [$initPhase, $initStatus] = Lead::initialPipelineFor($sourceGroup, $targetOwner?->id);
+
         $lead = Lead::create([
             'raw_lead_id' => $raw->id,
             'received_date' => $this->parseDate($payload['received_date'] ?? null) ?? $raw->created_at?->toDateString() ?? now()->toDateString(),
@@ -149,6 +155,9 @@ class ProcessRawLead implements ShouldQueue
             'note' => $payload['note'] ?? null,
             'classification' => 'new',
             'imported_by' => $importedBy,
+            'source_group' => $sourceGroup,
+            'pipeline_phase' => $initPhase,
+            'pipeline_status' => $initStatus,
             'pool_level' => Lead::POOL_COMMON, // vào kho chung, chờ engine chia số (Phase 4)
         ]);
         // Trường tùy biến map từ file (payload key 'cf_<id>') — ghi trước khi sinh mã

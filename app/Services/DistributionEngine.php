@@ -387,6 +387,11 @@ class DistributionEngine
             'owner_id' => $user->id,
             'pool_level' => Lead::POOL_PERSONAL,
             'assigned_at' => now(),
+            // Chuyển từ WAITING → IN_CARE khi đã có owner: badge hiển thị đúng
+            // trạng thái "Đang chăm sóc" thay vì "Chờ CM chia".
+            'pipeline_status' => $lead->pipeline_status === Lead::PSTATUS_WAITING
+                ? Lead::PSTATUS_IN_CARE
+                : $lead->pipeline_status,
         ]);
 
         $this->notifyAssigned($lead, $user->id, $prevOwnerId);
