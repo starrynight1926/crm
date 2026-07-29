@@ -393,6 +393,13 @@ class Lead extends Model
     public function handlerTrio(): array
     {
         $importer = $this->importer;
+
+        // Chưa chia (kho chung + null owner) → không show booking/sale từ data cũ
+        // (receiver_id có thể còn giá trị residual sau khi thu hồi).
+        if ($this->owner_id === null && $this->pool_level === self::POOL_COMMON) {
+            return ['importer' => $importer, 'booking' => null, 'sale' => null];
+        }
+
         $sale = $this->pipeline_phase === self::PHASE_SALE ? $this->owner : null;
         if ($this->pipeline_phase === self::PHASE_BOOKING) {
             $booking = $this->owner;
