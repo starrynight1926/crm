@@ -931,6 +931,9 @@ new class extends Component
             @endif
 
             @if ($preview)
+                <p class="mb-3 text-xs text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+                    <strong>Chú ý:</strong> những cột không được khớp (map) ở bước trên sẽ không được nhập vào hệ thống. Trường hợp có dòng sai định dạng, toàn bộ quá trình nhập sẽ bị hủy — phải sửa file rồi upload lại.
+                </p>
                 <div class="max-h-[420px] overflow-auto border border-gold-100 rounded">
                     <table class="w-full text-xs whitespace-nowrap">
                         <thead class="sticky top-0 z-10">
