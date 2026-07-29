@@ -2,6 +2,66 @@
 
 > Làm xong phase nào ghi vào đây: ngày hoàn thành, việc đã làm, việc dời lại/chưa xong, ghi chú & quyết định phát sinh. Mẫu bên dưới.
 
+## 2026-07-29 — QA bug bash: import/permission/phase/payment/booking ✅
+
+Bug bash 1 ngày qua flow trực page → booking → sale → thu tiền. Bắt được 12 bug, fix hết, đã push lên `fourth`.
+
+### Sửa middleware / permission
+- `EnsurePermission::handle(string $permission)` chỉ nhận key đầu → Laravel tách `permission:a,b` thành 2 arg → key thứ 2 bị bỏ qua. Route `/reports` khai `permission:report.view,report.view_all` ngầm chỉ check `report.view` bao lâu nay. Fix: đổi thành `string ...$permissions`. Thêm feature test 6 case (`EnsurePermissionMiddlewareTest`). Commit `bebd84c`.
+- `/leads/*` group cũ gate `permission:lead.view` khóa cả nút Import ra ngoài scope trực page. Đổi thành `permission:lead.view,lead.import`; menu "Danh sách khách hàng" dùng `hasAnyPermission(['lead.view','lead.import'])`. Commit `bebd84c`.
+
+### Người nhập lead (imported_by) — thấy vĩnh viễn data mình up
+- Trước: trực page import xong lead vào kho chung → engine chia sale → mất scope xem → tưởng mất data.
+- Thêm cột `leads.imported_by` (FK users, nullable, index). Migration + backfill cross pgsql/mysql qua `raw_leads.clean_lead_id` ∪ `import_batches.uploaded_by`.
+- `ProcessRawLead` set `imported_by = batch.uploaded_by`.
+- `form.createLead` (nhập tay) cũng set `imported_by = auth->id` cho user tạo lead giữ scope xem.
+- `Lead::scopeVisibleTo` + `isVisibleTo`: thêm nhánh `imported_by = user`. SĐT unmask tự động qua `canViewFullPhone`.
+- Seed role "Team nhập lead" bổ sung `lead.import`, `lead.view`, `lead.distribute_to_team`, `lead.distribute_to_sale`; `canDistributeLead` gate scope theo `imported_by` (chỉ chia được lead chính mình up, lead nguồn khác vẫn chờ CM).
+- Lead detail: block **Người phụ trách** (`Lead::handlerTrio()`) hiển thị 3 slot Nhập / Booking / Sale theo phase; nguồn direct-sale hiển thị "Không qua booking"; kho chung + chưa chia → cả 3 slot đều `—` (tránh show booking từ `receiver_id` residual).
+- Commit `850088b`, `f2c34dc`, `d611c08`, `a51ade5`.
+
+### Luồng phase Booking → Sale + badge
+- `ProcessRawLead` không set `source_group`/`pipeline_phase` → lead marketing default DB `phase=sale`, sai luồng. Fix: default source_group=MKT + gọi `Lead::initialPipelineFor()`.
+- `DistributionEngine::manualAssign` giữ `pipeline_status=WAITING` sau khi đã có owner → badge "Chờ CM chia" giả. Fix: chuyển WAITING → IN_CARE trong cùng update.
+- `Lead::moveToSaleWaiting()` chỉ đổi phase, không reset owner/pool → CM sale không thấy lead trong pool để chia tiếp. Fix: đưa về POOL_COMMON, owner=null, receiver_id=user booking cũ (giữ lịch sử), org_unit_id=null, assigned_at=null.
+- `Lead::pipelineLabel()`: chỉ badge "Kho chung · Chưa chia" cho lead mới (receiver_id null). Lead đã qua booking rồi về common → giữ label phase-based ("Sale · Chờ CM sale chia").
+- Commit `a51ade5`, `2b6f53b`.
+
+### Thu tiền
+- Trước: chỉ Admin + 2 IT demo + DM HCM có `payment.record`. Sale (owner khách) không thu được → data doanh thu lệch báo cáo.
+- Cấp `payment.record` cho: Sale, Team sale, Team sale ĐN, CM sale (duyệt/ghi hộ), CM booking (thu deposit nếu áp dụng), Team Leader. Giữ nguyên: Team booking / Trực page / Observer / Trợ lý KD (không thu).
+- E2E verify: sale01 gắn dịch vụ 10M + thu 3M → CS.totalPaid=3M, Payment record đủ.
+- Commit `fe36022`.
+
+### UX / i18n / cleanup
+- Nút Import trong màn Lead list gate theo `lead.import`.
+- Sheet "DS Sale" trong file mẫu Excel: liệt kê sale active + phòng/team + email, bôi vàng tên trùng, sheet "Hướng dẫn" nhấn ưu tiên điền email khi có nhiều người cùng tên. Cột CHIA CHO nhận cả tên & email; `resolveOwner` khớp email exact (case-insensitive) trước, fallback logic tên cũ.
+- `updatedSelectedOrgTemplate` hook: đổi team sau upload sẽ tự re-init mapping + auto-guess.
+- Map cột lọc field theo team đã chọn (`CustomField::applicableTo($org)`) — không còn hiện field của team khác.
+- Preview có dòng đỏ cảnh báo cột không map sẽ bị bỏ.
+- Redirect sau import về chính trang Import (thấy Lịch sử batch), thay vì /leads/index trống.
+- `symlink public/storage` đã tạo (`storage:link`) — trước thiếu → ảnh note upload sẽ 404.
+- Publish `lang/vi/validation.php` + `APP_LOCALE=vi` — validation message trước trộn tiếng Anh/Việt.
+- Block "Thêm Ghi chú" ẩn khi user không có `lead.update`.
+- Menu Cài đặt gate `hasAnyPermission($adminPerms)`.
+- `/distribution/pools`: nút chia + checkbox chọn gate per-lead theo `canDistributeLead` để tránh 403 khi bấm nhầm.
+- Commit `adabccd`, `4c49289`, `1d87d8b`, `72b5447`, `90e4427`, `3e81387`, `646b6b6`, `ebae219`.
+
+### Test end-to-end đã cover
+- **Import Excel**: trực page HN import 3 lead → phase=booking + kho chung + imported_by=user. Chia 2/3 cho hn.book01 → booking sửa info khách → bấm Chuyển sang Sale → CM sale thấy trong pool → chia cho hn.sale01 → sale ghi note. Trio đầy đủ 3 người.
+- **Nhập tay**: sale/CM booking/CM sale/trực page mỗi role tạo tay 1 lead → verify phase/pool/owner/source_group/imported_by đúng theo `initialPipelineFor`. Duplicate SĐT bị chặn 2 mức (banner + field error). Validation 3 field required chặn đúng. Custom field required theo team gate qua `validateCustomFields()`.
+- **Chia + reassign + thu hồi**: manualAssign đổi owner, log manual_assign đầy đủ; recall thủ công đưa lead về POOL_TEAM; SLA `leads:process-recalls` auto-recall theo `recall_at` + conditions (no_activity/no_booking/no_progress).
+- **Booking sync**: callback GET → set booked+booking_ma+classification=booking. Webhook POST đủ 3 event `status` (booked→khach_da_toi→da_xong), `comment`, `edit` — đều ghi note + LeadStatusLog + AuditLog + notification.
+- **Role scan** 9 role (page01/book01/cmb01/sale01/cms01/tl01/dm-hcm/observer/tlkd01/admin) qua 13 route: gate 200/403 khớp perm, không có 500.
+- **Export**: admin export 42 lead → AuditLog `action=export`. Sale/CM/booking không có `lead.export` → 403.
+- **Backup**: config export ra JSON (meta+tables, 24 table), self-import idempotent (0 add/update/delete, 0 errors). Full backup ZIP 95KB chứa data khách/DV/thanh toán/logs.
+
+### Ghi chú & rủi ro
+- `pipeline_phase` cho lead import default MKT → nếu công ty thực tế có nguồn khác cho luồng import (VD BOD import batch) cần thêm dropdown "Nhóm nguồn" ở màn Import hoặc set qua payload `source_group`.
+- `lead.export` chỉ Observer + Admin có — sale/CM chưa có (chốt sau nếu cần cho báo cáo tay).
+- Bug UX nhỏ: nút "Đặt booking" ẩn hoàn toàn khi lead chưa gắn facility → user không biết thiếu gì. Cân nhắc show disabled + tooltip "Chưa gắn cơ sở".
+- Flash message chia số hiển thị "Đã chia {tên khách} cho {sale}" — khi tên khách bắt đầu bằng "CM..." đọc lên nghe funky ("chia tay"). Không phải bug, chỉ trùng ngữ.
+
 ## 2026-07-28 — Chuyển sang mô hình 7 nguồn khách + rename Team Trực Page ✅
 - **Cũ (6 nguồn)**: marketing / data_cold / bdm / referral / ctv / walk_in.
 - **Mới (7 nguồn)** — chia 3 luồng:
