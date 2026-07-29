@@ -161,14 +161,18 @@ new class extends Component
         return $out;
     }
 
-    /** Cache custom fields active cho session. */
+    /**
+     * Custom field áp cho map cột: lọc theo phòng/team đã chọn ở bước 1 (field công ty +
+     * field của org đó và các cha), tránh liệt kê field của team khác. Chưa chọn org →
+     * chỉ field mức công ty.
+     */
     private function customFields()
     {
-        return CustomField::query()
-            ->where('active', true)
-            ->where('status', CustomField::STATUS_ACTIVE)
-            ->with('orgUnit')
-            ->orderBy('org_unit_id')->orderBy('position')->get();
+        $orgUnit = null;
+        if (str_starts_with($this->selectedOrgTemplate, 'org:')) {
+            $orgUnit = \App\Models\OrgUnit::find((int) substr($this->selectedOrgTemplate, 4));
+        }
+        return CustomField::applicableTo($orgUnit)->load('orgUnit');
     }
 
     /** Toàn bộ target: field chuẩn + trường tùy biến. */
@@ -180,6 +184,22 @@ new class extends Component
     private function norm(string $s): string
     {
         return mb_strtolower(trim(preg_replace('/\s+/u', ' ', $s)));
+    }
+
+    /** Đổi phòng/team sau khi đã upload → bộ target thay đổi → phải re-init mapping. */
+    public function updatedSelectedOrgTemplate(): void
+    {
+        if (! $this->preview) return;
+        $this->initMappingDefaults();
+        if ($this->selectedTemplateId !== '') {
+            $this->applyTemplate();
+        } else {
+            $this->autoGuess();
+        }
+        $this->rowErrors = [];
+        $this->errorRowCount = 0;
+        $this->validRowCount = 0;
+        $this->validated = false;
     }
 
     public function updatedFile(): void
