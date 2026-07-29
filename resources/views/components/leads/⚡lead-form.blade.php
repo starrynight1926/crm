@@ -469,6 +469,10 @@ new class extends Component
     {
         $user = auth()->user();
         $attributes['receiver_id'] = $user->id;
+        // Người tạo lead (dù nhập tay hay import Excel) đều được coi là "người nhập"
+        // để có scope xem lại data sau khi engine chia cho sale khác (giống flow
+        // trực page import Excel — thuộc [[imported-by-scope]]).
+        $attributes['imported_by'] = $user->id;
         $pool = $this->poolAttributes();
         $attributes = array_merge($attributes, $pool);
 
