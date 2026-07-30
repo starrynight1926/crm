@@ -189,7 +189,48 @@ Màn dành cho **Admin hệ thống** (permission `ops.manage`), quản lý toà
    - Quá `escalate_after_days` ở pool team → escalate lên kho CM cấp cha.
 6. Từ chối ở kho booking → ở lại kho booking, đánh dấu overdue nếu quá thời hạn (không auto-delete).
 
-### 8.0.1 Trục lifecycle (Phase 6.8, 2026-07-19)
+### 8.0.2 Customer Flow 7 phase (Phase 6.21, 2026-07-30) — mô hình lifecycle hiện tại
+
+> Thay thế mô hình 2-phase (8.0.1) ở lớp UI + phân quyền chốt phase. Field cũ (`pipeline_phase`, `pipeline_status`, `booking_status`) **giữ song song** làm compat cho báo cáo + rule chia số. Chi tiết thiết kế: `docs/design/customer_flow_30-07-2026.md`. Mockup: `docs/mockups/customer_flow_30-07-2026.html`.
+
+**7 phase lifecycle của khách (không phải lead riêng)**:
+
+| # | Phase | Ai xử lý (mặc định) | Sub-status |
+|---|-------|---------------------|------------|
+| 1 | Thêm mới khách hàng | Trực Page/Tele/QL Sale/Sale (tùy nguồn) | – |
+| 2 | Chia số | CM cơ sở → CM team | – |
+| 3 | Gọi điện | Tele | Thành công / Thất bại / Không nghe máy (mỗi lần gọi = 1 record `call_logs`) |
+| 4 | Booking thăm khám | Sale | Đã xác nhận / Chờ xác nhận / Hủy - Đổi lịch (mỗi lần booking = 1 record `booking_logs`) |
+| 5 | Check-in | Lễ tân | – |
+| 6 | Bán hàng | *(chưa build)* | – |
+| 7 | Sử dụng dịch vụ | *(chưa build)* | – |
+
+**Mapping `source_group` → `start_phase`** (phase cao nhất được chốt tại lúc tạo lead):
+
+| Source | start_phase | Ghi chú |
+|--------|-------------|---------|
+| MKT | 1 | Trực Page nhập, đi full 5 phase tuần tự |
+| MKT_BR | 4 | Sale tự tạo + tự làm A→Z (phase 1-4 mở thông, lưu 1 phát chốt cả cụm) |
+| BA | 3 | Tele tự tạo + tự gọi, chuyển Sale ở phase 4 |
+| SA / BDM / BOD / Walk-in | 2 | QL Sale tự tạo + tự chia, chuyển Tele ở phase 3 |
+
+**Luật vận hành**:
+
+- **Mở thông (bulk edit)**: chỉ xảy ra 1 lần khi tạo lead. Mở thông phase `1..start_phase` (khách mới) hoặc `3..start_phase` (khách quay lại). Nút **"Lưu — chốt N phase"** đóng tất cả cùng lúc, đóng dấu `LeadPhaseClosure(closed_by, closed_at)`.
+- **Tuần tự**: sau khi lưu lần đầu, mỗi phase có nút **"Kết thúc phase X"**, phải bấm mới chuyển bước.
+- **Lùi phase**: chỉ role có perm `phase.rollback` (mặc định gán "Admin vận hành") — xóa closure từ phase X trở đi.
+- **Khách quay lại**: field `is_first_visit` bỏ tick → lead reset về phase 3, `call_logs`/`booking_logs` cũ giữ, chỉ append record mới.
+- **Ghi call_log/booking_log**: owner đang giữ lead + QL Sale + Admin vận hành đều ghi hộ được. Mỗi lần gọi/booking = 1 record riêng (không đè).
+
+**Permission mới (Phase 6.21)** — 6 perm tách rời để linh hoạt cấp lẻ:
+- `phase.close.new`, `phase.close.distribute`, `phase.close.call`, `phase.close.booking`, `phase.close.checkin` — chốt từng phase.
+- `phase.rollback` — lùi phase (Admin vận hành only).
+
+**UI trang chi tiết KH**: đổi từ 6 tab dọc (`Trạng thái | Bác sĩ tư vấn | Liệu trình | Tiềm năng | Insight` + Phân phối gộp) thành:
+- **Thanh arrow-breadcrumb 7 phase** trên đầu (style AMIS CRM) — bấm chuyển tab.
+- **7 tab-phase** thay 6 tab cũ. Mỗi tab hiển thị form của phase đó. Phase bị skip theo nguồn thì ẩn hẳn. Phase đã chốt = readonly (trừ Admin lùi). Phase 6-7 = placeholder "chưa build".
+
+### 8.0.1 Trục lifecycle (Phase 6.8, 2026-07-19) — legacy, giữ song song
 
 Song song với `booking_status` (đã đặt lịch chưa), mỗi lead có 2 trục:
 

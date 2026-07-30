@@ -91,8 +91,10 @@ Nhật ký webhook/API call: id, source_type, connection_id (logic), http_status
 | recall_at | timestamp nullable — mốc thu hồi (do CM chia đặt); null = chia vĩnh viễn |
 | is_permanent_assignment | bool default false — "Chia vĩnh viễn" (admin vẫn thu hồi được) |
 | booking_status | enum: `not_booked` / `booked` / `rescheduled` — trạng thái đặt lịch |
-| pipeline_phase | enum: `booking` / `sale` — giai đoạn lifecycle (Phase 6.8) |
-| pipeline_status | enum: `waiting_distribute` / `in_care` — trạng thái trong giai đoạn (Phase 6.8) |
+| pipeline_phase | enum: `booking` / `sale` — giai đoạn lifecycle (Phase 6.8, legacy) |
+| pipeline_status | enum: `waiting_distribute` / `in_care` — trạng thái trong giai đoạn (Phase 6.8, legacy) |
+| **phase** | **tinyint 1..7 (Phase 6.21, 2026-07-30) — Customer Flow: 1 Thêm mới / 2 Chia số / 3 Gọi điện / 4 Booking / 5 Check-in / 6 Bán hàng / 7 Sử dụng DV. Index. Default 1.** |
+| **is_first_visit** | **bool default true (Phase 6.21) — "Đến lần đầu"; bỏ tick khi khách quay lại → reset `phase = 3`, giữ lịch sử `call_logs`/`booking_logs` cũ.** |
 | consultant_1_id, consultant_2_id, consultant_3_id | FK **users** (Phase 6.9, trước đó là staff_members) — chuyên viên tư vấn = user team sale |
 | doctor_id | FK staff_members — bác sĩ tư vấn (không đăng nhập) |
 | ~~performing_doctor_id, treatment_1..4, quality_rating~~ | **Đã drop Phase 6.11** — chuyển sang bảng `lead_treatments` (thẻ 1-N) |
@@ -114,7 +116,48 @@ Bổ sung 2026-07-03 (mã KH + trường tùy biến, xem scope.md 4.1–4.2):
 
 **lead_treatments** (Phase 6.11) — id, lead_id FK (cascade), `sequence` (1,2,3...), `performed_at` date nullable, `performing_doctor_id` FK staff_members nullable, `quality_rating` text nullable, timestamps. Index `(lead_id, sequence)`. Mỗi row = 1 lần liệu trình, có bác sĩ + đánh giá riêng.
 
-**lead_status_logs** — id, lead_id FK, user_id FK, field (`classification`/`status_1`/`status_2`/`note`), old_value, new_value, created_at. Nguồn cho lịch sử chăm sóc + audit.
+**lead_status_logs** — id, lead_id FK, user_id FK, field (`classification`/`status_1`/`status_2`/`note`/`phase_close`/`phase_rollback`), old_value, new_value, created_at. Nguồn cho lịch sử chăm sóc + audit.
+
+**lead_phase_closures** (Phase 6.21, 2026-07-30) — 1 record khi 1 phase của khách được chốt
+| Cột | Ghi chú |
+|---|---|
+| id | PK |
+| lead_id | FK leads (cascade delete) |
+| phase | tinyint 1..7 |
+| closed_by | FK users |
+| closed_at | timestamp |
+| note | text nullable |
+| timestamps | |
+
+`UNIQUE(lead_id, phase)` — 1 phase chỉ chốt 1 lần (Admin lùi phase → xóa closure). `INDEX(lead_id, phase)`.
+
+**call_logs** (Phase 6.21) — mỗi lần Tele gọi khách = 1 record
+| Cột | Ghi chú |
+|---|---|
+| id | PK |
+| lead_id | FK leads (cascade) |
+| user_id | FK users — ai gọi |
+| status | varchar(20) — `thanh_cong` / `that_bai` / `khong_nghe_may` |
+| note | text nullable |
+| called_at | datetime |
+| timestamps | |
+
+`INDEX(lead_id, called_at desc)`, `INDEX(user_id)`. Ai được ghi log: owner + QL Sale (`lead.distribute_sale`) + Admin vận hành.
+
+**booking_logs** (Phase 6.21) — mỗi lần đặt/đổi/hủy booking = 1 record
+| Cột | Ghi chú |
+|---|---|
+| id | PK |
+| lead_id | FK leads (cascade) |
+| user_id | FK users — ai đặt |
+| status | varchar(20) — `da_xac_nhan` / `cho_xac_nhan` / `huy_doi_lich` |
+| scheduled_at | datetime nullable |
+| doctor_id | FK staff_members nullable |
+| service_id | FK services nullable |
+| note | text nullable |
+| timestamps | |
+
+`INDEX(lead_id, scheduled_at desc)`, `INDEX(user_id)`. Khi thêm booking_log `da_xac_nhan` → sync `leads.booking_status = 'booked'` (compat với code cũ).
 
 **lead_distribution_logs** — id, lead_id FK, action (`distribute`/`recall`/`escalate`/`manual_assign`/`approve`/`reject`), from_pool_level, to_pool_level, from_owner_id, to_owner_id, org_unit_id, rule_id nullable, actor_id nullable (null = hệ thống), reason text nullable (dùng cho reject/escalate), created_at.
 

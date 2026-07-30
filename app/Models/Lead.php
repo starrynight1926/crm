@@ -26,10 +26,23 @@ use Illuminate\Database\Eloquent\SoftDeletes;
     'booking_status', 'booking_ma', 'booked_at',
     // Phase 6.8
     'pipeline_phase', 'pipeline_status',
+    // Phase 6.21 — Customer Flow 7 phase (2026-07-30)
+    'phase', 'is_first_visit',
 ])]
 class Lead extends Model
 {
     use SoftDeletes;
+
+    // Phase 6.21 — default cho cột mới (Laravel không auto-refresh sau create nếu không truyền)
+    protected $attributes = [
+        'phase' => 1,
+        'is_first_visit' => true,
+    ];
+
+    protected $casts = [
+        'phase' => 'integer',
+        'is_first_visit' => 'boolean',
+    ];
 
     // Phân loại kết quả — thứ tự theo funnel trong scope.md mục 4
     public const CLASSIFICATIONS = [
@@ -91,17 +104,20 @@ class Lead extends Model
         return self::SOURCE_GROUP_CODES[$this->source_group] ?? '';
     }
 
-    // Permission cần có để thấy nhóm nguồn đó ở form thêm lead.
-    // Nhóm 1 → cần lead.distribute_booking (Team Nhập Lead + QL Booking).
-    // Nhóm 2 + 3 → null: ai tạo lead cũng thấy được.
+    // Permission cần có để thấy nhóm nguồn đó ở form thêm lead (Phase 6.21f, 2026-07-30).
+    // Mapping:
+    //   MKT              → source.up.trucpage (Trực Page)
+    //   MKT_BR, SA       → source.up.sale     (Sale tự nhận)
+    //   BA               → source.up.tele     (Tele tự nhận)
+    //   BDM, BOD, WI     → source.up.admin    (Admin)
     public const SOURCE_PERMISSIONS = [
-        self::SOURCE_MKT => 'lead.distribute_booking',
-        self::SOURCE_MKT_BR => 'lead.distribute_booking',
-        self::SOURCE_BDM => 'lead.distribute_booking',
-        self::SOURCE_BOD => null,
-        self::SOURCE_SA => null,
-        self::SOURCE_BA => null,
-        self::SOURCE_WI => null,
+        self::SOURCE_MKT    => 'source.up.trucpage',
+        self::SOURCE_MKT_BR => 'source.up.sale',
+        self::SOURCE_SA     => 'source.up.sale',
+        self::SOURCE_BA     => 'source.up.tele',
+        self::SOURCE_BDM    => 'source.up.admin',
+        self::SOURCE_BOD    => 'source.up.admin',
+        self::SOURCE_WI     => 'source.up.admin',
     ];
 
     // Phase 6.8 — Trục lifecycle: phase (giai đoạn) + status (trạng thái trong giai đoạn)
@@ -683,5 +699,220 @@ class Lead extends Model
         }
 
         return preg_match('/^0\d{9}$/', $digits) ? $digits : null;
+    }
+
+    // =====================================================================
+    // Phase 6.21 — Customer Flow 7 phase (2026-07-30)
+    // Design: docs/design/customer_flow_30-07-2026.md
+    // =====================================================================
+
+    public const CF_PHASE_NEW        = 1;
+    public const CF_PHASE_DISTRIBUTE = 2;
+    public const CF_PHASE_CALL       = 3;
+    public const CF_PHASE_BOOKING    = 4;
+    public const CF_PHASE_CHECKIN    = 5;
+    public const CF_PHASE_SALES      = 6; // chưa build
+    public const CF_PHASE_SERVICE    = 7; // chưa build
+
+    public const CF_PHASE_LABELS = [
+        1 => 'Thêm mới khách hàng',
+        2 => 'Chia số',
+        3 => 'Gọi điện',
+        4 => 'Booking thăm khám',
+        5 => 'Check-in',
+        6 => 'Bán hàng',
+        7 => 'Sử dụng dịch vụ',
+    ];
+
+    public const CF_PHASE_CLOSE_PERM = [
+        1 => 'phase.close.new',
+        2 => 'phase.close.distribute',
+        3 => 'phase.close.call',
+        4 => 'phase.close.booking',
+        5 => 'phase.close.checkin',
+        // phase 6-7 chưa build
+    ];
+
+    public const CF_ROLLBACK_PERM = 'phase.rollback';
+
+    public const CF_START_PHASE_BY_SOURCE = [
+        self::SOURCE_MKT    => 1,
+        self::SOURCE_MKT_BR => 4,
+        self::SOURCE_BA     => 3,
+        self::SOURCE_SA     => 2,
+        self::SOURCE_BDM    => 2,
+        self::SOURCE_BOD    => 2,
+        self::SOURCE_WI     => 2,
+    ];
+
+    // ---- Relations ----
+    public function phaseClosures(): HasMany
+    {
+        return $this->hasMany(LeadPhaseClosure::class);
+    }
+
+    public function callLogs(): HasMany
+    {
+        return $this->hasMany(CallLog::class);
+    }
+
+    public function bookingLogs(): HasMany
+    {
+        return $this->hasMany(BookingLog::class);
+    }
+
+    // ---- Helpers ----
+
+    /** Phase cao nhất được chốt khi user tạo lead bấm "Lưu — chốt N phase". */
+    public function startPhase(): int
+    {
+        return self::CF_START_PHASE_BY_SOURCE[$this->source_group] ?? 1;
+    }
+
+    /** Phase thấp nhất mở thông khi bulk edit lần đầu. Khách quay lại: 3 (nếu start ≥ 3). */
+    public function openFrom(): int
+    {
+        if (! $this->is_first_visit && $this->startPhase() >= 3) {
+            return 3;
+        }
+        return 1;
+    }
+
+    /** True nếu lead đang ở chế độ "mở thông" (chưa từng bấm Lưu chốt lần đầu). */
+    public function isBulkOpen(): bool
+    {
+        // Chế độ bulk: chưa có closure ở phase startPhase (nghĩa là chưa Lưu chốt).
+        // Khách quay lại → cũng bulk (mở thông từ phase 3).
+        $expectedClosed = max(1, $this->openFrom() - 1);
+        return ! $this->phaseClosures()->where('phase', $this->startPhase())->exists();
+    }
+
+    /**
+     * Trạng thái từng phase để render UI.
+     * done | current | open | pending | skipped | notbuilt
+     */
+    public function phaseState(int $idx): string
+    {
+        if ($idx === 6 || $idx === 7) return 'notbuilt';
+
+        $closed = $this->phaseClosures()->pluck('phase')->all();
+        if (in_array($idx, $closed, true)) return 'done';
+
+        $bulk = $this->isBulkOpen();
+        $openFrom = $this->openFrom();
+        $start = $this->startPhase();
+
+        if ($bulk) {
+            if ($idx < $openFrom) return 'skipped';
+            if ($idx >= $openFrom && $idx <= $start) return 'open';
+            return 'pending';
+        }
+        // Tuần tự: phase hiện tại = min phase chưa closed và > 0
+        if ($idx === (int) $this->phase) return 'current';
+        return 'pending';
+    }
+
+    /** Có được nhập vào phase $idx không (không phân biệt user — chỉ dựa trạng thái). */
+    public function isPhaseEditable(int $idx): bool
+    {
+        $st = $this->phaseState($idx);
+        return $st === 'open' || $st === 'current';
+    }
+
+    /** User có được ghi call_log không (owner + QL Sale + Admin ops). */
+    public function canLogCall(User $user): bool
+    {
+        if (! $this->isVisibleTo($user)) return false;
+        if ($user->hasPermission('phase.rollback')) return true;
+        if ($user->hasPermission('lead.distribute_sale')) return true;
+        return $this->isOwnedBy($user);
+    }
+
+    /** User có được ghi booking_log không. */
+    public function canLogBooking(User $user): bool
+    {
+        if (! $this->isVisibleTo($user)) return false;
+        if ($user->hasPermission('phase.rollback')) return true;
+        if ($user->hasPermission('lead.distribute_sale')) return true;
+        return $this->isOwnedBy($user);
+    }
+
+    /**
+     * Bulk save: chốt tất cả phase từ openFrom → startPhase, đưa lead.phase = startPhase + 1.
+     * Yêu cầu user có TẤT CẢ perm phase.close.<slug> cho các phase mở thông.
+     * Trả về danh sách phase đã đóng, throw exception nếu thiếu perm.
+     */
+    public function bulkSave(User $user, ?string $note = null): array
+    {
+        if (! $this->isBulkOpen()) {
+            throw new \RuntimeException('Lead đã ra khỏi chế độ mở thông — không thể bulk save.');
+        }
+        $from = $this->openFrom();
+        $to = $this->startPhase();
+        // Check perm cho toàn cụm
+        for ($p = $from; $p <= $to; $p++) {
+            $perm = self::CF_PHASE_CLOSE_PERM[$p] ?? null;
+            if ($perm && ! $user->hasPermission($perm)) {
+                throw new \RuntimeException("Thiếu quyền {$perm} để chốt phase {$p}.");
+            }
+        }
+        $closed = [];
+        $now = now();
+        for ($p = $from; $p <= $to; $p++) {
+            LeadPhaseClosure::updateOrCreate(
+                ['lead_id' => $this->id, 'phase' => $p],
+                ['closed_by' => $user->id, 'closed_at' => $now, 'note' => $note]
+            );
+            $closed[] = $p;
+        }
+        $this->update(['phase' => min($to + 1, 5)]);
+        return $closed;
+    }
+
+    /** Chốt 1 phase tuần tự. */
+    public function closePhase(int $idx, User $user, ?string $note = null): void
+    {
+        if ($idx !== (int) $this->phase) {
+            throw new \RuntimeException("Chỉ chốt được phase hiện tại (đang ở phase {$this->phase}).");
+        }
+        $perm = self::CF_PHASE_CLOSE_PERM[$idx] ?? null;
+        if ($perm && ! $user->hasPermission($perm)) {
+            throw new \RuntimeException("Thiếu quyền {$perm}.");
+        }
+        LeadPhaseClosure::updateOrCreate(
+            ['lead_id' => $this->id, 'phase' => $idx],
+            ['closed_by' => $user->id, 'closed_at' => now(), 'note' => $note]
+        );
+        $this->update(['phase' => min($idx + 1, 5)]);
+    }
+
+    /** Lùi phase (Admin vận hành only). Xóa closure từ $idx trở đi, set phase = $idx. */
+    public function rollbackTo(int $idx, User $user, ?string $note = null): void
+    {
+        if (! $user->hasPermission(self::CF_ROLLBACK_PERM)) {
+            throw new \RuntimeException('Chỉ Admin vận hành được lùi phase.');
+        }
+        if ($idx < 1 || $idx > 5) {
+            throw new \RuntimeException('Chỉ lùi được về phase 1..5.');
+        }
+        $this->phaseClosures()->where('phase', '>=', $idx)->delete();
+        $this->update(['phase' => $idx]);
+    }
+
+    /** Khách quay lại: bỏ tick is_first_visit → phase reset về 3, giữ lịch sử. */
+    public function markReturning(User $user): void
+    {
+        if (! $user->hasPermission(self::CF_ROLLBACK_PERM)
+            && ! $user->hasPermission('phase.close.checkin')) {
+            throw new \RuntimeException('Không có quyền khởi động lần thăm khám mới.');
+        }
+        $this->update(['is_first_visit' => false, 'phase' => 3]);
+    }
+
+    /** Label ngắn cho arrow-breadcrumb + tab. */
+    public function customerFlowLabel(): string
+    {
+        $label = self::CF_PHASE_LABELS[$this->phase] ?? '?';
+        return "Phase {$this->phase} · {$label}";
     }
 }

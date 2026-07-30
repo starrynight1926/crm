@@ -50,18 +50,12 @@ class Phase66FlowsTest extends TestCase
         $this->assertCount(7, $sources);
     }
 
-    public function test_nv_thuong_chi_thay_4_nhom_khong_can_permission(): void
+    public function test_nv_thuong_khong_co_source_perm_thi_khong_thay_nguon_nao(): void
     {
-        // Nhóm 2 (BOD/SA/BA) + Nhóm 3 (WI) đều mở cho ai cũng nhập được.
+        // Phase 6.21f — mọi source đều gate bằng perm source.up.{trucpage,sale,tele,admin}.
+        // NV thường (role Sale test này) chỉ có lead.view + lead.create → không có source.up.* → 0 nguồn.
         $sources = Lead::allowedSourceGroupsFor($this->regular);
-        $this->assertArrayHasKey(Lead::SOURCE_BOD, $sources);
-        $this->assertArrayHasKey(Lead::SOURCE_SA, $sources);
-        $this->assertArrayHasKey(Lead::SOURCE_BA, $sources);
-        $this->assertArrayHasKey(Lead::SOURCE_WI, $sources);
-        $this->assertArrayNotHasKey(Lead::SOURCE_MKT, $sources);
-        $this->assertArrayNotHasKey(Lead::SOURCE_MKT_BR, $sources);
-        $this->assertArrayNotHasKey(Lead::SOURCE_BDM, $sources);
-        $this->assertCount(4, $sources);
+        $this->assertCount(0, $sources);
     }
 
     public function test_route_leads_approvals_can_permission(): void

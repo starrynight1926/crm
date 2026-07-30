@@ -912,3 +912,214 @@ User request tích hợp 2 chiều CRM ↔ Booking system (GET facilities/servic
   - Chưa cập nhật `scope.md` / `plan.md` — sẽ đồng bộ ở lần commit doc.
   - Chưa viết test tự động cho readonly form + book_action gate — cần bổ sung ở QA phase.
   - Q4 gate ở `lead-pools` giữ `lead.distribute` là fallback compat; nếu về sau muốn strict thì phải rà lại các role vẫn còn `lead.distribute` và quyết định giữ/gỡ.
+
+## 2026-07-30 — Q&A thiết kế Customer Flow (7 phase) + tab Chi tiết KH
+
+**Bối cảnh**: họp thống nhất mô hình Customer Flow 7 bước = 7 trạng thái lifecycle của lead/khách. Cần cập nhật `scope.md` + `ERD.md` trước khi code.
+
+### Chốt được
+1. **Customer Flow = 7 phase, gắn vào khách hàng** (là trạng thái lifecycle của lead):
+   1. Thêm mới khách hàng
+   2. Chia số
+   3. Gọi điện → có sub-status: Thành công / Thất bại / Không nghe máy
+   4. Booking thăm khám → có sub-status: Đã xác nhận / Chờ xác nhận / Hủy - Đổi lịch
+   5. Check-in
+   6. Bán hàng *(chưa build — bước 5 tạm thời là bước cuối)*
+   7. Sử dụng dịch vụ *(chưa build)*
+
+2. **Điểm bắt đầu theo nguồn** (bắt buộc, dựa ma trận chia số 7 nguồn):
+   - `MKT` → bắt đầu phase 1 (Trực Page nhận), chạy full 4 bậc Trực Page → Tele → QL Sale → Sale.
+   - `MKT BR` → nhảy thẳng Sale (bỏ Trực Page/Tele/QL Sale).
+   - `SA`, `BDM`, `BOD`, `Walk IN` → QL Sale nhận trực tiếp.
+   - `BA` → Tele nhận trực tiếp.
+   - Các bước bị skip ẩn hẳn trên UI (không hiển thị "bỏ qua"). Trường thông tin đóng/mở linh hoạt theo phase hiện tại.
+
+3. **Chuyển phase = tuần tự**, không nhảy cóc. Điều kiện chuyển: bấm nút **"Kết thúc phase X"** ở cuối mỗi phase.
+
+4. **Lùi phase**: có, nhưng **CHỈ role "Admin vận hành"** được lùi. User thường không thấy nút này.
+
+5. **Phân quyền chốt phase — TÁCH RIÊNG từng bước** để linh hoạt sau này:
+   - `phase.close.new` (chốt phase Thêm mới)
+   - `phase.close.distribute` (chốt phase Chia số)
+   - `phase.close.call` (chốt phase Gọi điện)
+   - `phase.close.booking` (chốt phase Booking)
+   - `phase.close.checkin` (chốt phase Check-in)
+   - (bán hàng / dịch vụ để sau)
+   - Mặc định: gán hết cho role "Admin vận hành". Sau có thể cấp lẻ cho các role khác.
+
+6. **Lịch sử gọi điện / booking**: mỗi lần gọi / mỗi lần booking → **tạo 1 record riêng** (không đè). Có bảng `call_logs` + `booking_logs`. Lý do: Tele gọi 3-5 lần/khách là bình thường, cần log để QA.
+
+7. **Tab Chi tiết KH — đổi thứ tự + tách thẻ Phân phối**:
+   `Phân phối | Trạng thái | Tư vấn | Liệu trình | Tiềm năng | Insight`
+   ("Phân phối nguồn" đang nằm trong Trạng thái → tách ra tab riêng đứng đầu.)
+
+8. **Thanh Customer Flow trên UI**: đặt dưới thanh trạng thái ("Sale - Chờ CM chia"), style **arrow-breadcrumb** giống AMIS CRM (bước xong xanh + tick, bước hiện tại highlight, bước chưa tới xám). Bước bị skip theo nguồn ẩn hoàn toàn.
+
+### Chưa chốt — chờ user (đang hỏi)
+- Mapping cụ thể: mỗi nguồn khởi tạo lead ở **phase index** nào? (VD MKT BR khởi tạo ở phase 3 "Gọi điện" hay nhảy thẳng phase 4?)
+- Quyền "cập nhật trạng thái Gọi điện / Booking" (tạo record call_log/booking_log): chỉ người đang giữ lead, hay cả QL Sale / Admin vận hành?
+- 1 khách có thể có nhiều "lifecycle" (quay lại sau bán hàng) hay 1 khách = 1 phase duy nhất tại 1 thời điểm?
+
+## 2026-07-30 — Phase 6.21: Customer Flow 7 phase (lifecycle + tab UI)
+- **Bối cảnh**: sau họp thiết kế cùng ngày (xem block Q&A ở trên), triển khai mô hình lifecycle 7 phase = trạng thái khách hàng, thay 2-phase cũ ở lớp UI + phân quyền chốt phase. Field cũ (`pipeline_phase`, `pipeline_status`, `booking_status`) **giữ song song** làm compat. Design doc: `docs/design/customer_flow_30-07-2026.md`. Mockup UI: `docs/mockups/customer_flow_30-07-2026.html`.
+- **Data model**:
+  - Migration `2026_07_30_100000_phase_6_21_customer_flow.php`: thêm `leads.phase` (tinyint 1..7, default 1, index) + `leads.is_first_visit` (bool default true).
+  - Bảng mới `lead_phase_closures` (unique lead_id+phase) — mỗi phase chốt = 1 record.
+  - Bảng mới `call_logs` (mỗi cuộc gọi Tele = 1 record, status thanh_cong/that_bai/khong_nghe_may).
+  - Bảng mới `booking_logs` (mỗi lần đặt = 1 record, status da_xac_nhan/cho_xac_nhan/huy_doi_lich; sync 1 chiều về `leads.booking_status` khi status=da_xac_nhan).
+  - Backfill 37 lead cũ: 15 phase 2 (chưa chia), 22 phase 3 (đang chăm). Sinh 59 closure giả lập cho các phase trước phase hiện tại (note='[backfill]').
+- **Permission (6 perm mới)**:
+  - `phase.close.new / distribute / call / booking / checkin` — tách riêng để linh hoạt cấp lẻ (theo yêu cầu user).
+  - `phase.rollback` — Admin vận hành only.
+  - Gán vào role hiện có: Admin (full 6), DM HCM/Manager (5 close), Team Leader (4), Sale (new+call+booking), CM sale (distribute+booking), CM booking (distribute+call), Team sale (new+call+booking), Team booking (call). Migration `2026_07_30_100001_seed_phase_621_permissions.php`.
+- **Model**:
+  - `Lead` thêm constants `CF_PHASE_*`, `CF_PHASE_LABELS`, `CF_PHASE_CLOSE_PERM`, `CF_ROLLBACK_PERM`, `CF_START_PHASE_BY_SOURCE` = [MKT=1, MKT_BR=4, BA=3, SA/BDM/BOD/WI=2].
+  - Methods: `startPhase()`, `openFrom()`, `isBulkOpen()`, `phaseState($idx)`, `isPhaseEditable($idx)`, `canLogCall($user)`, `canLogBooking($user)`, `bulkSave($user)`, `closePhase($idx, $user)`, `rollbackTo($idx, $user)`, `markReturning($user)`, `customerFlowLabel()`.
+  - Relations: `phaseClosures()`, `callLogs()`, `bookingLogs()`.
+  - `$attributes = ['phase' => 1, 'is_first_visit' => true]` + casts.
+  - 3 model mới: `LeadPhaseClosure`, `CallLog` (+ STATUSES const), `BookingLog` (+ STATUSES + `syncLeadBookingStatus`).
+- **UI**:
+  - Thay vì rewrite `⚡lead-form.blade.php` (1600 dòng, risky), tạo **panel mới độc lập** `resources/views/components/leads/⚡customer-flow-panel.blade.php` (Volt-style component). Panel gồm arrow-breadcrumb 7 phase (style AMIS CRM) + tab-bar 7 tab-phase + form nhập call_log/booking_log + action bar 3 nút (Lưu chốt N phase / Kết thúc phase / Lùi phase Admin) + nút "Khởi động lần thăm khám mới" cho khách quay lại.
+  - Include panel vào `resources/views/leads/show.blade.php` — hiển thị TRÊN `lead-detail` cũ (không phá vỡ lead-form/lead-detail hiện có).
+- **Test**: `tests/Feature/CustomerFlow621Test.php` — 10 test, 10 pass. Bao gồm: mapping source→start_phase, bulk save chốt N phase, close tuần tự, close perm required, rollback chỉ Admin, returning customer reset phase 3, call_log perm, booking sync booking_status, migration NOT NULL, bulk save fail thiếu perm.
+- **Regression**: `php artisan test` — 128/143 pass. 3 failure + 12 error là **pre-existing** (verified bằng stash trước khi apply changes): DistributionEngine notification test, ProcessRawLead mã KH format (do commit `143aaad` refactor), Hcm booking test setup, SlaRecall SQLite constraint. Không phá vỡ suite hiện có.
+
+### 5 quyết định default (user check lại)
+Trong design doc §13 có 5 câu treo. Tao chọn default sau (thay đổi được sau nếu user muốn):
+
+1. **`phase.rollback` perm** → tạo mới, gán Admin only (đúng ý user "chỉ Admin vận hành lùi phase").
+2. **Role "Admin vận hành"** → chưa tạo role riêng, gán 6 perm vào role **`Admin`** hiện có (holder `ops.manage`). Nếu user muốn role riêng, chạy 1 seeder tạo `admin-ops`.
+3. **Nút "Khởi động lần thăm khám mới"** → đặt trong panel Customer Flow ở header, hiện khi `phase = 5` + đã có closure phase 5.
+4. **status_1/status_2 legacy** → giữ readonly ở Phase 3 (compat, không nhập mới; data mới ghi vào `call_logs`).
+5. **Không backfill call_logs từ status_1/2** → data cũ chỉ 2 field text, để trắng logs bảng mới.
+
+### Cách test manual
+1. Chạy queue nếu cần: `php artisan queue:work --stop-when-empty`.
+2. Login `admin@longevity.com.vn` / `59@ntn` → mở `/leads/1` (hoặc bất kỳ lead nào).
+3. Panel Customer Flow hiện TRÊN card chi tiết cũ:
+   - Arrow-breadcrumb 7 phase (bấm phase để chuyển tab).
+   - 7 tab-phase với form nhập tương ứng.
+   - Nút "Kết thúc phase X" ở footer (tuần tự) hoặc "Lưu chốt N phase" (nếu lead mới chưa từng Lưu).
+   - Nút "⤺ Lùi phase" hiện với Admin vận hành khi ở tab phase đã done.
+4. Test cases:
+   - Tạo lead mới nguồn `MKT` → phase 1 mở, Lưu → phase 2.
+   - Tạo lead mới nguồn `MKT_BR` → mở thông phase 1-4, Lưu 1 phát chốt cả cụm → phase 5.
+   - Tạo lead nguồn `BA` → mở thông phase 1-3.
+   - Lead ở phase 3: thêm cuộc gọi (status + note) → list cập nhật.
+   - Lead ở phase 4: thêm booking → `leads.booking_status` sync theo status log mới nhất.
+   - Lead phase 5 đã chốt: bấm "Khởi động lần thăm khám mới" → reset về phase 3, giữ lịch sử.
+
+### Chưa làm (dời sang commit sau)
+- Chưa rewrite `⚡lead-form.blade.php` cũ (form Cập nhật vẫn dùng 5 tab cũ). Panel Customer Flow chỉ hiển thị ở trang chi tiết, không ở form edit. Nếu user muốn form edit cũng dùng 7 tab-phase → cần Phase 6.22.
+- Chưa build Phase 6 (Bán hàng) + Phase 7 (Sử dụng DV) — hiển thị placeholder "chưa build" ở panel. Sẽ tích hợp lại với module `lead_upsells` + `lead_treatments` hiện có ở phase sau.
+- Chưa gán tay perm cho Admin role tại migration (bug: pass integer IDs vào map cần string keys). Đã fix migration + gán tay qua tinker cho DB hiện có; migration mới sẽ chạy đúng ở fresh DB.
+
+## 2026-07-30 (cont'd) — Phase 6.21b: Rewrite lead-form.blade.php sang 7 tab-phase
+- **Bối cảnh**: user yêu cầu form Tạo mới + Cập nhật lead cũng dùng UI 7 tab-phase (không chỉ trang chi tiết). Plan A trong 3 hướng đã đề xuất.
+- **Thay đổi `⚡lead-form.blade.php`** (1603 → 1875 dòng):
+  - Thêm state Livewire: `activePhase` (int 1..7), `isFirstVisit` (bool), `newCallStatus/Note`, `newBookingStatus/ScheduledAt/DoctorId/ServiceId/Note`.
+  - Thêm methods: `addCallLog`, `addBookingLog`, `bulkSavePhases`, `closePhaseNow($idx)`, `rollbackToPhase($idx)`, `markReturning`, `selectPhaseTab($idx)`. Tất cả gate qua Lead::canLogCall/Booking + Lead::CF_ROLLBACK_PERM.
+  - Import `BookingLog`, `CallLog`, `LeadPhaseClosure` vào top.
+  - Mount(): default `activePhase = openFrom` (bulk mode) hoặc `phase` hiện tại; với form Tạo mới → `activePhase = 1`.
+  - Header UI: thêm section **Arrow-breadcrumb 7 phase** (style AMIS CRM) TRÊN tabbar. Hiển thị state của từng phase (done/current/open/pending/skipped/notbuilt) với clip-path mũi tên. Legend + alert cf_ok/cf_error inline.
+  - Tabbar: đổi từ 5 tab (`status/staff/treatment/upsell/insight` với `x-data="{tab:'status'}"`) sang **7 tab-phase** (`1..7` với `x-data="{phase: @entangle('activePhase').live}"`). Wire `selectPhaseTab` cho click.
+  - Đổi `x-show="tab === 'X'"` sang `x-show="phase === N"` cho 5 tab cũ:
+    - staff → phase 4 (Booking — bác sĩ + chuyên viên tư vấn)
+    - insight → phase 1 (Thêm mới)
+    - treatment → phase 7 (Sử dụng DV — liệu trình)
+    - status → phase 3 || phase 2 (Gọi điện + Chia số — status_1/2 + classification + booking_status + panel Phân phối)
+    - upsell → phase 6 (Bán hàng)
+  - Thêm 3 section mới:
+    - **Phase 3 Call logs**: list `lead.callLogs` + form add (status dropdown + note + auto called_at=now).
+    - **Phase 4 Booking logs**: list `lead.bookingLogs` + form add (status + scheduled_at + doctor + service + note). Sync booking_status khi status=da_xac_nhan.
+    - **Phase 5 Check-in placeholder**: hiển thị trạng thái closure phase 5 nếu có, hoặc hint "Lễ tân bấm Kết thúc phase 5".
+  - **Nút markReturning**: hiện dưới Phase 5 khi lead đã chốt phase 5 + is_first_visit=true.
+  - Footer button bar: giữ nút "Lưu thông tin khách hàng" cũ; **thêm 3 nút Customer Flow** mutually exclusive:
+    - `Lưu chốt N phase (X→Y)` — khi bulk mode + activeTab ∈ [openFrom, startPhase].
+    - `Kết thúc phase N` — khi tuần tự + activeTab === current phase + phase ≤ 5.
+    - `⤺ Lùi phase N (Admin)` — khi user có `phase.rollback` + activeTab < current + có closure.
+- **Verify**:
+  - Feature test `CustomerFlow621Test.php`: 10/10 ✅ giữ nguyên.
+  - Regression `php artisan test`: 128/143 pass — baseline giữ, không có test mới bị vỡ.
+  - Dry-render qua Livewire::mount: form Create + form Edit đều render OK (138KB + 171KB HTML). Grep verify chứa: "Customer Flow — 7 phase", 7 label phase, "Lịch sử cuộc gọi", "Lịch sử booking", "selectPhaseTab".
+- **Chưa test browser end-to-end** (login qua Livewire XHR khó automation trong session này) — user cần vào trực tiếp `/leads/create` và `/leads/1/edit` để verify UI hoạt động thực tế.
+
+### Cách test manual (updated cho Phase 6.21b)
+1. Login admin: `admin@longevity.com.vn` / `59@ntn`.
+2. Vào `/leads/create` — form Tạo mới:
+   - Thấy arrow-breadcrumb 7 phase (phase 1 highlight vì start_phase default 1 khi chưa chọn nguồn).
+   - Tabbar 7 tab dọc — click chuyển tab.
+   - Chọn nguồn `MKT_BR` → tab phase 1-4 mở, phase 5+ pending.
+   - Nhập full info khách → bấm "Lưu thông tin khách hàng" (tạo lead) → sau đó bấm "Lưu chốt 4 phase (1→4)" ở footer để đóng cả cụm.
+3. Vào `/leads/1/edit` — form Cập nhật:
+   - Arrow-breadcrumb hiện phase hiện tại + closure history.
+   - Ở tab phase 3: thấy form "Ghi cuộc gọi" — thêm log → list cập nhật.
+   - Ở tab phase 4: thấy form "Ghi booking" — thêm log → booking_status sync theo.
+   - Bấm "Kết thúc phase X" ở footer → phase tăng.
+   - Admin ops thấy nút "⤺ Lùi phase" ở tab đã done.
+
+## 2026-07-30 (cont'd 2) — Phase 6.21c → 6.21h: hoàn thiện UI + phân quyền + booking split
+Sau block "Phase 6.21b" (rewrite lead-form 7 tab-phase), user yêu cầu nhiều chỉnh sửa UI + logic. Danh sách gom lại:
+
+### 6.21c — Layout ngang (style AMIS)
+- Bỏ layout 2 cột (grid-cols-2), chuyển thành 1 cột dọc: Header khách + Arrow-breadcrumb + Tabbar + Content phase + Footer.
+- Info khách hàng ngang 4 cột: Tên | SĐT | Ngày | Nguồn.
+
+### 6.21d — Tab-driven content (Info + Custom fields vào Phase 1)
+- Wrap 2 card đầu (Info khách + Trường bổ sung) trong `x-show="phase === 1"`.
+- Bọc tất cả các phase content trong 1 x-data outer duy nhất.
+
+### 6.21e — Sizing lớn hơn (giống mockup)
+- Arrow buttons `min-w-[150px] px-5 py-3`, text-sm font-semibold.
+- Tabbar text-base, các tab cùng màu vàng (text-gold-700), tab active có gạch chân `border-b-2 border-gold-700 font-bold`.
+- Header khách hàng thêm 3 dòng: Người nhập lead / Người phụ trách tele / Người phụ trách tư vấn (compute từ imported_by + closer + owner).
+
+### 6.21f — Phân quyền up nguồn theo role
+- **Rename**: `Team booking` → `Team Tele`; `CM booking` → `CM Tele`; `Team nhập lead` → `Trực Page` (rename cả role và org_units). Migrations: `2026_07_30_150000` (roles) + `2026_07_30_160000` (org_units).
+- **4 perm mới**: `source.up.{trucpage,sale,tele,admin}`:
+  - MKT → `source.up.trucpage` (Trực Page)
+  - MKT_BR, SA → `source.up.sale` (Sale, Team sale, CM sale, TL, Manager, DM HCM, Admin)
+  - BA → `source.up.tele` (Team Tele, CM Tele, DM HCM, Admin)
+  - BDM, BOD, WI → `source.up.admin` (Admin, DM HCM)
+- Cấp `lead.update_booking` cho Team Tele + `lead.update_sale` + `lead.book_action` cho Sale/Team sale (migration `2026_07_30_170000`) — Tele/Sale sửa được info lead ở phase họ giữ.
+- Fix gate `mount()` LeadForm: dùng `canOpenEditForm` thay `canEditPersonalInfo` để Tele readonly-view thay vì 403.
+- Fix validate `save()` UPDATE mode: whitelist sourceGroup cũ nếu ngoài perm user (Tele update lead MKT do người khác up).
+- Update `Lead::SOURCE_PERMISSIONS` mapping. Cập nhật `Phase66FlowsTest` (Sale không có source.up.* → 0 nguồn).
+
+### 6.21g — Lock phase đã chốt + logic phaseState + call/booking form
+- Compute `$phaseLocked[1..7]` trong `with()`: phase 6, 7 luôn lock; phase 1-5 lock nếu có closure + user không có `phase.rollback`.
+- Bọc content 2-7 trong `<fieldset :disabled="cfLocked[phase]">` với banner "Phase X đã chốt — chỉ đọc" reactive theo tab.
+- Fix `phaseState`: phase current của lead cũng `open` (xanh dương) dù `idx > startPhase`.
+- Redirect sau create/update → `/leads/{id}/edit` (form 7 phase) thay vì `/leads/{id}` (chi tiết cổ).
+- Click row list → mở `/edit` nếu có quyền.
+- Move panel "Phân phối & Nguồn" từ Phase 3 → Phase 2 (Chia số). Filter dropdown user theo `poolTarget` subtree.
+- Filter dropdown "Chia số" chỉ đến depth ≤ 3 (Team owner, không xuống sub-team). Sort HN→DN→HCM. Prefix theo depth (🏢 Công ty / 📍 Chi nhánh / 🏬 Địa điểm / 👥 Team).
+- Fix `consultantUsers`: nếu viewer là owner → bỏ intersect với `visibleOrgIds` (Tele hẹp scope vẫn thấy Sale trong Team subtree). Lùi root subtree lên depth 3 khi lead ở sub-team depth 4.
+- Header khách hàng: badge "Đang nhập phase X→Y (cần điền)" cho bulk mode + 3 dòng người xử lý.
+- Legend 6 trạng thái: Đã chốt / Cần điền thông tin / Chưa tới / Skip / Chưa build (bỏ "Đang xử lý" amber, gộp về xanh dương). State current color đổi amber → blue.
+- Phase 3 sắp xếp lại: Lịch sử cuộc gọi (order-1) → Trạng thái chăm sóc (order-2) → Insight (order-3) qua CSS `order-*` + `flex flex-col`.
+- Move "Trạng thái đặt lịch" từ Phase 3 → Phase 4 (dropdown readonly badge, "🔒 tự sync").
+- Banner tổng errors ở đầu form: "⚠️ Không thể lưu — sửa các lỗi sau: ..." — user không mất lỗi khi ở tab khác.
+
+### 6.21h — Split Thăm khám vs Dịch vụ
+- Migration `2026_07_30_180000`: `services.service_type` enum(`tham_kham`/`dich_vu`) + index, `booking_logs.type` varchar nullable + index.
+- Seed 9 mục Thăm khám + 40 mục Dịch vụ (idempotent, theo screenshot user).
+- `BookingLog` Fillable: thêm `type`.
+- `LeadForm.addBookingLog()` validate `newBookingType required in tham_kham,dich_vu`.
+- Method mới `syncBookingsFromExternal()` — placeholder chờ tích hợp API lara-sbooking.
+- UI Phase 4 form Thêm booking: 5 cột (Loại* / Trạng thái (readonly badge Chờ xác nhận 🔒) / Ngày giờ / Bác sĩ / Dịch vụ). Dropdown Dịch vụ disable + filter theo Loại đang chọn. Nút "🔄 Đồng bộ từ bên booking" ở đầu section.
+- List booking hiển thị 2 badge: Loại (🩺 Thăm khám sky / 💆 Dịch vụ fuchsia) + Trạng thái.
+
+### Test summary (2026-07-30 15:34)
+- Feature test `CustomerFlow621Test`: **10/10 pass** ✓
+- Full suite: **128/143 pass**. 3 failure + 12 error đều **pre-existing** (verify qua stash). Baseline giữ.
+- Migrations chạy sạch qua 8 file mới (100000 → 180000).
+
+### Sẵn sàng manual test
+Tài khoản test suggest:
+- Admin: `admin@longevity.com.vn` / `59@ntn` (full quyền, thấy nút Lùi phase).
+- Trực Page HN: `hn.page01@longevity.com.vn` (chỉ MKT).
+- Tele HN: `hn.book03@longevity.com.vn` (chỉ BA, sửa info lead khi phase 3).
+- Sale HN: `hn.tsg.sale01@longevity.com.vn` (MKT_BR + SA, sửa info phase 4).
+
+Vào `/leads/create` tạo mới với các nguồn khác nhau. Vào `/leads/{id}/edit` để test UI 7 phase, chuyển tab, thêm call log, thêm booking (chọn Loại), Kết thúc phase / Lùi phase (Admin).

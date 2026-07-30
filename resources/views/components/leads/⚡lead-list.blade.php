@@ -547,7 +547,7 @@ new class extends Component
             </thead>
             <tbody class="divide-y divide-gold-100">
                 @forelse ($leads as $lead)
-                    <tr class="hover:bg-gold-50/40 cursor-pointer" onclick="window.location='{{ route('leads.show', $lead) }}'">
+                    <tr class="hover:bg-gold-50/40 cursor-pointer" onclick="window.location='{{ $lead->canOpenEditForm(auth()->user()) ? route('leads.edit', $lead) : route('leads.show', $lead) }}'">
                         @if ($canDelete)
                             <td class="px-4 py-3" onclick="event.stopPropagation()">
                                 <input type="checkbox" wire:model.live="selected" value="{{ $lead->id }}" class="rounded border-gold-300 text-gold-600 w-4 h-4">

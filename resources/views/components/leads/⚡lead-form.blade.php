@@ -2,10 +2,13 @@
 
 use App\Models\Assignment;
 use App\Models\AuditLog;
+use App\Models\BookingLog;
+use App\Models\CallLog;
 use App\Models\CustomField;
 use App\Models\Facility;
 use App\Models\Lead;
 use App\Models\LeadCustomValue;
+use App\Models\LeadPhaseClosure;
 use App\Models\LeadStatusLog;
 use App\Models\LeadTreatment;
 use App\Models\LeadUpsell;
@@ -88,16 +91,231 @@ new class extends Component
 
     public ?int $duplicateLeadId = null;
 
+    // ============================================================
+    // Phase 6.21 — Customer Flow 7 phase state + methods (2026-07-30)
+    // ============================================================
+
+    /** Tab phase đang active (1..7). Alpine wire :phase. */
+    public int $activePhase = 1;
+
+    /** Đến lần đầu — bind vào leads.is_first_visit. */
+    public bool $isFirstVisit = true;
+
+    // State form thêm call log
+    public string $newCallStatus = 'thanh_cong';
+    public string $newCallNote = '';
+
+    // State form thêm booking log
+    public string $newBookingType = ''; // '' = -- Chọn --, tham_kham | dich_vu (required)
+    public string $newBookingStatus = 'cho_xac_nhan';
+    public string $newBookingScheduledAt = '';
+    public ?int $newBookingDoctorId = null;
+    public ?int $newBookingServiceId = null;
+    public string $newBookingNote = '';
+
+    // State form Check-in (Phase 5)
+    public string $checkinTime = '';
+    public ?int $checkinReceptionistId = null;
+    public ?int $checkinDoctorId = null;
+    public string $checkinNote = '';
+
+    public function addCallLog(): void
+    {
+        if (! $this->lead) {
+            session()->flash('cf_error', 'Lead chưa được tạo. Bấm "Lưu thông tin khách hàng" trước.');
+            return;
+        }
+        $user = auth()->user();
+        if (! $this->lead->canLogCall($user)) {
+            session()->flash('cf_error', 'Bạn không có quyền ghi log gọi.');
+            return;
+        }
+        $this->validate([
+            'newCallStatus' => 'required|in:' . implode(',', array_keys(CallLog::STATUSES)),
+            'newCallNote'   => 'nullable|string|max:1000',
+        ]);
+        CallLog::create([
+            'lead_id'   => $this->lead->id,
+            'user_id'   => $user->id,
+            'status'    => $this->newCallStatus,
+            'note'      => $this->newCallNote ?: null,
+            'called_at' => now(),
+        ]);
+        $this->newCallNote = '';
+        $this->lead->refresh();
+        session()->flash('cf_ok', 'Đã ghi log cuộc gọi.');
+    }
+
+    public function addBookingLog(): void
+    {
+        if (! $this->lead) {
+            session()->flash('cf_error', 'Lead chưa được tạo. Bấm "Lưu thông tin khách hàng" trước.');
+            return;
+        }
+        $user = auth()->user();
+        if (! $this->lead->canLogBooking($user)) {
+            session()->flash('cf_error', 'Bạn không có quyền ghi log booking.');
+            return;
+        }
+        $this->validate([
+            'newBookingType'        => 'required|in:tham_kham,dich_vu',
+            'newBookingStatus'      => 'required|in:' . implode(',', array_keys(BookingLog::STATUSES)),
+            'newBookingScheduledAt' => 'nullable|date',
+            'newBookingDoctorId'    => 'nullable|exists:staff_members,id',
+            'newBookingServiceId'   => 'nullable|exists:services,id',
+            'newBookingNote'        => 'nullable|string|max:1000',
+        ], ['newBookingType.required' => 'Chọn loại booking (Thăm khám hoặc Dịch vụ).']);
+        BookingLog::create([
+            'lead_id'      => $this->lead->id,
+            'user_id'      => $user->id,
+            'type'         => $this->newBookingType,
+            'status'       => $this->newBookingStatus,
+            'scheduled_at' => $this->newBookingScheduledAt ?: null,
+            'doctor_id'    => $this->newBookingDoctorId,
+            'service_id'   => $this->newBookingServiceId,
+            'note'         => $this->newBookingNote ?: null,
+        ]);
+        BookingLog::syncLeadBookingStatus($this->lead->id);
+        $this->reset(['newBookingType', 'newBookingScheduledAt', 'newBookingDoctorId', 'newBookingServiceId', 'newBookingNote']);
+        $this->lead->refresh();
+        $this->bookingStatus = $this->lead->booking_status ?? 'not_booked';
+        session()->flash('cf_ok', 'Đã ghi log booking. Đã đồng bộ trạng thái booking.');
+    }
+
+    public function bulkSavePhases(): void
+    {
+        if (! $this->lead) {
+            session()->flash('cf_error', 'Lead chưa được tạo. Bấm "Lưu thông tin khách hàng" trước để tạo lead, rồi chốt phase.');
+            return;
+        }
+        try {
+            $closed = $this->lead->bulkSave(auth()->user());
+            $this->lead->refresh();
+            $this->activePhase = min((int) $this->lead->phase, 5);
+            session()->flash('cf_ok', 'Đã chốt ' . count($closed) . ' phase (' . min($closed) . '→' . max($closed) . ').');
+        } catch (\Throwable $e) {
+            session()->flash('cf_error', $e->getMessage());
+        }
+    }
+
+    public function closePhaseNow(int $idx): void
+    {
+        if (! $this->lead) {
+            session()->flash('cf_error', 'Lead chưa tồn tại.');
+            return;
+        }
+        try {
+            // Với Phase 5, gộp 4 field checkin vào note của closure
+            $note = null;
+            if ($idx === 5) {
+                $recept = $this->checkinReceptionistId ? \App\Models\User::find($this->checkinReceptionistId)?->name : '?';
+                $doc = $this->checkinDoctorId ? \App\Models\StaffMember::find($this->checkinDoctorId)?->name : '?';
+                $note = "Check-in: {$this->checkinTime} | Lễ tân: {$recept} | BS tiếp nhận: {$doc}";
+                if ($this->checkinNote) $note .= " | Note: {$this->checkinNote}";
+            }
+            $this->lead->closePhase($idx, auth()->user(), $note);
+            $this->lead->refresh();
+            $this->activePhase = min((int) $this->lead->phase, 5);
+            session()->flash('cf_ok', 'Đã kết thúc phase ' . $idx . '.');
+        } catch (\Throwable $e) {
+            session()->flash('cf_error', $e->getMessage());
+        }
+    }
+
+    public function rollbackToPhase(int $idx): void
+    {
+        if (! $this->lead) return;
+        try {
+            $this->lead->rollbackTo($idx, auth()->user());
+            $this->lead->refresh();
+            $this->activePhase = $idx;
+            session()->flash('cf_ok', 'Đã lùi phase về ' . $idx . '.');
+        } catch (\Throwable $e) {
+            session()->flash('cf_error', $e->getMessage());
+        }
+    }
+
+    /**
+     * Phase 6.21i — Chuyển lead sang Sale phụ trách (chọn ở Phase 4).
+     * Reuse pattern giống Phase 2 (chọn Tele), nhưng filter user theo role có lead.consult.
+     */
+    public function assignToSale(int $userId): void
+    {
+        if (! $this->lead) {
+            session()->flash('cf_error', 'Lead chưa tồn tại.');
+            return;
+        }
+        $viewer = auth()->user();
+        if (! $viewer->hasPermission('lead.distribute_sale')
+            && ! $viewer->hasPermission('phase.rollback')
+            && ! $viewer->hasPermission('lead.distribute')) {
+            session()->flash('cf_error', 'Không có quyền chuyển Sale (cần lead.distribute_sale).');
+            return;
+        }
+        $sale = User::find($userId);
+        if (! $sale) {
+            session()->flash('cf_error', 'Không tìm thấy user.');
+            return;
+        }
+        $this->lead->update([
+            'owner_id'    => $sale->id,
+            'assigned_at' => now(),
+            'pool_level'  => Lead::POOL_PERSONAL,
+        ]);
+        $this->lead->refresh();
+        LeadStatusLog::record($this->lead, 'assigned_sale', null, 'Chuyển sang Sale: ' . $sale->name, $viewer->id);
+        session()->flash('cf_ok', 'Đã chuyển lead sang Sale: ' . $sale->name);
+    }
+
+    /**
+     * Phase 6.21h — Placeholder: đồng bộ trạng thái booking từ hệ thống booking (lara-sbooking).
+     * Chưa có API thật — tạm flash message. Sẽ tích hợp sau khi có endpoint.
+     */
+    public function syncBookingsFromExternal(): void
+    {
+        if (! $this->lead) return;
+        // TODO: gọi API lara-sbooking, lấy list booking + status → update booking_logs.
+        session()->flash('cf_ok', 'Đã yêu cầu đồng bộ từ bên booking. (Chưa có API — placeholder.)');
+    }
+
+    public function markReturning(): void
+    {
+        if (! $this->lead) return;
+        try {
+            $this->lead->markReturning(auth()->user());
+            $this->lead->refresh();
+            $this->isFirstVisit = false;
+            $this->activePhase = 3;
+            session()->flash('cf_ok', 'Đã khởi động lần thăm khám mới.');
+        } catch (\Throwable $e) {
+            session()->flash('cf_error', $e->getMessage());
+        }
+    }
+
+    public function selectPhaseTab(int $idx): void
+    {
+        if ($idx < 1 || $idx > 7) return;
+        if ($this->lead && $this->lead->phaseState($idx) === 'skipped') return;
+        $this->activePhase = $idx;
+    }
+
     public function mount(?Lead $lead = null): void
     {
         if ($lead?->exists) {
-            // Phase 6.8 — sửa info cá nhân chỉ khi có update_booking/update_sale khớp phase hiện tại.
-            abort_unless($lead->canEditPersonalInfo(auth()->user()), 403,
-                'Bạn không có quyền sửa thông tin khách hàng ở phase ' . ($lead->pipeline_phase ?? 'sale') . '.');
+            // Phase 6.21g — dùng canOpenEditForm để cho phép Team Tele (chỉ có lead.read_booking)
+            // vào form ở chế độ readonly, có thể xem info + thao tác Customer Flow (call log, close phase).
+            // Việc sửa info cá nhân vẫn bị chặn ở tầng save() qua canEditPersonalInfo.
+            abort_unless($lead->canOpenEditForm(auth()->user()), 403,
+                'Bạn không có quyền truy cập lead ở phase ' . ($lead->pipeline_phase ?? 'sale') . '.');
             $this->lead = $lead;
             $this->fillFromLead($lead);
+            // Phase 6.21 — default tab = phase hiện tại (hoặc openFrom nếu bulk mode).
+            $this->activePhase = $lead->isBulkOpen() ? $lead->openFrom() : (int) $lead->phase;
+            if ($this->activePhase < 1 || $this->activePhase > 7) $this->activePhase = 1;
+            $this->isFirstVisit = (bool) $lead->is_first_visit;
         } else {
             $this->received_date = now()->toDateString();
+            $this->activePhase = 1;
         }
     }
 
@@ -364,6 +582,11 @@ new class extends Component
         $this->duplicateLeadId = null;
 
         $allowedSources = Lead::allowedSourceGroupsFor(auth()->user());
+        // Phase 6.21g — UPDATE mode: nếu lead đã có sourceGroup cũ ngoài quyền user
+        // (VD Tele update lead nguồn MKT do người khác up), vẫn cho pass source hiện có.
+        if ($this->lead?->exists && $this->sourceGroup && ! isset($allowedSources[$this->sourceGroup])) {
+            $allowedSources[$this->sourceGroup] = $this->sourceGroup;
+        }
         $this->validate([
             'name' => 'required|string|max:150',
             'phone' => 'required|string',
@@ -492,10 +715,13 @@ new class extends Component
         AuditLog::record('create', $lead);
 
         session()->flash('status', 'Đã tạo lead mới.');
-        if ($user->hasPermission('lead.view')) {
+        // Phase 6.21g — sau tạo mới, đưa thẳng vào form Edit (giao diện 7 phase)
+        // thay vì trang chi tiết (bất tiện, phải bấm sang edit).
+        if ($lead->canOpenEditForm($user)) {
+            $this->redirectRoute('leads.edit', $lead);
+        } elseif ($user->hasPermission('lead.view')) {
             $this->redirectRoute('leads.show', $lead);
         } else {
-            // Team nhập lead: không có quyền xem → quay lại form tạo mới.
             $this->redirectRoute('leads.create');
         }
     }
@@ -551,7 +777,8 @@ new class extends Component
         AuditLog::record('update', $lead);
 
         session()->flash('status', 'Đã cập nhật thông tin khách hàng.');
-        $this->redirectRoute('leads.show', $lead);
+        // Phase 6.21g — ở lại form edit thay vì nhảy sang trang chi tiết.
+        $this->redirectRoute('leads.edit', $lead);
     }
 
     /**
@@ -612,16 +839,33 @@ new class extends Component
         $viewer = auth()->user();
         $visibleOrgIds = $viewer->visibleOrgUnitIds();
 
-        // Xác định "subtree hợp lệ" cho chuyên viên: dùng org_unit hiện tại của lead (nếu có).
+        // Xác định "subtree hợp lệ" cho chuyên viên tư vấn: dùng team sale ROOT chứa lead.
+        // Với lead ở Team Tele (id=6, path /1/2/3/4/6/) → team sale sibling ở depth 3 (id=4 = Team Giang).
+        // Consultant nằm trong subtree Team Giang → mở rộng root lên cấp depth 3 (Team owner).
         $rootOrg = $this->targetOrgUnit();
+        $subtreeIds = [];
         if ($rootOrg) {
-            $subtreeIds = \App\Models\OrgUnit::where('path', 'like', $rootOrg->path . '%')->pluck('id')->all();
-        } else {
-            $subtreeIds = $visibleOrgIds; // chưa gắn team → dùng toàn bộ scope của người thao tác
+            // Nếu lead ở sub-team (depth 4+), lùi lên depth 3 (team owner) làm root.
+            $effectiveRoot = $rootOrg;
+            while ($effectiveRoot && $effectiveRoot->depth > 3) {
+                $effectiveRoot = $effectiveRoot->parent;
+            }
+            if ($effectiveRoot) {
+                $subtreeIds = \App\Models\OrgUnit::where('path', 'like', $effectiveRoot->path . '%')->pluck('id')->all();
+            }
         }
+        if ($subtreeIds === []) $subtreeIds = $visibleOrgIds;
 
-        // Giao với scope của người thao tác.
-        $allowedOrgIds = array_values(array_intersect($subtreeIds ?: [], $visibleOrgIds ?: []));
+        // Phase 6.21g — Nếu viewer là owner/receiver của lead (đang giữ), bỏ intersect scope
+        // (họ có quyền chọn consultant cho lead của mình dù scope viewer hẹp).
+        $isOwnerViewing = $this->lead?->exists && (
+            $this->lead->owner_id === $viewer->id
+            || $this->lead->receiver_id === $viewer->id
+        );
+        $allowedOrgIds = $isOwnerViewing || $viewer->hasPermission(Lead::CF_ROLLBACK_PERM)
+            ? array_values($subtreeIds)
+            : array_values(array_intersect($subtreeIds ?: [], $visibleOrgIds ?: []));
+
         if ($allowedOrgIds === []) {
             return collect();
         }
@@ -662,13 +906,59 @@ new class extends Component
     private function assignableOrgs()
     {
         $ids = auth()->user()->visibleOrgUnitIds();
+        if ($ids === []) return collect();
+        $orgs = OrgUnit::whereIn('id', $ids)->orderBy('path')->get();
 
-        return $ids === [] ? collect() : OrgUnit::whereIn('id', $ids)->orderBy('path')->get();
+        // Sort custom: HN → DN → HCM → khác. Giữ subtree order theo path bên trong mỗi branch.
+        $branchPriority = ['branch-hn' => 1, 'branch-dn' => 2, 'branch-hcm' => 3];
+        $orgsById = $orgs->keyBy('id');
+        return $orgs->sortBy(function ($o) use ($branchPriority, $orgsById) {
+            $priority = 0;
+            foreach (array_filter(explode('/', $o->path)) as $pid) {
+                $node = $orgsById->get((int) $pid);
+                if ($node && $node->depth === 1) {
+                    $priority = $branchPriority[$node->code] ?? 90;
+                    break;
+                }
+            }
+            return sprintf('%02d-%s', $priority, $o->path);
+        })->values();
     }
 
     public function with(): array
     {
+        // Phase 6.21g — lock rule:
+        //   - Phase 6, 7 luôn lock (chưa build — chỉ cho xem).
+        //   - Phase 1..5 đã có closure → lock cho user không có phase.rollback.
+        $phaseLocked = [6 => true, 7 => true];
+        $canRollback = auth()->user()->hasPermission(Lead::CF_ROLLBACK_PERM);
+        if ($this->lead?->exists) {
+            $closedPhases = $this->lead->phaseClosures->pluck('phase')->all();
+            for ($p = 1; $p <= 5; $p++) {
+                $phaseLocked[$p] = in_array($p, $closedPhases, true) && ! $canRollback;
+            }
+        } else {
+            for ($p = 1; $p <= 5; $p++) $phaseLocked[$p] = false;
+        }
+
         $users = $this->assignableUsers();
+
+        // Phase 6.21g — Nếu đã chọn kho org:{id} → filter user thuộc org đó + subtree.
+        if ($this->poolTarget && str_starts_with($this->poolTarget, 'org:')) {
+            $orgId = (int) substr($this->poolTarget, 4);
+            $root = OrgUnit::find($orgId);
+            if ($root) {
+                $subtreePath = rtrim($root->path, '/') . '/';
+                $subtreeIds = OrgUnit::where(function ($q) use ($orgId, $subtreePath) {
+                    $q->where('id', $orgId)->orWhere('path', 'like', $subtreePath . '%');
+                })->pluck('id')->all();
+                $users = $users->filter(fn ($u) => $u->assignments
+                    ->pluck('org_unit_id')
+                    ->intersect($subtreeIds)
+                    ->isNotEmpty());
+            }
+        }
+
         $q = trim($this->personSearch);
         $results = ($q === '' ? $users : $users->filter(fn ($u) => str_contains(mb_strtolower($u->name), mb_strtolower($q))))
             ->take(15)->values();
@@ -698,6 +988,7 @@ new class extends Component
             : collect();
 
         return [
+            'phaseLocked' => $phaseLocked,
             'assignableOrgs' => $this->assignableOrgs(),
             'personResults' => $results,
             'selectedPerson' => $this->personId ? $users->firstWhere('id', $this->personId) : null,
@@ -841,10 +1132,176 @@ new class extends Component
         </div>
     @endif
 
+    {{-- Phase 6.21g — hiển thị tổng errors ở đầu form để user thấy dù đang ở tab nào --}}
+    @if ($errors->any())
+        <div class="mb-5 bg-red-50 border border-red-300 rounded-lg px-4 py-3 text-sm text-red-800">
+            <div class="font-bold mb-1">⚠️ Không thể lưu — sửa các lỗi sau:</div>
+            <ul class="list-disc pl-5 space-y-0.5 text-xs">
+                @foreach ($errors->all() as $err)
+                    <li>{{ $err }}</li>
+                @endforeach
+            </ul>
+        </div>
+    @endif
+
     <fieldset {{ $isReadonly ? 'disabled' : '' }} class="min-w-0 border-0 p-0 m-0 {{ $isReadonly ? 'opacity-80' : '' }}">
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-        {{-- CỘT TRÁI --}}
-        <div class="space-y-6">
+    {{-- Phase 6.21d — layout tab-driven (đúng mockup): các card wrap theo x-show phase, chỉ 1 x-data outer --}}
+    <div class="space-y-4" x-data="{
+        phase: @entangle('activePhase').live,
+        cfLocked: @js($phaseLocked ?? [])
+    }">
+        @php
+            $cfPhases = \App\Models\Lead::CF_PHASE_LABELS;
+            $cfStartPhase = $lead?->exists ? $lead->startPhase() : (($sourceGroup && isset(\App\Models\Lead::CF_START_PHASE_BY_SOURCE[$sourceGroup])) ? \App\Models\Lead::CF_START_PHASE_BY_SOURCE[$sourceGroup] : 1);
+            $cfOpenFrom = $lead?->exists ? $lead->openFrom() : 1;
+            $cfClosures = $lead?->exists ? $lead->phaseClosures->keyBy('phase') : collect();
+        @endphp
+
+        {{-- Header khách hàng — LUÔN HIỆN trên đầu (theo mockup) --}}
+        <div class="bg-white border border-gold-200 rounded-xl shadow-card p-5">
+            <div class="flex items-start justify-between gap-4 flex-wrap">
+                <div>
+                    <div class="flex items-center gap-2 mb-1">
+                        <span class="text-xs text-ink/50 font-mono">{{ $lead?->code ?? 'KH mới — chưa có mã' }}</span>
+                        @if ($lead?->exists)
+                            @if ($lead->is_first_visit)
+                                <span class="text-[10px] px-2 py-0.5 rounded bg-slate-100 text-slate-600 font-semibold uppercase">Đến lần đầu</span>
+                            @else
+                                <span class="text-[10px] px-2 py-0.5 rounded bg-purple-100 text-purple-700 font-semibold uppercase">Khách quay lại</span>
+                            @endif
+                        @endif
+                    </div>
+                    <h1 class="text-xl font-bold text-ink/90">{{ $name ?: '— Chưa có tên —' }}</h1>
+                    <div class="text-sm text-ink/60 mt-1">
+                        @if ($phone) SĐT: <b>{{ $phone }}</b> @endif
+                        @if ($birthday) · Sinh: {{ \Carbon\Carbon::parse($birthday)->format('d/m/Y') }} @endif
+                        @if ($lead?->orgUnit) · Cơ sở: {{ $lead->orgUnit->name }} @endif
+                        @if ($sourceGroup) · Nguồn: <b>{{ \App\Models\Lead::SOURCE_GROUP_CODES[$sourceGroup] ?? $sourceGroup }}</b> @endif
+                    </div>
+                </div>
+                <div class="text-right space-y-1 min-w-[280px]">
+                    <div class="text-xs text-ink/50 uppercase tracking-wide font-semibold">Trạng thái pipeline</div>
+                    @if ($lead?->exists)
+                        @if ($lead->isBulkOpen())
+                            <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-50 border border-blue-200 text-blue-800 text-sm font-semibold">
+                                Đang nhập phase {{ $lead->openFrom() }}→{{ $lead->startPhase() }} (cần điền)
+                            </div>
+                        @else
+                            <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-50 border border-blue-200 text-blue-800 text-sm font-semibold">
+                                {{ $lead->customerFlowLabel() }}
+                            </div>
+                        @endif
+                        @php
+                            // Người nhập lead: imported_by, fallback receiver_id (data cũ chưa có imported_by).
+                            $inpUserId = $lead->imported_by ?: $lead->receiver_id;
+                            $inpBy = $inpUserId ? \App\Models\User::find($inpUserId)?->name : null;
+
+                            // Người phụ trách tele: theo priority
+                            //   1) closer phase 3 (nếu đã chốt)
+                            //   2) user call_log gần nhất
+                            //   3) owner_id nếu lead đang ở phase Tele (pipeline_phase='booking' hoặc phase=3)
+                            $teleUserId = $lead->phaseClosures->firstWhere('phase', 3)?->closed_by
+                                ?? $lead->callLogs()->latest('called_at')->value('user_id');
+                            if (! $teleUserId && ($lead->pipeline_phase === 'booking' || (int) $lead->phase === 3)) {
+                                $teleUserId = $lead->owner_id;
+                            }
+                            $teleName = $teleUserId ? \App\Models\User::find($teleUserId)?->name : null;
+
+                            // Người phụ trách tư vấn (Sale):
+                            //   1) closer phase 4
+                            //   2) owner_id nếu lead đã sang Sale (pipeline_phase='sale' hoặc phase>=4)
+                            $svUserId = $lead->phaseClosures->firstWhere('phase', 4)?->closed_by;
+                            if (! $svUserId && ($lead->pipeline_phase === 'sale' || (int) $lead->phase >= 4)) {
+                                $svUserId = $lead->owner_id;
+                            }
+                            $svName = $svUserId ? \App\Models\User::find($svUserId)?->name : null;
+                        @endphp
+                        <div class="text-xs text-ink/60 space-y-0.5 mt-2 text-right">
+                            <div>Người nhập lead: <b class="text-ink/80">{{ $inpBy ?? '—' }}</b></div>
+                            <div>Người phụ trách tele: <b class="text-ink/80">{{ $teleName ?? '—' }}</b></div>
+                            <div>Người phụ trách tư vấn: <b class="text-ink/80">{{ $svName ?? '—' }}</b></div>
+                        </div>
+                    @else
+                        <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-slate-600 text-sm font-semibold">
+                            Chưa tạo lead
+                        </div>
+                    @endif
+                </div>
+            </div>
+        </div>
+
+        {{-- Arrow-breadcrumb 7 phase — sizing lớn theo mockup (Phase 6.21e) --}}
+        <div class="bg-white border border-gold-200 rounded-xl shadow-card p-5">
+            <div class="flex items-center justify-between mb-4 flex-wrap gap-3">
+                <div class="text-sm uppercase tracking-wide text-gold-700 font-bold">Customer Flow — 7 phase</div>
+                <div class="flex items-center gap-3 text-xs text-ink/60 flex-wrap">
+                    <span class="inline-flex items-center gap-1.5"><span class="w-3.5 h-3.5 rounded bg-emerald-500"></span>Đã chốt</span>
+                    <span class="inline-flex items-center gap-1.5"><span class="w-3.5 h-3.5 rounded bg-blue-400"></span>Cần điền thông tin</span>
+                    <span class="inline-flex items-center gap-1.5"><span class="w-3.5 h-3.5 rounded bg-slate-200 border border-slate-300"></span>Chưa tới</span>
+                    <span class="inline-flex items-center gap-1.5"><span class="w-3.5 h-3.5 rounded bg-slate-300 opacity-60"></span>Chưa build</span>
+                </div>
+            </div>
+            @if (session('cf_ok'))<div class="mb-3 px-4 py-2 bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm rounded">✓ {{ session('cf_ok') }}</div>@endif
+            @if (session('cf_error'))<div class="mb-3 px-4 py-2 bg-red-50 border border-red-200 text-red-800 text-sm rounded">✗ {{ session('cf_error') }}</div>@endif
+            <div class="flex gap-1 overflow-x-auto pb-1">
+                @foreach ($cfPhases as $idx => $label)
+                    @php
+                        $state = (in_array($idx, [6, 7], true))
+    ? 'notbuilt'
+    : ($cfClosures->has($idx)
+        ? 'done'
+        : (($idx <= $cfStartPhase || $idx == ($lead?->phase ?? 0)) ? 'open' : 'pending'));
+                        $bg = match ($state) {
+                            'done' => 'bg-emerald-500 text-white',
+                            'current' => 'bg-blue-400 text-white',
+                            'open' => 'bg-blue-400 text-white',
+                            'pending' => 'bg-slate-200 text-slate-600',
+                            'skipped' => 'bg-slate-100 text-slate-400 line-through cursor-not-allowed',
+                            'notbuilt' => 'bg-slate-300 text-slate-500 opacity-60 cursor-not-allowed',
+                        };
+                        $disabled = in_array($state, ['skipped'], true);
+                        $clip = $idx === 1 ? 'polygon(0 0,calc(100% - 14px) 0,100% 50%,calc(100% - 14px) 100%,0 100%)' : ($idx === 7 ? 'polygon(0 0,100% 0,100% 100%,0 100%,14px 50%)' : 'polygon(0 0,calc(100% - 14px) 0,100% 50%,calc(100% - 14px) 100%,0 100%,14px 50%)');
+                    @endphp
+                    <button type="button"
+                            @if (! $disabled) wire:click="selectPhaseTab({{ $idx }})" @endif
+                            :class="phase === {{ $idx }} ? 'ring-2 ring-offset-1 ring-indigo-500' : ''"
+                            @if ($disabled) disabled @endif
+                            style="clip-path: {{ $clip }};"
+                            class="flex-1 min-w-[150px] px-5 py-3 text-left transition {{ $bg }}">
+                        <div class="text-[10px] uppercase opacity-80 leading-none tracking-wide">Phase {{ $idx }}</div>
+                        <div class="text-sm font-semibold mt-1 leading-tight">{{ $label }}</div>
+                    </button>
+                @endforeach
+            </div>
+        </div>
+
+        {{-- Tabbar horizontal — chung màu vàng, active gạch chân --}}
+        <div class="flex flex-wrap items-center border-b border-gold-200 bg-white rounded-t-lg">
+            @foreach ($cfPhases as $idx => $label)
+                @php $state = (in_array($idx, [6, 7], true))
+    ? 'notbuilt'
+    : ($cfClosures->has($idx)
+        ? 'done'
+        : (($idx <= $cfStartPhase || $idx == ($lead?->phase ?? 0)) ? 'open' : 'pending')); @endphp
+                <button type="button" wire:click="selectPhaseTab({{ $idx }})"
+                        :class="phase === {{ $idx }} ? 'border-b-2 border-gold-700 font-bold' : 'border-b-2 border-transparent font-medium'"
+                        class="px-5 py-3 -mb-px text-base text-gold-700 whitespace-nowrap transition-colors hover:font-bold">
+                    {{ $idx }}. {{ $label }}
+                    @if ($state === 'done')<span class="text-emerald-500 ml-1">✓</span>@endif
+                    @if ($state === 'notbuilt')<span class="text-[11px] text-gold-500 ml-1">(chưa build)</span>@endif
+                </button>
+            @endforeach
+        </div>
+
+        {{-- Info khách + custom fields — Phase 1 (Thêm mới KH) --}}
+        <div class="space-y-3" x-show="phase === 1" x-cloak>
+            @if ($phaseLocked[1] ?? false)
+                <div class="px-4 py-2.5 bg-slate-100 border border-slate-300 rounded-lg text-sm text-slate-700 flex items-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/></svg>
+                    <span>Phase 1 đã chốt — thông tin khách hàng chỉ đọc. Chỉ Admin vận hành (perm <code>phase.rollback</code>) mới sửa được.</span>
+                </div>
+            @endif
+            <fieldset @if ($phaseLocked[1] ?? false) disabled class="opacity-70 space-y-6 border-0 p-0 m-0" @else class="space-y-6 border-0 p-0 m-0" @endif>
             {{-- Thông tin khách hàng --}}
             <div class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
                 <h2 class="font-bold text-gold-700 mb-5 flex items-center gap-2 flex-wrap">
@@ -860,17 +1317,18 @@ new class extends Component
                     @endif
                 </h2>
                 <div class="space-y-4">
-                    <div>
-                        <label class="block text-sm font-medium mb-1.5">Tên khách hàng <span class="text-red-500">*</span></label>
-                        <input type="text" wire:model="name" placeholder="Nhập họ và tên" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
-                        @error('name')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium mb-1.5">SĐT <span class="text-red-500">*</span></label>
-                        <input type="text" wire:model="phone" placeholder="0xxx xxx xxx" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-gold-500">
-                        @error('phone')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
-                    </div>
-                    <div class="grid grid-cols-2 gap-4">
+                    {{-- Phase 6.21c — in ngang 4 cột (style AMIS) --}}
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium mb-1.5">Tên khách hàng <span class="text-red-500">*</span></label>
+                            <input type="text" wire:model="name" placeholder="Nhập họ và tên" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
+                            @error('name')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-1.5">SĐT <span class="text-red-500">*</span></label>
+                            <input type="text" wire:model="phone" placeholder="0xxx xxx xxx" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-gold-500">
+                            @error('phone')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
+                        </div>
                         <div>
                             <label class="block text-sm font-medium mb-1.5">Ngày thu thập <span class="text-red-500">*</span></label>
                             <x-date-input field="received_date" />
@@ -896,16 +1354,23 @@ new class extends Component
                                 @endforeach
                             </select>
                             @error('sourceGroup')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
-                            @if (in_array($sourceGroup, [\App\Models\Lead::SOURCE_BOD, \App\Models\Lead::SOURCE_SA, \App\Models\Lead::SOURCE_BA], true))
-                                @if (! auth()->user()->hasPermission('lead.distribute'))
-                                    <p class="text-xs text-amber-700 mt-1">Bước tiếp theo: lead sẽ tự động chia cho <strong>bạn ({{ auth()->user()->name }})</strong> (không qua duyệt).</p>
-                                @else
-                                    <p class="text-xs text-amber-700 mt-1">Bước tiếp theo: chọn sale nhận ở khối "Phân phối & Nguồn" bên dưới (bắt buộc, không qua duyệt).</p>
-                                @endif
-                            @elseif ($sourceGroup === \App\Models\Lead::SOURCE_WI)
-                                <p class="text-xs text-amber-700 mt-1">Bước tiếp theo: chia về kho team, chờ CM team sale chia.</p>
-                            @elseif (in_array($sourceGroup, [\App\Models\Lead::SOURCE_MKT, \App\Models\Lead::SOURCE_MKT_BR, \App\Models\Lead::SOURCE_BDM], true))
-                                <p class="text-xs text-amber-700 mt-1">Bước tiếp theo: chia về kho team, chờ CM chia cho nhân viên booking.</p>
+                            @php
+                                $nextStep = null;
+                                if (in_array($sourceGroup, [\App\Models\Lead::SOURCE_BOD, \App\Models\Lead::SOURCE_SA, \App\Models\Lead::SOURCE_BA], true)) {
+                                    $nextStep = ! auth()->user()->hasPermission('lead.distribute')
+                                        ? 'Lead sẽ tự động chia cho BẠN (' . auth()->user()->name . '). Không qua duyệt — nhập xong là xong.'
+                                        : 'Chuyển sang tab "2. Chia số" để chọn sale nhận (bắt buộc, không qua duyệt).';
+                                } elseif ($sourceGroup === \App\Models\Lead::SOURCE_WI) {
+                                    $nextStep = 'Lead sẽ về kho team → chờ CM team sale chia cho nhân viên.';
+                                } elseif (in_array($sourceGroup, [\App\Models\Lead::SOURCE_MKT, \App\Models\Lead::SOURCE_MKT_BR, \App\Models\Lead::SOURCE_BDM], true)) {
+                                    $nextStep = 'Lead sẽ về kho team → chờ CM chia cho nhân viên booking.';
+                                }
+                            @endphp
+                            @if ($nextStep)
+                                <div class="mt-2 flex items-start gap-2 px-3 py-2 bg-amber-50 border-l-4 border-amber-400 rounded text-sm text-amber-900">
+                                    <svg class="w-4 h-4 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                    <span><b class="uppercase tracking-wide text-xs">Bước tiếp theo:</b> {{ $nextStep }}</span>
+                                </div>
                             @endif
                         </div>
                     </div>
@@ -970,38 +1435,98 @@ new class extends Component
             @endif
 
             {{-- INSIGHT chuyển sang cột phải (tab) Phase 6.15 --}}
-
-
+            </fieldset>
         </div>
 
-        {{-- CỘT PHẢI --}}
+        {{-- Content các tab-phase khác (2, 3, 4, 5, 6, 7) — nằm cùng x-data outer --}}
 <?php $staffTreeJson = json_encode($staffTree, JSON_UNESCAPED_UNICODE); ?>
 <?php $consultantUsersJson = json_encode($consultantUsers, JSON_UNESCAPED_UNICODE); ?>
         <script>
             window.__staffTree = {!! $staffTreeJson !!};
             window.__consultantUsers = {!! $consultantUsersJson !!};
         </script>
-        <div class="space-y-4" x-data="{ tab: 'status' }">
-            {{-- Tabbar horizontal text-only, gọn labels (Phase 6.17) --}}
-            <div class="flex flex-wrap items-center border-b border-gold-200">
-                <?php $tabs = array_values(array_filter([
-                    ['key' => 'status',       'label' => 'Trạng thái'],
-                    ['key' => 'staff',        'label' => 'Bác sĩ tư vấn'],
-                    ['key' => 'treatment',    'label' => 'Liệu trình'],
-                    ['key' => 'upsell',       'label' => 'Tiềm năng'],
-                    ['key' => 'insight',      'label' => 'Insight'],
-                ])); ?>
-                @foreach ($tabs as $t)
-                    <button type="button" @click="tab = '{{ $t['key'] }}'"
-                            :class="tab === '{{ $t['key'] }}' ? 'text-gold-700 border-b-2 border-gold-600 font-semibold' : 'text-ink/50 border-b-2 border-transparent hover:text-gold-700'"
-                            class="px-3 py-2 -mb-px text-sm whitespace-nowrap transition-colors">
-                        {{ $t['label'] }}
-                    </button>
-                @endforeach
+        {{-- Phase locked banner (reactive theo tab hiện tại) --}}
+        <template x-if="cfLocked[phase]">
+            <div class="px-4 py-2.5 bg-slate-100 border border-slate-300 rounded-lg text-sm text-slate-700 flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/></svg>
+                <span>Phase <span x-text="phase"></span> đã chốt — chỉ đọc. Chỉ Admin vận hành (perm <code>phase.rollback</code>) mới sửa được.</span>
+            </div>
+        </template>
+        <fieldset :disabled="!!cfLocked[phase]" x-bind:class="cfLocked[phase] ? 'opacity-70 flex flex-col space-y-4 border-0 p-0 m-0' : 'flex flex-col space-y-4 border-0 p-0 m-0'">
+
+            {{-- Arrow-breadcrumb + tabbar đã move lên đầu (dưới cùng x-data). Các phase blocks bên dưới đây. --}}
+
+            {{-- ============= Phase 6.21i — Panel "Phân bổ nhân viên tư vấn" (Phase 4) — format giống Phase 2 ============= --}}
+            @php
+                $canAssignSale = auth()->user()->hasPermission('lead.distribute_sale')
+                    || auth()->user()->hasPermission('phase.rollback')
+                    || auth()->user()->hasPermission('lead.distribute');
+                $currentSale = $lead?->owner;
+                $teleClosedBy = $lead?->phaseClosures->firstWhere('phase', 3)?->closed_by;
+                $teleName = $teleClosedBy ? \App\Models\User::find($teleClosedBy)?->name : null;
+            @endphp
+            <div x-show="phase === 4" x-cloak class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
+                <h2 class="font-bold text-gold-700 mb-5 flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5"/></svg>
+                    Phân bổ nhân viên tư vấn
+                </h2>
+
+                {{-- Info readonly 4 cột (format giống Phase 2) --}}
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm mb-4">
+                    <div>
+                        <label class="block text-xs font-medium text-ink/60 mb-1">Nguồn khách</label>
+                        <div class="px-3 py-2 border border-gold-200 rounded-md bg-slate-50">{{ \App\Models\Lead::SOURCE_GROUPS[$sourceGroup] ?? '—' }}</div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-ink/60 mb-1">Team đang giữ</label>
+                        <div class="px-3 py-2 border border-gold-200 rounded-md bg-slate-50">{{ $lead?->orgUnit?->name ?? '—' }}</div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-ink/60 mb-1">Tele đã xử lý</label>
+                        <div class="px-3 py-2 border border-gold-200 rounded-md bg-slate-50">{{ $teleName ?? '—' }}</div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-ink/60 mb-1">Sale phụ trách</label>
+                        <div class="px-3 py-2 border border-gold-200 rounded-md {{ $currentSale ? 'bg-emerald-50 border-emerald-200 text-emerald-800 font-semibold' : 'bg-slate-50 text-ink/50 italic' }}">
+                            {{ $currentSale?->name ?? '— chưa phân —' }}
+                        </div>
+                    </div>
+                </div>
+
+                {{-- Form Phân bổ Sale — chỉ CM có perm mới thấy --}}
+                @if ($canAssignSale && $lead?->exists)
+                    <div class="border-t border-gold-200 pt-5">
+                        <h3 class="font-bold text-gold-700 mb-4 flex items-center gap-2 text-sm">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M18 7.5v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"/></svg>
+                            Chọn Sale để bàn giao (Do CM chia)
+                        </h3>
+                        <div x-data="{ open: false, q: '' }" @click.outside="open = false" class="relative">
+                            <label class="block text-sm font-medium mb-1.5">CHUYÊN VIÊN TƯ VẤN</label>
+                            <input type="text" x-model="q" @focus="open = true" placeholder="Gõ tên chuyên viên tư vấn..."
+                                   class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
+                            <div x-show="open" x-cloak class="absolute z-20 mt-1 w-full max-h-56 overflow-y-auto bg-white border border-gold-200 rounded-lg shadow-card">
+                                @forelse ($consultantUsers as $u)
+                                    <button type="button" wire:click="assignToSale({{ $u['id'] }})" @click="open = false; q = ''"
+                                            x-show="q === '' || '{{ mb_strtolower(str_replace("'", "\\'", $u['name'])) }}'.includes(q.toLowerCase())"
+                                            class="block w-full text-left px-3 py-2 text-sm hover:bg-gold-50">
+                                        {{ $u['name'] }}
+                                    </button>
+                                @empty
+                                    <p class="px-3 py-2 text-sm text-ink/40">Không tìm thấy nhân viên tư vấn trong scope.</p>
+                                @endforelse
+                            </div>
+                            <p class="text-xs text-ink/50 mt-1.5">Chọn xong → bấm "Kết thúc phase 4" ở footer để chuyển sang phase Check-in.</p>
+                        </div>
+                    </div>
+                @elseif (! $canAssignSale)
+                    <div class="border-t border-gold-200 pt-4 text-sm text-ink/60 italic">
+                        Bạn không có quyền phân bổ Sale (cần <code>lead.distribute_sale</code>). CM sale sẽ chọn Sale cho lead này.
+                    </div>
+                @endif
             </div>
 
-            {{-- Bác sĩ tư vấn (bác sĩ + chuyên viên tư vấn) --}}
-            <div x-show="tab === 'staff'" x-cloak class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
+            {{-- Bác sĩ tư vấn (bác sĩ + chuyên viên tư vấn) — Phase 4 (Booking) --}}
+            <div x-show="phase === 4" x-cloak class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
                 <h2 class="font-bold text-gold-700 mb-5 flex items-center gap-2">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z"/></svg>
                     Bác sĩ tư vấn
@@ -1222,8 +1747,8 @@ new class extends Component
                 </div>
             </div>
 
-            {{-- INSIGHT (tab) — Phase 6.15 moved từ cột trái sang --}}
-            <div x-show="tab === 'insight'" x-cloak class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
+            {{-- INSIGHT — Phase 3 (Gọi điện) — order 3 (dưới cùng) --}}
+            <div x-show="phase === 3" x-cloak class="order-3 bg-white border border-gold-200 rounded-xl shadow-card p-6">
                 <h2 class="font-bold text-gold-700 mb-5 flex items-center gap-2">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 18v-5.25m0 0a6.01 6.01 0 001.5-.189m-1.5.189a6.01 6.01 0 01-1.5-.189m3.75 7.478a12.06 12.06 0 01-4.5 0m3.75 2.383a14.406 14.406 0 01-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 10-7.517 0c.85.493 1.509 1.333 1.509 2.316V18"/></svg>
                     INSIGHT
@@ -1260,8 +1785,8 @@ new class extends Component
                 </div>
             </div>
 
-            {{-- Nhóm LIỆU TRÌNH (Phase 6.11 — dạng thẻ 1-N, mỗi lần bác sĩ + đánh giá riêng) --}}
-            <div x-show="tab === 'treatment'" x-cloak class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
+            {{-- Nhóm LIỆU TRÌNH — Phase 7 (Sử dụng DV) --}}
+            <div x-show="phase === 7" x-cloak class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
                 <div class="flex items-center justify-between mb-5">
                     <h2 class="font-bold text-gold-700 flex items-center gap-2">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5"/></svg>
@@ -1320,8 +1845,8 @@ new class extends Component
                 </div>
             </div>
 
-            {{-- Trạng thái chăm sóc --}}
-            <div x-show="tab === 'status'" x-cloak class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
+            {{-- Trạng thái chăm sóc — Phase 3 (Gọi điện) — order 2 (giữa) --}}
+            <div x-show="phase === 3" x-cloak class="order-2 bg-white border border-gold-200 rounded-xl shadow-card p-6">
                 <h2 class="font-bold text-gold-700 mb-5 flex items-center gap-2">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                     Trạng thái chăm sóc
@@ -1335,101 +1860,22 @@ new class extends Component
                         <label class="block text-sm font-medium mb-1.5">Ghi nhận tình trạng lần 2</label>
                         <input type="text" wire:model="status_2" placeholder="VD: Đã tư vấn" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
                     </div>
-                    <div class="grid grid-cols-2 gap-4">
-                        <div>
-                            <label class="block text-sm font-medium mb-1.5">PHÂN LOẠI KẾT QUẢ</label>
-                            <select wire:model="classification" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-gold-500">
-                                @foreach (\App\Models\Lead::CLASSIFICATIONS as $key => $label)
-                                    <option value="{{ $key }}">{{ $label }}</option>
-                                @endforeach
-                            </select>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium mb-1.5">TRẠNG THÁI ĐẶT LỊCH</label>
-                            <select wire:model="bookingStatus" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-gold-500">
-                                @foreach (\App\Models\Lead::BOOKING_STATUSES as $key => $label)
-                                    <option value="{{ $key }}">{{ $label }}</option>
-                                @endforeach
-                            </select>
-                            <p class="text-xs text-ink/50 mt-1">Team booking đổi khi khách đồng ý gặp.</p>
-                        </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-1.5">PHÂN LOẠI KẾT QUẢ</label>
+                        <select wire:model="classification" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-gold-500">
+                            @foreach (\App\Models\Lead::CLASSIFICATIONS as $key => $label)
+                                <option value="{{ $key }}">{{ $label }}</option>
+                            @endforeach
+                        </select>
                     </div>
+                    {{-- TRẠNG THÁI ĐẶT LỊCH đã move sang Phase 4 (Booking) --}}
 
-                    @if ($canDistribute)
-                        <div class="border-t border-gold-100 pt-4 mt-2">
-                            <h3 class="font-bold text-gold-700 mb-4 flex items-center gap-2 text-sm">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5"/></svg>
-                                Phân phối & Nguồn (Do CM chia)
-                            </h3>
-                            <div class="space-y-4">
-                                @if ($lead?->code)
-                                <div>
-                                    <label class="block text-sm font-medium mb-1.5">Mã khách hàng</label>
-                                    <p class="text-sm mt-2"><code class="font-mono text-gold-700">{{ $lead->code }}</code></p>
-                                    <p class="text-xs text-ink/50 mt-1.5">Mã tự sinh theo trường phân loại của phòng.</p>
-                                </div>
-                                @endif
-                                <div>
-                                    <label class="block text-sm font-medium mb-1.5">CHIA VÀO KHO</label>
-                                    <select wire:model.live="poolTarget" @disabled($selectedPerson) @class(['w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-gold-500', 'opacity-50 cursor-not-allowed' => $selectedPerson])>
-                                        <option value="">— Chọn —</option>
-                                        <option value="company">Kho chung công ty</option>
-                                        @if ($assignableOrgs->isNotEmpty())
-                                            <optgroup label="Kho chung phòng / team">
-                                                @foreach ($assignableOrgs as $o)
-                                                    <option value="org:{{ $o->id }}">{{ str_repeat('— ', $o->depth) }}Kho chung {{ $o->name }}</option>
-                                                @endforeach
-                                            </optgroup>
-                                        @endif
-                                    </select>
-                                    <p class="text-xs text-ink/50 mt-1.5">
-                                        @if ($selectedPerson)
-                                            Đã gán nhân viên phụ trách → lead không nằm trong kho chung.
-                                        @else
-                                            Kho chung phòng/team: chỉ người trong phòng/team đó thấy được.
-                                        @endif
-                                    </p>
-                                    @error('poolTarget')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
-                                </div>
-                                <div x-data="{ open: false }" @click.outside="open = false">
-                                    <label class="block text-sm font-medium mb-1.5">NHÂN VIÊN PHỤ TRÁCH</label>
-                                    @if ($selectedPerson)
-                                        <div class="flex items-center justify-between gap-2 border border-gold-300 bg-gold-50 rounded-md px-3 py-2.5">
-                                            <span class="text-sm font-semibold text-gold-800">{{ $selectedPerson->name }}</span>
-                                            <button type="button" wire:click="clearPerson" class="text-xs font-semibold text-ink/50 hover:text-red-600">Bỏ chọn ✕</button>
-                                        </div>
-                                        <p class="text-xs text-ink/50 mt-1.5">Lead rời kho chung, chuyển vào kho cá nhân của nhân viên này.</p>
-                                    @else
-                                        <div class="relative">
-                                            <input type="text" wire:model.live.debounce.250ms="personSearch" @focus="open = true" placeholder="Gõ tên để tìm nhân sự..."
-                                                   class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
-                                            <div x-show="open" x-cloak class="absolute z-20 mt-1 w-full max-h-56 overflow-y-auto bg-white border border-gold-200 rounded-lg shadow-card">
-                                                @forelse ($personResults as $u)
-                                                    <button type="button" wire:click="selectPerson({{ $u->id }})" @click="open = false"
-                                                            class="block w-full text-left px-3 py-2 text-sm hover:bg-gold-50">
-                                                        {{ $u->name }}
-                                                        <span class="text-xs text-ink/40">{{ $u->email }}</span>
-                                                    </button>
-                                                @empty
-                                                    <p class="px-3 py-2 text-sm text-ink/40">Không tìm thấy nhân sự phù hợp.</p>
-                                                @endforelse
-                                            </div>
-                                        </div>
-                                        @error('personId')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
-                                    @endif
-                                </div>
-                                <div>
-                                    <label class="block text-sm font-medium mb-1.5">KHU VỰC</label>
-                                    <input type="text" wire:model="region" placeholder="VD: TP. Hồ Chí Minh" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
-                                </div>
-                            </div>
-                        </div>
-                    @endif
+                    {{-- Panel Phân phối & Nguồn đã move sang tab Phase 2 (Chia số) — Phase 6.21g --}}
                 </div>
             </div>
 
-            {{-- DV tiềm năng + UPSELL (tab) --}}
-            <div x-show="tab === 'upsell'" x-cloak class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
+            {{-- DV tiềm năng + UPSELL — Phase 6 (Bán hàng) --}}
+            <div x-show="phase === 6" x-cloak class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
                 <h2 class="font-bold text-gold-700 mb-5 flex items-center gap-2">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18L9 11.25l4.306 4.307a11.95 11.95 0 015.814-5.519l2.74-1.22m0 0l-5.94-2.281m5.94 2.28l-2.28 5.941"/></svg>
                     Dịch vụ tiềm năng & UPSELL
@@ -1572,8 +2018,308 @@ new class extends Component
 
             {{-- "Phân phối & Nguồn" đã gộp vào tab Trạng thái (khi $canDistribute). --}}
 
+            {{-- ============= Phase 6.21g — Section CHIA SỐ (Phase 2) — panel Phân phối động ============= --}}
+            <div x-show="phase === 2" x-cloak class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
+                <h2 class="font-bold text-gold-700 mb-5 flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5"/></svg>
+                    Chia số (Phân phối)
+                </h2>
+
+                {{-- Info readonly hiện tại --}}
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm mb-4">
+                    <div>
+                        <label class="block text-xs font-medium text-ink/60 mb-1">Nguồn khách</label>
+                        <div class="px-3 py-2 border border-gold-200 rounded-md bg-slate-50">{{ \App\Models\Lead::SOURCE_GROUPS[$sourceGroup] ?? '—' }}</div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-ink/60 mb-1">Team đang giữ</label>
+                        <div class="px-3 py-2 border border-gold-200 rounded-md bg-slate-50">{{ $lead?->orgUnit?->name ?? '— chưa chia —' }}</div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-ink/60 mb-1">Sale phụ trách</label>
+                        <div class="px-3 py-2 border border-gold-200 rounded-md bg-slate-50">{{ $lead?->owner?->name ?? '— chưa chia —' }}</div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-ink/60 mb-1">Người nhận đầu</label>
+                        <div class="px-3 py-2 border border-gold-200 rounded-md bg-slate-50">{{ $lead?->receiver?->name ?? '—' }}</div>
+                    </div>
+                </div>
+
+                {{-- Form Phân phối — chỉ hiện khi user có perm chia --}}
+                @if ($canDistribute)
+                    <div class="border-t border-gold-200 pt-5">
+                        <h3 class="font-bold text-gold-700 mb-4 flex items-center gap-2 text-sm">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5"/></svg>
+                            Chia lead vào kho / cho sale
+                        </h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            @if ($lead?->code)
+                            <div class="md:col-span-2">
+                                <label class="block text-sm font-medium mb-1.5">Mã khách hàng</label>
+                                <p class="text-sm"><code class="font-mono text-gold-700">{{ $lead->code }}</code></p>
+                            </div>
+                            @endif
+                            <div>
+                                <label class="block text-sm font-medium mb-1.5">Chia số <span class="text-xs font-normal text-ink/50">(kho công ty / chi nhánh / địa điểm / team)</span></label>
+                                <select wire:model.live="poolTarget" @disabled($selectedPerson) @class(['w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-gold-500', 'opacity-50 cursor-not-allowed' => $selectedPerson])>
+                                    <option value="">— Chọn —</option>
+                                    <option value="company">🏢 Công ty (kho chung)</option>
+                                    @foreach ($assignableOrgs as $o)
+                                        @php
+                                            // Chỉ chia tới cấp Team owner (depth ≤ 3) — sub-team booking/tele/sale
+                                            // (depth 4) là nội bộ, không cho chọn ở đây.
+                                            if ($o->depth === 0 || $o->depth > 3) continue;
+                                            $indent = str_repeat('　', $o->depth - 1);
+                                            $prefix = match ($o->depth) {
+                                                1 => '📍 Chi nhánh',
+                                                2 => '🏬 Địa điểm',
+                                                3 => '👥 Team',
+                                            };
+                                        @endphp
+                                        <option value="org:{{ $o->id }}">{{ $indent }}{{ $prefix }}: {{ $o->name }}</option>
+                                    @endforeach
+                                </select>
+                                <p class="text-xs text-ink/50 mt-1.5">
+                                    @if ($selectedPerson)Đã gán nhân viên phụ trách → lead không nằm trong kho chung.
+                                    @else Chọn kho nào thì nhân sự trong phạm vi kho đó thấy được lead. @endif
+                                </p>
+                                @error('poolTarget')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
+                            </div>
+                            <div x-data="{ open: false }" @click.outside="open = false">
+                                <label class="block text-sm font-medium mb-1.5">NHÂN VIÊN PHỤ TRÁCH</label>
+                                @if ($selectedPerson)
+                                    <div class="flex items-center justify-between gap-2 border border-gold-300 bg-gold-50 rounded-md px-3 py-2.5">
+                                        <span class="text-sm font-semibold text-gold-800">{{ $selectedPerson->name }}</span>
+                                        <button type="button" wire:click="clearPerson" class="text-xs font-semibold text-ink/50 hover:text-red-600">Bỏ chọn ✕</button>
+                                    </div>
+                                    <p class="text-xs text-ink/50 mt-1.5">Lead rời kho chung, chuyển vào kho cá nhân của nhân viên này.</p>
+                                @else
+                                    <div class="relative">
+                                        <input type="text" wire:model.live.debounce.250ms="personSearch" @focus="open = true" placeholder="Gõ tên để tìm nhân sự..."
+                                               class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
+                                        <div x-show="open" x-cloak class="absolute z-20 mt-1 w-full max-h-56 overflow-y-auto bg-white border border-gold-200 rounded-lg shadow-card">
+                                            @forelse ($personResults as $u)
+                                                <button type="button" wire:click="selectPerson({{ $u->id }})" @click="open = false"
+                                                        class="block w-full text-left px-3 py-2 text-sm hover:bg-gold-50">
+                                                    {{ $u->name }}
+                                                    <span class="text-xs text-ink/40">{{ $u->email }}</span>
+                                                </button>
+                                            @empty
+                                                <p class="px-3 py-2 text-sm text-ink/40">Không tìm thấy nhân sự phù hợp.</p>
+                                            @endforelse
+                                        </div>
+                                    </div>
+                                    @error('personId')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
+                                @endif
+                            </div>
+                            <div class="md:col-span-2">
+                                <label class="block text-sm font-medium mb-1.5">KHU VỰC</label>
+                                <input type="text" wire:model="region" placeholder="VD: TP. Hồ Chí Minh" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
+                            </div>
+                        </div>
+                        <p class="text-xs text-ink/50 mt-4 italic">Chọn xong bấm "Lưu thông tin khách hàng" ở footer để áp dụng. Sau đó bấm "Kết thúc phase 2" để chuyển sang phase Gọi điện.</p>
+                    </div>
+                @else
+                    <div class="border-t border-gold-200 pt-4 text-sm text-ink/60 italic">
+                        Bạn không có quyền chia số. Người có quyền (CM cơ sở / CM team / Admin) sẽ chia lead này.
+                    </div>
+                @endif
+            </div>
+
+            {{-- ============= Phase 6.21 — Section CALL LOGS (Phase 3) — order 1 (trên cùng) ============= --}}
+            <div x-show="phase === 3" x-cloak class="order-1 bg-white border border-gold-200 rounded-xl shadow-card p-6">
+                <h2 class="font-bold text-gold-700 mb-5 flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 002.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 01-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 00-1.091-.852H4.5A2.25 2.25 0 002.25 4.5v2.25z"/></svg>
+                    Lịch sử cuộc gọi <span class="text-sm text-ink/50 font-normal">(mỗi lần gọi = 1 record)</span>
+                </h2>
+                @if ($lead?->exists && $lead->callLogs->isNotEmpty())
+                    <div class="border border-slate-200 rounded divide-y mb-4 text-sm">
+                        @foreach ($lead->callLogs()->with('user')->orderByDesc('called_at')->get() as $cl)
+                            <div class="p-3 flex items-start gap-3">
+                                @php
+                                    $b = match ($cl->status) {
+                                        'thanh_cong' => 'bg-emerald-100 text-emerald-700',
+                                        'that_bai' => 'bg-red-100 text-red-700',
+                                        default => 'bg-slate-100 text-slate-600',
+                                    };
+                                @endphp
+                                <span class="text-xs px-2 py-0.5 rounded whitespace-nowrap {{ $b }}">{{ $cl->statusLabel() }}</span>
+                                <div class="flex-1">
+                                    <div class="text-xs text-ink/50">{{ $cl->called_at->format('d/m/Y H:i') }} · {{ $cl->user->name ?? 'system' }}</div>
+                                    @if ($cl->note)<div class="text-ink/80 mt-1">{{ $cl->note }}</div>@endif
+                                </div>
+                            </div>
+                        @endforeach
+                    </div>
+                @endif
+                @if ($lead?->exists)
+                    <div class="border border-dashed border-slate-300 bg-slate-50 rounded p-3 space-y-2">
+                        <div class="text-xs font-semibold text-ink/60">Thêm cuộc gọi mới</div>
+                        <div class="grid grid-cols-3 gap-2">
+                            <select wire:model="newCallStatus" class="border border-slate-300 rounded px-2 py-1.5 text-sm">
+                                @foreach (\App\Models\CallLog::STATUSES as $k => $lbl)
+                                    <option value="{{ $k }}">{{ $lbl }}</option>
+                                @endforeach
+                            </select>
+                            <input wire:model="newCallNote" placeholder="Ghi chú cuộc gọi..." class="col-span-2 border border-slate-300 rounded px-2 py-1.5 text-sm">
+                        </div>
+                        <button type="button" wire:click="addCallLog" class="text-sm bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-4 py-1.5 rounded">+ Ghi cuộc gọi</button>
+                    </div>
+                @else
+                    <p class="text-xs text-ink/40 italic">Bấm "Lưu thông tin khách hàng" để tạo lead trước, rồi mới ghi được cuộc gọi.</p>
+                @endif
+            </div>
+
+            {{-- ============= Phase 6.21 — Section BOOKING LOGS (Phase 4) ============= --}}
+            <div x-show="phase === 4" x-cloak class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
+                <h2 class="font-bold text-gold-700 mb-5 flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5"/></svg>
+                    Lịch sử booking <span class="text-sm text-ink/50 font-normal">(mỗi lần đặt/đổi/hủy = 1 record)</span>
+                </h2>
+
+                {{-- TRẠNG THÁI ĐẶT LỊCH (tổng thể) — readonly, tự sync từ booking_logs mới nhất --}}
+                <div class="mb-4 pb-4 border-b border-slate-200">
+                    <label class="block text-sm font-medium mb-1.5">TRẠNG THÁI ĐẶT LỊCH (tổng thể)</label>
+                    <div class="inline-flex items-center gap-2 px-3 py-2 border border-gold-200 rounded-md bg-slate-50 text-sm min-w-[240px]">
+                        <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                        <span class="font-semibold text-ink/80">{{ \App\Models\Lead::BOOKING_STATUSES[$bookingStatus] ?? $bookingStatus ?: 'Chưa đặt' }}</span>
+                        <span class="text-xs text-ink/40 ml-auto">🔒 tự sync</span>
+                    </div>
+                    <p class="text-xs text-ink/50 mt-1">Tự cập nhật khi thêm booking mới hoặc bên hệ thống booking sync về — không chỉnh tay.</p>
+                </div>
+                @if ($lead?->exists && $lead->bookingLogs->isNotEmpty())
+                    <div class="border border-slate-200 rounded divide-y mb-4 text-sm">
+                        @foreach ($lead->bookingLogs()->with(['user', 'doctor', 'service'])->orderByDesc('scheduled_at')->get() as $bl)
+                            <div class="p-3 flex items-start gap-3">
+                                @php
+                                    $b = match ($bl->status) {
+                                        'da_xac_nhan' => 'bg-emerald-100 text-emerald-700',
+                                        'huy_doi_lich' => 'bg-red-100 text-red-700',
+                                        default => 'bg-amber-100 text-amber-700',
+                                    };
+                                    $tb = $bl->type === 'tham_kham' ? 'bg-sky-100 text-sky-700' : ($bl->type === 'dich_vu' ? 'bg-fuchsia-100 text-fuchsia-700' : 'bg-slate-100 text-slate-500');
+                                    $tlabel = $bl->type === 'tham_kham' ? '🩺 Thăm khám' : ($bl->type === 'dich_vu' ? '💆 Dịch vụ' : 'Chưa gán loại');
+                                @endphp
+                                <span class="text-xs px-2 py-0.5 rounded whitespace-nowrap {{ $tb }}">{{ $tlabel }}</span>
+                                <span class="text-xs px-2 py-0.5 rounded whitespace-nowrap {{ $b }}">{{ $bl->statusLabel() }}</span>
+                                <div class="flex-1">
+                                    <div class="text-xs text-ink/50">
+                                        Lịch: {{ $bl->scheduled_at?->format('d/m/Y H:i') ?? 'chưa đặt' }}
+                                        · BS: {{ $bl->doctor->name ?? '—' }}
+                                        · DV: {{ $bl->service->name ?? '—' }}
+                                        · bởi {{ $bl->user->name ?? 'system' }}
+                                    </div>
+                                    @if ($bl->note)<div class="text-ink/80 mt-1">{{ $bl->note }}</div>@endif
+                                </div>
+                            </div>
+                        @endforeach
+                    </div>
+                @endif
+                @if ($lead?->exists)
+                    <div class="flex items-center justify-between mb-2">
+                        <span></span>
+                        <button type="button" wire:click="syncBookingsFromExternal"
+                                class="text-xs bg-blue-600 hover:bg-blue-700 text-white font-semibold px-3 py-1.5 rounded flex items-center gap-1.5">
+                            🔄 Đồng bộ từ bên booking
+                        </button>
+                    </div>
+                    <div class="border border-dashed border-slate-300 bg-slate-50 rounded p-3 space-y-2">
+                        <div class="text-xs font-semibold text-ink/60">Thêm booking mới <span class="font-normal text-ink/40">— mặc định "Chờ xác nhận", bên booking cập nhật sẽ tự sync về đây</span></div>
+                        <div class="grid grid-cols-2 md:grid-cols-5 gap-2">
+                            <select wire:model.live="newBookingType" class="border border-slate-300 rounded px-2 py-1.5 text-sm">
+                                <option value="">— Loại * —</option>
+                                <option value="tham_kham">🩺 Thăm khám</option>
+                                <option value="dich_vu">💆 Dịch vụ</option>
+                            </select>
+                            <div class="inline-flex items-center gap-1.5 border border-slate-300 rounded px-2 py-1.5 text-sm bg-slate-100 text-ink/60">
+                                <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+                                Chờ xác nhận
+                                <span class="ml-auto text-[10px]">🔒</span>
+                            </div>
+                            <input type="datetime-local" wire:model="newBookingScheduledAt" class="border border-slate-300 rounded px-2 py-1.5 text-sm">
+                            <select wire:model="newBookingDoctorId" class="border border-slate-300 rounded px-2 py-1.5 text-sm">
+                                <option value="">— Bác sĩ —</option>
+                                @foreach (\App\Models\StaffMember::where('role','doctor')->where('active',true)->orderBy('name')->get() as $d)
+                                    <option value="{{ $d->id }}">{{ $d->name }}</option>
+                                @endforeach
+                            </select>
+                            <select wire:model="newBookingServiceId" @disabled(! $newBookingType) class="border border-slate-300 rounded px-2 py-1.5 text-sm">
+                                <option value="">
+                                    {{ $newBookingType ? '— ' . ($newBookingType === 'tham_kham' ? 'Chọn thăm khám' : 'Chọn dịch vụ') . ' —' : '— Chọn loại trước —' }}
+                                </option>
+                                @if ($newBookingType)
+                                    @foreach (\App\Models\Service::where('active',true)->where('service_type', $newBookingType)->orderBy('name')->get() as $s)
+                                        <option value="{{ $s->id }}">{{ $s->name }}</option>
+                                    @endforeach
+                                @endif
+                            </select>
+                        </div>
+                        <input wire:model="newBookingNote" placeholder="Ghi chú sau booking..." class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm">
+                        <button type="button" wire:click="addBookingLog" class="text-sm bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-4 py-1.5 rounded">+ Ghi booking</button>
+                    </div>
+                @else
+                    <p class="text-xs text-ink/40 italic">Bấm "Lưu thông tin khách hàng" để tạo lead trước.</p>
+                @endif
+            </div>
+
+            {{-- ============= Phase 6.21 — Section CHECK-IN (Phase 5) đúng field mockup ============= --}}
+            <div x-show="phase === 5" x-cloak class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
+                <h2 class="font-bold text-gold-700 mb-5 flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z"/></svg>
+                    Check-in <span class="text-sm text-ink/50 font-normal">(tạm thời là bước cuối)</span>
+                </h2>
+                @if ($lead?->exists && $lead->phaseClosures->firstWhere('phase', 5))
+                    @php $ci = $lead->phaseClosures->firstWhere('phase', 5); @endphp
+                    <div class="p-3 bg-emerald-50 border border-emerald-200 rounded text-sm text-emerald-800 mb-4">
+                        ✓ Đã check-in lúc {{ $ci->closed_at->format('d/m/Y H:i') }} bởi <b>{{ \App\Models\User::find($ci->closed_by)?->name ?? 'system' }}</b>
+                        @if ($ci->note)<div class="text-xs text-emerald-700 mt-1">{{ $ci->note }}</div>@endif
+                    </div>
+                @else
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                        <div>
+                            <label class="block text-xs font-medium text-ink/60 mb-1">Thời gian check-in</label>
+                            <input type="datetime-local" wire:model="checkinTime" class="w-full border border-gold-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-gold-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-ink/60 mb-1">Lễ tân xử lý</label>
+                            <select wire:model="checkinReceptionistId" class="w-full border border-gold-200 rounded-md px-3 py-2 text-sm bg-white focus:outline-none focus:border-gold-500">
+                                <option value="">— Chọn lễ tân —</option>
+                                @foreach (\App\Models\User::orderBy('name')->limit(200)->get() as $u)
+                                    <option value="{{ $u->id }}">{{ $u->name }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-ink/60 mb-1">Bác sĩ tiếp nhận</label>
+                            <select wire:model="checkinDoctorId" class="w-full border border-gold-200 rounded-md px-3 py-2 text-sm bg-white focus:outline-none focus:border-gold-500">
+                                <option value="">— Chọn bác sĩ —</option>
+                                @foreach (\App\Models\StaffMember::where('role','doctor')->where('active',true)->orderBy('name')->get() as $d)
+                                    <option value="{{ $d->id }}">{{ $d->name }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div class="md:col-span-3">
+                            <label class="block text-xs font-medium text-ink/60 mb-1">Ghi chú check-in</label>
+                            <textarea wire:model="checkinNote" rows="2" class="w-full border border-gold-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-gold-500" placeholder="VD: khách tới đúng giờ, mang theo hồ sơ..."></textarea>
+                        </div>
+                    </div>
+                    <p class="text-xs text-ink/50 mt-3 italic">Nhập xong bấm "Kết thúc phase 5" ở footer — 4 field này sẽ gộp vào note của closure phase 5.</p>
+                @endif
+            </div>
+
+            {{-- ============= Phase 6.21 — Section MARK RETURNING (Phase 5 done + first_visit) ============= --}}
+            @if ($lead?->exists && (int) $lead->phase === 5 && $lead->is_first_visit && $lead->phaseClosures->firstWhere('phase', 5))
+                <div class="bg-purple-50 border border-purple-200 rounded-xl p-4" x-show="phase === 5">
+                    <div class="text-sm text-purple-800 mb-2 font-semibold">Khách quay lại thăm khám?</div>
+                    <button type="button" wire:click="markReturning" onclick="return confirm('Reset lead về phase 3 (Gọi điện) cho lần khám mới? Lịch sử cũ vẫn giữ.')"
+                            class="text-sm bg-purple-600 hover:bg-purple-700 text-white font-semibold px-4 py-1.5 rounded">
+                        Khởi động lần thăm khám mới
+                    </button>
+                </div>
+            @endif
+
             {{-- Trường bổ sung — đã chuyển lên dưới "Thông tin khách hàng" (Phase 6.14) --}}
-        </div>
+        </fieldset>{{-- close phase-lock fieldset --}}
     </div>
     </fieldset>
 
@@ -1597,6 +2343,36 @@ new class extends Component
         @endif
         @if (! $isReadonly)
             <button wire:click="save" class="bg-gold-600 hover:bg-gold-700 text-white font-semibold text-sm px-6 py-2.5 rounded-md">Lưu thông tin khách hàng</button>
+        @endif
+
+        {{-- ============= Phase 6.21 — Customer Flow action buttons ============= --}}
+        @if ($lead?->exists && ! $isReadonly)
+            @php
+                $cfCurPhase = (int) $lead->phase;
+                $cfIsBulk = $lead->isBulkOpen();
+                $cfStart = $lead->startPhase();
+                $cfOpen = $lead->openFrom();
+                $cfCanRollback = auth()->user()->hasPermission(\App\Models\Lead::CF_ROLLBACK_PERM);
+                $cfClosuresMap = $lead->phaseClosures->keyBy('phase');
+            @endphp
+            @if ($cfIsBulk && $activePhase >= $cfOpen && $activePhase <= $cfStart)
+                <button type="button" wire:click="bulkSavePhases"
+                        class="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm px-5 py-2.5 rounded-md">
+                    Lưu chốt {{ $cfStart - $cfOpen + 1 }} phase ({{ $cfOpen }}→{{ $cfStart }})
+                </button>
+            @elseif (! $cfIsBulk && $activePhase === $cfCurPhase && $activePhase <= 5)
+                <button type="button" wire:click="closePhaseNow({{ $activePhase }})"
+                        class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm px-5 py-2.5 rounded-md">
+                    Kết thúc phase {{ $activePhase }}
+                </button>
+            @endif
+            @if ($cfCanRollback && $activePhase < $cfCurPhase && $cfClosuresMap->has($activePhase))
+                <button type="button" wire:click="rollbackToPhase({{ $activePhase }})"
+                        onclick="return confirm('Lùi phase về {{ $activePhase }}? Xóa closure từ phase này trở đi.')"
+                        class="bg-white border border-red-400 text-red-600 hover:bg-red-50 font-semibold text-sm px-5 py-2.5 rounded-md">
+                    ⤺ Lùi phase {{ $activePhase }} (Admin)
+                </button>
+            @endif
         @endif
     </div>
 </div>

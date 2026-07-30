@@ -133,6 +133,41 @@
 - [ ] Fix nhỏ: hiện `Team trực page` + `CM booking` đều thấy đủ 3 nhóm marketing/data_cold/bdm do gộp permission `lead.distribute_team`. Nếu muốn strict (Team trực page chỉ Marketing) thì tách permission `lead.source.marketing/data_cold/bdm`.
 - [ ] Test lại 6 luồng end-to-end sau khi có auto-route.
 
+## Phase 6.21 — Customer Flow 7 phase & UI 7 tab-phase (2026-07-30)
+
+> Bối cảnh: user chốt mô hình Customer Flow 7 phase = lifecycle của khách (thay 2-phase cũ ở lớp UI + perm chốt). Design doc: `docs/design/customer_flow_30-07-2026.md`. Mockup: `docs/mockups/customer_flow_30-07-2026.html`. Chi tiết nghiệp vụ + Q&A: xem `result.md` block 2026-07-30. Tương ứng scope.md §8.0.2, ERD.md B2 (bảng mới `lead_phase_closures` / `call_logs` / `booking_logs`).
+
+### 6.21.a — Data model
+- [ ] Migration `2026_07_30_100000_phase_6_21_customer_flow.php`: thêm `leads.phase` (tinyint 1..7 default 1), `leads.is_first_visit` (bool default true), tạo 3 bảng `lead_phase_closures` / `call_logs` / `booking_logs`, backfill `phase` cho lead cũ theo rule ở design §7.
+- [ ] Model mới: `LeadPhaseClosure`, `CallLog`, `BookingLog` với relationship `belongsTo(Lead)` + `belongsTo(User)`.
+
+### 6.21.b — Business logic (Lead model)
+- [ ] Constants `PHASE_1..7` + `PHASE_LABELS` + `START_PHASE_BY_SOURCE`.
+- [ ] Methods: `startPhase()`, `openFrom()`, `phaseState($idx)`, `canEdit($idx, $user)`, `canLogCall($user)`, `canLogBooking($user)`, `bulkSave($user)`, `closePhase($idx, $user)`, `rollbackTo($idx, $user)`, `markReturning($user)`.
+- [ ] Sync 1 chiều `booking_status` khi thêm `booking_log` status `da_xac_nhan`.
+
+### 6.21.c — Permission
+- [ ] `PermissionSeeder`: thêm 5 perm `phase.close.{new,distribute,call,booking,checkin}` + `phase.rollback`.
+- [ ] Role "Admin vận hành" — kiểm tra có sẵn không (grep). Nếu chưa: tạo role `admin-ops` label "Admin vận hành", gán 5+1 perm trên + `ops.manage`.
+- [ ] Gán 5 perm chốt phase cho các role mặc định theo bảng design §5 (Trực Page / Tele / QL Sale / Sale / Lễ tân).
+
+### 6.21.d — UI
+- [ ] Component mới `resources/views/components/leads/⚡customer-flow-bar.blade.php` — arrow-breadcrumb 7 phase, prop `$lead` + `$activePhase`.
+- [ ] Rewrite `⚡lead-form.blade.php` từ dòng ~984-1573: đổi `x-data="{ tab: 'status' }"` sang `x-data="{ phase: <startTab> }"`, thay 5 tab cũ (status/staff/treatment/upsell/insight) bằng 7 tab-phase; wrap từng section theo `x-show="phase === N"`.
+- [ ] Action bar footer: 3 nút mutually exclusive `Lưu chốt N phase` / `Kết thúc phase X` / `⤺ Lùi phase` — wire vào methods `saveBulk` / `closePhase` / `rollbackTo`.
+- [ ] Nút "Khởi động lần thăm khám mới" trên header trang chi tiết (hiện khi phase=5 + closure phase 5 done + có perm `phase.rollback` hoặc `phase.close.checkin`).
+
+### 6.21.e — Test & QA
+- [ ] `tests/Feature/CustomerFlowTest.php` — 10 case ở design §12.
+- [ ] Regression: `php artisan test` — 117 test cũ phải pass.
+- [ ] Manual smoke qua browser: tạo lead 7 nguồn từ 7 tài khoản, verify UI mở/đóng phase đúng + nút Lưu/Kết thúc/Lùi hoạt động + `is_first_visit` flow.
+- [ ] Ghi kết quả vào `result.md`.
+
+**Breaking changes cần lưu ý**:
+- Trang chi tiết KH đổi hoàn toàn UI (6 → 7 tab). Người dùng cũ cần training lại.
+- 41 lead hiện có sẽ được backfill `phase` mặc định = 3 (chăm sóc) trừ khi khớp rule chi tiết ở design §7. Sai mapping có thể phải chỉnh tay.
+- `pipeline_phase` + `pipeline_status` giữ nguyên cho compat — chưa deprecate ở phase này.
+
 ## Phase 7 — Ads API + hoàn thiện
 - [ ] Màn 14 đầy đủ: kết nối Facebook Lead Form / TikTok / Google Ads, sync định kỳ
 - [ ] Seed ~200–300k lead giả, test index/pagination/aggregate ở quy mô thật, tune query

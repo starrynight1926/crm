@@ -60,6 +60,20 @@ class PermissionSeeder extends Seeder
             'connection.manage' => 'Quản lý kết nối nguồn lead (Ads API, webhook)',
             'system.backup' => 'Sao lưu & khôi phục cấu hình / dữ liệu hệ thống',
         ],
+        'source_up' => [
+            'source.up.trucpage' => 'Up lead nguồn MKT (Trực Page)',
+            'source.up.sale'     => 'Up lead nguồn MKT BR / SA (Sale tự nhận)',
+            'source.up.tele'     => 'Up lead nguồn BA (Tele tự nhận)',
+            'source.up.admin'    => 'Up lead nguồn BDM / BOD / Walk-in (Admin)',
+        ],
+        'customer_flow' => [
+            'phase.close.new' => 'Chốt phase 1 — Thêm mới khách hàng',
+            'phase.close.distribute' => 'Chốt phase 2 — Chia số',
+            'phase.close.call' => 'Chốt phase 3 — Gọi điện',
+            'phase.close.booking' => 'Chốt phase 4 — Booking thăm khám',
+            'phase.close.checkin' => 'Chốt phase 5 — Check-in',
+            'phase.rollback' => 'Lùi phase (Admin vận hành only)',
+        ],
     ];
 
     public function run(): void

@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<title>Lara-SCRM · Mockup Customer Flow (7 phase)</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+<style>
+  [x-cloak]{display:none!important}
+  .arrow-step{clip-path:polygon(0 0,calc(100% - 14px) 0,100% 50%,calc(100% - 14px) 100%,0 100%,14px 50%)}
+  .arrow-step:first-child{clip-path:polygon(0 0,calc(100% - 14px) 0,100% 50%,calc(100% - 14px) 100%,0 100%)}
+  .arrow-step:last-child{clip-path:polygon(0 0,100% 0,100% 100%,0 100%,14px 50%)}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f5f6f8}
+</style>
+</head>
+<body class="text-slate-800">
+
+<div x-data="crmMock()" class="max-w-[1400px] mx-auto p-6 space-y-4">
+
+  <!-- ============= DEV CONTROL PANEL (mockup only) ============= -->
+  <div class="bg-amber-50 border border-amber-300 rounded-lg p-4 text-sm">
+    <div class="flex items-center gap-3 mb-2">
+      <span class="font-bold text-amber-800">MOCKUP CONTROL</span>
+      <span class="text-amber-700 text-xs">(panel này chỉ để test — production sẽ bỏ)</span>
+    </div>
+    <div class="flex flex-wrap items-center gap-4">
+      <label class="flex items-center gap-2">
+        <span class="text-xs text-slate-600 font-medium">Nguồn khách:</span>
+        <select x-model="source" @change="onSourceChange()" class="border border-slate-300 rounded px-2 py-1 text-sm">
+          <template x-for="s in sources" :key="s.code">
+            <option :value="s.code" x-text="`${s.code} — bắt đầu phase ${s.startPhase}`"></option>
+          </template>
+        </select>
+      </label>
+      <label class="flex items-center gap-2">
+        <input type="checkbox" x-model="returning" @change="onReturningChange()">
+        <span class="text-xs text-slate-600 font-medium">Đến lần đầu = <span x-text="returning ? 'KHÔNG (khách quay lại)' : 'CÓ (khách mới)'"></span></span>
+      </label>
+      <label class="flex items-center gap-2">
+        <input type="checkbox" x-model="isAdminOps">
+        <span class="text-xs text-slate-600 font-medium">Đăng nhập như "Admin vận hành" (hiện nút Lùi phase)</span>
+      </label>
+      <button @click="resetDemo()" class="ml-auto text-xs bg-white border border-amber-400 text-amber-700 rounded px-3 py-1 hover:bg-amber-100">Reset demo</button>
+    </div>
+    <p class="text-xs text-amber-700 mt-2">
+      Đang xem: nguồn <b x-text="source"></b> · start_phase = <b x-text="startPhase"></b> · phase mở thông từ <b x-text="openFrom"></b> đến <b x-text="startPhase"></b> · sau đó tuần tự từ phase <b x-text="startPhase+1"></b>.
+    </p>
+  </div>
+
+  <!-- ============= HEADER CARD ============= -->
+  <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+    <div class="flex items-start justify-between gap-4">
+      <div>
+        <div class="flex items-center gap-2 mb-1">
+          <span class="text-xs text-slate-500">KH-042-<span x-text="source"></span></span>
+          <span class="inline-block text-[10px] px-2 py-0.5 rounded bg-slate-100 text-slate-600" x-show="!returning">Đến lần đầu</span>
+          <span class="inline-block text-[10px] px-2 py-0.5 rounded bg-purple-100 text-purple-700" x-show="returning">Khách quay lại (lần 2+)</span>
+        </div>
+        <h1 class="text-xl font-bold">Nguyễn Thị Ngọc Anh</h1>
+        <div class="text-sm text-slate-500 mt-0.5">SĐT: 0912 345 678 · Sinh: 12/06/1992 · Cơ sở: HCM · Nguồn: <b x-text="source"></b></div>
+      </div>
+      <div class="text-right space-y-1">
+        <div class="text-xs text-slate-500">Trạng thái pipeline</div>
+        <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm font-medium">
+          <span x-text="currentPhaseLabel()"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============= CUSTOMER FLOW ARROW BAR ============= -->
+  <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+    <div class="flex items-center justify-between mb-3">
+      <div class="text-xs uppercase tracking-wide text-slate-500 font-semibold">Customer Flow</div>
+      <div class="flex items-center gap-3 text-[11px] text-slate-500">
+        <span class="inline-flex items-center gap-1"><span class="w-3 h-3 rounded bg-emerald-500"></span>Đã chốt</span>
+        <span class="inline-flex items-center gap-1"><span class="w-3 h-3 rounded bg-amber-400"></span>Đang xử lý</span>
+        <span class="inline-flex items-center gap-1"><span class="w-3 h-3 rounded bg-blue-400"></span>Mở thông (nhập cùng lúc)</span>
+        <span class="inline-flex items-center gap-1"><span class="w-3 h-3 rounded bg-slate-200 border border-slate-300"></span>Chưa tới</span>
+        <span class="inline-flex items-center gap-1"><span class="w-3 h-3 rounded bg-slate-100 border border-dashed border-slate-400"></span>Skip (theo nguồn)</span>
+        <span class="inline-flex items-center gap-1"><span class="w-3 h-3 rounded bg-slate-300 opacity-50"></span>Chưa build</span>
+      </div>
+    </div>
+    <div class="flex gap-1 overflow-x-auto pb-1">
+      <template x-for="p in phases" :key="p.idx">
+        <button
+          @click="activeTab = p.idx"
+          :disabled="phaseState(p.idx) === 'skipped'"
+          :class="{
+            'bg-emerald-500 text-white': phaseState(p.idx) === 'done',
+            'bg-amber-400 text-white': phaseState(p.idx) === 'current',
+            'bg-blue-400 text-white': phaseState(p.idx) === 'open',
+            'bg-slate-200 text-slate-500': phaseState(p.idx) === 'pending',
+            'bg-slate-100 text-slate-400 border-dashed border-slate-400 border cursor-not-allowed line-through': phaseState(p.idx) === 'skipped',
+            'bg-slate-300 text-slate-500 opacity-50 cursor-not-allowed': phaseState(p.idx) === 'notbuilt',
+            'ring-2 ring-offset-1 ring-indigo-500': activeTab === p.idx
+          }"
+          class="arrow-step flex-1 min-w-[130px] px-5 py-3 text-sm font-semibold text-left transition">
+          <div class="text-[10px] uppercase opacity-80">Phase <span x-text="p.idx"></span></div>
+          <div x-text="p.label"></div>
+        </button>
+      </template>
+    </div>
+  </div>
+
+  <!-- ============= TABBAR (7 tab-phase THAY 6 tab dọc cũ) ============= -->
+  <div class="bg-white rounded-xl shadow-sm border border-slate-200">
+    <div class="flex border-b border-slate-200 overflow-x-auto">
+      <template x-for="p in phases" :key="'tab'+p.idx">
+        <button
+          @click="activeTab = p.idx"
+          :disabled="phaseState(p.idx) === 'skipped'"
+          :class="{
+            'border-b-2 border-indigo-600 text-indigo-700 font-semibold': activeTab === p.idx,
+            'text-slate-500 hover:text-slate-800': activeTab !== p.idx && phaseState(p.idx) !== 'skipped',
+            'text-slate-300 line-through cursor-not-allowed': phaseState(p.idx) === 'skipped',
+            'text-slate-400 cursor-not-allowed': phaseState(p.idx) === 'notbuilt'
+          }"
+          class="px-4 py-3 text-sm whitespace-nowrap">
+          <span x-text="p.idx + '. ' + p.label"></span>
+          <span x-show="phaseState(p.idx) === 'done'" class="ml-1 text-emerald-500">✓</span>
+          <span x-show="phaseState(p.idx) === 'skipped'" class="ml-1 text-[10px] text-slate-400">(skip)</span>
+          <span x-show="phaseState(p.idx) === 'notbuilt'" class="ml-1 text-[10px] text-slate-400">(chưa build)</span>
+        </button>
+      </template>
+    </div>
+
+    <!-- =========== PHASE 1: THÊM MỚI KHÁCH HÀNG =========== -->
+    <div x-show="activeTab === 1" x-cloak class="p-6 space-y-4">
+      <div class="flex items-center justify-between">
+        <h2 class="text-lg font-semibold">Phase 1 — Thêm mới khách hàng</h2>
+        <div class="text-xs text-slate-500">
+          Người xử lý: <b>Trực Page</b> (MKT) / <b>Tele</b> (BA) / <b>QL Sale</b> (SA/BDM/BOD/WI) / <b>Sale</b> (MKT BR)
+        </div>
+      </div>
+      <fieldset :disabled="!canEdit(1)" class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Họ và tên *</label>
+          <input class="w-full border border-slate-300 rounded px-3 py-2 text-sm" value="Nguyễn Thị Ngọc Anh">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Số điện thoại *</label>
+          <input class="w-full border border-slate-300 rounded px-3 py-2 text-sm" value="0912 345 678">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Ngày sinh</label>
+          <input type="date" class="w-full border border-slate-300 rounded px-3 py-2 text-sm" value="1992-06-12">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Địa chỉ</label>
+          <input class="w-full border border-slate-300 rounded px-3 py-2 text-sm" value="Q.1, TP.HCM">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Nguồn khách</label>
+          <input class="w-full border border-slate-300 rounded px-3 py-2 text-sm bg-slate-100" :value="source" readonly>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Cơ sở</label>
+          <select class="w-full border border-slate-300 rounded px-3 py-2 text-sm">
+            <option>HCM</option><option>HN</option><option>ĐN</option>
+          </select>
+        </div>
+        <div class="col-span-2">
+          <label class="block text-xs font-medium text-slate-600 mb-1">Insight ban đầu / Ghi chú tạo lead</label>
+          <textarea class="w-full border border-slate-300 rounded px-3 py-2 text-sm" rows="2" placeholder="VD: hỏi giá liệu trình triệt lông..."></textarea>
+        </div>
+      </fieldset>
+      <div class="text-xs text-slate-500 border-t pt-3">
+        <b>Audit:</b> created_by = <i>trực_page_hcm01</i> · created_at = 2026-07-30 09:12
+      </div>
+    </div>
+
+    <!-- =========== PHASE 2: CHIA SỐ =========== -->
+    <div x-show="activeTab === 2" x-cloak class="p-6 space-y-4">
+      <div class="flex items-center justify-between">
+        <h2 class="text-lg font-semibold">Phase 2 — Chia số (Phân phối)</h2>
+        <div class="text-xs text-slate-500">Người xử lý: <b>CM cơ sở → CM team → Sale</b></div>
+      </div>
+      <template x-if="phaseState(2) === 'skipped'">
+        <div class="p-4 bg-slate-50 border border-dashed border-slate-300 rounded text-sm text-slate-500 italic">
+          Phase này bị skip do nguồn <b x-text="source"></b> bắt đầu ở phase <b x-text="startPhase"></b>. Không hiển thị ở production.
+        </div>
+      </template>
+      <fieldset x-show="phaseState(2) !== 'skipped'" :disabled="!canEdit(2)" class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Team sale nhận</label>
+          <select class="w-full border border-slate-300 rounded px-3 py-2 text-sm"><option>Team HCM-01</option></select>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Sale phụ trách *</label>
+          <select class="w-full border border-slate-300 rounded px-3 py-2 text-sm"><option>Sale Nguyễn Văn A</option></select>
+        </div>
+        <div class="col-span-2">
+          <label class="block text-xs font-medium text-slate-600 mb-1">Ghi chú chia</label>
+          <input class="w-full border border-slate-300 rounded px-3 py-2 text-sm" placeholder="VD: khách quen của A">
+        </div>
+      </fieldset>
+      <div x-show="phaseState(2) !== 'skipped'" class="text-xs text-slate-500 border-t pt-3">
+        <b>Audit:</b> distributed_by = <i>cm_hcm</i> · distributed_at = 2026-07-30 09:30
+      </div>
+    </div>
+
+    <!-- =========== PHASE 3: GỌI ĐIỆN =========== -->
+    <div x-show="activeTab === 3" x-cloak class="p-6 space-y-4">
+      <div class="flex items-center justify-between">
+        <h2 class="text-lg font-semibold">Phase 3 — Gọi điện <span class="text-xs text-slate-500 font-normal">(nhiều lần, mỗi lần 1 record)</span></h2>
+        <button :disabled="!canEdit(3)" class="text-sm bg-indigo-600 text-white px-3 py-1.5 rounded disabled:opacity-40">+ Thêm cuộc gọi</button>
+      </div>
+      <div class="border border-slate-200 rounded divide-y">
+        <div class="p-3 flex items-center gap-3">
+          <span class="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded">Thành công</span>
+          <span class="text-sm">2026-07-30 10:15 · Tele Trần Thị B</span>
+          <span class="text-sm text-slate-500 flex-1 truncate">"Khách quan tâm gói triệt lông, hẹn xem lịch tuần sau"</span>
+        </div>
+        <div class="p-3 flex items-center gap-3">
+          <span class="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded">Không nghe máy</span>
+          <span class="text-sm">2026-07-30 09:40 · Tele Trần Thị B</span>
+          <span class="text-sm text-slate-500 flex-1 truncate">"Gọi lần 1, không bắt máy"</span>
+        </div>
+      </div>
+      <fieldset :disabled="!canEdit(3)" class="border border-dashed border-slate-300 rounded p-4 grid grid-cols-3 gap-3 bg-slate-50">
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Trạng thái cuộc gọi</label>
+          <select class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm">
+            <option>Thành công</option><option>Thất bại</option><option>Không nghe máy</option>
+          </select>
+        </div>
+        <div class="col-span-2">
+          <label class="block text-xs font-medium text-slate-600 mb-1">Ghi chú cuộc gọi</label>
+          <input class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm" placeholder="Nội dung khách trao đổi...">
+        </div>
+      </fieldset>
+      <div class="text-xs text-slate-500 border-t pt-3">
+        <b>Ai được ghi log:</b> Tele đang giữ lead + QL Sale + Admin vận hành. <b>Đóng phase:</b> chỉ Admin vận hành (quyền <code>phase.close.call</code>).
+      </div>
+    </div>
+
+    <!-- =========== PHASE 4: BOOKING =========== -->
+    <div x-show="activeTab === 4" x-cloak class="p-6 space-y-4">
+      <div class="flex items-center justify-between">
+        <h2 class="text-lg font-semibold">Phase 4 — Booking thăm khám <span class="text-xs text-slate-500 font-normal">(nhiều lần, mỗi lần 1 record)</span></h2>
+        <button :disabled="!canEdit(4)" class="text-sm bg-indigo-600 text-white px-3 py-1.5 rounded disabled:opacity-40">+ Thêm booking</button>
+      </div>
+      <div class="border border-slate-200 rounded divide-y">
+        <div class="p-3 flex items-center gap-3">
+          <span class="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded">Đã xác nhận</span>
+          <span class="text-sm">Lịch: 2026-08-02 14:00 · BS Lê C · DV: Triệt lông chân</span>
+          <span class="text-sm text-slate-500 flex-1 truncate">"Khách xác nhận qua Zalo"</span>
+        </div>
+      </div>
+      <fieldset :disabled="!canEdit(4)" class="border border-dashed border-slate-300 rounded p-4 grid grid-cols-4 gap-3 bg-slate-50">
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Trạng thái</label>
+          <select class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm">
+            <option>Đã xác nhận</option><option>Chờ xác nhận</option><option>Hủy / Đổi lịch</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Ngày giờ</label>
+          <input type="datetime-local" class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Bác sĩ</label>
+          <select class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm"><option>BS Lê C</option></select>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Dịch vụ dự kiến</label>
+          <input class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm">
+        </div>
+        <div class="col-span-4">
+          <label class="block text-xs font-medium text-slate-600 mb-1">Ghi chú sau booking</label>
+          <textarea class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm" rows="2"></textarea>
+        </div>
+      </fieldset>
+    </div>
+
+    <!-- =========== PHASE 5: CHECK-IN =========== -->
+    <div x-show="activeTab === 5" x-cloak class="p-6 space-y-4">
+      <div class="flex items-center justify-between">
+        <h2 class="text-lg font-semibold">Phase 5 — Check-in <span class="text-xs text-slate-500 font-normal">(tạm thời là bước cuối)</span></h2>
+      </div>
+      <fieldset :disabled="!canEdit(5)" class="grid grid-cols-3 gap-4">
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Thời gian check-in</label>
+          <input type="datetime-local" class="w-full border border-slate-300 rounded px-3 py-2 text-sm">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Lễ tân xử lý</label>
+          <select class="w-full border border-slate-300 rounded px-3 py-2 text-sm"><option>Lễ tân Phạm D</option></select>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Bác sĩ tiếp nhận</label>
+          <select class="w-full border border-slate-300 rounded px-3 py-2 text-sm"><option>BS Lê C</option></select>
+        </div>
+        <div class="col-span-3">
+          <label class="block text-xs font-medium text-slate-600 mb-1">Ghi chú check-in</label>
+          <textarea class="w-full border border-slate-300 rounded px-3 py-2 text-sm" rows="2"></textarea>
+        </div>
+      </fieldset>
+    </div>
+
+    <!-- =========== PHASE 6 + 7 =========== -->
+    <template x-for="p in [6,7]" :key="'nb'+p">
+      <div x-show="activeTab === p" x-cloak class="p-10 text-center">
+        <div class="inline-block px-4 py-8 border-2 border-dashed border-slate-300 rounded-lg text-slate-400">
+          <div class="text-sm font-semibold" x-text="'Phase ' + p + ' — chưa build'"></div>
+          <div class="text-xs mt-1">Sẽ triển khai ở giai đoạn sau.</div>
+        </div>
+      </div>
+    </template>
+
+    <!-- =========== ACTION BAR =========== -->
+    <div class="border-t border-slate-200 p-4 bg-slate-50 rounded-b-xl flex items-center gap-3">
+      <template x-if="isBulkOpenPhase()">
+        <button @click="bulkSave()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded font-semibold text-sm">
+          Lưu — chốt <span x-text="startPhase - openFrom + 1"></span> phase (từ <span x-text="openFrom"></span> đến <span x-text="startPhase"></span>)
+        </button>
+      </template>
+      <template x-if="!isBulkOpenPhase() && activeTab === currentPhase && activeTab <= 5">
+        <button @click="closePhase(activeTab)" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded font-semibold text-sm"
+                x-text="'Kết thúc phase ' + activeTab + ' — ' + phaseLabel(activeTab)"></button>
+      </template>
+      <template x-if="isAdminOps && activeTab < currentPhase && activeTab >= openFrom">
+        <button @click="rollbackTo(activeTab)" class="bg-white border border-red-400 text-red-600 hover:bg-red-50 px-4 py-2 rounded font-semibold text-sm">
+          ⤺ Lùi phase về "<span x-text="phaseLabel(activeTab)"></span>" (Admin vận hành)
+        </button>
+      </template>
+      <div class="ml-auto text-xs text-slate-500">
+        <template x-if="activeTab < currentPhase && !(isBulkOpenPhase() && activeTab >= openFrom)">
+          <span>Phase đã chốt — chỉ xem, không sửa (trừ khi Admin lùi phase).</span>
+        </template>
+        <template x-if="phaseState(activeTab) === 'pending'">
+          <span>Chưa tới phase này — cần chốt phase <span x-text="currentPhase"></span> trước.</span>
+        </template>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============= NOTES ============= -->
+  <div class="bg-white rounded-xl border border-slate-200 p-5 text-sm space-y-2">
+    <h3 class="font-semibold text-slate-700">Ghi chú thiết kế (tao suy ra từ Q&A — mày check)</h3>
+    <ul class="list-disc pl-5 space-y-1 text-slate-600">
+      <li>Mapping <code>source → start_phase</code>: MKT=1, SA/BDM/BOD/Walk IN=2, BA=3, MKT BR=4. (Confirm số?)</li>
+      <li>Khách mới: mở thông từ phase <b>1 → start_phase</b>, Lưu 1 phát chốt cả cụm, lead nhảy sang phase <b>start_phase + 1</b> (tuần tự tiếp).</li>
+      <li>Khách quay lại (tick "Đến lần đầu" = false): mở thông từ phase <b>3 → start_phase</b> (nếu start ≥ 3), giữ nguyên data phase 1-2 lần đầu.</li>
+      <li>Nút "Lưu chốt N phase" chỉ hiện khi lead đang ở trạng thái "mới tạo, chưa chốt lần đầu". Sau khi chốt cụm → chỉ còn nút "Kết thúc phase X" tuần tự.</li>
+      <li>Skip UI hoàn toàn cho phase &lt; start_phase (production ẩn hẳn — mockup này vẫn hiện để mày thấy logic).</li>
+      <li>Admin vận hành thấy nút "Lùi phase" ở tab các phase đã chốt.</li>
+      <li>Call/Booking mỗi lần = 1 record; danh sách lịch sử luôn hiển thị, form thêm mới bên dưới.</li>
+    </ul>
+  </div>
+
+</div>
+
+<script>
+function crmMock(){
+  return {
+    sources: [
+      {code:'MKT',    startPhase:1},
+      {code:'MKT_BR', startPhase:4},
+      {code:'BA',     startPhase:3},
+      {code:'SA',     startPhase:2},
+      {code:'BDM',    startPhase:2},
+      {code:'BOD',    startPhase:2},
+      {code:'WI',     startPhase:2},
+    ],
+    phases: [
+      {idx:1,label:'Thêm mới KH'},
+      {idx:2,label:'Chia số'},
+      {idx:3,label:'Gọi điện'},
+      {idx:4,label:'Booking'},
+      {idx:5,label:'Check-in'},
+      {idx:6,label:'Bán hàng'},
+      {idx:7,label:'Sử dụng DV'},
+    ],
+    source: 'MKT',
+    returning: false,
+    isAdminOps: false,
+    activeTab: 1,
+    bulkSaved: false,      // đã bấm "Lưu chốt N phase" chưa
+    doneUpTo: 0,           // phase cao nhất đã chốt (bao gồm sau khi bấm Kết thúc phase tuần tự)
+    get startPhase(){ return this.sources.find(s=>s.code===this.source).startPhase },
+    get openFrom(){ return this.returning ? 3 : 1 },
+    get currentPhase(){
+      // Phase user cần xử lý tiếp theo
+      if (!this.bulkSaved) return this.startPhase;
+      return Math.min(this.doneUpTo + 1, 5);
+    },
+    onSourceChange(){ this.bulkSaved=false; this.doneUpTo=0; this.activeTab = this.openFrom; },
+    onReturningChange(){ this.bulkSaved=false; this.doneUpTo = this.returning ? 2 : 0; this.activeTab = this.openFrom; },
+    resetDemo(){ this.source='MKT'; this.returning=false; this.isAdminOps=false; this.activeTab=1; this.bulkSaved=false; this.doneUpTo=0; },
+    phaseState(idx){
+      if (idx === 6 || idx === 7) return 'notbuilt';
+      if (idx <= this.doneUpTo) return 'done';                           // đã chốt
+      if (!this.returning && idx < this.openFrom) return 'skipped';      // (không xảy ra vì openFrom=1 khi new)
+      if (this.returning && idx < this.openFrom && idx > this.doneUpTo) return 'skipped'; // safety
+      if (!this.bulkSaved && idx >= this.openFrom && idx <= this.startPhase) return 'open'; // mở thông
+      if (this.bulkSaved && idx === this.doneUpTo + 1 && idx <= 5) return 'current';        // tuần tự
+      return 'pending';
+    },
+    canEdit(idx){
+      const st = this.phaseState(idx);
+      return st === 'open' || st === 'current';
+    },
+    isBulkOpenPhase(){
+      return !this.bulkSaved && this.startPhase >= this.openFrom;
+    },
+    bulkSave(){
+      this.bulkSaved = true;
+      this.doneUpTo = this.startPhase;
+      this.activeTab = Math.min(this.startPhase + 1, 5);
+    },
+    closePhase(idx){
+      if (idx !== this.currentPhase) return;
+      this.doneUpTo = idx;
+      this.activeTab = Math.min(idx + 1, 5);
+    },
+    rollbackTo(idx){
+      if (!this.isAdminOps) return;
+      // Lùi về phase idx → doneUpTo = idx-1, phase idx thành 'current' (nếu đã bulkSaved) hoặc 'open'
+      this.doneUpTo = idx - 1;
+      if (!this.bulkSaved) this.bulkSaved = true; // sau lùi, chuyển sang chế độ tuần tự
+      this.activeTab = idx;
+    },
+    phaseLabel(idx){ return this.phases.find(p=>p.idx===idx)?.label || ''; },
+    currentPhaseLabel(){
+      if (this.isBulkOpenPhase()) return `Đang nhập phase ${this.openFrom}→${this.startPhase} (mở thông)`;
+      return `Phase ${this.currentPhase} — ${this.phaseLabel(this.currentPhase)}`;
+    },
+  }
+}
+</script>
+</body>
+</html>
