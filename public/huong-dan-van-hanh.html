@@ -1,0 +1,436 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lara-SCRM — Hướng dẫn vận hành chi tiết</title>
+<style>
+  :root {
+    --bg:#faf7f2; --ink:#2d2a24; --gold:#8b5e14; --gold-light:#f5edd8; --gold-dark:#75510f;
+    --border:#e5d5b8; --muted:#78716c;
+    --p1:#e0f2fe; --p2:#ddd6fe; --p3:#fef3c7; --p4:#fed7aa; --p5:#fecaca; --p6:#f3f4f6; --p7:#f3f4f6;
+  }
+  * { box-sizing:border-box; }
+  body { font-family: system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; background:var(--bg); color:var(--ink); margin:0; padding:0; }
+  .wrap { max-width:1180px; margin:auto; padding:24px; }
+  h1 { color:var(--gold); font-size:28px; margin:0 0 4px; }
+  .sub { color:var(--muted); font-size:14px; margin-bottom:20px; }
+  h2 { color:var(--gold-dark); font-size:20px; margin:32px 0 12px; padding-bottom:6px; border-bottom:2px solid var(--gold-light); }
+  h3 { font-size:15px; margin:16px 0 8px; color:var(--ink); }
+  section.card { background:#fff; border:1px solid var(--border); border-radius:10px; padding:16px 22px; margin-bottom:14px; }
+  .toc { background:#fff; border:1px solid var(--border); border-radius:10px; padding:16px 22px; margin-bottom:20px; }
+  .toc ol { margin:0; padding-left:20px; column-count:2; column-gap:24px; }
+  .toc a { color:var(--gold-dark); text-decoration:none; font-size:13.5px; }
+  .toc a:hover { text-decoration:underline; }
+  table { width:100%; border-collapse:collapse; font-size:13.5px; margin:8px 0; }
+  th, td { border:1px solid var(--border); padding:8px 10px; text-align:left; vertical-align:top; }
+  th { background:var(--gold-light); font-weight:600; font-size:12.5px; }
+  code { background:#f5edd8; padding:1px 6px; border-radius:3px; font-size:12.5px; color:var(--gold-dark); }
+  .badge { display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:600; margin-right:4px; }
+  .p1 { background:var(--p1); color:#075985; }
+  .p2 { background:var(--p2); color:#5b21b6; }
+  .p3 { background:var(--p3); color:#a16207; }
+  .p4 { background:var(--p4); color:#c2410c; }
+  .p5 { background:var(--p5); color:#b91c1c; }
+  .p6, .p7 { background:var(--p6); color:var(--muted); }
+
+  .flow { display:flex; gap:6px; overflow-x:auto; padding:16px 0; align-items:stretch; }
+  .flow .step { flex:0 0 145px; border:1px solid var(--border); border-radius:8px; padding:10px 12px; background:#fff; position:relative; font-size:12.5px; }
+  .flow .step h4 { margin:0 0 4px; font-size:13px; color:var(--gold-dark); }
+  .flow .step small { color:var(--muted); display:block; margin-top:4px; }
+  .flow .arrow { flex:0 0 20px; display:flex; align-items:center; color:var(--gold); font-size:20px; }
+
+  .role-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(340px,1fr)); gap:12px; }
+  .role { background:#fff; border:1px solid var(--border); border-radius:10px; padding:14px 16px; }
+  .role h3 { margin:0 0 6px; color:var(--gold-dark); font-size:15px; }
+  .role .who { color:var(--muted); font-size:12.5px; margin-bottom:8px; font-style:italic; }
+  .role .list { list-style:none; padding:0; margin:4px 0; font-size:12.5px; }
+  .role .list li { padding:2px 0; }
+  .role .list li::before { content:"✓ "; color:#16a34a; font-weight:bold; }
+  .role .list li.no::before { content:"✗ "; color:#dc2626; }
+  .role .accts { background:var(--gold-light); padding:6px 10px; border-radius:6px; font-size:12px; margin-top:8px; font-family:monospace; color:var(--gold-dark); }
+
+  .rule { background:#fef3c7; border-left:4px solid #f59e0b; padding:10px 14px; margin:10px 0; font-size:13.5px; border-radius:4px; }
+  .rule strong { color:#92400e; }
+  .rule.err { background:#fee2e2; border-color:#dc2626; }
+  .rule.err strong { color:#991b1b; }
+  .rule.ok { background:#dcfce7; border-color:#16a34a; }
+  .rule.ok strong { color:#166534; }
+
+  .src-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(200px,1fr)); gap:10px; margin:10px 0; }
+  .src { background:#fff; border:1px solid var(--border); border-radius:8px; padding:10px 12px; font-size:12.5px; }
+  .src h4 { margin:0 0 4px; color:var(--gold-dark); font-size:14px; }
+  .src small { color:var(--muted); }
+
+  header.top { background:var(--gold); color:#fff; padding:16px 24px; }
+  header.top h1 { color:#fff; }
+  header.top .sub { color:rgba(255,255,255,.85); margin:0; }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap" style="padding:0">
+    <h1>Lara-SCRM — Hướng dẫn vận hành chi tiết</h1>
+    <p class="sub">Ai làm gì · Khách đi qua đâu · Vì sao chặn/mở. Cập nhật 2026-07-31 (nhánh <code style="background:rgba(255,255,255,.2);color:#fff">fifth</code>)</p>
+  </div>
+</header>
+
+<div class="wrap">
+
+<div class="toc">
+  <h3 style="margin-top:0">Mục lục</h3>
+  <ol>
+    <li><a href="#tongquan">Tổng quan</a></li>
+    <li><a href="#nguon">7 nguồn lead</a></li>
+    <li><a href="#phase">7 phase — vòng đời của khách</a></li>
+    <li><a href="#luong">Luồng đi của từng nguồn</a></li>
+    <li><a href="#role">Vai trò & tài khoản test</a></li>
+    <li><a href="#rule">Rule bắt buộc (nghiệp vụ)</a></li>
+    <li><a href="#filter">Bộ lọc "Trạng thái xử lý" ở danh sách</a></li>
+    <li><a href="#report">Báo cáo (Funnel + Hiệu suất) theo Phase</a></li>
+    <li><a href="#data">Cấu trúc data cốt lõi</a></li>
+    <li><a href="#tk">Tổng hợp tài khoản</a></li>
+  </ol>
+</div>
+
+<section id="tongquan" class="card">
+  <h2>1. Tổng quan</h2>
+  <p>Lara-SCRM là CRM quản lý khách hàng và điều phối lead cho ngành y tế/dịch vụ. Mỗi khách chạy qua <strong>7 phase lifecycle</strong> (từ "Thêm mới" đến "Sử dụng dịch vụ"), được xử lý bởi <strong>4 vị trí</strong> (Trực Page → Tele → QL Sale → Sale) tùy theo <strong>7 nguồn</strong> data khác nhau.</p>
+  <p>Hệ thống chia làm 2 tầng DB:</p>
+  <ul>
+    <li><strong>PostgreSQL (raw)</strong> — hứng lead thô từ mọi nguồn, schema JSONB linh hoạt.</li>
+    <li><strong>MySQL (clean)</strong> — data đã chuẩn hóa, mọi nghiệp vụ chạy ở đây.</li>
+  </ul>
+  <p>Pipeline job đọc raw → validate SĐT → check trùng → ghi sang MySQL. Chia số chỉ chạy sau khi lead sang tầng clean.</p>
+</section>
+
+<section id="nguon" class="card">
+  <h2>2. 7 nguồn lead</h2>
+  <p>Mỗi lead thuộc <strong>1 trong 7 nguồn</strong>. Nguồn quyết định <strong>ai được phép up</strong> và <strong>khách bắt đầu từ phase nào</strong>.</p>
+
+  <div class="src-grid">
+    <div class="src"><h4>MKT</h4><small>Marketing — Facebook, Google, Tiktok…</small><br><br>Up bởi: <strong>Trực Page</strong> · Admin cơ sở</div>
+    <div class="src"><h4>MKT BR</h4><small>Marketing branch — sale tự chạy quảng cáo riêng</small><br><br>Up bởi: <strong>Sale</strong> · CM sale · Admin cơ sở</div>
+    <div class="src"><h4>SA</h4><small>Sale Appointment — khách sale hẹn lại</small><br><br>Up bởi: <strong>Sale</strong> · CM sale · Admin cơ sở</div>
+    <div class="src"><h4>BA</h4><small>Booking Appointment — khách tele đặt lịch mới</small><br><br>Up bởi: <strong>Team Tele</strong> · Admin cơ sở</div>
+    <div class="src"><h4>BDM</h4><small>Business Development — đối tác giới thiệu</small><br><br>Up bởi: <strong>CM sale</strong> · Admin cơ sở</div>
+    <div class="src"><h4>BOD</h4><small>Board — ban lãnh đạo giới thiệu</small><br><br>Up bởi: <strong>CM sale</strong> · Admin cơ sở</div>
+    <div class="src"><h4>WI (Walk-in)</h4><small>Khách tự đến cơ sở, cần duyệt</small><br><br>Up bởi: <strong>CM sale</strong> · Admin cơ sở</div>
+  </div>
+
+  <div class="rule">
+    <strong>Engine chặn ở đâu:</strong> khi bấm nút "Thêm mới khách hàng", dropdown Nguồn sẽ <strong>disable</strong> option user không có quyền. Cơ chế map trong <code>Lead::SOURCE_PERMISSIONS</code> → mỗi nguồn cần 1 permission cụ thể (<code>source.up.trucpage</code> / <code>.sale</code> / <code>.tele</code> / <code>.admin</code>). Role <strong>Admin cơ sở</strong> có <code>lead.source_all</code> — bypass, thấy đủ 7 option.
+  </div>
+</section>
+
+<section id="phase" class="card">
+  <h2>3. 7 phase — vòng đời của khách</h2>
+  <p>Cột "Ai xử lý" mặc định — có thể lệch nếu nguồn cho phép sale tự làm A→Z.</p>
+
+  <div class="flow">
+    <div class="step" style="background:var(--p1)"><h4><span class="badge p1">P1</span> Thêm mới</h4>Trực Page / Tele / QL Sale / Sale (tùy nguồn)<small>Nhập tên, SĐT, nguồn, custom fields</small></div>
+    <div class="arrow">→</div>
+    <div class="step" style="background:var(--p2)"><h4><span class="badge p2">P2</span> Chia số</h4>CM cơ sở → CM team<small>Kéo lead từ kho chung → team</small></div>
+    <div class="arrow">→</div>
+    <div class="step" style="background:var(--p3)"><h4><span class="badge p3">P3</span> Gọi điện</h4>Tele<small>Mỗi lần gọi = 1 <code>call_logs</code></small></div>
+    <div class="arrow">→</div>
+    <div class="step" style="background:var(--p4)"><h4><span class="badge p4">P4</span> Booking</h4>Sale<small>Đặt lịch thăm khám (booked)</small></div>
+    <div class="arrow">→</div>
+    <div class="step" style="background:var(--p5)"><h4><span class="badge p5">P5</span> Check-in</h4>Lễ tân<small>Khách đến cơ sở</small></div>
+    <div class="arrow">→</div>
+    <div class="step" style="background:var(--p6)"><h4><span class="badge p6">P6</span> Bán hàng</h4><em>Chưa build</em></div>
+    <div class="arrow">→</div>
+    <div class="step" style="background:var(--p7)"><h4><span class="badge p7">P7</span> Sử dụng DV</h4><em>Chưa build</em></div>
+  </div>
+
+  <table>
+    <thead><tr><th>Phase</th><th>Sub-status</th><th>Sự kiện chốt phase</th><th>Permission chốt</th></tr></thead>
+    <tbody>
+      <tr><td><span class="badge p1">P1</span> Thêm mới</td><td>–</td><td>Điền form + Lưu</td><td><code>phase.close.new</code></td></tr>
+      <tr><td><span class="badge p2">P2</span> Chia số</td><td>–</td><td>Lead có <code>owner_id</code></td><td><code>phase.close.distribute</code></td></tr>
+      <tr><td><span class="badge p3">P3</span> Gọi điện</td><td>Thành công / Thất bại / Không nghe máy</td><td>Ít nhất 1 call_log</td><td><code>phase.close.call</code></td></tr>
+      <tr><td><span class="badge p4">P4</span> Booking</td><td>Đã xác nhận / Chờ / Hủy - Đổi lịch</td><td><code>booking_status = booked</code></td><td><code>phase.close.booking</code></td></tr>
+      <tr><td><span class="badge p5">P5</span> Check-in</td><td>–</td><td>Khách đến cơ sở</td><td><code>phase.close.checkin</code></td></tr>
+      <tr><td><span class="badge p6">P6</span></td><td colspan="3"><em>Chưa build</em></td></tr>
+      <tr><td><span class="badge p7">P7</span></td><td colspan="3"><em>Chưa build</em></td></tr>
+    </tbody>
+  </table>
+
+  <h3>Quy tắc chuyển phase</h3>
+  <ul>
+    <li><strong>Mở thông (bulk edit)</strong> chỉ xảy ra 1 lần khi tạo lead. Nút "Lưu — chốt N phase" đóng nhiều phase cùng lúc theo <code>start_phase</code> của nguồn.</li>
+    <li><strong>Tuần tự</strong>: sau khi lưu, mỗi phase có nút "Kết thúc phase X".</li>
+    <li><strong>Lùi phase</strong>: chỉ role có <code>phase.rollback</code> (mặc định "Admin vận hành").</li>
+    <li><strong>Khách quay lại</strong>: bỏ tick <code>is_first_visit</code> → reset về phase 3, call_logs/booking_logs cũ giữ lại.</li>
+  </ul>
+</section>
+
+<section id="luong" class="card">
+  <h2>4. Luồng đi của từng nguồn</h2>
+  <p>Mỗi nguồn có <code>start_phase</code> khác nhau — quyết định khách vào hệ thống ở phase nào.</p>
+  <table>
+    <thead><tr><th>Nguồn</th><th>start_phase</th><th>Luồng</th></tr></thead>
+    <tbody>
+      <tr><td><strong>MKT</strong></td><td>1</td><td>Trực Page nhập → đi <strong>full 5 phase</strong> tuần tự (Tele chia gọi, Sale nhận sau khi booking).</td></tr>
+      <tr><td><strong>MKT BR</strong></td><td>4</td><td>Sale <strong>tự tạo + tự làm A→Z</strong> (P1-P4 mở thông, 1 phát chốt cả cụm).</td></tr>
+      <tr><td><strong>BA</strong></td><td>3</td><td>Tele <strong>tự tạo + tự gọi</strong>, chuyển Sale ở phase 4.</td></tr>
+      <tr><td><strong>SA / BDM / BOD / WI</strong></td><td>2</td><td>QL Sale <strong>tự tạo + tự chia</strong> cho sale, chuyển Tele ở phase 3.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="role" class="card">
+  <h2>5. Vai trò & tài khoản test</h2>
+  <div class="role-grid">
+
+    <div class="role">
+      <h3>Trực Page</h3>
+      <div class="who">Nhập lead marketing (nguồn MKT). Không chăm khách.</div>
+      <ul class="list">
+        <li>Up nguồn: <strong>MKT</strong></li>
+        <li>Thêm mới KH (nút hiện)</li>
+        <li>Xem danh sách KH đã up (imported_by scope)</li>
+        <li>Import Excel</li>
+        <li class="no">KHÔNG chia số (CM/Admin làm)</li>
+        <li class="no">KHÔNG xem báo cáo</li>
+      </ul>
+      <div class="accts">hn.page01 · hcm.page01 · dn.page01</div>
+    </div>
+
+    <div class="role">
+      <h3>CM Tele (QL Tele)</h3>
+      <div class="who">Quản lý team Tele, chia số kho Tele cho tele viên, sửa info khách phase Booking.</div>
+      <ul class="list">
+        <li>Up nguồn: MKT BR, BDM, BOD, SA, BA, WI</li>
+        <li>Chia kho Tele (<code>distribute_tele</code>) — filter "Chờ chia — Tele"</li>
+        <li>Đặt booking cho khách</li>
+        <li>Thu tiền hộ team</li>
+        <li>Xem báo cáo team</li>
+      </ul>
+      <div class="accts">hn.cmb01 · hn.cmb02 · hcm.cmb01</div>
+    </div>
+
+    <div class="role">
+      <h3>Team Tele</h3>
+      <div class="who">Gọi khách, đặt lịch booking. Không chia, không thu tiền, không báo cáo.</div>
+      <ul class="list">
+        <li>Up nguồn: <strong>BA</strong></li>
+        <li>Thêm mới KH nguồn BA</li>
+        <li>Xem chi tiết + note + Đặt booking</li>
+        <li>Handoff sang Sale (nếu booked)</li>
+        <li class="no">KHÔNG chia số</li>
+        <li class="no">KHÔNG báo cáo</li>
+      </ul>
+      <div class="accts">hn.book01 · hn.book02</div>
+    </div>
+
+    <div class="role">
+      <h3>CM sale (QL Sale)</h3>
+      <div class="who">Quản lý team Sale, chia số kho Sale, kiêm sale trực tiếp cho SA/BDM/BOD/WI.</div>
+      <ul class="list">
+        <li>Up nguồn: MKT BR, SA, BDM, BOD, WI, BA</li>
+        <li>Chia kho Sale (<code>distribute_sale</code>) — filter "Chờ chia — Sale"</li>
+        <li>Đặt booking (<code>book_action</code>)</li>
+        <li>Duyệt Walk-in</li>
+        <li>Thu tiền hộ team</li>
+      </ul>
+      <div class="accts">hn.cms01 · hn.cms02 · hcm.cms01</div>
+    </div>
+
+    <div class="role">
+      <h3>Sale (nhân viên)</h3>
+      <div class="who">Chăm sóc khách, tư vấn dịch vụ, chốt Close, thu tiền cho lead mình phụ trách.</div>
+      <ul class="list">
+        <li>Up nguồn: <strong>MKT BR, SA</strong></li>
+        <li>Xem lead trong phạm vi</li>
+        <li>Note, phân loại, gắn dịch vụ, thu tiền</li>
+        <li>Đặt booking (<code>book_action</code>)</li>
+        <li>Xem báo cáo (dữ liệu bản thân)</li>
+      </ul>
+      <div class="accts">hn.sale01 · hn.sale02 · hn.sale03</div>
+    </div>
+
+    <div class="role">
+      <h3>Team sale ĐN</h3>
+      <div class="who">Sale Đà Nẵng — union quyền tele + booking + sale (cơ sở nhỏ, không tách team).</div>
+      <ul class="list">
+        <li>Up nguồn: MKT BR, SA</li>
+        <li>Tạo lead + Đặt booking + Chăm khách + Thu tiền</li>
+        <li>Xem báo cáo</li>
+      </ul>
+      <div class="accts">dn.sale01 · dn.sale02 · dn.sale03</div>
+    </div>
+
+    <div class="role" style="border-color:var(--gold); border-width:2px">
+      <h3>Admin cơ sở ⭐</h3>
+      <div class="who">MỚI 2026-07-31. Điều hành 1 cơ sở — bypass mọi nguồn + chia số 2 kho, scope theo branch.</div>
+      <ul class="list">
+        <li>Up <strong>đủ 7 nguồn</strong> (<code>lead.source_all</code> bypass)</li>
+        <li>Chia cả kho Tele + kho Sale</li>
+        <li>Duyệt Walk-in, đặt booking, thu tiền</li>
+        <li>Xem báo cáo</li>
+        <li class="no">KHÔNG có org/user/role/service/rule.manage (không phải Admin công ty)</li>
+      </ul>
+      <div class="accts">admin.hn · admin.hcm · admin.dn</div>
+    </div>
+
+    <div class="role">
+      <h3>Team Leader</h3>
+      <div class="who">Leader team sale — hỗ trợ CM chia số, duyệt WI, thu tiền.</div>
+      <ul class="list">
+        <li>Chia số (<code>distribute + distribute_tele + distribute_sale</code>)</li>
+        <li>Duyệt WI, thu tiền, đặt booking</li>
+      </ul>
+      <div class="accts">hn.tl01 · hcm.tl01 · dn.tl01</div>
+    </div>
+
+    <div class="role">
+      <h3>Observer</h3>
+      <div class="who">Chỉ xem — không thêm/sửa/xóa. Dùng cho sếp / kiểm toán.</div>
+      <ul class="list">
+        <li>Xem danh sách KH (full phone qua <code>view_phone</code>)</li>
+        <li>Xem báo cáo (<code>report.view + view_all</code>)</li>
+        <li>Xuất Excel</li>
+        <li class="no">KHÔNG thêm/sửa/xóa</li>
+      </ul>
+      <div class="accts">vh.obs01 · vh.obs02 · vh.obs03</div>
+    </div>
+
+  </div>
+</section>
+
+<section id="rule" class="card">
+  <h2>6. Rule bắt buộc (nghiệp vụ)</h2>
+
+  <div class="rule err">
+    <strong>Booking-first (2026-07-31):</strong> chỉ được chuyển lead sang phase Sale khi <code>booking_status = booked</code>. Áp cho <strong>mọi role</strong> — kể cả sale/tele tự care khách của mình. Nếu chưa book mà bấm "Chuyển phase Sale" → <code>DomainException</code> throw, flash lỗi đỏ <em>"Chưa đặt booking cho khách. Đặt booking xong mới được chuyển sang phase Sale."</em>
+  </div>
+
+  <div class="rule">
+    <strong>Nguồn ↔ Role (SOURCE_PERMISSIONS):</strong> mỗi nguồn map với 1 permission cụ thể. Ai không có perm đó thì dropdown Nguồn sẽ disable option đó. Bypass duy nhất là <code>lead.source_all</code> (chỉ Admin cơ sở + Admin công ty có).
+  </div>
+
+  <div class="rule">
+    <strong>Ẩn filter "Chờ chia" theo perm:</strong>
+    <ul>
+      <li>"Chờ chia — Tele" chỉ hiện với role có <code>lead.distribute_tele</code> (CM Tele, CM sale, Team Leader, Admin cơ sở, Admin/DM).</li>
+      <li>"Chờ chia — Sale" chỉ hiện với <code>lead.distribute_sale</code> (CM sale, Team Leader, Admin cơ sở, Admin/DM).</li>
+    </ul>
+    Sale/Tele/Observer thấy filter chỉ có 3 option (in_care/booked/checkin).
+  </div>
+
+  <div class="rule ok">
+    <strong>Route gate (middleware EnsurePermission):</strong> mọi route đều gate bằng permission. Ví dụ <code>/leads/create</code> gate <code>lead.create</code> → Observer gõ URL sẽ 403. <code>/reports</code> gate <code>report.view</code> → Trực Page + Team Tele 403.
+  </div>
+
+  <div class="rule">
+    <strong>Imported_by scope:</strong> user tạo lead luôn giữ scope xem lead đó, kể cả sau khi engine chia cho sale khác. Trực Page vẫn thấy được lead mình up sau khi CM tele đã chia.
+  </div>
+
+  <div class="rule">
+    <strong>Assign sale trực tiếp (BOD/SA/BA):</strong>
+    <ul>
+      <li>User không có <code>lead.distribute</code> → tự động owner = chính user (sale tự nhận).</li>
+      <li>User có <code>lead.distribute</code> (CM/Admin) → bắt buộc chọn Sale nhận, không chọn thì error <em>"bắt buộc chọn sale nhận"</em>.</li>
+    </ul>
+  </div>
+
+  <div class="rule">
+    <strong>Walk-in (WI):</strong> tạo mới → <code>approval_status = pending</code>. Cần role có <code>lead.approve_source</code> duyệt (CM sale, Admin cơ sở, Admin/DM) mới đi tiếp.
+  </div>
+
+  <div class="rule">
+    <strong>Data scope theo assignment:</strong>
+    <ul>
+      <li><code>SCOPE_SELF</code>: chỉ lead mình là owner/receiver.</li>
+      <li><code>SCOPE_TEAM</code>: toàn subtree của org_unit gán (Admin cơ sở dùng cái này — thấy toàn branch).</li>
+      <li><code>SCOPE_CUSTOM</code>: chọn nhiều org_unit lẻ.</li>
+    </ul>
+  </div>
+</section>
+
+<section id="filter" class="card">
+  <h2>7. Bộ lọc "Trạng thái xử lý" ở danh sách khách</h2>
+  <p>Ở màn <strong>Danh sách khách</strong> → dropdown "Trạng thái xử lý" (thêm 2026-07-31).</p>
+  <table>
+    <thead><tr><th>Option</th><th>Nghĩa</th><th>Query</th><th>Ai thấy</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Chờ chia — Tele</strong></td><td>Lead đang trong kho Tele, chưa có owner</td><td><code>pipeline_phase = booking AND pipeline_status = waiting_distribute</code></td><td>Có <code>distribute_tele</code></td></tr>
+      <tr><td><strong>Chờ chia — Sale</strong></td><td>Lead đang trong kho Sale, chưa có owner</td><td><code>pipeline_phase = sale AND pipeline_status = waiting_distribute</code></td><td>Có <code>distribute_sale</code></td></tr>
+      <tr><td>Đang care</td><td>Đang chăm sóc, chưa đặt booking</td><td><code>pipeline_status = in_care AND booking_status IN (not_booked, rescheduled)</code></td><td>Ai cũng thấy</td></tr>
+      <tr><td>Đã đặt booking</td><td>Đã đặt lịch thăm khám</td><td><code>booking_status = booked</code></td><td>Ai cũng thấy</td></tr>
+      <tr><td>Đã check-in</td><td>Khách đã đến cơ sở</td><td><code>booking_status IN (khach_da_toi, khach_toi_tre, da_xong)</code></td><td>Ai cũng thấy</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="report" class="card">
+  <h2>8. Báo cáo — Funnel + Hiệu suất sale với dimension Phase</h2>
+  <p>Tab <strong>Funnel theo kỳ</strong> và <strong>Hiệu suất sale</strong> thêm dropdown <strong>Phase</strong> ở filter bar (2026-07-31):</p>
+  <ul>
+    <li>Tất cả — không lọc</li>
+    <li>Booking (Tele) — chỉ lead đang ở phase Booking</li>
+    <li>Sale — chỉ lead đang ở phase Sale</li>
+  </ul>
+  <p>Data ghi vào <code>stats_daily</code> có cột <code>pipeline_phase</code>. Sau khi có data mới → chạy CLI:</p>
+  <p><code>php artisan stats:aggregate --from=2026-07-01 --to=2026-07-31</code></p>
+  <div class="rule">
+    <strong>Data cũ (trước 2026-07-31)</strong> có <code>pipeline_phase = null</code>. Cần re-aggregate mới có số theo phase.
+  </div>
+</section>
+
+<section id="data" class="card">
+  <h2>9. Cấu trúc data cốt lõi</h2>
+  <h3>Lead — các cột quyết định luồng</h3>
+  <table>
+    <thead><tr><th>Cột</th><th>Giá trị</th><th>Ý nghĩa</th></tr></thead>
+    <tbody>
+      <tr><td><code>source_group</code></td><td>mkt / mkt_br / sa / ba / bdm / bod / wi</td><td>7 nguồn</td></tr>
+      <tr><td><code>pipeline_phase</code></td><td>booking / sale</td><td>Đang ở phase nghiệp vụ nào (2-tier legacy)</td></tr>
+      <tr><td><code>pipeline_status</code></td><td>waiting_distribute / in_care</td><td>Chờ chia hay đang chăm sóc</td></tr>
+      <tr><td><code>booking_status</code></td><td>not_booked / booked / khach_da_toi / khach_toi_tre / khach_huy / da_xong / rescheduled</td><td>Trạng thái đặt lịch</td></tr>
+      <tr><td><code>owner_id</code></td><td>user_id / null</td><td>Sale/Tele đang giữ (null = chưa chia, ở kho chung)</td></tr>
+      <tr><td><code>receiver_id</code></td><td>user_id / null</td><td>Người bàn giao trước đó (giữ lịch sử)</td></tr>
+      <tr><td><code>imported_by</code></td><td>user_id</td><td>Người tạo lead (giữ scope xem vĩnh viễn)</td></tr>
+      <tr><td><code>pool_level</code></td><td>common / team / personal</td><td>Kho lead đang ở</td></tr>
+      <tr><td><code>org_unit_id</code></td><td>id org_unit / null</td><td>Team/phòng ban đang giữ</td></tr>
+      <tr><td><code>approval_status</code></td><td>none / pending / approved / rejected</td><td>Duyệt WI (nguồn WI bắt đầu = pending)</td></tr>
+      <tr><td><code>facility_id</code>, <code>doctor_id</code>, <code>consultant_*_id</code></td><td>id</td><td>Cơ sở, bác sĩ, chuyên viên tư vấn</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Kho lead (pool_level)</h3>
+  <ul>
+    <li><strong>common</strong> — kho chung toàn công ty. <code>owner_id=null, org_unit_id=null</code>. CM chia về team.</li>
+    <li><strong>team</strong> — kho của 1 team (phòng ban). <code>owner_id=null, org_unit_id=X</code>. CM team chia cho sale.</li>
+    <li><strong>personal</strong> — sale/tele đang giữ. <code>owner_id=user, org_unit_id=user's org</code>.</li>
+  </ul>
+</section>
+
+<section id="tk" class="card">
+  <h2>10. Tổng hợp tài khoản test</h2>
+  <p>Password chung: <code>59@ntn</code></p>
+  <table>
+    <thead><tr><th>Role</th><th>Tài khoản</th><th>Cơ sở</th></tr></thead>
+    <tbody>
+      <tr><td>Admin cơ sở</td><td><code>admin.hn@longevity.com.vn</code></td><td>HN</td></tr>
+      <tr><td>Admin cơ sở</td><td><code>admin.hcm@longevity.com.vn</code></td><td>HCM</td></tr>
+      <tr><td>Admin cơ sở</td><td><code>admin.dn@longevity.com.vn</code></td><td>ĐN</td></tr>
+      <tr><td>Trực Page</td><td><code>hn.page01</code> / <code>hcm.page01</code> / <code>dn.page01</code></td><td>3 cơ sở</td></tr>
+      <tr><td>CM Tele</td><td><code>hn.cmb01</code>, <code>hn.cmb02</code>, <code>hcm.cmb01</code></td><td>HN, HCM</td></tr>
+      <tr><td>Team Tele</td><td><code>hn.book01</code>, <code>hn.book02</code></td><td>HN</td></tr>
+      <tr><td>CM sale</td><td><code>hn.cms01</code>, <code>hn.cms02</code>, <code>hcm.cms01</code></td><td>HN, HCM</td></tr>
+      <tr><td>Sale</td><td><code>hn.sale01</code> → <code>hn.sale19</code></td><td>HN</td></tr>
+      <tr><td>Team sale ĐN</td><td><code>dn.sale01</code> → <code>dn.sale07</code></td><td>ĐN (union quyền)</td></tr>
+      <tr><td>Team Leader</td><td><code>hn.tl01</code>, <code>hcm.tl01</code>, <code>dn.tl01</code></td><td>3 cơ sở</td></tr>
+      <tr><td>Observer</td><td><code>vh.obs01</code>, <code>vh.obs02</code>, <code>vh.obs03</code></td><td>Vận hành</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<p style="text-align:center; color:var(--muted); font-size:12px; margin:30px 0 10px">Tài liệu này generate từ code hiện tại (branch <code>fifth</code>, commit sau <code>af17226</code>). Nếu code đổi, xin update lại.</p>
+
+</div>
+</body>
+</html>
