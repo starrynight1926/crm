@@ -101,6 +101,44 @@ Verify sau fix:
 
 Câu 2 (SA up bởi Sale + Admin) — verify lại: đã đúng, không cần fix. SA hiện map `source.up.sale`; Sale + CM sale + Admin cơ sở + Admin/DM đều có perm này.
 
+### Checklist E2E tổng hợp (2026-07-31 chiều — sau align perm)
+Script tinker `qa_matrix.php` — 7 role × 4 màn HTTP × matrix nguồn × assert booking-first.
+**Kết quả: 38/38 PASS** (3 case 403 là expected — permission chặn đúng ở route level).
+
+| Role | /dashboard | /leads | /leads/create | /reports | Nguồn up (7) | Filter Phase (5) | Assert booking-first |
+|---|---|---|---|---|---|---|---|
+| Admin cơ sở HN | 200 ✅ | 200 ✅ | 200 ✅ | 200 ✅ | 7/7 | 5/5 | throw ✅ · booked→sale ✅ |
+| Trực Page | 200 ✅ | 200 ✅ | 200 ✅ | 403 🔒 | mkt (1/7) | 3/5 | N/A |
+| CM Tele | 200 ✅ | 200 ✅ | 200 ✅ | 200 ✅ | mkt_br,bdm,bod,sa,ba,wi (6/7) | 5/5 | throw ✅ · booked→sale ✅ |
+| Team Tele | 200 ✅ | 200 ✅ | 200 ✅ | 403 🔒 | ba (1/7) | 3/5 | throw ✅ · booked→sale ✅ |
+| CM sale | 200 ✅ | 200 ✅ | 200 ✅ | 200 ✅ | mkt_br,bdm,bod,sa,ba,wi (6/7) | 5/5 | throw ✅ · booked→sale ✅ |
+| Team sale ĐN | 200 ✅ | 200 ✅ | 200 ✅ | 200 ✅ | mkt_br,sa (2/7) | 3/5 | throw ✅ · booked→sale ✅ |
+| Observer | 200 ✅ | 200 ✅ | 403 🔒 | 200 ✅ | 0/7 | 3/5 | N/A |
+
+**3 case 403 (expected):**
+- Trực Page → /reports: không có `report.view` ✓
+- Team Tele → /reports: không có `report.view` ✓
+- Observer → /leads/create: không có `lead.create` ✓
+
+**Assert booking-first (5 role có lead.update, 10 case)**: 10/10 pass — throw khi `booking_status=not_booked`, handoff thành công khi `=booked`.
+
+### Livewire matrix test (RolePermissionMatrixTest) — 35/35 PASS
+Feature test data-driven `#[DataProvider('matrixProvider')]` phủ **5 role × 7 nguồn = 35 case**. Với mỗi case: mount `Livewire::test('leads.lead-form')` actingAs user, set sourceGroup, call save, assert:
+- Role được phép up nguồn → **assertHasNoErrors('sourceGroup')**.
+- Role không được phép → **assertHasErrors('sourceGroup')** + `assertDatabaseMissing('leads', ...)`.
+
+Bảng expected (đồng bộ với `Lead::SOURCE_PERMISSIONS` + role perms hiện tại):
+
+|  | mkt | mkt_br | sa | ba | bdm | bod | wi |
+|---|---|---|---|---|---|---|---|
+| Trực Page | ✓ | – | – | – | – | – | – |
+| Team Tele | – | – | – | ✓ | – | – | – |
+| Team sale | – | ✓ | ✓ | – | – | – | – |
+| CM sale | – | ✓ | ✓ | – | ✓ | ✓ | ✓ |
+| Admin cơ sở (source_all) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+
+Regression full: 99/100 pass. 1 fail pre-existing (DistributionEngineTest notification, không liên quan).
+
 ### Chưa làm / dời lại
 - Guide page (`resources/views/guide.blade.php`): mới thay ảnh `flow.jpg`; text 4 role (CM/Booking/Sale/Observer) + 3 section phụ (Thu hồi/Đặt booking/Đà Nẵng) chưa viết lại theo vị trí mới (Trực Page/Tele/QL Sale/Sale + 7 nguồn). Chờ mày chốt scope trước khi rewrite.
 - Nếu Trực Page không được kiêm chia số → gỡ `lead.distribute_tele` ở `OrgStaffSeeder.php:157` + migration UPDATE detach cho role hiện tại. Chờ mày chốt.
