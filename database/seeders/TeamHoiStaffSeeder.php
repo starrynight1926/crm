@@ -42,7 +42,7 @@ class TeamHoiStaffSeeder extends Seeder
                 $user = User::create([
                     'name' => $full,
                     'email' => 'tmp_' . Str::random(12) . '@placeholder.local',
-                    'password' => '59@ntn',
+                    'password' => \App\Support\DefaultPassword::HN,
                     'status' => User::STATUS_ACTIVE,
                 ]);
                 $user->update(['email' => $this->initials($full) . $user->id . '@longevity.com.vn']);

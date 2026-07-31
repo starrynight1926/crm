@@ -330,7 +330,7 @@ class DemoDataSeeder extends Seeder
         } else {
             $user = User::create([
                 'email' => $email, 'name' => $name,
-                'password' => '59@ntn', 'status' => User::STATUS_ACTIVE,
+                'password' => \App\Support\DefaultPassword::forEmail($email), 'status' => User::STATUS_ACTIVE,
             ]);
         }
 

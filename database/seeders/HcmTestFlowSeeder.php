@@ -33,7 +33,7 @@ class HcmTestFlowSeeder extends Seeder
             $user = User::create([
                 'username' => 'cmbooking_ashley', 'name' => 'CM Booking Team Ashley',
                 'email' => 'cmbooking_ashley@longevity.com.vn',
-                'password' => '59@ntn', 'status' => User::STATUS_ACTIVE,
+                'password' => \App\Support\DefaultPassword::HCM, 'status' => User::STATUS_ACTIVE,
             ]);
         }
 

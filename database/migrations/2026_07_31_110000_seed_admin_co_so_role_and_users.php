@@ -5,9 +5,9 @@ use App\Models\OrgUnit;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\User;
+use App\Support\DefaultPassword;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Hash;
 
 /**
  * Tạo role "Admin cơ sở" + 3 tài khoản admin.hn / admin.dn / admin.hcm.
@@ -17,8 +17,6 @@ use Illuminate\Support\Facades\Hash;
  * KHÔNG có quyền quản trị công ty (org/user/role/service/rule.manage).
  */
 return new class extends Migration {
-    private const PASSWORD = '59@ntn'; // giống dev pattern (DemoDataSeeder)
-
     private const ACCOUNTS = [
         ['username' => 'admin.hn',  'name' => 'Admin Cơ sở Hà Nội',  'branch' => 'branch-hn'],
         ['username' => 'admin.hcm', 'name' => 'Admin Cơ sở HCM',     'branch' => 'branch-hcm'],
@@ -66,7 +64,7 @@ return new class extends Migration {
                 $user = User::create([
                     'email'    => $email,
                     'name'     => $acc['name'],
-                    'password' => self::PASSWORD, // model cast 'hashed' sẽ tự bcrypt
+                    'password' => DefaultPassword::forEmail($email), // model cast 'hashed' sẽ tự bcrypt
                     'status'   => User::STATUS_ACTIVE,
                 ]);
             } else {

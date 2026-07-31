@@ -24,8 +24,6 @@ use Illuminate\Database\Seeder;
  */
 class RealCmStaffSeeder extends Seeder
 {
-    private const PASSWORD = '59@ntn';
-
     public function run(): void
     {
         $rootCompany = OrgUnit::firstWhere('code', 'company');
@@ -109,7 +107,7 @@ class RealCmStaffSeeder extends Seeder
             } else {
                 $user = User::create([
                     'email' => $email, 'name' => $name, 'job_title' => $jobTitle,
-                    'password' => self::PASSWORD, 'status' => User::STATUS_ACTIVE,
+                    'password' => \App\Support\DefaultPassword::forEmail($email), 'status' => User::STATUS_ACTIVE,
                 ]);
             }
 
@@ -174,7 +172,7 @@ class RealCmStaffSeeder extends Seeder
             } else {
                 $user = User::create([
                     'email' => $email, 'name' => $userName, 'job_title' => 'CM Team',
-                    'password' => self::PASSWORD, 'status' => User::STATUS_ACTIVE,
+                    'password' => \App\Support\DefaultPassword::forEmail($email), 'status' => User::STATUS_ACTIVE,
                 ]);
             }
 

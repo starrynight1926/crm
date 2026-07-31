@@ -90,7 +90,7 @@ class Phase66FlowSeeder extends Seeder
                 ['email' => $email],
                 [
                     'name' => $name,
-                    'password' => '59@ntn',
+                    'password' => \App\Support\DefaultPassword::HN,
                     'status' => User::STATUS_ACTIVE,
                 ]
             );

@@ -33,7 +33,7 @@ class HnDnTestFlowSeeder extends Seeder
             $user = User::create([
                 'username' => 'cmsale_giang', 'name' => 'CM Sale Team Giang',
                 'email' => 'cmsale_giang@longevity.com.vn',
-                'password' => '59@ntn', 'status' => User::STATUS_ACTIVE,
+                'password' => \App\Support\DefaultPassword::HN, 'status' => User::STATUS_ACTIVE,
             ]);
         }
 

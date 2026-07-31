@@ -139,6 +139,25 @@ Bảng expected (đồng bộ với `Lead::SOURCE_PERMISSIONS` + role perms hi�
 
 Regression full: 99/100 pass. 1 fail pre-existing (DistributionEngineTest notification, không liên quan).
 
+### Password mặc định theo cơ sở (2026-07-31 cuối ngày)
+User đề xuất: password dùng địa chỉ cơ sở cho dễ nhớ, mỗi cơ sở 1 pass.
+
+| Prefix email | Password | Địa chỉ / nguồn |
+|---|---|---|
+| `hn.*` + `admin.hn` | `59@ntn` | 59 Ngô Thì Nhậm (HN) |
+| `hcm.*` + `admin.hcm` | `207@nvt` | 207 Nguyễn Văn Thụ (HCM) |
+| `dn.*` + `admin.dn` | `23@tdn` | Lô 2+3 Trần Đăng Ninh (ĐN) |
+| `vh.*` + `admin` | `59ntn` | Vận hành (không có @) |
+
+**Thực hiện:**
+- Tạo helper `App\Support\DefaultPassword` — `::forEmail($email)` resolve theo prefix; `::HN/HCM/DN/VH` const cho seeder biết cứng branch.
+- Migration `2026_07_31_130000_reset_default_passwords_per_facility.php` — UPDATE toàn bộ user hiện có (chunk 200) theo pattern email, bỏ qua `bs./ktv./dd.` sync từ sbooking. Chạy 11s.
+- Sửa các seeder + migration khác dùng helper: `OrgStaffSeeder`, `DemoDataSeeder`, `HcmTestFlowSeeder`, `HnDnTestFlowSeeder`, `TeamHoiStaffSeeder`, `Phase66FlowSeeder`, `RealCmStaffSeeder` (bỏ const `PASSWORD`), migration Admin cơ sở (`2026_07_31_110000`). Re-seed sau không lệch.
+- `SyncCrmAccountsSeeder` giữ nguyên (đang đồng bộ với sbooking, không thuộc scope CRM).
+- Update 2 HTML docs (qa_checklist + huong_dan_van_hanh) — hiển thị bảng password theo cơ sở.
+
+**Verify** (10 case tinker): 10/10 pass — mọi user check password khớp cơ sở.
+
 ### Chưa làm / dời lại
 - Guide page (`resources/views/guide.blade.php`): mới thay ảnh `flow.jpg`; text 4 role (CM/Booking/Sale/Observer) + 3 section phụ (Thu hồi/Đặt booking/Đà Nẵng) chưa viết lại theo vị trí mới (Trực Page/Tele/QL Sale/Sale + 7 nguồn). Chờ mày chốt scope trước khi rewrite.
 - Nếu Trực Page không được kiêm chia số → gỡ `lead.distribute_tele` ở `OrgStaffSeeder.php:157` + migration UPDATE detach cho role hiện tại. Chờ mày chốt.
