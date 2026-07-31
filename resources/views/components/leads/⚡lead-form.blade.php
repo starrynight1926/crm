@@ -239,17 +239,30 @@ new class extends Component
      * Phase 6.21i — Chuyển lead sang Sale phụ trách (chọn ở Phase 4).
      * Reuse pattern giống Phase 2 (chọn Tele), nhưng filter user theo role có lead.consult.
      */
-    public function assignToSale(int $userId): void
+    /**
+     * Assign chuyên viên tư vấn (CV1 hoặc CV2) — dùng ở phase 4.
+     * Rule (2026-08-01):
+     *   - Yêu cầu booking_status = booked (rule cứng — không cho set sale nếu chưa booked).
+     *   - Yêu cầu perm lead.distribute_sale / distribute / phase.rollback.
+     *   - CV1 = handoff chính: set owner_id=userId, receiver_id=owner cũ (giữ tele lịch sử),
+     *     pipeline_phase=sale, pipeline_status=in_care, consultant_1_id=userId. Auto-close P4.
+     *   - CV2 = chỉ set consultant_2_id (phụ chăm sóc). Không đổi owner.
+     */
+    public function assignToSale(int $userId, int $slot = 1): void
     {
         if (! $this->lead) {
             session()->flash('cf_error', 'Lead chưa tồn tại.');
+            return;
+        }
+        if ($this->lead->booking_status !== Lead::BOOKING_BOOKED) {
+            session()->flash('cf_error', 'Chưa đặt booking cho khách. Đặt booking + duyệt xong mới gán được chuyên viên tư vấn.');
             return;
         }
         $viewer = auth()->user();
         if (! $viewer->hasPermission('lead.distribute_sale')
             && ! $viewer->hasPermission('phase.rollback')
             && ! $viewer->hasPermission('lead.distribute')) {
-            session()->flash('cf_error', 'Không có quyền chuyển Sale (cần lead.distribute_sale).');
+            session()->flash('cf_error', 'Không có quyền phân bổ Sale (cần lead.distribute_sale).');
             return;
         }
         $sale = User::find($userId);
@@ -257,14 +270,37 @@ new class extends Component
             session()->flash('cf_error', 'Không tìm thấy user.');
             return;
         }
+        if ($slot === 2) {
+            $this->lead->update(['consultant_2_id' => $sale->id]);
+            $this->consultant2Id = $sale->id;
+            $this->lead->refresh();
+            session()->flash('cf_ok', 'Đã gán CV tư vấn 2: ' . $sale->name);
+            return;
+        }
+        // CV1 — handoff chính
+        $prevOwnerId = $this->lead->owner_id;
         $this->lead->update([
-            'owner_id'    => $sale->id,
-            'assigned_at' => now(),
-            'pool_level'  => Lead::POOL_PERSONAL,
+            'owner_id'         => $sale->id,
+            'receiver_id'      => $prevOwnerId ?: $this->lead->receiver_id, // giữ tele cũ nếu có
+            'assigned_at'      => now(),
+            'pool_level'       => Lead::POOL_PERSONAL,
+            'pipeline_phase'   => Lead::PHASE_SALE,
+            'pipeline_status'  => Lead::PSTATUS_IN_CARE,
+            'consultant_1_id'  => $sale->id,
+            'org_unit_id'      => $sale->assignments->first()?->org_unit_id ?: $this->lead->org_unit_id,
         ]);
+        // Auto-close phase 4 để indicator xanh.
+        \App\Models\LeadPhaseClosure::updateOrCreate(
+            ['lead_id' => $this->lead->id, 'phase' => Lead::CF_PHASE_BOOKING],
+            ['closed_by' => $viewer->id, 'closed_at' => now(), 'note' => 'Auto-close: gán CV tư vấn 1']
+        );
+        if ((int) $this->lead->phase <= Lead::CF_PHASE_BOOKING) {
+            $this->lead->update(['phase' => Lead::CF_PHASE_CHECKIN]);
+        }
         $this->lead->refresh();
-        LeadStatusLog::record($this->lead, 'assigned_sale', null, 'Chuyển sang Sale: ' . $sale->name, $viewer->id);
-        session()->flash('cf_ok', 'Đã chuyển lead sang Sale: ' . $sale->name);
+        $this->consultant1Id = $sale->id;
+        LeadStatusLog::record($this->lead, 'assigned_sale', null, 'Gán CV1 + chuyển phase Sale: ' . $sale->name, $viewer->id);
+        session()->flash('cf_ok', 'Đã gán CV tư vấn 1 + chuyển lead sang phase Sale: ' . $sale->name);
     }
 
     /**
@@ -1547,36 +1583,11 @@ new class extends Component
                     </div>
                 </div>
 
-                {{-- Form Phân bổ Sale — chỉ CM có perm mới thấy --}}
-                @if ($canAssignSale && $lead?->exists)
-                    <div class="border-t border-gold-200 pt-5">
-                        <h3 class="font-bold text-gold-700 mb-4 flex items-center gap-2 text-sm">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M18 7.5v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"/></svg>
-                            Chọn Sale để bàn giao (Do CM chia)
-                        </h3>
-                        <div x-data="{ open: false, q: '' }" @click.outside="open = false" class="relative">
-                            <label class="block text-sm font-medium mb-1.5">CHUYÊN VIÊN TƯ VẤN</label>
-                            <input type="text" x-model="q" @focus="open = true" placeholder="Gõ tên chuyên viên tư vấn..."
-                                   class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
-                            <div x-show="open" x-cloak class="absolute z-20 mt-1 w-full max-h-56 overflow-y-auto bg-white border border-gold-200 rounded-lg shadow-card">
-                                @forelse ($consultantUsers as $u)
-                                    <button type="button" wire:click="assignToSale({{ $u['id'] }})" @click="open = false; q = ''"
-                                            x-show="q === '' || '{{ mb_strtolower(str_replace("'", "\\'", $u['name'])) }}'.includes(q.toLowerCase())"
-                                            class="block w-full text-left px-3 py-2 text-sm hover:bg-gold-50">
-                                        {{ $u['name'] }}
-                                    </button>
-                                @empty
-                                    <p class="px-3 py-2 text-sm text-ink/40">Không tìm thấy nhân viên tư vấn trong scope.</p>
-                                @endforelse
-                            </div>
-                            <p class="text-xs text-ink/50 mt-1.5">Chọn xong → bấm "Kết thúc phase 4" ở footer để chuyển sang phase Check-in.</p>
-                        </div>
-                    </div>
-                @elseif (! $canAssignSale)
-                    <div class="border-t border-gold-200 pt-4 text-sm text-ink/60 italic">
-                        Bạn không có quyền phân bổ Sale (cần <code>lead.distribute_sale</code>). CM sale sẽ chọn Sale cho lead này.
-                    </div>
-                @endif
+                {{-- Form "Chọn Sale để bàn giao" đã move sang section "Bác sĩ tư vấn" (CV1, CV2)
+                     — chỉ mở khi booking_status=booked (rule 2026-08-01). --}}
+                <div class="border-t border-gold-200 pt-4 text-xs text-ink/50 italic">
+                    Chọn "Chuyên viên tư vấn 1, 2" ở section <b>Bác sĩ tư vấn</b> bên dưới — chỉ mở sau khi lịch booking được duyệt.
+                </div>
             </div>
 
             {{-- Bác sĩ tư vấn (bác sĩ + chuyên viên tư vấn) — Phase 4 (Booking) --}}
@@ -1687,12 +1698,28 @@ new class extends Component
                         </div>
                     @endforeach
 
-                    {{-- CHUYÊN VIÊN TƯ VẤN — user team sale trong subtree org_unit của lead --}}
-                    <?php $consultantDropdowns = [
-                        ['label' => 'CHUYÊN VIÊN TƯ VẤN 1', 'wireModel' => 'consultant1Id', 'current' => $consultant1Id, 'slot' => 0],
-                        ['label' => 'CHUYÊN VIÊN TƯ VẤN 2', 'wireModel' => 'consultant2Id', 'current' => $consultant2Id, 'slot' => 1],
-                        ['label' => 'CHUYÊN VIÊN TƯ VẤN 3', 'wireModel' => 'consultant3Id', 'current' => $consultant3Id, 'slot' => 2],
-                    ]; ?>
+                    {{-- Rule 2026-08-01: CV1, CV2 chỉ mở khi booking_status=booked + user có
+                         perm distribute_sale (Admin cơ sở). CV1 pick = handoff Sale luôn. --}}
+                    @php
+                        $_bookedForCv = $lead?->booking_status === \App\Models\Lead::BOOKING_BOOKED;
+                        $_canAssignCv = auth()->user()->hasPermission('lead.distribute_sale')
+                            || auth()->user()->hasPermission('phase.rollback')
+                            || auth()->user()->hasPermission('lead.distribute');
+                    @endphp
+                    @if (! $_bookedForCv)
+                        <div class="p-3 bg-amber-50 border border-amber-200 rounded-md text-sm text-amber-800">
+                            <b>Chờ booking được duyệt.</b> Sau khi <code>booking_status = booked</code> (sbooking duyệt lịch), Admin cơ sở mới chọn được Chuyên viên tư vấn 1, 2.
+                        </div>
+                    @elseif (! $_canAssignCv)
+                        <div class="p-3 bg-slate-50 border border-slate-200 rounded-md text-sm text-ink/60 italic">
+                            Chỉ Admin cơ sở (perm <code>lead.distribute_sale</code>) mới chọn được Chuyên viên tư vấn.
+                        </div>
+                    @endif
+                    <?php $consultantDropdowns = ($_bookedForCv && $_canAssignCv) ? [
+                        ['label' => 'CHUYÊN VIÊN TƯ VẤN 1', 'wireModel' => 'consultant1Id', 'current' => $consultant1Id, 'slot' => 0, 'call' => 1],
+                        ['label' => 'CHUYÊN VIÊN TƯ VẤN 2', 'wireModel' => 'consultant2Id', 'current' => $consultant2Id, 'slot' => 1, 'call' => 2],
+                        ['label' => 'CHUYÊN VIÊN TƯ VẤN 3', 'wireModel' => 'consultant3Id', 'current' => $consultant3Id, 'slot' => 2, 'call' => null],
+                    ] : []; ?>
                     @foreach ($consultantDropdowns as $cv)
                         <?php
                             $cvCurrentName = $cv['current']
@@ -1732,7 +1759,11 @@ new class extends Component
                                     this.selectedName = name;
                                     this.open = false;
                                     this.search = '';
-                                    $wire.set('{{ $cv['wireModel'] }}', id);
+                                    @if (! empty($cv['call']))
+                                        $wire.call('assignToSale', id, {{ $cv['call'] }});
+                                    @else
+                                        $wire.set('{{ $cv['wireModel'] }}', id);
+                                    @endif
                                 },
                                 clear() {
                                     this.selectedId = null;
