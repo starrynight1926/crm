@@ -1486,9 +1486,21 @@ new class extends Component
                 $canAssignSale = auth()->user()->hasPermission('lead.distribute_sale')
                     || auth()->user()->hasPermission('phase.rollback')
                     || auth()->user()->hasPermission('lead.distribute');
-                $currentSale = $lead?->owner;
-                $teleClosedBy = $lead?->phaseClosures->firstWhere('phase', 3)?->closed_by;
-                $teleName = $teleClosedBy ? \App\Models\User::find($teleClosedBy)?->name : null;
+                // Owner khi lead ở phase Booking = tele đang xử lý; khi phase Sale = sale.
+                // Fix 2026-08-01: hiển thị đúng theo pipeline_phase, không quy tất cả về "sale".
+                $inBookingPhase = $lead?->pipeline_phase === \App\Models\Lead::PHASE_BOOKING;
+                $currentTele = $inBookingPhase ? $lead?->owner : null;
+                $currentSale = $inBookingPhase ? null : $lead?->owner;
+                // Fallback lịch sử: nếu phase 3 đã đóng nhưng owner đã sang sale → đọc closer.
+                if (! $currentTele && $lead) {
+                    $teleClosedBy = $lead->phaseClosures->firstWhere('phase', 3)?->closed_by;
+                    $currentTele = $teleClosedBy ? \App\Models\User::find($teleClosedBy) : null;
+                }
+                // Team đang giữ: khi phase Booking, dùng team Tele mà tele viên thuộc về;
+                // khi phase Sale, dùng org_unit_id hiện tại của lead.
+                $holdingTeamName = $inBookingPhase
+                    ? ($currentTele?->assignments->first()?->orgUnit?->name ?? $lead?->orgUnit?->name)
+                    : ($lead?->orgUnit?->name);
             @endphp
             <div x-show="phase === 4" x-cloak class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
                 <h2 class="font-bold text-gold-700 mb-5 flex items-center gap-2">
@@ -1504,11 +1516,11 @@ new class extends Component
                     </div>
                     <div>
                         <label class="block text-xs font-medium text-ink/60 mb-1">Team đang giữ</label>
-                        <div class="px-3 py-2 border border-gold-200 rounded-md bg-slate-50">{{ $lead?->orgUnit?->name ?? '—' }}</div>
+                        <div class="px-3 py-2 border border-gold-200 rounded-md bg-slate-50">{{ $holdingTeamName ?? '—' }}</div>
                     </div>
                     <div>
                         <label class="block text-xs font-medium text-ink/60 mb-1">Tele đã xử lý</label>
-                        <div class="px-3 py-2 border border-gold-200 rounded-md bg-slate-50">{{ $teleName ?? '—' }}</div>
+                        <div class="px-3 py-2 border border-gold-200 rounded-md {{ $currentTele ? 'bg-slate-50' : 'bg-slate-50 text-ink/50 italic' }}">{{ $currentTele?->name ?? '—' }}</div>
                     </div>
                     <div>
                         <label class="block text-xs font-medium text-ink/60 mb-1">Sale phụ trách</label>
