@@ -88,12 +88,12 @@ new class extends Component
             <p class="text-sm text-ink/60">Số liệu tháng {{ now()->format('m/Y') }} — tự cập nhật mỗi phút.</p>
         </div>
         <div class="flex items-center gap-2">
-            @can('lead.create')
+            @if (auth()->user()->hasPermission('lead.create'))
                 <a href="{{ route('leads.create') }}" class="text-sm font-semibold text-white bg-gold-600 hover:bg-gold-700 px-4 py-2.5 rounded-md inline-flex items-center gap-1.5">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
                     Thêm mới khách hàng
                 </a>
-            @endcan
+            @endif
             @if (auth()->user()->hasAnyPermission(['report.view', 'report.view_all']))
                 <a href="{{ route('reports.index') }}" class="text-sm font-semibold text-gold-700 border border-gold-300 hover:bg-gold-50 px-4 py-2.5 rounded-md">Xem báo cáo chi tiết →</a>
             @endif

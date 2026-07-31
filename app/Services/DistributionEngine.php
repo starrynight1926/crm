@@ -411,14 +411,17 @@ class DistributionEngine
      */
     protected function autoClosePhase(Lead $lead, int $phase, ?int $actorId): void
     {
-        if ($lead->isBulkOpen()) return;
-        if (\App\Models\LeadPhaseClosure::where('lead_id', $lead->id)->where('phase', $phase)->exists()) return;
-        \App\Models\LeadPhaseClosure::create([
-            'lead_id' => $lead->id, 'phase' => $phase,
-            'closed_by' => $actorId, 'closed_at' => now(),
-            'note' => 'Auto-close (event)',
-        ]);
-        if ((int) $lead->phase === $phase) {
+        // Đảm bảo tất cả phase trước $phase cũng closed (nếu Admin chia số ở P2 mà
+        // lead chưa qua P1 auto-close, cũng close P1 luôn để indicator liền mạch).
+        for ($p = 1; $p <= $phase; $p++) {
+            if (\App\Models\LeadPhaseClosure::where('lead_id', $lead->id)->where('phase', $p)->exists()) continue;
+            \App\Models\LeadPhaseClosure::create([
+                'lead_id' => $lead->id, 'phase' => $p,
+                'closed_by' => $actorId, 'closed_at' => now(),
+                'note' => 'Auto-close (event)',
+            ]);
+        }
+        if ((int) $lead->phase <= $phase) {
             $lead->update(['phase' => min($phase + 1, 5)]);
         }
     }

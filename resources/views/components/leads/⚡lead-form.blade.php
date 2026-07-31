@@ -711,15 +711,13 @@ new class extends Component
         $lead->load('customValues');
         $lead->generateCode();
 
-        // Fix Wave 1 #5-UI (2026-07-31): auto-chốt phase 1 sau khi tạo lead nếu user có perm
-        // → indicator phase 1 chuyển xanh lá ngay, không phải bấm nút "Kết thúc phase" nữa.
-        if ($user->hasPermission(Lead::CF_PHASE_CLOSE_PERM[Lead::CF_PHASE_NEW] ?? 'phase.close.new')) {
-            \App\Models\LeadPhaseClosure::updateOrCreate(
-                ['lead_id' => $lead->id, 'phase' => Lead::CF_PHASE_NEW],
-                ['closed_by' => $user->id, 'closed_at' => now(), 'note' => 'Auto-close khi tạo lead']
-            );
-            $lead->update(['phase' => min(Lead::CF_PHASE_NEW + 1, 5)]);
-        }
+        // Auto-chốt phase 1 sau khi tạo lead (system event, không cần perm — Trực Page
+        // không có phase.close.new nhưng vẫn tạo được lead → auto close cho họ).
+        \App\Models\LeadPhaseClosure::updateOrCreate(
+            ['lead_id' => $lead->id, 'phase' => Lead::CF_PHASE_NEW],
+            ['closed_by' => $user->id, 'closed_at' => now(), 'note' => 'Auto-close khi tạo lead']
+        );
+        $lead->update(['phase' => min(Lead::CF_PHASE_NEW + 1, 5)]);
 
         LeadStatusLog::record($lead, 'created', null, 'Nhập tay bởi ' . $user->name, $user->id);
         AuditLog::record('create', $lead);
