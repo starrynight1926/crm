@@ -833,7 +833,9 @@ class Lead extends Model
     {
         if (! $this->isVisibleTo($user)) return false;
         if ($user->hasPermission('phase.rollback')) return true;
-        if ($user->hasPermission('lead.distribute_sale')) return true;
+        // Chỉ owner mới ghi call — Admin cơ sở/CM Sale KHÔNG được thao tác phase 3
+        // (fix bug 2026-08-01: Admin cơ sở nhập được data phase 3 mặc dù chỉ có
+        // quyền phase 2 + phase 4). CM Tele cần thì cấp perm phase.close.call riêng.
         return $this->isOwnedBy($user);
     }
 
@@ -842,7 +844,8 @@ class Lead extends Model
     {
         if (! $this->isVisibleTo($user)) return false;
         if ($user->hasPermission('phase.rollback')) return true;
-        if ($user->hasPermission('lead.distribute_sale')) return true;
+        // Có lead.book_action (Admin cơ sở, CM sale, Sale, Tele, Team sale ĐN) — đúng phase 4.
+        if ($user->hasPermission('lead.book_action')) return true;
         return $this->isOwnedBy($user);
     }
 
