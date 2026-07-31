@@ -260,6 +260,12 @@ class Lead extends Model
      */
     public function moveToSaleWaiting(): void
     {
+        // Rule cứng: chỉ được bàn giao sang phase Sale khi khách đã đặt booking.
+        // Áp cho mọi caller (kể cả sale/tele tự care) — tránh gán tên sale khi khách chưa book.
+        if ($this->booking_status !== self::BOOKING_BOOKED) {
+            throw new \DomainException('Chưa đặt booking cho khách. Đặt booking xong mới được chuyển sang phase Sale.');
+        }
+
         // Đưa lead về kho chung để CM sale chia số ở kho Sale.
         // Owner cũ (booking user) → chuyển vào receiver_id để giữ lịch sử người vừa bàn giao;
         // owner_id null + pool_level=common → CM sale thấy trong pool để chia.

@@ -24,6 +24,17 @@ new class extends Component
 
     public string $fDateTo = '';
 
+    /**
+     * Filter theo bước trong Customer Flow (Phase 2..5).
+     * Rỗng = không lọc. Options:
+     *   waiting_tele  — Chờ chia — Tele  (gate: lead.distribute_tele)
+     *   waiting_sale  — Chờ chia — Sale  (gate: lead.distribute_sale)
+     *   in_care       — Đang care        (pipeline_status=in_care, chưa book)
+     *   booked        — Đã đặt booking   (booking_status=booked)
+     *   checkin       — Đã check-in      (booking_status in nhóm đã tới)
+     */
+    public string $fPhase = '';
+
     public bool $showExportModal = false;
 
     /** Key các cột được chọn để xuất (core: tên cột; custom: cf_{id}). */
@@ -65,7 +76,7 @@ new class extends Component
 
     public function updated($property): void
     {
-        if (in_array($property, ['search', 'fClassification', 'fCamp', 'fNguon', 'fDateFrom', 'fDateTo'])) {
+        if (in_array($property, ['search', 'fClassification', 'fCamp', 'fNguon', 'fDateFrom', 'fDateTo', 'fPhase'])) {
             $this->resetPage();
             $this->reset('selected', 'selectAll');
         }
@@ -262,6 +273,21 @@ new class extends Component
                 $cv->where('custom_field_id', 1)->where('value', $this->fNguon)))
             ->when($this->fDateFrom, fn ($q) => $q->where('received_date', '>=', $this->fDateFrom))
             ->when($this->fDateTo, fn ($q) => $q->where('received_date', '<=', $this->fDateTo))
+            ->when($this->fPhase, function ($q) {
+                match ($this->fPhase) {
+                    'waiting_tele' => $q->where('pipeline_phase', Lead::PHASE_BOOKING)
+                        ->where('pipeline_status', Lead::PSTATUS_WAITING),
+                    'waiting_sale' => $q->where('pipeline_phase', Lead::PHASE_SALE)
+                        ->where('pipeline_status', Lead::PSTATUS_WAITING),
+                    'in_care' => $q->where('pipeline_status', Lead::PSTATUS_IN_CARE)
+                        ->whereIn('booking_status', [Lead::BOOKING_NOT_BOOKED, Lead::BOOKING_RESCHEDULED]),
+                    'booked' => $q->where('booking_status', Lead::BOOKING_BOOKED),
+                    'checkin' => $q->whereIn('booking_status', [
+                        Lead::BOOKING_KHACH_DA_TOI, Lead::BOOKING_KHACH_TOI_TRE, Lead::BOOKING_DA_XONG,
+                    ]),
+                    default => null,
+                };
+            })
             ->orderByDesc('received_date')
             ->orderByDesc('id');
     }
@@ -475,6 +501,34 @@ new class extends Component
                 </select>
             </div>
         @endif
+        @php
+            $_u = auth()->user();
+            $_phaseOpts = [
+                'in_care' => 'Đang care',
+                'booked'  => 'Đã đặt booking',
+                'checkin' => 'Đã check-in',
+            ];
+            if ($_u->hasPermission('lead.distribute_tele')) {
+                $_phaseOpts = ['waiting_tele' => 'Chờ chia — Tele'] + $_phaseOpts;
+            }
+            if ($_u->hasPermission('lead.distribute_sale')) {
+                // chèn "Chờ chia — Sale" ngay sau (hoặc trước) waiting_tele
+                $_phaseOpts = array_merge(
+                    array_slice($_phaseOpts, 0, isset($_phaseOpts['waiting_tele']) ? 1 : 0),
+                    ['waiting_sale' => 'Chờ chia — Sale'],
+                    array_slice($_phaseOpts, isset($_phaseOpts['waiting_tele']) ? 1 : 0),
+                );
+            }
+        @endphp
+        <div class="min-w-[160px] flex-1">
+            <label class="block text-xs font-semibold text-ink/50 mb-1">Trạng thái xử lý</label>
+            <select wire:model.live="fPhase" class="w-full border border-gold-200 rounded-md px-2.5 py-2 text-sm bg-white focus:outline-none focus:border-gold-500">
+                <option value="">Tất cả</option>
+                @foreach ($_phaseOpts as $key => $label)
+                    <option value="{{ $key }}">{{ $label }}</option>
+                @endforeach
+            </select>
+        </div>
         <div class="min-w-[180px] flex-[2]">
             <label class="block text-xs font-semibold text-ink/50 mb-1">Tìm kiếm</label>
             <input type="search" wire:model.live.debounce.300ms="search" placeholder="Tên hoặc SĐT..."

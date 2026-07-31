@@ -354,13 +354,18 @@ new class extends Component
         abort_unless($this->lead->pipeline_phase === Lead::PHASE_BOOKING, 422,
             'Lead không ở phase Booking, không thể chuyển.');
         abort_unless(
-            auth()->user()->hasAnyPermission(['lead.update_booking', 'lead.distribute_booking'])
+            auth()->user()->hasAnyPermission(['lead.update_booking', 'lead.distribute_tele'])
                 && $this->lead->isVisibleTo(auth()->user()),
             403
         );
 
         $before = $this->lead->pipelineLabel();
-        $this->lead->moveToSaleWaiting();
+        try {
+            $this->lead->moveToSaleWaiting();
+        } catch (\DomainException $e) {
+            session()->flash('cf_error', $e->getMessage());
+            return;
+        }
         LeadStatusLog::record(
             $this->lead, 'pipeline_phase', $before, $this->lead->pipelineLabel(),
             auth()->id()
