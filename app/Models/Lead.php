@@ -839,6 +839,14 @@ class Lead extends Model
         return $this->owner_id !== null && $this->owner_id === $user->id;
     }
 
+    /** User có được ghi check-in (phase 5) không. Rule giống canLogCall — chỉ owner. */
+    public function canCheckin(User $user): bool
+    {
+        if (! $this->isVisibleTo($user)) return false;
+        if ($user->hasPermission('phase.rollback')) return true;
+        return $this->owner_id !== null && $this->owner_id === $user->id;
+    }
+
     /** User có được ghi booking_log không. */
     public function canLogBooking(User $user): bool
     {

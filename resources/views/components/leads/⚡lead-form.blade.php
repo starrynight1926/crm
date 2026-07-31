@@ -959,11 +959,14 @@ new class extends Component
         $canRollback = $u->hasPermission(Lead::CF_ROLLBACK_PERM);
         $canLogCallHere = $this->lead?->exists ? $this->lead->canLogCall($u) : true;
         $canLogBookingHere = $this->lead?->exists ? $this->lead->canLogBooking($u) : true;
+        $canCheckinHere = $this->lead?->exists ? $this->lead->canCheckin($u) : true;
         if ($this->lead?->exists) {
             $closedPhases = $this->lead->phaseClosures->pluck('phase')->all();
             for ($p = 1; $p <= 5; $p++) {
                 $lockedByClosure = in_array($p, $closedPhases, true) && ! $canRollback;
-                $lockedByPerm = ($p === 3 && ! $canLogCallHere) || ($p === 4 && ! $canLogBookingHere);
+                $lockedByPerm = ($p === 3 && ! $canLogCallHere)
+                    || ($p === 4 && ! $canLogBookingHere)
+                    || ($p === 5 && ! $canCheckinHere);
                 $phaseLocked[$p] = $lockedByClosure || $lockedByPerm;
             }
         } else {
