@@ -1906,6 +1906,26 @@ new class extends Component
                     Trạng thái chăm sóc
                     @if ($phaseLocked[3] ?? false)<span class="ml-2 text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-500 font-normal">Chỉ đọc (không có quyền)</span>@endif
                 </h2>
+
+                @if ($lead?->exists)
+                    @php
+                        // Sale phụ trách: sau khi handoff sang phase Sale, owner = sale.
+                        // Trước handoff (lead vẫn phase Booking), lấy closer phase 4 nếu có,
+                        // else "chưa phân".
+                        $_p3Sale = null;
+                        if ($lead->pipeline_phase === \App\Models\Lead::PHASE_SALE) {
+                            $_p3Sale = $lead->owner?->name;
+                        } else {
+                            $_p3ClosedBy = $lead->phaseClosures->firstWhere('phase', 4)?->closed_by;
+                            $_p3Sale = $_p3ClosedBy ? \App\Models\User::find($_p3ClosedBy)?->name : null;
+                        }
+                    @endphp
+                    <div class="mb-4 p-3 bg-slate-50 border border-gold-200 rounded-md text-sm">
+                        <span class="text-xs font-medium text-ink/60">Sale phụ trách:</span>
+                        <b class="ml-2 {{ $_p3Sale ? 'text-emerald-700' : 'text-ink/40 italic font-normal' }}">{{ $_p3Sale ?? '— chưa phân —' }}</b>
+                    </div>
+                @endif
+
                 <fieldset @if ($phaseLocked[3] ?? false) disabled @endif class="space-y-4 border-0 p-0 m-0">
                     <div>
                         <label class="block text-sm font-medium mb-1.5">Ghi nhận tình trạng lần 1</label>
@@ -2090,13 +2110,20 @@ new class extends Component
                         <label class="block text-xs font-medium text-ink/60 mb-1">Team đang giữ</label>
                         <div class="px-3 py-2 border border-gold-200 rounded-md bg-slate-50">{{ $lead?->orgUnit?->name ?? '— chưa chia —' }}</div>
                     </div>
+                    @php
+                        $_isBooking = $lead?->pipeline_phase === \App\Models\Lead::PHASE_BOOKING;
+                        $_ownerLabel = $_isBooking ? 'Tele phụ trách' : 'Sale phụ trách';
+                        $_importedName = $lead?->imported_by
+                            ? \App\Models\User::find($lead->imported_by)?->name
+                            : $lead?->receiver?->name;
+                    @endphp
                     <div>
-                        <label class="block text-xs font-medium text-ink/60 mb-1">Sale phụ trách</label>
+                        <label class="block text-xs font-medium text-ink/60 mb-1">{{ $_ownerLabel }}</label>
                         <div class="px-3 py-2 border border-gold-200 rounded-md bg-slate-50">{{ $lead?->owner?->name ?? '— chưa chia —' }}</div>
                     </div>
                     <div>
-                        <label class="block text-xs font-medium text-ink/60 mb-1">Người nhận đầu</label>
-                        <div class="px-3 py-2 border border-gold-200 rounded-md bg-slate-50">{{ $lead?->receiver?->name ?? '—' }}</div>
+                        <label class="block text-xs font-medium text-ink/60 mb-1">Người nhập</label>
+                        <div class="px-3 py-2 border border-gold-200 rounded-md bg-slate-50">{{ $_importedName ?? '—' }}</div>
                     </div>
                 </div>
 
