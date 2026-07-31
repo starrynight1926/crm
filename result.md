@@ -66,6 +66,20 @@ Kết luận:
 - **Ẩn P2 với role không có perm distribute_***: Team Tele + Team sale ĐN + Observer không thấy `waiting_tele/waiting_sale` — đúng.
 - **Đảo lại: Trực Page HIỆN option `waiting_tele`** vì role được gán `lead.distribute_tele` (tồn dư từ OrgStaffSeeder). Cần user chốt: Trực Page có phải là vị trí kiêm chia số kho Tele không? Nếu không → gỡ perm này khỏi role Trực Page (1 dòng ở `OrgStaffSeeder.php:157`). Tao **không tự sửa** vì chưa rõ intent.
 
+### Tạo 3 tài khoản Admin cơ sở (2026-07-31 chiều)
+Migration `2026_07_31_110000_seed_admin_co_so_role_and_users.php`:
+- Role mới **"Admin cơ sở"** — union quyền up mọi nguồn (`source.up.*` + `lead.source_all`) + chia số giống CM (`view_pool`, `distribute`, `distribute_tele`, `distribute_sale`, `distribute_to_team/sale`, `recall`, `pull_pool`) + basic lead + phase.close.1..5 + payment/report. **KHÔNG** có org/user/role/service/rule.manage.
+- 3 user:
+
+| Username | Email | Branch | Password | Lead visible |
+|---|---|---|---|---|
+| admin.hn | admin.hn@longevity.com.vn | branch-hn | `59@ntn` | 40 |
+| admin.hcm | admin.hcm@longevity.com.vn | branch-hcm | `59@ntn` | 18 |
+| admin.dn | admin.dn@longevity.com.vn | branch-dn | `59@ntn` | 16 |
+
+- Scope `SCOPE_TEAM` (subtree branch). Verify: cả 3 up được đủ 7 nguồn (mkt/mkt_br/bdm/bod/sa/ba/wi), thấy đủ 5 options filter Phase (waiting_tele/waiting_sale/in_care/booked/checkin).
+- `RenameUsersToPositionFormatSeeder` không đụng vì role "Admin cơ sở" không có trong ROLE_MAP → username giữ nguyên `admin.hn/hcm/dn`.
+
 ### Chưa làm / dời lại
 - Guide page (`resources/views/guide.blade.php`): mới thay ảnh `flow.jpg`; text 4 role (CM/Booking/Sale/Observer) + 3 section phụ (Thu hồi/Đặt booking/Đà Nẵng) chưa viết lại theo vị trí mới (Trực Page/Tele/QL Sale/Sale + 7 nguồn). Chờ mày chốt scope trước khi rewrite.
 - Nếu Trực Page không được kiêm chia số → gỡ `lead.distribute_tele` ở `OrgStaffSeeder.php:157` + migration UPDATE detach cho role hiện tại. Chờ mày chốt.
