@@ -2214,6 +2214,23 @@ new class extends Component
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 002.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 01-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 00-1.091-.852H4.5A2.25 2.25 0 002.25 4.5v2.25z"/></svg>
                     Lịch sử cuộc gọi <span class="text-sm text-ink/50 font-normal">(mỗi lần gọi = 1 record)</span>
                 </h2>
+                @if ($lead?->exists)
+                    @php
+                        // Tele đang nắm: owner khi phase Booking. Sau khi handoff sang Sale
+                        // (phase=sale), tele cũ = closer phase 3.
+                        $_tele = $lead->pipeline_phase === \App\Models\Lead::PHASE_BOOKING
+                            ? $lead->owner
+                            : null;
+                        if (! $_tele) {
+                            $_teleId = $lead->phaseClosures->firstWhere('phase', 3)?->closed_by;
+                            $_tele = $_teleId ? \App\Models\User::find($_teleId) : null;
+                        }
+                    @endphp
+                    <div class="mb-4 p-3 bg-slate-50 border border-gold-200 rounded-md text-sm">
+                        <span class="text-xs font-medium text-ink/60">Tele đang nắm:</span>
+                        <b class="ml-2 {{ $_tele ? 'text-emerald-700' : 'text-ink/40 italic font-normal' }}">{{ $_tele?->name ?? '— chưa phân —' }}</b>
+                    </div>
+                @endif
                 @if ($lead?->exists && $lead->callLogs->isNotEmpty())
                     <div class="border border-slate-200 rounded divide-y mb-4 text-sm">
                         @foreach ($lead->callLogs()->with('user')->orderByDesc('called_at')->get() as $cl)
