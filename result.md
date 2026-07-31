@@ -2,6 +2,76 @@
 
 > Làm xong phase nào ghi vào đây: ngày hoàn thành, việc đã làm, việc dời lại/chưa xong, ghi chú & quyết định phát sinh. Mẫu bên dưới.
 
+## 2026-07-31 — Rebrand tele + filter Phase + assert booking-first + dimension phase cho báo cáo ✅
+
+Nhánh `fifth`. Chốt bằng flow ảnh mới (7 bước, 7 nguồn — file `public/images/flow.jpg`), fix xong 4 mảng:
+
+### Rebrand permission
+- `lead.distribute_booking` → `lead.distribute_tele` (team booking cũ đã rename thành "tele" ở `2026_07_30_160000`; giờ permission cũng theo). Sed toàn repo 18 chỗ (`app/`, `database/seeders/`, blade components, test comment). Migration `2026_07_31_100000_rename_perm_distribute_booking_to_tele.php` UPDATE `permissions.key + label` in-place (giữ id + liên kết `permission_role`).
+- Label mới: "Chia số ở kho Tele (CM team tele)"; ops-rules panel đổi nhãn "Chia số kho Tele (phase)".
+
+### Dashboard + gate nút Thêm mới
+- Thêm nút **Thêm mới khách hàng** (gold-600 solid) trong header `⚡dashboard-overview` bên cạnh nút Xem báo cáo. Gate `@can('lead.create')`.
+- Verify rule chặn nguồn: form `⚡lead-form` đã dùng `Lead::allowedSourceGroupsFor()` map `SOURCE_PERMISSIONS` → Sale/Tele bấm nút vào form chỉ chọn được nguồn thuộc quyền (Sale = MKT_BR/SA, Tele = BA), không thấy MKT trong dropdown → OK, không cần sửa gì thêm.
+
+### Filter Phase ở list Leads
+- Thêm `public string $fPhase` + dropdown "Trạng thái xử lý" trong `⚡lead-list`. 5 options:
+  - `waiting_tele` — Chờ chia — Tele (gate `lead.distribute_tele`)
+  - `waiting_sale` — Chờ chia — Sale (gate `lead.distribute_sale`)
+  - `in_care` — Đang care (pipeline_status=in_care, booking chưa book)
+  - `booked` — Đã đặt booking
+  - `checkin` — Đã check-in (khach_da_toi/khach_toi_tre/da_xong)
+- Sale/Tele thường **không** thấy 2 options waiting_* (không có perm distribute_tele/sale). Query mapping vào `filteredQuery()` bằng match, đã kết hợp với `visibleTo($user)` scope.
+
+### Assert cứng: booking_status=booked mới cho handoff Sale
+- `Lead::moveToSaleWaiting()` throw `DomainException` nếu `booking_status !== BOOKING_BOOKED`. Áp cho **mọi caller**.
+- Caller ở `⚡lead-detail::moveToSalePhase()` bắt exception, flash `cf_error` thay vì 500.
+- Nguồn direct-sale (BOD/SA/BA/WI) vẫn giữ luồng `initialPipelineFor` cũ (owner=sale ngay khi tạo) — chỉ chặn bước handoff booking→sale (phương án 2 mày chốt).
+
+### Dimension Phase cho báo cáo Funnel + Hiệu suất sale
+- `stats_daily` + cột `pipeline_phase` (nullable, sau ad_source); update unique index bao thêm cột này. Migration `2026_07_31_100100_add_pipeline_phase_to_stats_daily.php`.
+- `StatsAggregator::aggregateDay` group thêm chiều `leads.pipeline_phase` ở cả funnel + revenue; `key()` thêm phase. Data cũ backfill=null → cần chạy lại `stats:aggregate` cho khoảng ngày muốn số liệu chuẩn.
+- `⚡report-center` thêm `public string $fPhase`; `scopedStats` where theo phase khi != ''. UI: dropdown Phase (Tất cả / Booking (Tele) / Sale) chỉ hiện ở section=overall + tab funnel/performance.
+
+### Test + kết quả
+- Test mới `MoveToSaleWaitingTest` — 2/2 pass:
+  - throws khi `booking_status = not_booked`
+  - passes khi = `booked` (phase → sale, status → waiting_distribute, owner → null)
+- Regression suite (`CustomerFlow621|DistributionEngine|LeadScope|LeadListActions|AccessControl`): 56/57 pass. 1 fail `DistributionEngineTest::test_full_flow_common_to_team_to_user` là assertion notification, không liên quan.
+- `Lead*` filter suite: 26/28. 1 fail có sẵn (`ProcessRawLeadTest` KH-001 vs KH-001-MKT), 1 error (BookingEventEndpointTest chạy mysql thay sqlite) — cả hai đã có trước lần này.
+
+### Chạy migrate + seed + aggregate (2026-07-31 chiều)
+- `php artisan migrate` — 2 migration mới OK: `2026_07_31_100000_rename_perm_distribute_booking_to_tele` (79.81ms), `2026_07_31_100100_add_pipeline_phase_to_stats_daily` (2s). Migration lần đầu lỗi vì tao `->after('ad_source')` — cột đã bị drop bởi `2026_07_20_140000`. Fix: đổi `->after('camp')`.
+- `php artisan db:seed --class=PermissionSeeder` — updateOrCreate không lỗi.
+- `db:seed --class=DemoDataSeeder` — thêm 2 nhóm lead mới (Phase 4 Booked + Phase 5 Checkin), mỗi nhóm 2 lead. Idempotent qua `firstOrCreate` theo phone `0917500001-2`, `0917600001-2`.
+- `stats:aggregate --from=2026-07-01 --to=2026-07-31`: re-aggregate 31 ngày → 17 dòng `pipeline_phase=sale`, 3 dòng `pipeline_phase=booking`, không còn NULL. Filter Phase ở báo cáo giờ có số thật.
+
+### Full test suite
+- 145 test / 130 pass. 3 fail + 12 error đều pre-existing (verify bằng stash pop): `DistributionEngineTest` notification, `ProcessRawLeadTest` KH-001-MKT format, Hcm/BookingEvent/SyncFromBooking không có DB `lara_scrm`, `SlaRecallTest` sqlite NOT NULL. Không liên quan changes lần này.
+- `MoveToSaleWaitingTest` (mới) 2/2 pass.
+
+### QA từng role (script tinker, đọc thẳng DB thực)
+
+| Role | Nút Thêm KH | Nguồn được up | Options filter Phase | Total leads thấy | waiting_tele | waiting_sale | in_care | booked | checkin |
+|---|---|---|---|---|---|---|---|---|---|
+| **Trực Page** (`hn.page01`) | HIỆN | mkt | waiting_tele \| in_care \| booked \| checkin | 0 | 0 | 0 | 0 | 0 | 0 |
+| **CM Tele** (`dn.cms01`) | HIỆN | mkt_br,sa,ba | waiting_tele \| waiting_sale \| in_care \| booked \| checkin | 16 | 1 | 0 | 15 | 0 | 0 |
+| **Team Tele** (`hn.book01`) | ẨN | ba | in_care \| booked \| checkin | 6 | 0 | 0 | 5 | 1 | 0 |
+| **CM sale** (`dn.cms01` — trùng user #11) | HIỆN | mkt_br,sa,ba | waiting_tele \| waiting_sale \| in_care \| booked \| checkin | 16 | 1 | 0 | 15 | 0 | 0 |
+| **Team sale ĐN** (`dn.sale01`) | HIỆN | mkt_br,sa | in_care \| booked \| checkin | 0 | 0 | 0 | 0 | 0 | 0 |
+| **Observer** (`vh.obs01`) | ẨN | (trống) | in_care \| booked \| checkin | 26 | 1 | 1 | 22 | 2 | 0 |
+
+Kết luận:
+- **Rule chặn nguồn theo role**: Trực Page chỉ `mkt`; Team Tele chỉ `ba`; Team sale ĐN chỉ `mkt_br,sa`; Observer không up được — đúng thiết kế.
+- **Ẩn P2 với role không có perm distribute_***: Team Tele + Team sale ĐN + Observer không thấy `waiting_tele/waiting_sale` — đúng.
+- **Đảo lại: Trực Page HIỆN option `waiting_tele`** vì role được gán `lead.distribute_tele` (tồn dư từ OrgStaffSeeder). Cần user chốt: Trực Page có phải là vị trí kiêm chia số kho Tele không? Nếu không → gỡ perm này khỏi role Trực Page (1 dòng ở `OrgStaffSeeder.php:157`). Tao **không tự sửa** vì chưa rõ intent.
+
+### Chưa làm / dời lại
+- Guide page (`resources/views/guide.blade.php`): mới thay ảnh `flow.jpg`; text 4 role (CM/Booking/Sale/Observer) + 3 section phụ (Thu hồi/Đặt booking/Đà Nẵng) chưa viết lại theo vị trí mới (Trực Page/Tele/QL Sale/Sale + 7 nguồn). Chờ mày chốt scope trước khi rewrite.
+- Nếu Trực Page không được kiêm chia số → gỡ `lead.distribute_tele` ở `OrgStaffSeeder.php:157` + migration UPDATE detach cho role hiện tại. Chờ mày chốt.
+
+---
+
 ## 2026-07-29 — QA bug bash: import/permission/phase/payment/booking ✅
 
 Bug bash 1 ngày qua flow trực page → booking → sale → thu tiền. Bắt được 12 bug, fix hết, đã push lên `fourth`.
