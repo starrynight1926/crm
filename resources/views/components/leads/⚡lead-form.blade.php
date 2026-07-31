@@ -1907,25 +1907,6 @@ new class extends Component
                     @if ($phaseLocked[3] ?? false)<span class="ml-2 text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-500 font-normal">Chỉ đọc (không có quyền)</span>@endif
                 </h2>
 
-                @if ($lead?->exists)
-                    @php
-                        // Sale phụ trách: sau khi handoff sang phase Sale, owner = sale.
-                        // Trước handoff (lead vẫn phase Booking), lấy closer phase 4 nếu có,
-                        // else "chưa phân".
-                        $_p3Sale = null;
-                        if ($lead->pipeline_phase === \App\Models\Lead::PHASE_SALE) {
-                            $_p3Sale = $lead->owner?->name;
-                        } else {
-                            $_p3ClosedBy = $lead->phaseClosures->firstWhere('phase', 4)?->closed_by;
-                            $_p3Sale = $_p3ClosedBy ? \App\Models\User::find($_p3ClosedBy)?->name : null;
-                        }
-                    @endphp
-                    <div class="mb-4 p-3 bg-slate-50 border border-gold-200 rounded-md text-sm">
-                        <span class="text-xs font-medium text-ink/60">Sale phụ trách:</span>
-                        <b class="ml-2 {{ $_p3Sale ? 'text-emerald-700' : 'text-ink/40 italic font-normal' }}">{{ $_p3Sale ?? '— chưa phân —' }}</b>
-                    </div>
-                @endif
-
                 <fieldset @if ($phaseLocked[3] ?? false) disabled @endif class="space-y-4 border-0 p-0 m-0">
                     <div>
                         <label class="block text-sm font-medium mb-1.5">Ghi nhận tình trạng lần 1</label>
