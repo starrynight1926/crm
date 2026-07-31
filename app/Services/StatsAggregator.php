@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\DB;
 /**
  * Tính stats_daily (ERD B7). Idempotent: xóa dòng của ngày rồi ghi lại.
  * - Funnel: lead nhận trong ngày (received_date), đếm theo classification HIỆN TẠI,
- *   chiều = (org_unit, owner, camp).
+ *   chiều = (org_unit, owner, camp, pipeline_phase).
  * - Revenue: payments theo paid_at, user = người thu, các chiều còn lại theo lead.
  */
 class StatsAggregator
@@ -29,7 +29,7 @@ class StatsAggregator
                 })
                 ->whereDate('received_date', $date)
                 ->whereNull('deleted_at')
-                ->selectRaw("leads.org_unit_id, leads.owner_id, camp_cv.value as camp,
+                ->selectRaw("leads.org_unit_id, leads.owner_id, camp_cv.value as camp, leads.pipeline_phase,
                     count(*) as total,
                     sum(classification = 'lead') as `lead`,
                     sum(classification = 'follow') as `follow`,
@@ -37,15 +37,16 @@ class StatsAggregator
                     sum(classification = 'booking') as booking,
                     sum(classification = 'show') as `show`,
                     sum(classification = 'close') as `close`")
-                ->groupBy('leads.org_unit_id', 'leads.owner_id', 'camp_cv.value')
+                ->groupBy('leads.org_unit_id', 'leads.owner_id', 'camp_cv.value', 'leads.pipeline_phase')
                 ->get();
 
             foreach ($funnel as $r) {
-                $rows[$this->key($date, $r->org_unit_id, $r->owner_id, $r->camp)] = [
+                $rows[$this->key($date, $r->org_unit_id, $r->owner_id, $r->camp, $r->pipeline_phase)] = [
                     'date' => $date,
                     'org_unit_id' => $r->org_unit_id,
                     'user_id' => $r->owner_id,
                     'camp' => $r->camp,
+                    'pipeline_phase' => $r->pipeline_phase,
                     'total' => (int) $r->total,
                     'lead' => (int) $r->lead,
                     'follow' => (int) $r->follow,
@@ -64,12 +65,12 @@ class StatsAggregator
                     $join->on('camp_cv.lead_id', '=', 'leads.id')->whereIn('camp_cv.custom_field_id', $campFieldIds ?: [0]);
                 })
                 ->whereDate('payments.paid_at', $date)
-                ->selectRaw('leads.org_unit_id, payments.collected_by as user_id, camp_cv.value as camp, sum(payments.amount) as amount')
-                ->groupBy('leads.org_unit_id', 'payments.collected_by', 'camp_cv.value')
+                ->selectRaw('leads.org_unit_id, payments.collected_by as user_id, camp_cv.value as camp, leads.pipeline_phase, sum(payments.amount) as amount')
+                ->groupBy('leads.org_unit_id', 'payments.collected_by', 'camp_cv.value', 'leads.pipeline_phase')
                 ->get();
 
             foreach ($revenue as $r) {
-                $key = $this->key($date, $r->org_unit_id, $r->user_id, $r->camp);
+                $key = $this->key($date, $r->org_unit_id, $r->user_id, $r->camp, $r->pipeline_phase);
                 if (isset($rows[$key])) {
                     $rows[$key]['revenue_collected'] = (int) $r->amount;
                 } else {
@@ -78,6 +79,7 @@ class StatsAggregator
                         'org_unit_id' => $r->org_unit_id,
                         'user_id' => $r->user_id,
                         'camp' => $r->camp,
+                        'pipeline_phase' => $r->pipeline_phase,
                         'total' => 0, 'lead' => 0, 'follow' => 0, 'net' => 0,
                         'booking' => 0, 'show' => 0, 'close' => 0,
                         'revenue_collected' => (int) $r->amount,
@@ -91,8 +93,8 @@ class StatsAggregator
         });
     }
 
-    private function key(string $date, $org, $user, $camp): string
+    private function key(string $date, $org, $user, $camp, $phase): string
     {
-        return implode('|', [$date, $org ?? '-', $user ?? '-', $camp ?? '-']);
+        return implode('|', [$date, $org ?? '-', $user ?? '-', $camp ?? '-', $phase ?? '-']);
     }
 }

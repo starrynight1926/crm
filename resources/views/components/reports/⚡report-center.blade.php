@@ -38,6 +38,9 @@ new class extends Component
 
     public string $groupBy = 'camp'; // cho tab marketing: camp / page
 
+    /** Filter phase cho tab funnel/performance. Rỗng = tất cả. Giá trị: '' | 'booking' | 'sale'. */
+    public string $fPhase = '';
+
     /** Kiểu hiển thị mã KH ở tab Chi tiết lead. */
     public string $codeMode = 'full'; // full | required | simple
 
@@ -641,6 +644,7 @@ new class extends Component
 
         return DB::table('stats_daily')
             ->whereBetween('date', [$this->from, $this->to])
+            ->when($this->fPhase !== '', fn ($q) => $q->where('pipeline_phase', $this->fPhase))
             ->when(! $this->seesAllReports(), fn ($query) => $query->where(function ($q) use ($orgIds, $user) {
                 if ($orgIds !== []) {
                     $q->orWhereIn('org_unit_id', $orgIds);
@@ -918,6 +922,14 @@ new class extends Component
                 <button wire:click="$dispatch('open-template-manager', { teamId: {{ $teamId }} })"
                         class="text-sm font-semibold text-gold-700 border border-gold-300 rounded-md px-3 py-1.5 hover:bg-gold-50">Quản lý mẫu</button>
             @endif
+        @endif
+        @if ($section === 'overall' && in_array($tab, ['funnel', 'performance'], true))
+            <label class="text-xs font-semibold text-ink/50 ml-2">Phase</label>
+            <select wire:model.live="fPhase" class="border border-gold-200 rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:border-gold-500">
+                <option value="">Tất cả</option>
+                <option value="{{ \App\Models\Lead::PHASE_BOOKING }}">Booking (Tele)</option>
+                <option value="{{ \App\Models\Lead::PHASE_SALE }}">Sale</option>
+            </select>
         @endif
         <div class="flex-1"></div>
         @if ($section === 'overall')
