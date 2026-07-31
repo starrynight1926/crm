@@ -711,6 +711,16 @@ new class extends Component
         $lead->load('customValues');
         $lead->generateCode();
 
+        // Fix Wave 1 #5-UI (2026-07-31): auto-chốt phase 1 sau khi tạo lead nếu user có perm
+        // → indicator phase 1 chuyển xanh lá ngay, không phải bấm nút "Kết thúc phase" nữa.
+        if ($user->hasPermission(Lead::CF_PHASE_CLOSE_PERM[Lead::CF_PHASE_NEW] ?? 'phase.close.new')) {
+            \App\Models\LeadPhaseClosure::updateOrCreate(
+                ['lead_id' => $lead->id, 'phase' => Lead::CF_PHASE_NEW],
+                ['closed_by' => $user->id, 'closed_at' => now(), 'note' => 'Auto-close khi tạo lead']
+            );
+            $lead->update(['phase' => min(Lead::CF_PHASE_NEW + 1, 5)]);
+        }
+
         LeadStatusLog::record($lead, 'created', null, 'Nhập tay bởi ' . $user->name, $user->id);
         AuditLog::record('create', $lead);
 
@@ -1323,6 +1333,16 @@ new class extends Component
                             <label class="block text-sm font-medium mb-1.5">Tên khách hàng <span class="text-red-500">*</span></label>
                             <input type="text" wire:model="name" placeholder="Nhập họ và tên" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
                             @error('name')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
+                            @if ($lead?->exists && ($lead->imported_by || $lead->receiver_id))
+                                @php
+                                    $_creator = \App\Models\User::find($lead->imported_by ?: $lead->receiver_id);
+                                    $_createdAt = optional($lead->created_at)->format('d/m/Y H:i');
+                                @endphp
+                                <p class="text-[11px] text-ink/60 mt-1.5">
+                                    Người tạo lead: <b class="text-ink/85">{{ $_creator?->name ?? '—' }}</b>
+                                    @if ($_createdAt) · <span class="font-mono">{{ $_createdAt }}</span> @endif
+                                </p>
+                            @endif
                         </div>
                         <div>
                             <label class="block text-sm font-medium mb-1.5">SĐT <span class="text-red-500">*</span></label>

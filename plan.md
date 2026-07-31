@@ -1,4 +1,4 @@
-# Lara-SCRM — Kế hoạch triển khai (9 phase)
+# Lara Data Source — Kế hoạch triển khai (9 phase)
 
 > Đi kèm `scope.md` + `ERD.md`. Nguyên tắc: mỗi phase kết thúc đều có thứ chạy được, demo được. Làm xong phase nào ghi vào `result.md`.
 >
@@ -30,7 +30,7 @@
 - [x] Che SĐT theo scope (mặc định che, "Hiện số" ghi audit log từng lần)
 - [x] Chống trùng: unique `leads.phone` + normalize SĐT VN + check trước khi lưu
 
-**Kết quả**: CRM thủ công hoàn chỉnh, phân quyền + mask SĐT chạy thật.
+**Kết quả**: Data Source thủ công hoàn chỉnh, phân quyền + mask SĐT chạy thật.
 
 ## Phase 2.5 — Mã KH + trường tùy biến phòng ban ✅ (bổ sung + hoàn thành 2026-07-03, xem result.md)
 - [x] Migration: `leads.code/type_code/source_code`, bảng `custom_fields` + `lead_custom_values`

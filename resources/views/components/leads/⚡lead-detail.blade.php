@@ -175,7 +175,7 @@ new class extends Component
     }
 
     /**
-     * Đồng bộ booking từ lara-sbooking về CRM: gọi API /api/bookings?so_dien_thoai=...
+     * Đồng bộ booking từ lara-sbooking về Data Source: gọi API /api/bookings?so_dien_thoai=...
      * Nếu tìm thấy booking mới nhất → update lead giống flow callback (booking_status/ma, classification, log).
      */
     public function syncFromBooking(): void
@@ -214,7 +214,7 @@ new class extends Component
         $latest = $items[0]; // đã sort desc theo updated_at bên booking
         $bookingMa = $latest['ma_booking'] ?? $latest['ma'] ?? $latest['booking_ma'] ?? ('BKG-' . ($latest['id'] ?? '?'));
 
-        // Map trạng thái từ booking → CRM. Ưu tiên trang_thai_khach (Khách đã tới/tới trễ/hủy),
+        // Map trạng thái từ booking → Data Source. Ưu tiên trang_thai_khach (Khách đã tới/tới trễ/hủy),
         // rồi trang_thai=da_xong, cuối cùng fallback = "đã đặt".
         $ttk = $latest['trang_thai_khach'] ?? null;
         $tt  = $latest['trang_thai'] ?? null;
@@ -502,7 +502,7 @@ new class extends Component
                 @endif
                 <button type="button" wire:click="syncFromBooking" wire:loading.attr="disabled" wire:target="syncFromBooking"
                         class="flex items-center gap-2 text-sm font-semibold text-ink/70 border border-gold-200 px-4 py-2.5 rounded-md hover:bg-gold-50 disabled:opacity-50 disabled:cursor-wait"
-                        title="Kiểm tra bên hệ thống Booking xem SĐT khách này đã có lịch chưa. Nếu có, cập nhật CRM về trạng thái Đã đặt + phân loại Booking.">
+                        title="Kiểm tra bên hệ thống Booking xem SĐT khách này đã có lịch chưa. Nếu có, cập nhật Data Source về trạng thái Đã đặt + phân loại Booking.">
                     <svg class="w-4 h-4" wire:loading.class="animate-spin" wire:target="syncFromBooking" fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/></svg>
                     <span wire:loading.remove wire:target="syncFromBooking">Đồng bộ Booking</span>
                     <span wire:loading wire:target="syncFromBooking">Đang kiểm tra…</span>

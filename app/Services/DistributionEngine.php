@@ -266,8 +266,14 @@ class DistributionEngine
             'owner_id' => $target->target_id,
             'pool_level' => Lead::POOL_PERSONAL,
             'assigned_at' => now(),
+            // Đồng bộ với manualAssign: có owner thì chuyển WAITING → IN_CARE để badge
+            // không kẹt "Chờ CM ... chia" sau khi đã chia (bug Wave 1 #6, 2026-07-31).
+            'pipeline_status' => $lead->pipeline_status === Lead::PSTATUS_WAITING
+                ? Lead::PSTATUS_IN_CARE
+                : $lead->pipeline_status,
         ]);
 
+        $this->autoClosePhase($lead, Lead::CF_PHASE_DISTRIBUTE, null);
         $this->notifyAssigned($lead, (int) $target->target_id);
     }
 
@@ -394,7 +400,27 @@ class DistributionEngine
                 : $lead->pipeline_status,
         ]);
 
+        $this->autoClosePhase($lead, Lead::CF_PHASE_DISTRIBUTE, $actorId);
         $this->notifyAssigned($lead, $user->id, $prevOwnerId);
+    }
+
+    /**
+     * Auto-chốt phase khi có sự kiện chuẩn (chia số → P2 done, booked → P4 done, …).
+     * Bỏ qua nếu phase đã closed trước đó, hoặc lead đang bulk-open (để user tự bấm
+     * "Lưu — chốt N phase" bulk 1 phát). Fix Wave 1 #5-UI (2026-07-31).
+     */
+    protected function autoClosePhase(Lead $lead, int $phase, ?int $actorId): void
+    {
+        if ($lead->isBulkOpen()) return;
+        if (\App\Models\LeadPhaseClosure::where('lead_id', $lead->id)->where('phase', $phase)->exists()) return;
+        \App\Models\LeadPhaseClosure::create([
+            'lead_id' => $lead->id, 'phase' => $phase,
+            'closed_by' => $actorId, 'closed_at' => now(),
+            'note' => 'Auto-close (event)',
+        ]);
+        if ((int) $lead->phase === $phase) {
+            $lead->update(['phase' => min($phase + 1, 5)]);
+        }
     }
 
     /** Sale tự kéo lead từ kho về mình (quyền lead.pull_pool). */

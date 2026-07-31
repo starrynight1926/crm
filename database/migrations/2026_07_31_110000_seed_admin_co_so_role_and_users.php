@@ -23,23 +23,18 @@ return new class extends Migration {
         ['username' => 'admin.dn',  'name' => 'Admin Cơ sở Đà Nẵng', 'branch' => 'branch-dn'],
     ];
 
+    // Trim 2026-07-31 (bug bash): Admin cơ sở chỉ có quyền xem + chia P2 + xử lý P4 + báo cáo.
+    // KHÔNG có create/update/import/export/source.up + phase.close.new/call/checkin/payment.
     private const PERMS = [
-        // Up mọi nguồn (không bị dropdown disable)
-        'source.up.trucpage', 'source.up.sale', 'source.up.tele', 'source.up.admin', 'lead.source_all',
-        // Chia số giống CM (cả kho Tele + kho Sale)
+        // Xem
+        'lead.view', 'lead.view_phone',
+        // Chia số phase 2 (kho Tele + kho Sale)
         'lead.view_pool', 'lead.distribute', 'lead.distribute_tele', 'lead.distribute_sale',
-        'lead.distribute_to_team', 'lead.distribute_to_sale', 'lead.recall', 'lead.pull_pool',
-        // Duyệt Walk-in
-        'lead.approve_source',
-        // Basic lead
-        'lead.view', 'lead.view_phone', 'lead.create', 'lead.update',
-        'lead.update_booking', 'lead.update_sale', 'lead.read_booking', 'lead.book_action',
-        'lead.import', 'lead.export',
-        // Chốt phase 1..5 (không có rollback — đó là ops-monitor)
-        'phase.close.new', 'phase.close.distribute', 'phase.close.call',
-        'phase.close.booking', 'phase.close.checkin',
-        // Payment + Report
-        'payment.record', 'report.view',
+        'lead.distribute_to_team', 'lead.distribute_to_sale', 'lead.recall',
+        // Phase 4 booking
+        'lead.book_action', 'lead.update_booking', 'lead.read_booking', 'phase.close.booking',
+        // Báo cáo
+        'report.view',
     ];
 
     public function up(): void

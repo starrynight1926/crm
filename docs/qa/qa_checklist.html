@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>QA Checklist — Lara-SCRM flow 7 nguồn</title>
+<style>
+  :root {
+    --bg:#faf7f2; --ink:#2d2a24; --gold:#8b5e14; --gold-light:#f5edd8;
+    --ok:#16a34a; --bad:#dc2626; --border:#e5d5b8; --muted:#78716c;
+  }
+  * { box-sizing:border-box; }
+  body { font-family: system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; background:var(--bg); color:var(--ink); margin:0; padding:24px; max-width:1200px; margin:auto; }
+  h1 { color:var(--gold); font-size:24px; margin:0 0 8px; }
+  .sub { color:var(--muted); font-size:13px; margin-bottom:20px; }
+  .progress-bar { position:sticky; top:0; background:#fff; border:1px solid var(--border); border-radius:8px; padding:12px 16px; margin-bottom:20px; display:flex; align-items:center; gap:16px; box-shadow:0 2px 8px rgba(0,0,0,.06); z-index:10; }
+  .progress-bar strong { color:var(--gold); font-size:18px; }
+  .bar { flex:1; height:8px; background:var(--gold-light); border-radius:4px; overflow:hidden; }
+  .bar > i { display:block; height:100%; background:var(--ok); width:0; transition:width .2s; }
+  button { border:1px solid var(--border); background:#fff; padding:6px 12px; border-radius:6px; cursor:pointer; font-size:13px; color:var(--ink); }
+  button:hover { background:var(--gold-light); }
+  section { background:#fff; border:1px solid var(--border); border-radius:10px; padding:16px 20px; margin-bottom:16px; }
+  section h2 { margin:0 0 12px; font-size:16px; color:var(--gold); border-left:4px solid var(--gold); padding-left:10px; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { border-bottom:1px solid #f0e8d0; padding:8px 6px; text-align:left; vertical-align:top; }
+  th { background:var(--gold-light); font-weight:600; color:var(--ink); font-size:12px; text-transform:uppercase; letter-spacing:.5px; }
+  tr.done td { background:#f0fdf4; color:var(--muted); text-decoration:line-through; text-decoration-color:#94a3b8; }
+  tr.neg { background:#fef2f2; }
+  tr.neg td:first-child::before { content:"❌ "; color:var(--bad); }
+  input[type=checkbox] { width:18px; height:18px; cursor:pointer; accent-color:var(--gold); }
+  code { background:#f5edd8; padding:1px 6px; border-radius:3px; font-size:12px; }
+  .acct { color:var(--gold); font-weight:600; }
+  .step { color:#334155; }
+  .exp { color:#166534; font-size:12.5px; }
+  .exp.neg { color:var(--bad); }
+  .banner { background:#fef3c7; border:1px solid #fbbf24; padding:10px 14px; border-radius:8px; font-size:13px; margin-bottom:16px; }
+</style>
+</head>
+<body>
+
+<h1>QA Checklist — Lara-SCRM · flow 7 nguồn</h1>
+<div class="sub">Password mọi tài khoản: <code>59@ntn</code>. Trạng thái tick tự lưu localStorage (F5 không mất).</div>
+
+<div class="banner">
+  <strong>Lưu ý</strong>: dùng incognito/tab khác cho mỗi role để session không đè nhau. Bug nào note theo cấu trúc: <em>tài khoản · bước · kỳ vọng vs thực tế</em>.
+</div>
+
+<div class="progress-bar">
+  <span>Tiến độ: <strong id="cnt">0</strong> / <strong id="tot">0</strong></span>
+  <div class="bar"><i id="pct"></i></div>
+  <button onclick="resetAll()">🔄 Reset tất cả</button>
+</div>
+
+<template id="row-tpl">
+  <tr>
+    <td style="width:32px"><input type="checkbox"></td>
+    <td class="acct"></td>
+    <td class="step"></td>
+    <td class="exp"></td>
+  </tr>
+</template>
+
+<div id="root"></div>
+
+<script>
+const data = [
+  {
+    title: "1️⃣ Nguồn MKT — Trực Page up → Tele chia/gọi/book → Sale close",
+    rows: [
+      { acct: "hn.page01@longevity.com.vn (Trực Page)", step: "Dashboard → + Thêm mới KH → Nguồn=MKT → Lưu", exp: "Lead vào kho cơ sở HN, phase=booking/waiting_distribute" },
+      { neg:1, acct: "hn.sale01@longevity.com.vn (Sale)", step: "Form Thêm KH → mở dropdown Nguồn", exp: "MKT DISABLED (Sale không được up)" },
+      { acct: "hn.cmb01@longevity.com.vn (CM Tele)", step: "Danh sách KH → filter 'Chờ chia — Tele' → tick → Chia thủ công", exp: "Lead có owner=tele viên, phase=booking/in_care" },
+      { acct: "hn.book01@longevity.com.vn (Team Tele)", step: "Chi tiết lead → ghi note → Đặt booking (ngày+bác sĩ) → Xác nhận", exp: "booking_status = booked" },
+      { neg:1, acct: "hn.book01 (Team Tele)", step: "Lead CHƯA book → bấm 'Chuyển sang phase Sale'", exp: "Flash lỗi: Chưa đặt booking cho khách..." },
+      { acct: "hn.book01 (Team Tele)", step: "Sau khi booked → bấm 'Chuyển sang phase Sale'", exp: "Về kho chung phase=sale/waiting_distribute, owner=null" },
+      { acct: "hn.cms01@longevity.com.vn (CM sale)", step: "Filter 'Chờ chia — Sale' → tick → Chia cho sale", exp: "owner=sale, phase=sale/in_care" },
+      { acct: "hn.sale01 (Sale)", step: "Chi tiết → note → gắn dịch vụ → thu tiền → phân loại = Close", exp: "Doanh thu vào báo cáo" },
+    ],
+  },
+  {
+    title: "2️⃣ Nguồn MKT BR — Sale + Admin up",
+    rows: [
+      { acct: "hn.sale01 (Sale)", step: "+ Thêm mới KH → Nguồn=MKT BR → Lưu", exp: "Lead vào kho team sale (chờ CM chia) hoặc sale tự nhận" },
+      { neg:1, acct: "hn.page01 (Trực Page)", step: "Form → dropdown Nguồn", exp: "MKT BR DISABLED" },
+      { acct: "hn.cms01 (CM sale)", step: "Filter 'Chờ chia — Sale' → chia (nếu vào kho team)", exp: "owner=sale" },
+      { acct: "hn.sale02 (Sale)", step: "Đặt booking → chuyển phase Sale → chăm → close", exp: "Giống flow MKT" },
+    ],
+  },
+  {
+    title: "3️⃣ Nguồn SA — Sale + CM sale + Admin up",
+    rows: [
+      { acct: "hn.sale01 (Sale)", step: "+ Thêm KH → Nguồn=SA → Lưu", exp: "Auto set owner=chính user (không có lead.distribute)" },
+      { acct: "hn.cms01 (CM sale)", step: "+ Thêm KH → Nguồn=SA → chọn Sale nhận → Lưu", exp: "owner = sale được chọn" },
+      { neg:1, acct: "hn.cms01 (CM sale)", step: "Form SA → KHÔNG chọn Sale nhận → Lưu", exp: "Error personId: 'Nguồn SA: bắt buộc chọn sale nhận.'" },
+      { acct: "hn.sale01 (Sale)", step: "Đặt booking → handoff → chăm → close", exp: "OK" },
+    ],
+  },
+  {
+    title: "4️⃣ Nguồn BA — Tele + Admin up",
+    rows: [
+      { acct: "hn.book01 (Team Tele)", step: "+ Thêm KH → Nguồn=BA → Lưu", exp: "Auto set owner=chính user tele" },
+      { neg:1, acct: "hn.sale01 (Sale)", step: "Form → dropdown Nguồn", exp: "BA DISABLED" },
+      { acct: "hn.book01 (Team Tele)", step: "Chi tiết → Đặt booking", exp: "booking_status = booked" },
+      { acct: "hn.book01 (Team Tele)", step: "Chuyển sang phase Sale", exp: "Về kho sale chờ chia" },
+      { acct: "hn.cms01 (CM sale) → hn.sale01 (Sale)", step: "Chia → chăm → close", exp: "OK" },
+    ],
+  },
+  {
+    title: "5️⃣ Nguồn BDM — CM sale + Admin up",
+    rows: [
+      { acct: "hn.cms01 (CM sale)", step: "+ Thêm KH → Nguồn=BDM → chọn Sale nhận → Lưu", exp: "owner = sale được chọn" },
+      { neg:1, acct: "hn.sale01 (Sale)", step: "Form → dropdown Nguồn", exp: "BDM DISABLED" },
+      { acct: "hn.sale01 (Sale)", step: "Chi tiết lead vừa nhận → Đặt booking", exp: "booked" },
+      { acct: "hn.sale01 (Sale)", step: "Chăm → close", exp: "Doanh thu vào báo cáo" },
+    ],
+  },
+  {
+    title: "6️⃣ Nguồn BOD — CM sale + Admin up (giống BDM, khác tài khoản)",
+    rows: [
+      { acct: "hn.cms02 (CM sale)", step: "+ Thêm KH → Nguồn=BOD → chọn Sale → Lưu", exp: "owner set" },
+      { neg:1, acct: "hn.sale02 (Sale)", step: "Form → dropdown Nguồn", exp: "BOD DISABLED" },
+      { acct: "hn.sale02 (Sale)", step: "Đặt booking → chăm → close", exp: "OK" },
+    ],
+  },
+  {
+    title: "7️⃣ Nguồn Walk-in (WI) — CM sale + Admin up",
+    rows: [
+      { acct: "hn.cms01 (CM sale)", step: "+ Thêm KH → Nguồn=Walk-in → chọn Sale → Lưu", exp: "approval_status = pending" },
+      { acct: "admin.hn@longevity.com.vn (Admin cơ sở)", step: "Menu Duyệt lead → Duyệt", exp: "approval_status = approved" },
+      { acct: "admin.hn (Admin cơ sở)", step: "Duyệt lead khác → Từ chối", exp: "approval_status = rejected" },
+      { acct: "hn.sale01 (Sale)", step: "Đặt booking → chăm → close", exp: "OK" },
+    ],
+  },
+  {
+    title: "🛡️ Admin cơ sở — test bypass + scope theo cơ sở",
+    rows: [
+      { acct: "admin.hn@longevity.com.vn", step: "+ Thêm KH → mở dropdown Nguồn", exp: "Cả 7 nguồn ENABLED (source_all bypass)" },
+      { acct: "admin.hn", step: "Danh sách KH → filter Trạng thái xử lý", exp: "Đủ 5 option (waiting_tele/waiting_sale/in_care/booked/checkin)" },
+      { acct: "admin.hn", step: "Danh sách KH", exp: "Chỉ thấy lead trong branch-hn (không thấy HCM/ĐN)" },
+      { acct: "admin.hcm@longevity.com.vn", step: "Danh sách KH", exp: "Chỉ thấy lead branch-hcm" },
+      { acct: "admin.dn@longevity.com.vn", step: "Danh sách KH", exp: "Chỉ thấy lead branch-dn" },
+      { acct: "admin.hn", step: "Filter 'Chờ chia — Tele' → tick lead → Chia", exp: "Chia được (giống CM Tele)" },
+      { acct: "admin.hn", step: "Filter 'Chờ chia — Sale' → tick → Chia", exp: "Chia được (giống CM sale)" },
+    ],
+  },
+  {
+    title: "❌ Test rule âm (permission chặn đúng)",
+    rows: [
+      { neg:1, acct: "vh.obs01@longevity.com.vn (Observer)", step: "Dashboard", exp: "KHÔNG thấy nút '+ Thêm mới khách hàng'" },
+      { neg:1, acct: "vh.obs01 (Observer)", step: "Gõ URL /leads/create", exp: "403 Forbidden" },
+      { neg:1, acct: "hn.page01 (Trực Page)", step: "Gõ URL /reports", exp: "403 Forbidden" },
+      { neg:1, acct: "hn.book01 (Team Tele)", step: "Gõ URL /reports", exp: "403 Forbidden" },
+      { neg:1, acct: "hn.sale01 (Sale)", step: "Danh sách KH → filter Trạng thái xử lý", exp: "Chỉ có 3 option, KHÔNG có 'Chờ chia — Tele/Sale'" },
+      { neg:1, acct: "hn.book01 (Team Tele)", step: "Danh sách KH → filter Trạng thái xử lý", exp: "Chỉ có 3 option" },
+      { neg:1, acct: "Bất kỳ role có lead.update", step: "Lead phase=booking, chưa book → bấm 'Chuyển phase Sale'", exp: "Flash đỏ cf_error, KHÔNG chuyển" },
+    ],
+  },
+  {
+    title: "📊 Báo cáo — filter Phase",
+    rows: [
+      { acct: "admin.hn@longevity.com.vn", step: "Menu Báo cáo → tab Funnel theo kỳ → dropdown Phase = 'Booking (Tele)'", exp: "Số nhỏ hơn 'Tất cả'" },
+      { acct: "admin.hn", step: "Đổi Phase = 'Sale'", exp: "Số khác, tổng 2 phase ≈ Tất cả" },
+      { acct: "admin.hn", step: "Tab Hiệu suất sale → filter Phase", exp: "Bảng thay đổi theo Phase" },
+      { acct: "admin.hn", step: "Nếu số 0 hết → chạy CLI 'php artisan stats:aggregate --from=... --to=...'", exp: "Re-aggregate xong, refresh có số" },
+    ],
+  },
+];
+
+const root = document.getElementById('root');
+const tpl = document.getElementById('row-tpl');
+const KEY = 'lara-scrm-qa-checklist-v1';
+let state = JSON.parse(localStorage.getItem(KEY) || '{}');
+let total = 0;
+
+data.forEach((sec, si) => {
+  const s = document.createElement('section');
+  s.innerHTML = `<h2>${sec.title}</h2>`;
+  const tbl = document.createElement('table');
+  tbl.innerHTML = `<thead><tr><th></th><th>Tài khoản</th><th>Bước</th><th>Kỳ vọng</th></tr></thead>`;
+  const tb = document.createElement('tbody');
+  sec.rows.forEach((r, ri) => {
+    const id = `s${si}-r${ri}`;
+    const tr = tpl.content.firstElementChild.cloneNode(true);
+    if (r.neg) { tr.classList.add('neg'); tr.querySelector('.exp').classList.add('neg'); }
+    const cb = tr.querySelector('input');
+    cb.dataset.id = id;
+    cb.checked = !!state[id];
+    if (state[id]) tr.classList.add('done');
+    cb.addEventListener('change', () => {
+      state[id] = cb.checked;
+      localStorage.setItem(KEY, JSON.stringify(state));
+      tr.classList.toggle('done', cb.checked);
+      updateProgress();
+    });
+    tr.querySelector('.acct').textContent = r.acct;
+    tr.querySelector('.step').textContent = r.step;
+    tr.querySelector('.exp').textContent = r.exp;
+    tb.appendChild(tr);
+    total++;
+  });
+  tbl.appendChild(tb);
+  s.appendChild(tbl);
+  root.appendChild(s);
+});
+
+document.getElementById('tot').textContent = total;
+function updateProgress() {
+  const done = Object.values(state).filter(Boolean).length;
+  document.getElementById('cnt').textContent = done;
+  document.getElementById('pct').style.width = (total ? (done/total*100) : 0) + '%';
+}
+function resetAll() {
+  if (!confirm('Reset toàn bộ tick?')) return;
+  state = {}; localStorage.removeItem(KEY);
+  document.querySelectorAll('input[type=checkbox]').forEach(cb => { cb.checked = false; cb.closest('tr').classList.remove('done'); });
+  updateProgress();
+}
+updateProgress();
+</script>
+</body>
+</html>

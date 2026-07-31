@@ -67,6 +67,21 @@ class BookingLog extends Model
         $newStatus = $map[$latest->status] ?? null;
         if ($newStatus) {
             Lead::where('id', $leadId)->update(['booking_status' => $newStatus]);
+            // Fix Wave 1 #5-UI (2026-07-31): booked → auto-close phase 4 để indicator xanh lá.
+            if ($newStatus === Lead::BOOKING_BOOKED) {
+                $lead = Lead::find($leadId);
+                if ($lead && ! $lead->isBulkOpen()
+                    && ! \App\Models\LeadPhaseClosure::where('lead_id', $leadId)->where('phase', Lead::CF_PHASE_BOOKING)->exists()) {
+                    \App\Models\LeadPhaseClosure::create([
+                        'lead_id' => $leadId, 'phase' => Lead::CF_PHASE_BOOKING,
+                        'closed_by' => $latest->user_id, 'closed_at' => now(),
+                        'note' => 'Auto-close khi booked',
+                    ]);
+                    if ((int) $lead->phase === Lead::CF_PHASE_BOOKING) {
+                        $lead->update(['phase' => min(Lead::CF_PHASE_BOOKING + 1, 5)]);
+                    }
+                }
+            }
         }
     }
 }

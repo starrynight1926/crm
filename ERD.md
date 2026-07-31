@@ -1,4 +1,4 @@
-# Lara-SCRM — ERD (thiết kế dữ liệu chi tiết)
+# Lara Data Source — ERD (thiết kế dữ liệu chi tiết)
 
 > Đi kèm `scope.md`. 2 connection Laravel: `pgsql` (raw) + `mysql` (clean, default).
 > Cập nhật 2026-07-15: mở rộng `leads` cho luồng 6 nguồn + bảng mới `recall_policies` / `system_settings` (xem B2, B3).

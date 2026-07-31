@@ -3,7 +3,7 @@
 > Ghi lại 2026-07-20. Chưa code. Chờ user chốt 4 câu cuối trước khi bắt tay.
 
 ## Bối cảnh
-Hiện tại nút "Mở Booking" trong `⚡lead-detail` chỉ redirect sang `{BOOKING_URL}/handoff?crm_lead_id=X&name=Y&phone=Z` — team booking bên đó nhập lịch tay, **không có callback về CRM**. Cần dựng 2 chiều để CRM biết khách đã đặt lịch gì, giờ nào, bác sĩ nào.
+Hiện tại nút "Mở Booking" trong `⚡lead-detail` chỉ redirect sang `{BOOKING_URL}/handoff?crm_lead_id=X&name=Y&phone=Z` — team booking bên đó nhập lịch tay, **không có callback về Data Source**. Cần dựng 2 chiều để Data Source biết khách đã đặt lịch gì, giờ nào, bác sĩ nào.
 
 ## API contract đề xuất (Booking-side sẽ implement)
 
@@ -40,7 +40,7 @@ Khung giờ khả dụng cho combo (cơ sở + dịch vụ + ngày).
 ```
 
 ### POST `{BOOKING_API_URL}/appointments`
-CRM gửi form đặt lịch. Booking check availability → OK thì ghi.
+Data Source gửi form đặt lịch. Booking check availability → OK thì ghi.
 
 Request:
 ```json
@@ -64,7 +64,7 @@ Response conflict (slot đã bị đặt):
 {"status": "conflict", "reason": "Slot đã bị đặt bởi khách khác"}
 ```
 
-## Trên CRM sẽ code
+## Trên Data Source sẽ code
 
 ### 1. Bảng `lead_appointments`
 ```
@@ -78,7 +78,7 @@ status: booked | cancelled,
 created_by (FK users),
 timestamps
 ```
-Snapshot tên để CRM hiển thị đúng dù bên booking rename sau này (cần chốt câu 4).
+Snapshot tên để Data Source hiển thị đúng dù bên booking rename sau này (cần chốt câu 4).
 
 ### 2. `App\Services\BookingClient`
 Class wrapper cho 4 endpoint trên. Auth qua `BOOKING_API_TOKEN` (config/services.php đã có).
@@ -107,7 +107,7 @@ Trong `⚡lead-detail` tab Insight (đã có), thêm section "Lịch hẹn" li�
 
 - Config đã có sẵn: `config('services.booking.url')`, `booking.api_url`, `booking.api_token` (Phase trước).
 - Nút "Chuyển sang Sale" hiện tại (`moveToSalePhase()`) → có thể tự trigger sau khi booking OK, khỏi phải bấm tay.
-- Nếu booking bên kia có cron cancel appointment → cần webhook về CRM để update `lead_appointments.status`.
+- Nếu booking bên kia có cron cancel appointment → cần webhook về Data Source để update `lead_appointments.status`.
 
 ## Trạng thái
 Chờ user research tiếp + trả lời 4 câu → tao code.

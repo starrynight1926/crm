@@ -134,7 +134,7 @@
         </div>
     </section>
 
-    {{-- Luồng đặt booking (CRM → sbooking → callback) --}}
+    {{-- Luồng đặt booking (Data Source → sbooking → callback) --}}
     <section class="mb-10">
         <h2 class="text-lg font-bold text-gold-700 mb-3 flex items-center gap-2">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3.75 8.25h16.5M4.5 6h15a.75.75 0 01.75.75v12a.75.75 0 01-.75.75h-15a.75.75 0 01-.75-.75v-12A.75.75 0 014.5 6z"/></svg>

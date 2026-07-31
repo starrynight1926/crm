@@ -170,7 +170,10 @@ class Lead extends Model
     {
         if (! $this->isVisibleTo($user)) return false;
         if ($user->hasPermission($this->personalInfoPermission())) return true;
-        // Override: nguồn "sale nhận trực tiếp" (BOD/SA/BA/WI) → owner tự sửa được dù role không có update_sale/update_booking.
+        // Override 1: người nhập lead (Trực Page, Sale, Tele tự up) — luôn được sửa lead mình up,
+        // dù role không có update_booking/update_sale. Fix Wave 1 #2 (2026-07-31).
+        if ($this->imported_by && $this->imported_by === $user->id && $user->hasPermission('lead.create')) return true;
+        // Override 2: nguồn "sale nhận trực tiếp" (BOD/SA/BA/WI) → owner tự sửa được dù role không có update_sale/update_booking.
         return $this->isDirectSaleSource() && $this->isOwnedBy($user) && $user->hasPermission('lead.update');
     }
 

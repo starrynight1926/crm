@@ -1,10 +1,10 @@
-# Lara-SCRM — Scope & Thiết kế tổng quan
+# Lara Data Source — Scope & Thiết kế tổng quan
 
 > Cập nhật: 2026-07-15 — bổ sung luồng 6 nhóm nguồn + cơ chế recall/escalate 2 tầng + trang Quy tắc vận hành (xem 6.3, 7.6). File này là nguồn tham chiếu chính của dự án.
 
 ## 1. Mục tiêu
 
-Phần mềm CRM quản lý data khách hàng (lead) + phân bổ data cho nhân viên sale, hỗ trợ tổ chức nhiều phòng ban với vai trò chồng chéo (một người thuộc team A nhưng giữ vai trò ở team B).
+Phần mềm Data Source quản lý data khách hàng (lead) + phân bổ data cho nhân viên sale, hỗ trợ tổ chức nhiều phòng ban với vai trò chồng chéo (một người thuộc team A nhưng giữ vai trò ở team B).
 
 Thiết kế UI tham khảo: Figma "[Longevity] Phần mềm" — 4 màn hình: Dashboard Tổng Quan, Danh Sách Khách Hàng, Thêm Mới/Cập Nhật Khách Hàng, Chi Tiết & Ghi Chú Khách Hàng.
 
@@ -227,7 +227,7 @@ Màn dành cho **Admin hệ thống** (permission `ops.manage`), quản lý toà
 - `phase.rollback` — lùi phase (Admin vận hành only).
 
 **UI trang chi tiết KH**: đổi từ 6 tab dọc (`Trạng thái | Bác sĩ tư vấn | Liệu trình | Tiềm năng | Insight` + Phân phối gộp) thành:
-- **Thanh arrow-breadcrumb 7 phase** trên đầu (style AMIS CRM) — bấm chuyển tab.
+- **Thanh arrow-breadcrumb 7 phase** trên đầu (style AMIS Data Source) — bấm chuyển tab.
 - **7 tab-phase** thay 6 tab cũ. Mỗi tab hiển thị form của phase đó. Phase bị skip theo nguồn thì ẩn hẳn. Phase đã chốt = readonly (trừ Admin lùi). Phase 6-7 = placeholder "chưa build".
 
 ### 8.0.1 Trục lifecycle (Phase 6.8, 2026-07-19) — legacy, giữ song song

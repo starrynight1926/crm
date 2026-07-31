@@ -1,10 +1,10 @@
 # HCM End-to-End Test Flow — Checklist
 
-**Mục tiêu**: test 5 nguồn lead (MKT / BDM / Data lạnh / REF / Walk-in) qua trình duyệt, từ up lead → chia → đặt lịch → sync booking → chăm sóc → close. Test **cả CRM (:1999) và Booking (:1995)**.
+**Mục tiêu**: test 5 nguồn lead (MKT / BDM / Data lạnh / REF / Walk-in) qua trình duyệt, từ up lead → chia → đặt lịch → sync booking → chăm sóc → close. Test **cả Data Source (:1999) và Booking (:1995)**.
 
 **Prerequisites** (đã seed sẵn):
 
-| Vai trò | CRM email | Booking username | Pass CRM | Pass Booking |
+| Vai trò | Data Source email | Booking username | Pass Data Source | Pass Booking |
 |---|---|---|---|---|
 | Team trực page (up MKT/BDM/Cold) | test.hcm.trucpage@longevity.com.vn | test.hcm.trucpage | 123456 | 207@nvt |
 | CM booking (chia kho booking) | test.hcm.cmbooking@longevity.com.vn | test.hcm.cmbooking | 123456 | 207@nvt |
@@ -14,7 +14,7 @@
 | Sale 1 (chăm sóc) | test.hcm.sale1@longevity.com.vn | test.hcm.sale1 | 123456 | 207@nvt |
 | Sale 2 | test.hcm.sale2@longevity.com.vn | test.hcm.sale2 | 123456 | 207@nvt |
 
-**Ghi chú common**: Cơ sở HCM slug `207nvt`. Trước mỗi test, mở 2 tab: CRM (1999) + Booking (1995).
+**Ghi chú common**: Cơ sở HCM slug `207nvt`. Trước mỗi test, mở 2 tab: Data Source (1999) + Booking (1995).
 
 **Ký hiệu**: `[ ]` chưa test — `[x]` OK — `[!]` fail, ghi chú bên phải.
 
@@ -23,7 +23,7 @@
 ## Test 1 — Nguồn Marketing (MKT)
 
 ### T1.1 — Up lead
-- [ ] Login CRM bằng `test.hcm.trucpage@longevity.com.vn` / `123456`. → chuyển vào Dashboard.
+- [ ] Login Data Source bằng `test.hcm.trucpage@longevity.com.vn` / `123456`. → chuyển vào Dashboard.
 - [ ] Vào **Khách hàng → Thêm mới**. Dropdown "Nhóm nguồn" hiện đủ 5 option nhưng chỉ **MKT / BDM / Data lạnh** enable (Team trực page chỉ có perm `lead.distribute_booking`).
 - [ ] Điền: Tên `Khách MKT Test 1`, SĐT `0900011001`, Ngày thu thập hôm nay, Nhóm nguồn `Marketing`.
 - [ ] Hint "Bước tiếp theo: chia về kho team, chờ CM chia cho nhân viên booking" hiện.
@@ -46,18 +46,18 @@
 - [ ] Bên Booking: đang chưa login → redirect login. Đăng nhập `test.hcm.booking1` / `207@nvt` → vào form tạo mới.
 - [ ] Form đã prefill Họ tên + SĐT (từ URL). Trường ẩn `khach_ma` đã set (verify qua devtools: `document.querySelector('input[name=khach_ma]').value === 'KH-XXX-MKT'`).
 - [ ] Chọn Phòng, Khung giờ, Dịch vụ, Bác sĩ, **Sale phụ trách** (chọn 1 trong 3 CM sale HCM). Bấm **Lưu**.
-- [ ] Redirect về CRM `/leads/{id}/booking-callback?booking_ma=BKG-...&booking_id=...` → tự động về Chi tiết lead.
+- [ ] Redirect về Data Source `/leads/{id}/booking-callback?booking_ma=BKG-...&booking_id=...` → tự động về Chi tiết lead.
 - [ ] Chi tiết lead: badge **📅 Đã đặt · BKG-YYMMDD-XXXXXX** hiện, phân loại = `Booking`, Lịch sử tương tác có 3 dòng mới (booking_status / note / classification).
 
 ### T1.5 — Check bên booking
 - [ ] Bên Booking `/207nvt/xem-dat-phong/{id}` — verify khách hiển thị đúng info, `crm_khach_ma = KH-XXX-MKT` (query DB nếu cần).
-- [ ] Đổi trạng thái khách → **Khách đã tới** → confirm popup có kèm câu "sẽ đẩy sang CRM KH-XXX-MKT" → OK.
-- [ ] Flash message xanh: "...Đã đẩy sang CRM KH-XXX-MKT."
-- [ ] Quay CRM Chi tiết lead → badge chuyển **✅ Khách đã tới**. Log mới ghi "Booking BKG... — Khách đã tới".
+- [ ] Đổi trạng thái khách → **Khách đã tới** → confirm popup có kèm câu "sẽ đẩy sang Data Source KH-XXX-MKT" → OK.
+- [ ] Flash message xanh: "...Đã đẩy sang Data Source KH-XXX-MKT."
+- [ ] Quay Data Source Chi tiết lead → badge chuyển **✅ Khách đã tới**. Log mới ghi "Booking BKG... — Khách đã tới".
 - [ ] Test lần lượt: **Khách tới trễ** → badge ⏰. **Đã xong** → badge 🎉 (đây là priority cao nhất).
 
 ### T1.6 — Chuyển sang phase Sale
-- [ ] Vẫn login booking1, quay CRM Chi tiết lead. Nút **"Chuyển sang Sale"** hiện (canMoveToSale).
+- [ ] Vẫn login booking1, quay Data Source Chi tiết lead. Nút **"Chuyển sang Sale"** hiện (canMoveToSale).
 - [ ] Bấm → confirm "Xác nhận: khách đã đồng ý gặp. Chuyển lead sang phase Sale (Chờ chia)?" → OK.
 - [ ] Lead phase đổi sang **Sale · Chờ chia**, owner_id = null, org_unit_id = team-ashley-sale.
 
@@ -73,8 +73,8 @@
 
 ### T1.9 — Bình luận booking sync
 - [ ] Quay Booking → xem-dat-phong → **Thêm bình luận** "Khách hài lòng" → Gửi.
-- [ ] Flash "Đã gửi bình luận. Đã đẩy sang CRM KH-XXX-MKT."
-- [ ] CRM Chi tiết → Lịch sử có ghi chú "Bình luận Booking BKG...: Khách hài lòng".
+- [ ] Flash "Đã gửi bình luận. Đã đẩy sang Data Source KH-XXX-MKT."
+- [ ] Data Source Chi tiết → Lịch sử có ghi chú "Bình luận Booking BKG...: Khách hài lòng".
 
 **Kết quả Test 1**: `[ ]` PASS / `[ ]` FAIL — ghi chú: _____
 
@@ -126,11 +126,11 @@ Same flow, chọn `BDM`. Mã KH `KH-XXX-BDM`. Note: BDM khá giống MKT, không
 - [ ] Bấm Đặt booking → mở booking.
 
 ### T4.3 — Booking + sync
-- [ ] Login booking bằng `test.hcm.sale1` (nếu chưa) → tạo lịch → callback về CRM.
+- [ ] Login booking bằng `test.hcm.sale1` (nếu chưa) → tạo lịch → callback về Data Source.
 - [ ] Verify tương tự T1.4.
 
 ### T4.4 — Chăm sóc
-- [ ] Trở lại CRM, sale1 update phân loại → close.
+- [ ] Trở lại Data Source, sale1 update phân loại → close.
 - [ ] Sale1 có sửa được info cá nhân không (SĐT/tên)? Test qua nút bút chì. **Yes** vì override `isDirectSaleSource && isOwnedBy` cho `canEditPersonalInfo`.
 
 **Kết quả**: `[ ]` PASS / `[ ]` FAIL — ghi chú: _____
@@ -160,7 +160,7 @@ Same flow, chọn `BDM`. Mã KH `KH-XXX-BDM`. Note: BDM khá giống MKT, không
 
 ## Test 6 — Cross-cutting: đồng bộ nút "Đồng bộ Booking"
 
-Dành cho case booking tạo trực tiếp bên booking side (KHÔNG qua nút Đặt booking CRM → thiếu `crm_khach_ma`). Bấm nút Đồng bộ Booking bên CRM để sync manual.
+Dành cho case booking tạo trực tiếp bên booking side (KHÔNG qua nút Đặt booking Data Source → thiếu `crm_khach_ma`). Bấm nút Đồng bộ Booking bên Data Source để sync manual.
 
 - [ ] Với 1 trong 5 lead đã tạo, xóa `booking_ma` + đổi `booking_status='not_booked'` trực tiếp DB (giả lập chưa sync).
 - [ ] Vào Chi tiết → bấm **Đồng bộ Booking**.
