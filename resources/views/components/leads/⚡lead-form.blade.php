@@ -938,12 +938,19 @@ new class extends Component
         // Phase 6.21g — lock rule:
         //   - Phase 6, 7 luôn lock (chưa build — chỉ cho xem).
         //   - Phase 1..5 đã có closure → lock cho user không có phase.rollback.
+        // Bug 2026-08-01: bổ sung khoá theo perm — user không có quyền thao tác
+        // phase đó (VD Admin cơ sở với phase 3) → lock luôn dù chưa có closure.
         $phaseLocked = [6 => true, 7 => true];
-        $canRollback = auth()->user()->hasPermission(Lead::CF_ROLLBACK_PERM);
+        $u = auth()->user();
+        $canRollback = $u->hasPermission(Lead::CF_ROLLBACK_PERM);
+        $canLogCallHere = $this->lead?->exists ? $this->lead->canLogCall($u) : true;
+        $canLogBookingHere = $this->lead?->exists ? $this->lead->canLogBooking($u) : true;
         if ($this->lead?->exists) {
             $closedPhases = $this->lead->phaseClosures->pluck('phase')->all();
             for ($p = 1; $p <= 5; $p++) {
-                $phaseLocked[$p] = in_array($p, $closedPhases, true) && ! $canRollback;
+                $lockedByClosure = in_array($p, $closedPhases, true) && ! $canRollback;
+                $lockedByPerm = ($p === 3 && ! $canLogCallHere) || ($p === 4 && ! $canLogBookingHere);
+                $phaseLocked[$p] = $lockedByClosure || $lockedByPerm;
             }
         } else {
             for ($p = 1; $p <= 5; $p++) $phaseLocked[$p] = false;
@@ -1864,12 +1871,13 @@ new class extends Component
             </div>
 
             {{-- Trạng thái chăm sóc — Phase 3 (Gọi điện) — order 2 (giữa) --}}
-            <div x-show="phase === 3" x-cloak class="order-2 bg-white border border-gold-200 rounded-xl shadow-card p-6">
+            <div x-show="phase === 3" x-cloak class="order-2 bg-white border border-gold-200 rounded-xl shadow-card p-6 @if ($phaseLocked[3] ?? false) opacity-70 @endif">
                 <h2 class="font-bold text-gold-700 mb-5 flex items-center gap-2">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                     Trạng thái chăm sóc
+                    @if ($phaseLocked[3] ?? false)<span class="ml-2 text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-500 font-normal">Chỉ đọc (không có quyền)</span>@endif
                 </h2>
-                <div class="space-y-4">
+                <fieldset @if ($phaseLocked[3] ?? false) disabled @endif class="space-y-4 border-0 p-0 m-0">
                     <div>
                         <label class="block text-sm font-medium mb-1.5">Ghi nhận tình trạng lần 1</label>
                         <input type="text" wire:model="status_1" placeholder="VD: Đã liên hệ" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
@@ -1889,7 +1897,7 @@ new class extends Component
                     {{-- TRẠNG THÁI ĐẶT LỊCH đã move sang Phase 4 (Booking) --}}
 
                     {{-- Panel Phân phối & Nguồn đã move sang tab Phase 2 (Chia số) — Phase 6.21g --}}
-                </div>
+                </fieldset>
             </div>
 
             {{-- DV tiềm năng + UPSELL — Phase 6 (Bán hàng) --}}
