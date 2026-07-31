@@ -833,10 +833,10 @@ class Lead extends Model
     {
         if (! $this->isVisibleTo($user)) return false;
         if ($user->hasPermission('phase.rollback')) return true;
-        // Chỉ owner mới ghi call — Admin cơ sở/CM Sale KHÔNG được thao tác phase 3
-        // (fix bug 2026-08-01: Admin cơ sở nhập được data phase 3 mặc dù chỉ có
-        // quyền phase 2 + phase 4). CM Tele cần thì cấp perm phase.close.call riêng.
-        return $this->isOwnedBy($user);
+        // CHỈ owner đang giữ (không tính receiver_id — receiver là lịch sử bàn giao).
+        // Fix 2026-08-01: Trực Page có receiver_id = user vẫn pass isOwnedBy → sửa
+        // sang so trực tiếp owner_id.
+        return $this->owner_id !== null && $this->owner_id === $user->id;
     }
 
     /** User có được ghi booking_log không. */
@@ -844,9 +844,11 @@ class Lead extends Model
     {
         if (! $this->isVisibleTo($user)) return false;
         if ($user->hasPermission('phase.rollback')) return true;
-        // Có lead.book_action (Admin cơ sở, CM sale, Sale, Tele, Team sale ĐN) — đúng phase 4.
-        if ($user->hasPermission('lead.book_action')) return true;
-        return $this->isOwnedBy($user);
+        // Book action là perm phase 4 chuẩn — nhưng chỉ owner (đang giữ lead) mới
+        // được ghi booking_log. Admin/CM Sale có book_action nhưng không giữ →
+        // không được ghi (chỉ xem).
+        return $this->owner_id !== null && $this->owner_id === $user->id
+            && $user->hasPermission('lead.book_action');
     }
 
     /**
