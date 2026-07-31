@@ -894,6 +894,18 @@ new class extends Component
     {
         $visibleOrgIds = auth()->user()->visibleOrgUnitIds();
 
+        // Fix 2026-08-01: filter theo phase của lead — không được chia lead phase
+        // Booking cho Sale hoặc phase Sale cho Tele.
+        //   Booking → cần role có source.up.tele (Team Tele, CM Tele, Admin cơ sở).
+        //   Sale    → cần role có lead.consult    (Sale, Team sale ĐN, CM sale).
+        // Nếu lead chưa exists (đang tạo) → không lọc theo phase (để bulk view đủ).
+        $phasePerm = null;
+        if ($this->lead?->exists) {
+            $phasePerm = $this->lead->pipeline_phase === Lead::PHASE_BOOKING
+                ? 'source.up.tele'
+                : 'lead.consult';
+        }
+
         return User::where('status', User::STATUS_ACTIVE)
             ->where(fn ($q) => $q
                 ->whereHas('assignments', fn ($qq) => $qq->effective()->when(
@@ -901,6 +913,9 @@ new class extends Component
                     fn ($qqq) => $qqq->whereIn('org_unit_id', $visibleOrgIds)
                 ))
                 ->orWhere('id', auth()->id()))
+            ->when($phasePerm, fn ($q) => $q->whereHas('assignments', fn ($qq) =>
+                $qq->whereHas('role.permissions', fn ($qqq) => $qqq->where('key', $phasePerm))
+            ))
             ->orderBy('name')
             ->get();
     }
