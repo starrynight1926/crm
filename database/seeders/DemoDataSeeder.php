@@ -246,6 +246,34 @@ class DemoDataSeeder extends Seeder
                  'pool_level' => 'team', 'org_unit_id' => $org,
                  'pipeline_phase' => Lead::PHASE_SALE, 'pipeline_status' => Lead::PSTATUS_WAITING]);
         }
+
+        // 5) Khách đã đặt booking (Phase 4) — sale đang ôm + booking_status = booked
+        $bookedSales = [
+            ['0917500001', 'Khách đã đặt booking — team Ashley',  $userByEmail('tyn@longevity.com.vn')],
+            ['0917500002', 'Khách đã đặt booking — team Giang',   $userByEmail('nmp@longevity.com.vn')],
+        ];
+        foreach ($bookedSales as [$p, $n, $owner]) {
+            $orgOfOwner = $owner?->assignments()->first()?->org_unit_id;
+            $mk(['phone' => $p, 'name' => $n, 'classification' => 'booking',
+                 'pool_level' => 'personal', 'owner_id' => $owner?->id, 'receiver_id' => $owner?->id,
+                 'org_unit_id' => $orgOfOwner,
+                 'pipeline_phase' => Lead::PHASE_SALE, 'pipeline_status' => Lead::PSTATUS_IN_CARE,
+                 'booking_status' => Lead::BOOKING_BOOKED]);
+        }
+
+        // 6) Khách đã check-in (Phase 5) — booking_status = khach_da_toi
+        $checkedIn = [
+            ['0917600001', 'Khách đã check-in — team Ashley',  $userByEmail('tyn@longevity.com.vn')],
+            ['0917600002', 'Khách đã check-in — team Hợi',     $userByEmail('nhg@longevity.com.vn')],
+        ];
+        foreach ($checkedIn as [$p, $n, $owner]) {
+            $orgOfOwner = $owner?->assignments()->first()?->org_unit_id;
+            $mk(['phone' => $p, 'name' => $n, 'classification' => 'show',
+                 'pool_level' => 'personal', 'owner_id' => $owner?->id, 'receiver_id' => $owner?->id,
+                 'org_unit_id' => $orgOfOwner,
+                 'pipeline_phase' => Lead::PHASE_SALE, 'pipeline_status' => Lead::PSTATUS_IN_CARE,
+                 'booking_status' => Lead::BOOKING_KHACH_DA_TOI]);
+        }
     }
 
     /** Danh sách giá trị mà Giải thích = chính Giá trị (map value => value). */
