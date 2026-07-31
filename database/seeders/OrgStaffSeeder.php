@@ -154,7 +154,7 @@ class OrgStaffSeeder extends Seeder
             ],
             'Team nhập lead' => [
                 'desc' => 'Team nhập lead marketing — up lead nguồn MKT / MKT BR / BDM. Xem lại được data đã up (imported_by), chia lại từ kho chung xuống team/sale cho CHÍNH lead mình up (scope theo imported_by).',
-                'perms' => ['lead.create','lead.import','lead.view','lead.distribute_tele','lead.distribute_to_team','lead.distribute_to_sale'],
+                'perms' => ['lead.create','lead.import','lead.view'],
             ],
             'CM booking' => [
                 'desc' => 'CM Phòng Booking — up nguồn nhóm 1 (MKT / MKT BR / BDM), chia lead trong kho booking cho team booking, thu deposit booking (nếu cơ sở áp dụng)',
@@ -162,11 +162,11 @@ class OrgStaffSeeder extends Seeder
             ],
             'Team booking' => [
                 'desc' => 'Team booking — sửa được info khách khi phase=booking, bấm nút Đặt booking. Chuyển sang phase Sale sau khi có data booking (không ghi note dịch vụ).',
-                'perms' => ['lead.book_action','lead.read_booking','lead.update','lead.update_booking','lead.view','lead.view_phone'],
+                'perms' => ['lead.book_action','lead.create','lead.read_booking','lead.update','lead.update_booking','lead.view','lead.view_phone'],
             ],
             'CM sale' => [
                 'desc' => 'CM Phòng Kinh doanh — chia lead đã đồng ý sang sale + sửa info cá nhân khi ở phase Sale + duyệt/ghi thu tiền hộ team sale',
-                'perms' => ['lead.create','lead.distribute','lead.distribute_sale','lead.distribute_to_sale','lead.recall','lead.update','lead.update_sale','lead.consult','lead.view','lead.view_phone','payment.record','report.view'],
+                'perms' => ['lead.book_action','lead.create','lead.distribute','lead.distribute_sale','lead.distribute_to_sale','lead.recall','lead.update','lead.update_sale','lead.consult','lead.view','lead.view_phone','payment.record','report.view','source.up.admin'],
             ],
             'Team sale' => [
                 'desc' => 'Sale nhân viên — chăm sóc khách, ghi chú, phân loại, gắn dịch vụ, thu tiền khách trực tiếp cho lead mình phụ trách',

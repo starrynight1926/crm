@@ -80,6 +80,27 @@ Migration `2026_07_31_110000_seed_admin_co_so_role_and_users.php`:
 - Scope `SCOPE_TEAM` (subtree branch). Verify: cả 3 up được đủ 7 nguồn (mkt/mkt_br/bdm/bod/sa/ba/wi), thấy đủ 5 options filter Phase (waiting_tele/waiting_sale/in_care/booked/checkin).
 - `RenameUsersToPositionFormatSeeder` không đụng vì role "Admin cơ sở" không có trong ROLE_MAP → username giữ nguyên `admin.hn/hcm/dn`.
 
+### Align perm 3 role theo flow mới (2026-07-31 chiều)
+Migration `2026_07_31_120000_align_role_perms_with_flow.php`:
+
+| Role | Trước | Sau |
+|---|---|---|
+| **Trực Page** | có `lead.distribute_tele + distribute_to_team + distribute_to_sale` | **gỡ** 3 perm này (Trực Page chỉ up, CM/Admin chia) |
+| **Team Tele** | không có `lead.create` | **thêm** `lead.create` (Tele tự up BA — ưu tiên 1) |
+| **CM sale** | không có `book_action`, không up được WI | **thêm** `lead.book_action` + `source.up.admin` (CM sale kiêm sale trực tiếp cho SA/BDM/BOD/WI, cần tự đặt lịch) |
+
+Verify sau fix:
+
+| Role | Nguồn up | Thêm KH | book_action | filter Phase |
+|---|---|---|---|---|
+| Trực Page | mkt | HIỆN | KHÔNG | in_care \| booked \| checkin |
+| Team Tele | ba | HIỆN | CÓ | in_care \| booked \| checkin |
+| CM sale | mkt_br, bdm, bod, sa, ba, wi | HIỆN | CÓ | waiting_tele \| waiting_sale \| in_care \| booked \| checkin |
+
+Đồng bộ `OrgStaffSeeder.php` 3 dòng perms tương ứng để re-seed lần sau vẫn đúng.
+
+Câu 2 (SA up bởi Sale + Admin) — verify lại: đã đúng, không cần fix. SA hiện map `source.up.sale`; Sale + CM sale + Admin cơ sở + Admin/DM đều có perm này.
+
 ### Chưa làm / dời lại
 - Guide page (`resources/views/guide.blade.php`): mới thay ảnh `flow.jpg`; text 4 role (CM/Booking/Sale/Observer) + 3 section phụ (Thu hồi/Đặt booking/Đà Nẵng) chưa viết lại theo vị trí mới (Trực Page/Tele/QL Sale/Sale + 7 nguồn). Chờ mày chốt scope trước khi rewrite.
 - Nếu Trực Page không được kiêm chia số → gỡ `lead.distribute_tele` ở `OrgStaffSeeder.php:157` + migration UPDATE detach cho role hiện tại. Chờ mày chốt.
