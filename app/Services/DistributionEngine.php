@@ -411,13 +411,18 @@ class DistributionEngine
      */
     protected function autoClosePhase(Lead $lead, int $phase, ?int $actorId): void
     {
-        // Đảm bảo tất cả phase trước $phase cũng closed (nếu Admin chia số ở P2 mà
-        // lead chưa qua P1 auto-close, cũng close P1 luôn để indicator liền mạch).
+        // closed_by NOT NULL → fallback: actor > owner > imported_by > first user.
+        $closer = $actorId
+            ?? $lead->owner_id
+            ?? $lead->imported_by
+            ?? $lead->receiver_id
+            ?? \App\Models\User::orderBy('id')->value('id');
+        if (! $closer) return; // Không tìm được user nào — skip (env test trống)
         for ($p = 1; $p <= $phase; $p++) {
             if (\App\Models\LeadPhaseClosure::where('lead_id', $lead->id)->where('phase', $p)->exists()) continue;
             \App\Models\LeadPhaseClosure::create([
                 'lead_id' => $lead->id, 'phase' => $p,
-                'closed_by' => $actorId, 'closed_at' => now(),
+                'closed_by' => $closer, 'closed_at' => now(),
                 'note' => 'Auto-close (event)',
             ]);
         }
