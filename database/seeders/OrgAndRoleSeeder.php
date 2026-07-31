@@ -47,7 +47,7 @@ class OrgAndRoleSeeder extends Seeder
         $tl->permissions()->sync(Permission::whereIn('key', [
             'lead.view', 'lead.view_phone', 'lead.create', 'lead.update',
             'lead.read_booking', 'lead.book_action',
-            'lead.view_pool', 'lead.distribute', 'lead.distribute_booking', 'lead.distribute_sale', 'lead.distribute_to_sale',
+            'lead.view_pool', 'lead.distribute', 'lead.distribute_tele', 'lead.distribute_sale', 'lead.distribute_to_sale',
             'lead.recall', 'lead.approve_source',
             'report.view',
         ])->pluck('id'));
@@ -68,7 +68,7 @@ class OrgAndRoleSeeder extends Seeder
             'lead.view', 'lead.view_phone', 'lead.create', 'lead.update',
             'lead.read_booking', 'lead.update_booking', 'lead.book_action', 'lead.update_sale', 'lead.delete',
             'lead.import', 'lead.export',
-            'lead.view_pool', 'lead.distribute', 'lead.distribute_booking', 'lead.distribute_sale',
+            'lead.view_pool', 'lead.distribute', 'lead.distribute_tele', 'lead.distribute_sale',
             'lead.distribute_to_team', 'lead.distribute_to_sale',
             'lead.recall', 'lead.approve_source',
             'user.manage', 'rule.manage',
@@ -84,7 +84,7 @@ class OrgAndRoleSeeder extends Seeder
             'lead.view', 'lead.create', 'lead.update',
             'lead.read_booking', 'lead.update_booking', 'lead.book_action', 'lead.update_sale',
             'lead.consult', 'lead.view_phone',
-            'lead.view_pool', 'lead.distribute', 'lead.distribute_booking', 'lead.distribute_sale',
+            'lead.view_pool', 'lead.distribute', 'lead.distribute_tele', 'lead.distribute_sale',
             'lead.distribute_to_team', 'lead.distribute_to_sale',
             'lead.approve_source', 'lead.recall',
             'report.view',

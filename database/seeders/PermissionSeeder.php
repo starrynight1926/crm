@@ -29,7 +29,7 @@ class PermissionSeeder extends Seeder
         'distribution' => [
             'lead.view_pool' => 'Xem kho số (kho chung công ty, chưa chia)',
             'lead.distribute' => 'Chia số thủ công',
-            'lead.distribute_booking' => 'Chia số ở kho Booking (CM team booking)',
+            'lead.distribute_tele' => 'Chia số ở kho Tele (CM team tele)',
             'lead.distribute_sale' => 'Chia số ở kho Sale (CM team sale)',
             'lead.distribute_to_team' => 'CM cơ sở: chia lead từ kho công ty/cơ sở xuống kho team',
             'lead.distribute_to_sale' => 'CM team: chia lead từ kho team xuống sale (owner)',

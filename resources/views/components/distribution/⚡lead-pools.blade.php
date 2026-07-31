@@ -301,7 +301,7 @@ new class extends Component
                 // Chỉ user "nhận lead": role có lead.update NHƯNG không có quyền chia số
                 // → loại Team nhập lead (up lead), CM booking/sale, TL, DM, Admin, Manager (họ chia số, không nhận).
                 ->whereHas('assignments.role.permissions', fn ($q) => $q->where('key', 'lead.update'))
-                ->whereDoesntHave('assignments.role.permissions', fn ($q) => $q->whereIn('key', ['lead.distribute', 'lead.distribute_booking', 'lead.distribute_sale']))
+                ->whereDoesntHave('assignments.role.permissions', fn ($q) => $q->whereIn('key', ['lead.distribute', 'lead.distribute_tele', 'lead.distribute_sale']))
                 ->orderBy('name')
                 ->get(),
             'canDistribute' => $user->hasAnyPermission(['lead.distribute', 'lead.distribute_to_team', 'lead.distribute_to_sale']),

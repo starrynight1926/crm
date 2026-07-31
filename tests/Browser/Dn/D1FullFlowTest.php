@@ -11,7 +11,7 @@ use Tests\DuskTestCase;
 /**
  * D1 — DN đặc thù: Team sale ĐN làm cả tele + book + sale (union quyền).
  * Test: sale ĐN có thể up tất cả nguồn team trực page KHÔNG được (role vẫn là "Team sale ĐN"
- * không có distribute_booking). Nhưng sale có book_action và update_booking (union quyền
+ * không có distribute_tele). Nhưng sale có book_action và update_booking (union quyền
  * bên booking side).
  */
 class D1FullFlowTest extends DuskTestCase

@@ -32,14 +32,14 @@ class Phase66FlowSeeder extends Seeder
         $roleDefs = [
             'Team nhập lead' => [
                 'desc' => 'Team nhập lead marketing — up lead nguồn MKT / MKT BR / BDM',
-                'perms' => ['lead.create','lead.distribute_booking'],
+                'perms' => ['lead.create','lead.distribute_tele'],
             ],
             'CM booking' => [
                 'desc' => 'CM Phòng Booking — up nguồn nhóm 1 (MKT / MKT BR / BDM), chia lead trong kho booking cho team booking',
                 'perms' => [
                     'lead.view', 'lead.view_phone', 'lead.create', 'lead.update',
                     'lead.read_booking', 'lead.update_booking', 'lead.book_action',
-                    'lead.view_pool', 'lead.distribute', 'lead.distribute_booking', 'lead.distribute_to_sale',
+                    'lead.view_pool', 'lead.distribute', 'lead.distribute_tele', 'lead.distribute_to_sale',
                     'lead.recall', 'report.view',
                 ],
             ],

@@ -126,11 +126,11 @@ class OrgStaffSeeder extends Seeder
         $roles = [
             'Admin' => [
                 'desc' => 'Toàn quyền hệ thống',
-                'perms' => ['connection.manage','contribution.set','field.approve','field.manage','lead.approve_source','lead.book_action','lead.create','lead.delete','lead.view_pool','lead.distribute','lead.distribute_booking','lead.distribute_sale','lead.distribute_to_team','lead.distribute_to_sale','lead.export','lead.import','lead.pull_pool','lead.read_booking','lead.recall','lead.update','lead.update_booking','lead.update_sale','lead.view','lead.view_phone','ops.manage','org.manage','payment.record','report.view','report.view_all','role.manage','rule.manage','service.manage','staff.manage','user.manage'],
+                'perms' => ['connection.manage','contribution.set','field.approve','field.manage','lead.approve_source','lead.book_action','lead.create','lead.delete','lead.view_pool','lead.distribute','lead.distribute_tele','lead.distribute_sale','lead.distribute_to_team','lead.distribute_to_sale','lead.export','lead.import','lead.pull_pool','lead.read_booking','lead.recall','lead.update','lead.update_booking','lead.update_sale','lead.view','lead.view_phone','ops.manage','org.manage','payment.record','report.view','report.view_all','role.manage','rule.manage','service.manage','staff.manage','user.manage'],
             ],
             'Manager' => [
                 'desc' => 'Quản lý team & chia số',
-                'perms' => ['lead.approve_source','lead.book_action','lead.create','lead.view_pool','lead.distribute','lead.distribute_booking','lead.distribute_sale','lead.distribute_to_team','lead.distribute_to_sale','lead.read_booking','lead.recall','lead.update','lead.update_booking','lead.update_sale','lead.view','lead.view_phone','report.view'],
+                'perms' => ['lead.approve_source','lead.book_action','lead.create','lead.view_pool','lead.distribute','lead.distribute_tele','lead.distribute_sale','lead.distribute_to_team','lead.distribute_to_sale','lead.read_booking','lead.recall','lead.update','lead.update_booking','lead.update_sale','lead.view','lead.view_phone','report.view'],
             ],
             'Sale' => [
                 'desc' => 'Khai thác & chăm sóc khách hàng',
@@ -142,7 +142,7 @@ class OrgStaffSeeder extends Seeder
             ],
             'Team Leader' => [
                 'desc' => 'Trưởng nhóm — quyền như CM nhưng scope team, chia số cấp team',
-                'perms' => ['lead.approve_source','lead.book_action','lead.create','lead.view_pool','lead.distribute','lead.distribute_booking','lead.distribute_sale','lead.distribute_to_sale','lead.read_booking','lead.recall','lead.update','lead.view','lead.view_phone','payment.record','report.view'],
+                'perms' => ['lead.approve_source','lead.book_action','lead.create','lead.view_pool','lead.distribute','lead.distribute_tele','lead.distribute_sale','lead.distribute_to_sale','lead.read_booking','lead.recall','lead.update','lead.view','lead.view_phone','payment.record','report.view'],
             ],
             'Trợ lý kinh doanh' => [
                 'desc' => 'Xem data cấp công ty, không thêm/sửa',
@@ -150,15 +150,15 @@ class OrgStaffSeeder extends Seeder
             ],
             'DM HCM' => [
                 'desc' => 'Directional Manager HCM — cao nhất khu vực HCM',
-                'perms' => ['contribution.set','field.approve','field.manage','lead.approve_source','lead.book_action','lead.create','lead.delete','lead.view_pool','lead.distribute','lead.distribute_booking','lead.distribute_sale','lead.distribute_to_team','lead.distribute_to_sale','lead.export','lead.import','lead.read_booking','lead.recall','lead.update','lead.update_booking','lead.update_sale','lead.view','lead.view_phone','payment.record','report.view','report.view_all','rule.manage','service.manage','user.manage'],
+                'perms' => ['contribution.set','field.approve','field.manage','lead.approve_source','lead.book_action','lead.create','lead.delete','lead.view_pool','lead.distribute','lead.distribute_tele','lead.distribute_sale','lead.distribute_to_team','lead.distribute_to_sale','lead.export','lead.import','lead.read_booking','lead.recall','lead.update','lead.update_booking','lead.update_sale','lead.view','lead.view_phone','payment.record','report.view','report.view_all','rule.manage','service.manage','user.manage'],
             ],
             'Team nhập lead' => [
                 'desc' => 'Team nhập lead marketing — up lead nguồn MKT / MKT BR / BDM. Xem lại được data đã up (imported_by), chia lại từ kho chung xuống team/sale cho CHÍNH lead mình up (scope theo imported_by).',
-                'perms' => ['lead.create','lead.import','lead.view','lead.distribute_booking','lead.distribute_to_team','lead.distribute_to_sale'],
+                'perms' => ['lead.create','lead.import','lead.view','lead.distribute_tele','lead.distribute_to_team','lead.distribute_to_sale'],
             ],
             'CM booking' => [
                 'desc' => 'CM Phòng Booking — up nguồn nhóm 1 (MKT / MKT BR / BDM), chia lead trong kho booking cho team booking, thu deposit booking (nếu cơ sở áp dụng)',
-                'perms' => ['lead.book_action','lead.create','lead.view_pool','lead.distribute','lead.distribute_booking','lead.distribute_to_sale','lead.read_booking','lead.recall','lead.update','lead.update_booking','lead.view','lead.view_phone','payment.record','report.view'],
+                'perms' => ['lead.book_action','lead.create','lead.view_pool','lead.distribute','lead.distribute_tele','lead.distribute_to_sale','lead.read_booking','lead.recall','lead.update','lead.update_booking','lead.view','lead.view_phone','payment.record','report.view'],
             ],
             'Team booking' => [
                 'desc' => 'Team booking — sửa được info khách khi phase=booking, bấm nút Đặt booking. Chuyển sang phase Sale sau khi có data booking (không ghi note dịch vụ).',

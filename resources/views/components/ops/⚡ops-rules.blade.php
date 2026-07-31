@@ -127,7 +127,7 @@ class extends Component {
             $data['permMatrix'] = [
                 'lead.distribute_to_team' => ['CM cơ sở: chia kho công ty → team', $this->usersWithPermission('lead.distribute_to_team')],
                 'lead.distribute_to_sale' => ['CM team: chia kho team → sale', $this->usersWithPermission('lead.distribute_to_sale')],
-                'lead.distribute_booking' => ['Chia số kho Booking (phase)', $this->usersWithPermission('lead.distribute_booking')],
+                'lead.distribute_tele' => ['Chia số kho Tele (phase)', $this->usersWithPermission('lead.distribute_tele')],
                 'lead.distribute_sale' => ['Chia số kho Sale (phase)', $this->usersWithPermission('lead.distribute_sale')],
                 'lead.read_booking' => ['Xem info Cập nhật khi phase Booking (readonly)', $this->usersWithPermission('lead.read_booking')],
                 'lead.update_booking' => ['Sửa info khi Booking phase', $this->usersWithPermission('lead.update_booking')],
