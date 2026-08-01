@@ -230,6 +230,15 @@ Màn dành cho **Admin hệ thống** (permission `ops.manage`), quản lý toà
 - **Thanh arrow-breadcrumb 7 phase** trên đầu (style AMIS Data Source) — bấm chuyển tab.
 - **7 tab-phase** thay 6 tab cũ. Mỗi tab hiển thị form của phase đó. Phase bị skip theo nguồn thì ẩn hẳn. Phase đã chốt = readonly (trừ Admin lùi). Phase 6-7 = placeholder "chưa build".
 
+**Phase 4 rework (2026-08-01)** — Booking per-record thay cho cấp lead:
+- Cơ sở / Bác sĩ / Dịch vụ / Chuyên viên tư vấn giờ nằm trong **từng record `booking_logs`**, không còn ở cột lead. Cho phép mỗi khách có nhiều lần booking khác nhau (VD: lần 1 HN với BS A, lần 2 HCM với BS B) — mỗi record độc lập.
+- 2 khung Phase 4:
+  - **"Lịch sử booking"**: list các record — Chờ duyệt lên đầu, rồi `scheduled_at desc`. Mỗi record hiển thị đủ cơ sở/BS/DV/CV[]/trạng thái/người book.
+  - **"Tạo booking"**: form ghi record mới (Loại | Trạng thái lock "Chờ xác nhận" | Datetime | Cơ sở | BS | DV | Multi-CV +/-). Giữ ô "Trạng thái đặt lịch tổng thể" tự sync + nút "Đồng bộ từ bên booking".
+- **Handoff Sale**: khi record chuyển `da_xac_nhan` + có CV pivot position=1 + lead chưa có owner → auto gọi `assignToSale(cv1)` — CV1 của booking được duyệt trở thành Sale phụ trách lead. Perm giữ nguyên `lead.distribute_sale`.
+- Bảng mới: `booking_log_consultants` (pivot n-CV per booking, có `position`). `booking_logs` thêm `facility_id`.
+- Cột lead cũ `facility_id / doctor_id / consultant_1..3_id / service_name` **không dùng nữa** nhưng giữ nguyên trong DB (backward compat, dọn ở lần cleanup sau).
+
 ### 8.0.1 Trục lifecycle (Phase 6.8, 2026-07-19) — legacy, giữ song song
 
 Song song với `booking_status` (đã đặt lịch chưa), mỗi lead có 2 trục:

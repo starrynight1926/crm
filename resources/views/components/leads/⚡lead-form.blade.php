@@ -109,9 +109,12 @@ new class extends Component
     public string $newBookingType = ''; // '' = -- Chọn --, tham_kham | dich_vu (required)
     public string $newBookingStatus = 'cho_xac_nhan';
     public string $newBookingScheduledAt = '';
+    public ?int $newBookingFacilityId = null;
     public ?int $newBookingDoctorId = null;
     public ?int $newBookingServiceId = null;
     public string $newBookingNote = '';
+    /** @var array<int, int|null> Phase 4 rework 2026-08-01: multi-CV per booking. Mặc định 1 ô. */
+    public array $newBookingConsultantIds = [null];
 
     // State form Check-in (Phase 5)
     public string $checkinTime = '';
@@ -158,28 +161,61 @@ new class extends Component
             return;
         }
         $this->validate([
-            'newBookingType'        => 'required|in:tham_kham,dich_vu',
-            'newBookingStatus'      => 'required|in:' . implode(',', array_keys(BookingLog::STATUSES)),
-            'newBookingScheduledAt' => 'nullable|date',
-            'newBookingDoctorId'    => 'nullable|exists:staff_members,id',
-            'newBookingServiceId'   => 'nullable|exists:services,id',
-            'newBookingNote'        => 'nullable|string|max:1000',
+            'newBookingType'          => 'required|in:tham_kham,dich_vu',
+            'newBookingStatus'        => 'required|in:' . implode(',', array_keys(BookingLog::STATUSES)),
+            'newBookingScheduledAt'   => 'nullable|date',
+            'newBookingFacilityId'    => 'nullable|exists:facilities,id',
+            'newBookingDoctorId'      => 'nullable|exists:staff_members,id',
+            'newBookingServiceId'     => 'nullable|exists:services,id',
+            'newBookingNote'          => 'nullable|string|max:1000',
+            'newBookingConsultantIds' => 'array',
+            'newBookingConsultantIds.*' => 'nullable|exists:users,id',
         ], ['newBookingType.required' => 'Chọn loại booking (Thăm khám hoặc Dịch vụ).']);
-        BookingLog::create([
+        $bl = BookingLog::create([
             'lead_id'      => $this->lead->id,
             'user_id'      => $user->id,
             'type'         => $this->newBookingType,
             'status'       => $this->newBookingStatus,
             'scheduled_at' => $this->newBookingScheduledAt ?: null,
+            'facility_id'  => $this->newBookingFacilityId,
             'doctor_id'    => $this->newBookingDoctorId,
             'service_id'   => $this->newBookingServiceId,
             'note'         => $this->newBookingNote ?: null,
         ]);
+        // Phase 4 rework 2026-08-01: attach multi-CV pivot theo thứ tự chọn (position=1..n).
+        $cvIds = array_values(array_filter($this->newBookingConsultantIds, fn ($v) => (int) $v > 0));
+        $syncData = [];
+        foreach ($cvIds as $i => $uid) {
+            $syncData[(int) $uid] = ['position' => $i + 1];
+        }
+        if ($syncData) {
+            $bl->consultants()->sync($syncData);
+        }
         BookingLog::syncLeadBookingStatus($this->lead->id);
-        $this->reset(['newBookingType', 'newBookingScheduledAt', 'newBookingDoctorId', 'newBookingServiceId', 'newBookingNote']);
+        // Nếu booking đã duyệt + có CV1 + lead chưa có Sale → handoff CV1 thành Sale phụ trách.
+        if ($bl->status === BookingLog::STATUS_DA_XAC_NHAN && ! empty($cvIds) && ! $this->lead->fresh()->owner_id) {
+            $this->assignToSale((int) $cvIds[0], 1);
+        }
+        $this->reset([
+            'newBookingType', 'newBookingScheduledAt', 'newBookingFacilityId',
+            'newBookingDoctorId', 'newBookingServiceId', 'newBookingNote',
+        ]);
+        $this->newBookingConsultantIds = [null];
         $this->lead->refresh();
         $this->bookingStatus = $this->lead->booking_status ?? 'not_booked';
-        session()->flash('cf_ok', 'Đã ghi log booking. Đã đồng bộ trạng thái booking.');
+        session()->flash('cf_ok', 'Đã ghi booking mới. Đã đồng bộ trạng thái.');
+    }
+
+    public function addBookingConsultantSlot(): void
+    {
+        $this->newBookingConsultantIds[] = null;
+    }
+
+    public function removeBookingConsultantSlot(int $index): void
+    {
+        if (count($this->newBookingConsultantIds) <= 1) return;
+        unset($this->newBookingConsultantIds[$index]);
+        $this->newBookingConsultantIds = array_values($this->newBookingConsultantIds);
     }
 
     public function bulkSavePhases(): void
@@ -1583,253 +1619,71 @@ new class extends Component
                     </div>
                 </div>
 
-                {{-- Form "Chọn Sale để bàn giao" đã move sang section "Bác sĩ tư vấn" (CV1, CV2)
-                     — chỉ mở khi booking_status=booked (rule 2026-08-01). --}}
+                {{-- Phase 4 rework 2026-08-01: Sale phụ trách = CV1 của booking mới nhất được duyệt.
+                     Chọn CV ngay trong khung "Tạo booking" (Phase 4). --}}
                 <div class="border-t border-gold-200 pt-4 text-xs text-ink/50 italic">
-                    Chọn "Chuyên viên tư vấn 1, 2" ở section <b>Bác sĩ tư vấn</b> bên dưới — chỉ mở sau khi lịch booking được duyệt.
+                    Chuyên viên tư vấn giờ chọn theo <b>từng lần booking</b> ở Phase 4. CV1 của booking được duyệt sẽ tự thành Sale phụ trách lead.
                 </div>
             </div>
 
-            {{-- Bác sĩ tư vấn (bác sĩ + chuyên viên tư vấn) — Phase 4 (Booking) --}}
+            {{-- ============= Phase 4 rework 2026-08-01 — LỊCH SỬ BOOKING (list record) ============= --}}
+            {{-- Mỗi booking = 1 record chứa cơ sở/bác sĩ/dịch vụ/CV[]. Chờ duyệt lên đầu. --}}
             <div x-show="phase === 4" x-cloak class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
                 <h2 class="font-bold text-gold-700 mb-5 flex items-center gap-2">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z"/></svg>
-                    Bác sĩ tư vấn
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5"/></svg>
+                    Lịch sử booking <span class="text-sm text-ink/50 font-normal">(mỗi lần đặt/đổi/hủy = 1 record — Chờ duyệt lên đầu)</span>
                 </h2>
-                <div class="space-y-4">
-                    <div>
-                        <label class="block text-sm font-medium mb-1.5">CƠ SỞ</label>
-                        <select wire:model.live="facilityId" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-gold-500">
-                            <option value="">— Chọn cơ sở —</option>
-                            @foreach ($facilities as $fac)
-                                <optgroup label="{{ $fac->name }}">
-                                    @foreach ($fac->children as $dept)
-                                        <option value="{{ $dept->id }}">{{ $fac->name }} › {{ $dept->name }}</option>
-                                    @endforeach
-                                </optgroup>
-                            @endforeach
-                        </select>
-                    </div>
-
-                    {{-- BÁC SĨ — vẫn dùng staff_members (title, chuyển API booking sau) --}}
-                    <?php $doctorDropdowns = [
-                        ['label' => 'BÁC SĨ TƯ VẤN', 'wireModel' => 'doctorId', 'role' => 'doctors', 'placeholder' => 'Chọn bác sĩ', 'current' => $doctorId, 'slot' => 0],
-                    ]; ?>
-                    @foreach ($doctorDropdowns as $dd)
-                        <div @if($dd['slot'] > 0) x-show="extraConsultants >= {{ $dd['slot'] }}" x-cloak @endif>
-                            <label class="block text-sm font-medium mb-1.5">{{ $dd['label'] }}</label>
-                            <div x-data="{
-                                open: false,
-                                search: '',
-                                role: '{{ $dd['role'] }}',
-                                selectedId: {{ $dd['current'] ?: 'null' }},
-                                selectedName: {{ Js::from($dd['current'] ? $allStaff->firstWhere('id', $dd['current'])?->displayName() : '') }},
-                                get hasSelection() { return this.selectedId != null && this.selectedId > 0; },
-                                get filtered() {
-                                    let q = this.search.toLowerCase();
-                                    let fid = parseInt($wire.facilityId) || 0;
-                                    let tree = window.__staffTree;
-                                    let base = q
-                                        ? tree.map(fac => ({
-                                            ...fac,
-                                            depts: fac.depts.map(dept => ({
-                                                ...dept,
-                                                [this.role]: dept[this.role].filter(s => s.name.toLowerCase().includes(q))
-                                            })).filter(dept => dept[this.role].length > 0)
-                                        })).filter(fac => fac.depts.length > 0)
-                                        : tree.filter(fac => fac.depts.some(d => d[this.role].length > 0));
-                                    if (!fid) return base;
-                                    let matched = base.filter(fac => fac.depts.some(d => d.id === fid));
-                                    let rest = base.filter(fac => !fac.depts.some(d => d.id === fid));
-                                    return [...matched, ...rest];
-                                },
-                                pick(id, name) {
-                                    this.selectedId = id;
-                                    this.selectedName = name;
-                                    this.open = false;
-                                    this.search = '';
-                                    $wire.set('{{ $dd['wireModel'] }}', id);
-                                },
-                                clear() {
-                                    this.selectedId = null;
-                                    this.selectedName = '';
-                                    $wire.set('{{ $dd['wireModel'] }}', null);
-                                }
-                            }" @click.outside="open = false; search = ''" class="relative">
-                                <div x-show="hasSelection" x-cloak class="flex items-center justify-between gap-2 border border-gold-300 bg-gold-50 rounded-md px-3 py-2.5">
-                                    <span class="text-sm font-semibold text-gold-800 whitespace-pre-line leading-tight" x-text="selectedName"></span>
-                                    <button type="button" @click="clear()" class="text-xs font-semibold text-ink/50 hover:text-red-600">✕</button>
-                                </div>
-                                <button x-show="!hasSelection" type="button" @click="open = !open"
-                                        class="w-full flex items-center justify-between border border-gold-200 rounded-md px-3 py-2.5 text-sm text-ink/40 bg-white hover:border-gold-400">
-                                    <span>— {{ $dd['placeholder'] }} —</span>
-                                    <svg class="w-4 h-4 text-ink/30" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"/></svg>
-                                </button>
-                                <div x-show="open" x-cloak
-                                     class="absolute z-30 mt-1 w-full bg-white border border-gold-200 rounded-lg shadow-lg max-h-72 flex flex-col">
-                                    <div class="p-2 border-b border-gold-100">
-                                        <input type="text" x-model="search" placeholder="Nhập tên..." @keydown.escape="open = false; search = ''"
-                                               class="w-full border border-gold-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-gold-500" x-ref="searchInput">
-                                    </div>
-                                    <div class="overflow-y-auto flex-1 py-1">
-                                        <template x-for="fac in filtered" :key="fac.name">
-                                            <div>
-                                                <div class="px-3 py-1.5 text-xs font-bold text-gold-700 uppercase tracking-wider bg-gold-50" x-text="fac.name"></div>
-                                                <template x-for="dept in fac.depts" :key="dept.name">
-                                                    <div>
-                                                        <div class="px-5 py-1 text-xs font-semibold text-ink/50" x-text="dept.name"></div>
-                                                        <template x-for="s in dept[role]" :key="s.id">
-                                                            <button type="button" @click="pick(s.id, s.name)"
-                                                                    class="block w-full text-left pl-8 pr-3 py-1.5 text-sm hover:bg-gold-50 whitespace-pre-line leading-tight"
-                                                                    :class="{'bg-gold-100 font-semibold text-gold-800': selectedId === s.id}">
-                                                                <span x-text="s.name"></span>
-                                                            </button>
-                                                        </template>
-                                                    </div>
-                                                </template>
-                                            </div>
-                                        </template>
-                                        <template x-if="filtered.length === 0">
-                                            <p class="px-3 py-2 text-sm text-ink/40">Không tìm thấy.</p>
-                                        </template>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    @endforeach
-
-                    {{-- Rule 2026-08-01: CV1, CV2 chỉ mở khi booking_status=booked + user có
-                         perm distribute_sale (Admin cơ sở). CV1 pick = handoff Sale luôn. --}}
+                @if ($lead?->exists && $lead->bookingLogs->isNotEmpty())
                     @php
-                        $_bookedForCv = $lead?->booking_status === \App\Models\Lead::BOOKING_BOOKED;
-                        $_canAssignCv = auth()->user()->hasPermission('lead.distribute_sale')
-                            || auth()->user()->hasPermission('phase.rollback')
-                            || auth()->user()->hasPermission('lead.distribute');
+                        $blOrder = [\App\Models\BookingLog::STATUS_CHO_XAC_NHAN => 0, \App\Models\BookingLog::STATUS_DA_XAC_NHAN => 1, \App\Models\BookingLog::STATUS_HUY_DOI_LICH => 2];
+                        $bookingList = $lead->bookingLogs()
+                            ->with(['user', 'facility.parent', 'doctor', 'service', 'consultants'])
+                            ->get()
+                            ->sort(function ($a, $b) use ($blOrder) {
+                                $sa = $blOrder[$a->status] ?? 9;
+                                $sb = $blOrder[$b->status] ?? 9;
+                                if ($sa !== $sb) return $sa <=> $sb;
+                                return ($b->scheduled_at?->timestamp ?? 0) <=> ($a->scheduled_at?->timestamp ?? 0);
+                            })->values();
                     @endphp
-                    @if (! $_bookedForCv)
-                        <div class="p-3 bg-amber-50 border border-amber-200 rounded-md text-sm text-amber-800">
-                            <b>Chờ booking được duyệt.</b> Sau khi <code>booking_status = booked</code> (sbooking duyệt lịch), Admin cơ sở mới chọn được Chuyên viên tư vấn 1, 2.
-                        </div>
-                    @elseif (! $_canAssignCv)
-                        <div class="p-3 bg-slate-50 border border-slate-200 rounded-md text-sm text-ink/60 italic">
-                            Chỉ Admin cơ sở (perm <code>lead.distribute_sale</code>) mới chọn được Chuyên viên tư vấn.
-                        </div>
-                    @endif
-                    <?php $consultantDropdowns = ($_bookedForCv && $_canAssignCv) ? [
-                        ['label' => 'CHUYÊN VIÊN TƯ VẤN 1', 'wireModel' => 'consultant1Id', 'current' => $consultant1Id, 'slot' => 0, 'call' => 1],
-                        ['label' => 'CHUYÊN VIÊN TƯ VẤN 2', 'wireModel' => 'consultant2Id', 'current' => $consultant2Id, 'slot' => 1, 'call' => 2],
-                        ['label' => 'CHUYÊN VIÊN TƯ VẤN 3', 'wireModel' => 'consultant3Id', 'current' => $consultant3Id, 'slot' => 2, 'call' => null],
-                    ] : []; ?>
-                    @foreach ($consultantDropdowns as $cv)
-                        <?php
-                            $cvCurrentName = $cv['current']
-                                ? ($consultantUsers && ($_f = collect($consultantUsers)->firstWhere('id', $cv['current'])) ? $_f['name'] : ($assignedConsultants->firstWhere('id', $cv['current'])['name'] ?? ''))
-                                : '';
-                            // Alpine click: giảm slot, clear id hiện tại. Nếu bớt CV2 thì cũng clear CV3.
-                            $removeExpr = 'extraConsultants = ' . ($cv['slot'] - 1)
-                                . '; $wire.set(\'' . $cv['wireModel'] . '\', null)'
-                                . ($cv['slot'] === 1 ? '; $wire.set(\'consultant3Id\', null)' : '');
-                        ?>
-                        <div @if($cv['slot'] > 0) x-show="extraConsultants >= {{ $cv['slot'] }}" x-cloak @endif>
-                            <div class="flex items-center justify-between mb-1.5">
-                                <label class="block text-sm font-medium">{{ $cv['label'] }}</label>
-                                @if ($cv['slot'] > 0)
-                                    <button type="button"
-                                            @click="{{ $removeExpr }}"
-                                            class="text-xs font-semibold text-red-600 hover:text-red-800 inline-flex items-center gap-1"
-                                            title="Bớt chuyên viên {{ $cv['slot'] + 1 }}">
-                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
-                                        Bớt
-                                    </button>
-                                @endif
-                            </div>
-                            <div x-data="{
-                                open: false,
-                                search: '',
-                                selectedId: {{ $cv['current'] ?: 'null' }},
-                                selectedName: @js($cvCurrentName),
-                                get list() { return window.__consultantUsers || []; },
-                                get hasSelection() { return this.selectedId != null && this.selectedId > 0; },
-                                get filtered() {
-                                    let q = this.search.toLowerCase().trim();
-                                    return q === '' ? this.list : this.list.filter(u => u.name.toLowerCase().includes(q));
-                                },
-                                pick(id, name) {
-                                    this.selectedId = id;
-                                    this.selectedName = name;
-                                    this.open = false;
-                                    this.search = '';
-                                    @if (! empty($cv['call']))
-                                        $wire.call('assignToSale', id, {{ $cv['call'] }});
-                                    @else
-                                        $wire.set('{{ $cv['wireModel'] }}', id);
-                                    @endif
-                                },
-                                clear() {
-                                    this.selectedId = null;
-                                    this.selectedName = '';
-                                    $wire.set('{{ $cv['wireModel'] }}', null);
-                                }
-                            }" @click.outside="open = false; search = ''" class="relative">
-                                <div x-show="hasSelection" x-cloak class="flex items-center justify-between gap-2 border border-gold-300 bg-gold-50 rounded-md px-3 py-2.5">
-                                    <span class="text-sm font-semibold text-gold-800" x-text="selectedName"></span>
-                                    <button type="button" @click="clear()" class="text-xs font-semibold text-ink/50 hover:text-red-600">✕</button>
+                    <div class="border border-slate-200 rounded divide-y text-sm">
+                        @foreach ($bookingList as $bl)
+                            @php
+                                $b = match ($bl->status) {
+                                    'da_xac_nhan' => 'bg-emerald-100 text-emerald-700',
+                                    'huy_doi_lich' => 'bg-red-100 text-red-700',
+                                    default => 'bg-amber-100 text-amber-700 ring-1 ring-amber-300',
+                                };
+                                $tb = $bl->type === 'tham_kham' ? 'bg-sky-100 text-sky-700' : ($bl->type === 'dich_vu' ? 'bg-fuchsia-100 text-fuchsia-700' : 'bg-slate-100 text-slate-500');
+                                $tlabel = $bl->type === 'tham_kham' ? '🩺 Thăm khám' : ($bl->type === 'dich_vu' ? '💆 Dịch vụ' : 'Chưa gán loại');
+                                $facLabel = $bl->facility ? (($bl->facility->parent?->name ? $bl->facility->parent->name . ' › ' : '') . $bl->facility->name) : '—';
+                            @endphp
+                            <div class="p-3 space-y-1.5">
+                                <div class="flex items-center flex-wrap gap-2">
+                                    <span class="text-xs px-2 py-0.5 rounded whitespace-nowrap {{ $tb }}">{{ $tlabel }}</span>
+                                    <span class="text-xs px-2 py-0.5 rounded whitespace-nowrap {{ $b }}">{{ $bl->statusLabel() }}</span>
+                                    <span class="text-xs text-ink/50">Lịch: <b class="text-ink/80">{{ $bl->scheduled_at?->format('d/m/Y H:i') ?? 'chưa đặt' }}</b></span>
+                                    <span class="text-xs text-ink/40 ml-auto">Người book: {{ $bl->user->name ?? 'system' }}</span>
                                 </div>
-                                <button x-show="!hasSelection" type="button" @click="open = !open"
-                                        class="w-full flex items-center justify-between border border-gold-200 rounded-md px-3 py-2.5 text-sm text-ink/40 bg-white hover:border-gold-400">
-                                    <span>— Chọn chuyên viên —</span>
-                                    <svg class="w-4 h-4 text-ink/30" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"/></svg>
-                                </button>
-                                <div x-show="open" x-cloak
-                                     class="absolute z-30 mt-1 w-full bg-white border border-gold-200 rounded-lg shadow-lg max-h-72 flex flex-col">
-                                    <div class="p-2 border-b border-gold-100">
-                                        <input type="text" x-model="search" placeholder="Nhập tên..." @keydown.escape="open = false; search = ''"
-                                               class="w-full border border-gold-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-gold-500">
-                                    </div>
-                                    <div class="overflow-y-auto flex-1 py-1">
-                                        <template x-for="u in filtered" :key="u.id">
-                                            <button type="button" @click="pick(u.id, u.name)"
-                                                    class="block w-full text-left px-3 py-1.5 text-sm hover:bg-gold-50"
-                                                    :class="{'bg-gold-100 font-semibold text-gold-800': selectedId === u.id}">
-                                                <span x-text="u.name"></span>
-                                            </button>
-                                        </template>
-                                        <template x-if="filtered.length === 0">
-                                            <p class="px-3 py-2 text-sm text-ink/40">Không có chuyên viên phù hợp trong team.</p>
-                                        </template>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    @endforeach
-
-                    <button x-show="extraConsultants < 2" type="button" @click="extraConsultants++"
-                            class="inline-flex items-center gap-1.5 text-sm font-medium text-gold-700 hover:text-gold-800">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
-                        Thêm chuyên viên tư vấn
-                    </button>
-
-                    {{-- Dịch vụ chính (nhãn nhanh, hiện ở lead-detail) --}}
-                    <div class="border-t border-gold-100 pt-4">
-                        <label class="block text-sm font-medium mb-1.5">DỊCH VỤ CHÍNH</label>
-                        <select wire:model="service_name" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-gold-500">
-                            <option value="">— Chọn dịch vụ —</option>
-                            @foreach ($serviceTree as $cat)
-                                <optgroup label="{{ $cat->name }}">
-                                    @foreach ($cat->children as $child)
-                                        @if ($child->children->isNotEmpty())
-                                            @foreach ($child->children as $leaf)
-                                                <option value="{{ $leaf->name }}">{{ $child->name }} · {{ $leaf->name }}</option>
-                                            @endforeach
+                                <div class="text-xs text-ink/70 flex flex-wrap gap-x-4 gap-y-1">
+                                    <span>🏥 <b>{{ $facLabel }}</b></span>
+                                    <span>👨‍⚕️ BS: <b>{{ $bl->doctor->name ?? '—' }}</b></span>
+                                    <span>💊 DV: <b>{{ $bl->service->name ?? '—' }}</b></span>
+                                    <span>🧑‍💼 CV:
+                                        @if ($bl->consultants->isNotEmpty())
+                                            <b>{{ $bl->consultants->pluck('name')->implode(', ') }}</b>
                                         @else
-                                            <option value="{{ $child->name }}">{{ $child->name }}</option>
+                                            <span class="italic text-ink/40">—</span>
                                         @endif
-                                    @endforeach
-                                </optgroup>
-                            @endforeach
-                        </select>
+                                    </span>
+                                </div>
+                                @if ($bl->note)<div class="text-ink/80 text-xs italic">📝 {{ $bl->note }}</div>@endif
+                            </div>
+                        @endforeach
                     </div>
-                </div>
+                @else
+                    <p class="text-xs text-ink/40 italic">Chưa có booking nào. Dùng khung "Tạo booking" bên dưới để tạo record mới.</p>
+                @endif
             </div>
 
             {{-- INSIGHT — Phase 3 (Gọi điện) — order 3 (dưới cùng) --}}
@@ -2281,12 +2135,16 @@ new class extends Component
                 @endif
             </div>
 
-            {{-- ============= Phase 6.21 — Section BOOKING LOGS (Phase 4) ============= --}}
+            {{-- ============= Phase 4 rework 2026-08-01 — GHI NHẬN BOOKING (log nội bộ) ============= --}}
             <div x-show="phase === 4" x-cloak class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
-                <h2 class="font-bold text-gold-700 mb-5 flex items-center gap-2">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5"/></svg>
-                    Lịch sử booking <span class="text-sm text-ink/50 font-normal">(mỗi lần đặt/đổi/hủy = 1 record)</span>
+                <h2 class="font-bold text-gold-700 mb-2 flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
+                    Ghi nhận booking <span class="text-sm text-ink/50 font-normal">(log nội bộ — tracking bên CRM)</span>
                 </h2>
+                <div class="mb-4 p-2.5 bg-blue-50 border border-blue-200 rounded text-xs text-blue-900 leading-relaxed">
+                    ⚠️ Khung này chỉ <b>ghi log nội bộ</b> (cơ sở / bác sĩ / dịch vụ / CV cho từng lần định đặt) — <b>KHÔNG</b> đẩy sang hệ thống Booking.
+                    Muốn tạo lịch thật (có phòng + khung giờ chuẩn), bấm nút <b>"Đặt booking"</b> màu xanh ở cuối form → mở lara-sbooking để đặt.
+                </div>
 
                 {{-- TRẠNG THÁI ĐẶT LỊCH (tổng thể) — readonly, tự sync từ booking_logs mới nhất --}}
                 <div class="mb-4 pb-4 border-b border-slate-200">
@@ -2298,34 +2156,7 @@ new class extends Component
                     </div>
                     <p class="text-xs text-ink/50 mt-1">Tự cập nhật khi thêm booking mới hoặc bên hệ thống booking sync về — không chỉnh tay.</p>
                 </div>
-                @if ($lead?->exists && $lead->bookingLogs->isNotEmpty())
-                    <div class="border border-slate-200 rounded divide-y mb-4 text-sm">
-                        @foreach ($lead->bookingLogs()->with(['user', 'doctor', 'service'])->orderByDesc('scheduled_at')->get() as $bl)
-                            <div class="p-3 flex items-start gap-3">
-                                @php
-                                    $b = match ($bl->status) {
-                                        'da_xac_nhan' => 'bg-emerald-100 text-emerald-700',
-                                        'huy_doi_lich' => 'bg-red-100 text-red-700',
-                                        default => 'bg-amber-100 text-amber-700',
-                                    };
-                                    $tb = $bl->type === 'tham_kham' ? 'bg-sky-100 text-sky-700' : ($bl->type === 'dich_vu' ? 'bg-fuchsia-100 text-fuchsia-700' : 'bg-slate-100 text-slate-500');
-                                    $tlabel = $bl->type === 'tham_kham' ? '🩺 Thăm khám' : ($bl->type === 'dich_vu' ? '💆 Dịch vụ' : 'Chưa gán loại');
-                                @endphp
-                                <span class="text-xs px-2 py-0.5 rounded whitespace-nowrap {{ $tb }}">{{ $tlabel }}</span>
-                                <span class="text-xs px-2 py-0.5 rounded whitespace-nowrap {{ $b }}">{{ $bl->statusLabel() }}</span>
-                                <div class="flex-1">
-                                    <div class="text-xs text-ink/50">
-                                        Lịch: {{ $bl->scheduled_at?->format('d/m/Y H:i') ?? 'chưa đặt' }}
-                                        · BS: {{ $bl->doctor->name ?? '—' }}
-                                        · DV: {{ $bl->service->name ?? '—' }}
-                                        · bởi {{ $bl->user->name ?? 'system' }}
-                                    </div>
-                                    @if ($bl->note)<div class="text-ink/80 mt-1">{{ $bl->note }}</div>@endif
-                                </div>
-                            </div>
-                        @endforeach
-                    </div>
-                @endif
+
                 @if ($lead?->exists)
                     <div class="flex items-center justify-between mb-2">
                         <span></span>
@@ -2336,7 +2167,8 @@ new class extends Component
                     </div>
                     <div class="border border-dashed border-slate-300 bg-slate-50 rounded p-3 space-y-2">
                         <div class="text-xs font-semibold text-ink/60">Thêm booking mới <span class="font-normal text-ink/40">— mặc định "Chờ xác nhận", bên booking cập nhật sẽ tự sync về đây</span></div>
-                        <div class="grid grid-cols-2 md:grid-cols-5 gap-2">
+                        {{-- Hàng 1: Loại | Trạng thái (lock) | Datetime --}}
+                        <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
                             <select wire:model.live="newBookingType" class="border border-slate-300 rounded px-2 py-1.5 text-sm">
                                 <option value="">— Loại * —</option>
                                 <option value="tham_kham">🩺 Thăm khám</option>
@@ -2348,6 +2180,19 @@ new class extends Component
                                 <span class="ml-auto text-[10px]">🔒</span>
                             </div>
                             <input type="datetime-local" wire:model="newBookingScheduledAt" class="border border-slate-300 rounded px-2 py-1.5 text-sm">
+                        </div>
+                        {{-- Hàng 2: Cơ sở | Bác sĩ | Dịch vụ --}}
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
+                            <select wire:model="newBookingFacilityId" class="border border-slate-300 rounded px-2 py-1.5 text-sm">
+                                <option value="">— Cơ sở —</option>
+                                @foreach ($facilities as $fac)
+                                    <optgroup label="{{ $fac->name }}">
+                                        @foreach ($fac->children as $dept)
+                                            <option value="{{ $dept->id }}">{{ $fac->name }} › {{ $dept->name }}</option>
+                                        @endforeach
+                                    </optgroup>
+                                @endforeach
+                            </select>
                             <select wire:model="newBookingDoctorId" class="border border-slate-300 rounded px-2 py-1.5 text-sm">
                                 <option value="">— Bác sĩ —</option>
                                 @foreach (\App\Models\StaffMember::where('role','doctor')->where('active',true)->orderBy('name')->get() as $d)
@@ -2365,8 +2210,27 @@ new class extends Component
                                 @endif
                             </select>
                         </div>
+                        {{-- Hàng 3: Chuyên viên tư vấn (multi) --}}
+                        <div class="space-y-1.5">
+                            <div class="text-xs font-semibold text-ink/60">Chuyên viên tư vấn <span class="font-normal text-ink/40">(có thể chọn nhiều — người đầu tiên = Sale phụ trách nếu booking được duyệt)</span></div>
+                            @foreach ($newBookingConsultantIds as $cvIdx => $cvVal)
+                                <div class="flex items-center gap-2" wire:key="new-cv-{{ $cvIdx }}">
+                                    <span class="text-xs text-ink/50 w-6 text-right">#{{ $cvIdx + 1 }}</span>
+                                    <select wire:model="newBookingConsultantIds.{{ $cvIdx }}" class="flex-1 border border-slate-300 rounded px-2 py-1.5 text-sm">
+                                        <option value="">— Chọn CV —</option>
+                                        @foreach ($consultantUsers ?? [] as $cu)
+                                            <option value="{{ $cu['id'] }}">{{ $cu['name'] }}</option>
+                                        @endforeach
+                                    </select>
+                                    @if (count($newBookingConsultantIds) > 1)
+                                        <button type="button" wire:click="removeBookingConsultantSlot({{ $cvIdx }})" class="text-xs text-red-600 hover:text-red-800 px-2">✕</button>
+                                    @endif
+                                </div>
+                            @endforeach
+                            <button type="button" wire:click="addBookingConsultantSlot" class="text-xs font-semibold text-gold-700 hover:text-gold-800">+ Thêm CV</button>
+                        </div>
                         <input wire:model="newBookingNote" placeholder="Ghi chú sau booking..." class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm">
-                        <button type="button" wire:click="addBookingLog" class="text-sm bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-4 py-1.5 rounded">+ Ghi booking</button>
+                        <button type="button" wire:click="addBookingLog" class="text-sm bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-4 py-1.5 rounded">+ Tạo booking</button>
                     </div>
                 @else
                     <p class="text-xs text-ink/40 italic">Bấm "Lưu thông tin khách hàng" để tạo lead trước.</p>

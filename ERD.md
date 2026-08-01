@@ -144,20 +144,33 @@ Bổ sung 2026-07-03 (mã KH + trường tùy biến, xem scope.md 4.1–4.2):
 
 `INDEX(lead_id, called_at desc)`, `INDEX(user_id)`. Ai được ghi log: owner + QL Sale (`lead.distribute_sale`) + Admin vận hành.
 
-**booking_logs** (Phase 6.21) — mỗi lần đặt/đổi/hủy booking = 1 record
+**booking_logs** (Phase 6.21 → rework 2026-08-01) — mỗi lần đặt/đổi/hủy booking = 1 record. Từ 2026-08-01: mỗi record TỰ chứa cơ sở/BS/DV/CV — bỏ đọc cột `leads.facility_id/doctor_id/consultant_*` (cột DB giữ backward compat).
 | Cột | Ghi chú |
 |---|---|
 | id | PK |
 | lead_id | FK leads (cascade) |
+| facility_id | **FK facilities nullable** (2026-08-01) — cơ sở của lần booking này |
 | user_id | FK users — ai đặt |
+| type | varchar(20) nullable — `tham_kham` / `dich_vu` |
 | status | varchar(20) — `da_xac_nhan` / `cho_xac_nhan` / `huy_doi_lich` |
 | scheduled_at | datetime nullable |
-| doctor_id | FK staff_members nullable |
-| service_id | FK services nullable |
+| doctor_id | FK staff_members nullable — bác sĩ của lần booking này |
+| service_id | FK services nullable — dịch vụ của lần booking này |
 | note | text nullable |
 | timestamps | |
 
-`INDEX(lead_id, scheduled_at desc)`, `INDEX(user_id)`. Khi thêm booking_log `da_xac_nhan` → sync `leads.booking_status = 'booked'` (compat với code cũ).
+`INDEX(lead_id, scheduled_at desc)`, `INDEX(user_id)`. Khi thêm booking_log `da_xac_nhan` → sync `leads.booking_status = 'booked'` (compat với code cũ). Nếu record `da_xac_nhan` + có CV pivot position=1 + lead chưa có owner → auto handoff Sale.
+
+**booking_log_consultants** (2026-08-01) — pivot: mỗi booking có N chuyên viên tư vấn
+| Cột | Ghi chú |
+|---|---|
+| id | PK |
+| booking_log_id | FK booking_logs (cascade) |
+| user_id | FK users (cascade) |
+| position | tinyint default 1 — thứ tự (1 = CV chính = Sale phụ trách nếu booking duyệt) |
+| timestamps | |
+
+`UNIQUE(booking_log_id, user_id)`, `INDEX(user_id)`.
 
 **lead_distribution_logs** — id, lead_id FK, action (`distribute`/`recall`/`escalate`/`manual_assign`/`approve`/`reject`), from_pool_level, to_pool_level, from_owner_id, to_owner_id, org_unit_id, rule_id nullable, actor_id nullable (null = hệ thống), reason text nullable (dùng cho reject/escalate), created_at.
 

@@ -1285,3 +1285,22 @@ Tài khoản test suggest:
 - Sale HN: `hn.tsg.sale01@longevity.com.vn` (MKT_BR + SA, sửa info phase 4).
 
 Vào `/leads/create` tạo mới với các nguồn khác nhau. Vào `/leads/{id}/edit` để test UI 7 phase, chuyển tab, thêm call log, thêm booking (chọn Loại), Kết thúc phase / Lùi phase (Admin).
+
+### 6.21i — Phase 4 rework: booking per-record (2026-08-01)
+- **Migration mới**: `2026_08_01_100000` thêm `booking_logs.facility_id` (nullable FK), `2026_08_01_100001` tạo pivot `booking_log_consultants(booking_log_id, user_id, position)` — cho phép mỗi booking có N chuyên viên tư vấn.
+- **BookingLog model**: thêm `facility()` belongsTo + `consultants()` belongsToMany ordered by pivot position. Fillable thêm `facility_id`.
+- **Rework UI Phase 4** (`⚡lead-form.blade.php`): swap 2 khung.
+  - Khung "Bác sĩ tư vấn" (cũ, dropdowns cấp lead) → thay hoàn toàn thành **"Lịch sử booking"** = list record booking (Chờ duyệt lên đầu, rồi scheduled_at desc). Mỗi row hiển thị: người book, datetime, cơ sở, BS, DV, CV[], badge trạng thái.
+  - Khung "Lịch sử booking" (cũ, form tạo booking) → đổi thành **"Tạo booking"**, form mở rộng: Loại | Trạng thái (lock) | Datetime | **Cơ sở** | **Bác sĩ** | **Dịch vụ** | **CV multi-select** (nút "+ Thêm CV" / "✕ bỏ"). Giữ ô "Trạng thái tổng thể" + nút "Đồng bộ".
+- **Backend Livewire**: thêm properties `newBookingFacilityId`, `newBookingConsultantIds[]`; method `addBookingConsultantSlot()` / `removeBookingConsultantSlot()`; `addBookingLog()` giờ ghi facility_id + attach pivot CV theo position; nếu booking = `da_xac_nhan` + có CV1 + lead chưa có owner → auto call `assignToSale(cv1, 1)` để handoff Sale phụ trách.
+- **Bỏ dropdowns cấp lead khỏi UI**: Cơ sở / Bác sĩ / CV1/2/3 / Dịch vụ chính không còn ở Phase 4. **Cột DB `leads.facility_id, doctor_id, consultant_1/2/3_id, service_name` GIỮ NGUYÊN** (backward compat, có thể drop ở lần dọn dẹp sau).
+- **lead-detail sidebar**: đọc Cơ sở/BS/CV/DV từ `latestBooking = lead->bookingLogs()->orderByDesc(scheduled_at)->first()` thay vì cột lead. Label CV không còn cứng "CVTV1..3", giờ đánh số theo position của pivot.
+- **Rủi ro / cần verify tay**:
+  - Handoff Sale: trước đây trigger khi pick CV1 dropdown. Giờ trigger tự động khi tạo booking `da_xac_nhan` + có CV. Test cả case tạo booking `cho_xac_nhan` trước → sau đó update sang `da_xac_nhan`: hiện logic chỉ handoff ở tạo mới, nếu user đổi status booking cũ sang duyệt thì chưa auto handoff (dời sang cải tiến sau).
+  - `service_name` không còn ghi mới từ Phase 4 → các dashboard/report group by `leads.service_name` sẽ chỉ có data lịch sử, không có data mới. Cần kiểm tra khi build phase 8.
+
+### 6.21j — Booking push scrm→sbooking: HOÃN, giữ flow cũ (2026-08-01)
+- Investigated: form "Tạo booking" mới không thể push sang lara-sbooking vì `BookingController@store` bên sbooking đòi `phong_id` + `khung_gio_id` (REQUIRED) + validate KTV/BS/phòng conflict real-time. Scrm form chỉ có `datetime` + `facility_id`, thiếu phòng và khung giờ → push sẽ fail validate.
+- 3 lựa chọn cân nhắc: (1) giữ nút "Đặt booking" cũ redirect + prefill, form scrm chỉ ghi local để tracking; (2) mở rộng form scrm duplicate y hệt form sbooking (~700 dòng logic + fetch dynamic phòng/khung giờ); (3) sbooking build API "quick-book" bypass hết conflict check (data lệch).
+- **Chốt (1)**: form "Tạo booking" đổi tên thành **"Ghi nhận booking"** (log nội bộ). Thêm banner xanh cảnh báo "chỉ ghi log nội bộ — muốn tạo lịch thật bấm 'Đặt booking'". Nút "Đặt booking" (redirect sbooking + callback) đã có sẵn ở footer form, giữ nguyên.
+- Lý do: form sbooking là feature hoàn chỉnh với business logic phòng/khung giờ/conflict — replicate hoặc bypass = phá vỡ integrity. Sau này nếu cần tự động push, phải build lại form scrm hoặc thay đổi contract 2 phía (task riêng, ~1-2 session).

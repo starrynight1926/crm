@@ -380,11 +380,16 @@ new class extends Component
         $customValues = $this->lead->customValues->pluck('value', 'custom_field_id');
 
         $this->lead->load([
-            'facility.parent', 'doctor.facility.parent',
-            'consultant1', 'consultant2', 'consultant3',
             'treatments.performingDoctor',
             'upsells.staffMember', 'upsells.service',
         ]);
+
+        // Phase 4 rework 2026-08-01: cơ sở/BS/DV/CV lấy từ booking_logs mới nhất, không đọc cột lead nữa.
+        $latestBooking = $this->lead->bookingLogs()
+            ->with(['facility.parent', 'doctor.facility.parent', 'service', 'consultants'])
+            ->orderByDesc('scheduled_at')
+            ->orderByDesc('created_at')
+            ->first();
 
         $lastPayment = Payment::where('lead_id', $this->lead->id)->orderByDesc('paid_at')->first();
         $totalPaid = Payment::where('lead_id', $this->lead->id)->sum('amount');
@@ -415,6 +420,7 @@ new class extends Component
             'lastPayment' => $lastPayment,
             'totalPaid' => $totalPaid,
             'paymentMethods' => $paymentMethods,
+            'latestBooking' => $latestBooking,
         ];
     }
 };
@@ -582,32 +588,34 @@ new class extends Component
                     <div class="border-t border-gold-100 pt-3 mt-1">
                         <p class="text-xs font-bold uppercase tracking-wider text-ink/40 mb-2">Cơ sở & Nhân sự</p>
                         <div class="space-y-2">
-                            @if ($lead->facility)
+                            {{-- Phase 4 rework 2026-08-01: đọc từ booking mới nhất, không đọc cột lead nữa. --}}
+                            @if ($latestBooking?->facility)
                             <div class="flex items-center gap-2">
                                 <svg class="w-3.5 h-3.5 text-ink/30 shrink-0" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 21h19.5m-18-18v18m10.5-18v18m6-13.5V21M6.75 6.75h.75m-.75 3h.75m-.75 3h.75m3-6h.75m-.75 3h.75m-.75 3h.75M6.75 21v-3.375c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21M3 3h12m-.75 4.5H21m-3.75 3H21"/></svg>
                                 <span class="font-medium text-sm">
-                                    @if ($lead->facility->parent) {{ $lead->facility->parent->name }} › @endif{{ $lead->facility->name }}
+                                    @if ($latestBooking->facility->parent) {{ $latestBooking->facility->parent->name }} › @endif{{ $latestBooking->facility->name }}
                                 </span>
+                                <span class="text-[10px] text-ink/40">(booking gần nhất)</span>
                             </div>
                             @endif
-                            @if ($lead->doctor)
+                            @if ($latestBooking?->doctor)
                             <div class="flex items-start gap-2">
                                 <span class="text-[10px] font-bold uppercase tracking-wider bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded shrink-0 mt-0.5">BS tư vấn</span>
-                                <span class="font-medium text-sm whitespace-pre-line leading-tight">{{ $lead->doctor->displayName() }}</span>
+                                <span class="font-medium text-sm whitespace-pre-line leading-tight">{{ $latestBooking->doctor->displayName() }}</span>
                             </div>
                             @endif
-                            @foreach ([$lead->consultant1, $lead->consultant2, $lead->consultant3] as $i => $cv)
-                                @if ($cv)
+                            @if ($latestBooking && $latestBooking->consultants->isNotEmpty())
+                                @foreach ($latestBooking->consultants as $i => $cv)
                                 <div class="flex items-center gap-2">
-                                    <span class="text-[10px] font-bold uppercase tracking-wider bg-green-100 text-green-700 px-1.5 py-0.5 rounded shrink-0">CVTV{{ $i + 1 }}</span>
+                                    <span class="text-[10px] font-bold uppercase tracking-wider bg-green-100 text-green-700 px-1.5 py-0.5 rounded shrink-0">CV{{ $i + 1 }}</span>
                                     <span class="font-medium text-sm">{{ $cv->name }}</span>
                                 </div>
-                                @endif
-                            @endforeach
-                            @if ($lead->service_name)
+                                @endforeach
+                            @endif
+                            @if ($latestBooking?->service)
                             <div class="flex items-center gap-2">
                                 <span class="text-[10px] font-bold uppercase tracking-wider bg-gold-100 text-gold-700 px-1.5 py-0.5 rounded shrink-0">Dịch vụ</span>
-                                <span class="font-medium text-sm">{{ $lead->service_name }}</span>
+                                <span class="font-medium text-sm">{{ $latestBooking->service->name }}</span>
                             </div>
                             @endif
                         </div>

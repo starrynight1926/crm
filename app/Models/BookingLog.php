@@ -5,10 +5,11 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 #[Fillable([
     'lead_id', 'user_id', 'type', 'status', 'scheduled_at',
-    'doctor_id', 'service_id', 'note',
+    'facility_id', 'doctor_id', 'service_id', 'note',
 ])]
 class BookingLog extends Model
 {
@@ -44,6 +45,23 @@ class BookingLog extends Model
     public function service(): BelongsTo
     {
         return $this->belongsTo(Service::class);
+    }
+
+    public function facility(): BelongsTo
+    {
+        return $this->belongsTo(Facility::class);
+    }
+
+    /**
+     * Phase 4 rework 2026-08-01: CV per-booking (n người).
+     * position = thứ tự; position=1 = CV chính, dùng để xác định Sale phụ trách lead.
+     */
+    public function consultants(): BelongsToMany
+    {
+        return $this->belongsToMany(User::class, 'booking_log_consultants')
+            ->withPivot('position')
+            ->withTimestamps()
+            ->orderBy('booking_log_consultants.position');
     }
 
     public function statusLabel(): string
