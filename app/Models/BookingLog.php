@@ -10,6 +10,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 #[Fillable([
     'lead_id', 'user_id', 'type', 'status', 'scheduled_at',
     'facility_id', 'doctor_id', 'service_id', 'note',
+    'so_lieu_trinh', 'so_luong_lo', 'dung_tich_lo', 'ket_hop_medical',
+    'sbooking_booking_id', 'sbooking_booking_ma', 'sync_status', 'sync_error', 'synced_at',
 ])]
 class BookingLog extends Model
 {
@@ -25,6 +27,9 @@ class BookingLog extends Model
 
     protected $casts = [
         'scheduled_at' => 'datetime',
+        'synced_at' => 'datetime',
+        'sbooking_booking_id' => 'integer',
+        'ket_hop_medical' => 'boolean',
     ];
 
     public function lead(): BelongsTo

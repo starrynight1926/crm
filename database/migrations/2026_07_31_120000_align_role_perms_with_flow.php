@@ -21,8 +21,14 @@ return new class extends Migration {
     ];
 
     private const ATTACH = [
-        'Team Tele' => ['lead.create'],
-        'CM sale'   => ['lead.book_action', 'source.up.admin'],
+        // Phase C1.b rev11 2026-08-02: cấp đủ phase.close.* cho các team tự tạo lead
+        // (nguồn direct-sale: SA/BA/BOD/WI). Bulk mode mở 1→startPhase → cần close cả cụm.
+        'Team Tele'    => ['lead.create', 'phase.close.new', 'phase.close.distribute'],
+        'Team sale'    => ['phase.close.distribute'],
+        'Team sale ĐN' => ['phase.close.new', 'phase.close.distribute', 'phase.close.call', 'phase.close.booking'],
+        'CM sale'      => ['lead.book_action', 'source.up.admin', 'phase.close.new', 'phase.close.call'],
+        'CM Tele'      => ['phase.close.new'],
+        'Trực Page'    => ['phase.close.new'],
     ];
 
     public function up(): void

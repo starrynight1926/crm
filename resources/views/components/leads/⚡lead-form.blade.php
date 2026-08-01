@@ -3,6 +3,7 @@
 use App\Models\Assignment;
 use App\Models\AuditLog;
 use App\Models\BookingLog;
+use App\Services\SbookingClient;
 use App\Models\CallLog;
 use App\Models\CustomField;
 use App\Models\Facility;
@@ -107,12 +108,19 @@ new class extends Component
 
     // State form thêm booking log
     public string $newBookingType = ''; // '' = -- Chọn --, tham_kham | dich_vu (required)
+    /** @var array<int, array{gio_bat_dau: string, label: string}> Phase C1.b rev3: slot đọc từ sbooking */
+    public array $availableSlots = [];
     public string $newBookingStatus = 'cho_xac_nhan';
     public string $newBookingScheduledAt = '';
     public ?int $newBookingFacilityId = null;
     public ?int $newBookingDoctorId = null;
     public ?int $newBookingServiceId = null;
     public string $newBookingNote = '';
+    // Phase C1.b rev9 2026-08-02: 4 field bổ sung đồng bộ với sbooking.
+    public string $newBookingSoLieuTrinh = '';
+    public string $newBookingSoLuongLo = '';
+    public string $newBookingDungTichLo = '';
+    public bool $newBookingKetHopMedical = false;
     /** @var array<int, int|null> Phase 4 rework 2026-08-01: multi-CV per booking. Mặc định 1 ô. */
     public array $newBookingConsultantIds = [null];
 
@@ -164,13 +172,33 @@ new class extends Component
             'newBookingType'          => 'required|in:tham_kham,dich_vu',
             'newBookingStatus'        => 'required|in:' . implode(',', array_keys(BookingLog::STATUSES)),
             'newBookingScheduledAt'   => 'nullable|date',
-            'newBookingFacilityId'    => 'nullable|exists:facilities,id',
+            'newBookingFacilityId'    => 'required|exists:facilities,id',
             'newBookingDoctorId'      => 'nullable|exists:staff_members,id',
             'newBookingServiceId'     => 'nullable|exists:services,id',
             'newBookingNote'          => 'nullable|string|max:1000',
+            'newBookingSoLieuTrinh'   => 'nullable|string|max:40',
+            'newBookingSoLuongLo'     => 'nullable|string|max:40',
+            // Phase C1.b rev9 2026-08-02: khớp enum sbooking (BookingController::store validate).
+            'newBookingDungTichLo'    => 'nullable|in:8M,10M,16M,20M,450M,1 LT,2 LT',
+            'newBookingKetHopMedical' => 'boolean',
             'newBookingConsultantIds' => 'array',
             'newBookingConsultantIds.*' => 'nullable|exists:users,id',
-        ], ['newBookingType.required' => 'Chọn loại booking (Thăm khám hoặc Dịch vụ).']);
+        ], [
+            'newBookingType.required' => 'Chọn loại booking (Thăm khám hoặc Dịch vụ).',
+            'newBookingFacilityId.required' => 'Chọn cơ sở — booking phải gắn cơ sở để đẩy sang sbooking.',
+        ]);
+        // Phase C1.b 2026-08-01 rev: chặn cứng nếu cơ sở (hoặc cha nó) chưa map sbooking. Không cho ghi log local.
+        $facilityForCheck = \App\Models\Facility::find($this->newBookingFacilityId);
+        $sbCoSoResolved = null;
+        $walk = $facilityForCheck;
+        while ($walk) {
+            if ($walk->sbooking_co_so_id) { $sbCoSoResolved = (int) $walk->sbooking_co_so_id; break; }
+            $walk = $walk->parent_id ? \App\Models\Facility::find($walk->parent_id) : null;
+        }
+        if (! $sbCoSoResolved) {
+            session()->flash('cf_error', 'Cơ sở "' . ($facilityForCheck?->name ?? '?') . '" (hoặc cơ sở cha) chưa được kết nối sbooking. Vào Thiết lập → Kết nối Booking để map sbooking_co_so_id trước khi ghi booking.');
+            return;
+        }
         $bl = BookingLog::create([
             'lead_id'      => $this->lead->id,
             'user_id'      => $user->id,
@@ -181,6 +209,10 @@ new class extends Component
             'doctor_id'    => $this->newBookingDoctorId,
             'service_id'   => $this->newBookingServiceId,
             'note'         => $this->newBookingNote ?: null,
+            'so_lieu_trinh' => $this->newBookingSoLieuTrinh ?: null,
+            'so_luong_lo'   => $this->newBookingSoLuongLo ?: null,
+            'dung_tich_lo'  => $this->newBookingDungTichLo ?: null,
+            'ket_hop_medical' => $this->newBookingKetHopMedical,
         ]);
         // Phase 4 rework 2026-08-01: attach multi-CV pivot theo thứ tự chọn (position=1..n).
         $cvIds = array_values(array_filter($this->newBookingConsultantIds, fn ($v) => (int) $v > 0));
@@ -196,14 +228,62 @@ new class extends Component
         if ($bl->status === BookingLog::STATUS_DA_XAC_NHAN && ! empty($cvIds) && ! $this->lead->fresh()->owner_id) {
             $this->assignToSale((int) $cvIds[0], 1);
         }
+        // Phase C1.b 2026-08-01 rev: mọi booking đều push sang sbooking (đã chặn cứng ở đầu).
+        $bl->update(['sync_status' => 'pending']);
+        $ok = app(SbookingClient::class)->pushBooking($bl->fresh());
+        if (! $ok) {
+            session()->flash('cf_warn', 'Đã ghi booking nhưng chưa đồng bộ được sang sbooking (' . $bl->fresh()->sync_error . '). Bấm "🔄 Thử lại" ở dòng booking để retry.');
+        }
         $this->reset([
             'newBookingType', 'newBookingScheduledAt', 'newBookingFacilityId',
             'newBookingDoctorId', 'newBookingServiceId', 'newBookingNote',
+            'newBookingSoLieuTrinh', 'newBookingSoLuongLo', 'newBookingDungTichLo', 'newBookingKetHopMedical',
         ]);
         $this->newBookingConsultantIds = [null];
         $this->lead->refresh();
         $this->bookingStatus = $this->lead->booking_status ?? 'not_booked';
         session()->flash('cf_ok', 'Đã ghi booking mới. Đã đồng bộ trạng thái.');
+    }
+
+    public function retrySbookingSync(int $bookingLogId): void
+    {
+        $bl = BookingLog::find($bookingLogId);
+        if (! $bl || $bl->lead_id !== $this->lead?->id) {
+            session()->flash('cf_error', 'Booking không tồn tại.');
+            return;
+        }
+        $bl->update(['sync_status' => 'pending']);
+        $ok = app(SbookingClient::class)->pushBooking($bl->fresh());
+        session()->flash($ok ? 'cf_ok' : 'cf_error',
+            $ok ? 'Đã đồng bộ booking sang sbooking (id ' . $bl->fresh()->sbooking_booking_id . ').'
+                : 'Vẫn không đồng bộ được: ' . $bl->fresh()->sync_error);
+    }
+
+    /** Phase C1.b rev3 2026-08-01: khi user chọn cơ sở → gọi sbooking API lấy khung giờ khả dụng. */
+    public function updatedNewBookingFacilityId(mixed $value): void
+    {
+        $this->availableSlots = [];
+        if (! $value) return;
+        $facility = \App\Models\Facility::find($value);
+        if (! $facility) return;
+        $sbCoSoId = null;
+        $walk = $facility;
+        while ($walk) {
+            if ($walk->sbooking_co_so_id) { $sbCoSoId = (int) $walk->sbooking_co_so_id; break; }
+            $walk = $walk->parent_id ? \App\Models\Facility::find($walk->parent_id) : null;
+        }
+        if (! $sbCoSoId) return;
+        $token = config('services.booking.api_token');
+        $url = rtrim(config('services.booking.api_url') ?: '', '/') . '/sync/khung-gio';
+        try {
+            $r = \Illuminate\Support\Facades\Http::withToken($token)->timeout(6)
+                ->acceptJson()->get($url, ['co_so_id' => $sbCoSoId]);
+            if ($r->successful()) {
+                $this->availableSlots = $r->json('slots') ?? [];
+            }
+        } catch (\Throwable $e) {
+            // Silent fail — form dùng fallback hardcode ở UI.
+        }
     }
 
     public function addBookingConsultantSlot(): void
@@ -227,6 +307,7 @@ new class extends Component
         try {
             $closed = $this->lead->bulkSave(auth()->user());
             $this->lead->refresh();
+            $this->lead->load('phaseClosures'); // Phase C1.b rev11: reload relation để breadcrumb đổi màu.
             $this->activePhase = min((int) $this->lead->phase, 5);
             session()->flash('cf_ok', 'Đã chốt ' . count($closed) . ' phase (' . min($closed) . '→' . max($closed) . ').');
         } catch (\Throwable $e) {
@@ -251,6 +332,7 @@ new class extends Component
             }
             $this->lead->closePhase($idx, auth()->user(), $note);
             $this->lead->refresh();
+            $this->lead->load('phaseClosures'); // Phase C1.b rev11: reload để breadcrumb đổi màu.
             $this->activePhase = min((int) $this->lead->phase, 5);
             session()->flash('cf_ok', 'Đã kết thúc phase ' . $idx . '.');
         } catch (\Throwable $e) {
@@ -350,15 +432,17 @@ new class extends Component
         session()->flash('cf_ok', 'Đã yêu cầu đồng bộ từ bên booking. (Chưa có API — placeholder.)');
     }
 
-    public function markReturning(): void
+    public function markReturning(int $targetPhase = 3): void
     {
         if (! $this->lead) return;
         try {
-            $this->lead->markReturning(auth()->user());
+            $this->lead->markReturning(auth()->user(), $targetPhase);
             $this->lead->refresh();
             $this->isFirstVisit = false;
-            $this->activePhase = 3;
-            session()->flash('cf_ok', 'Đã khởi động lần thăm khám mới.');
+            $this->activePhase = $targetPhase;
+            session()->flash('cf_ok', $targetPhase === 3
+                ? 'Đã khởi động cuộc gọi mới. Về phase 3 (Gọi điện).'
+                : 'Đã khởi động đặt lịch mới. Về phase 4 (Booking).');
         } catch (\Throwable $e) {
             session()->flash('cf_error', $e->getMessage());
         }
@@ -382,8 +466,14 @@ new class extends Component
             $this->lead = $lead;
             $this->fillFromLead($lead);
             // Phase 6.21 — default tab = phase hiện tại (hoặc openFrom nếu bulk mode).
-            $this->activePhase = $lead->isBulkOpen() ? $lead->openFrom() : (int) $lead->phase;
-            if ($this->activePhase < 1 || $this->activePhase > 7) $this->activePhase = 1;
+            // Phase C1.b rev4 2026-08-01: query ?phase=N override để "Lưu thông tin" nhảy thẳng section booking (phase 4).
+            $queryPhase = (int) request()->query('phase', 0);
+            if ($queryPhase >= 1 && $queryPhase <= 7) {
+                $this->activePhase = $queryPhase;
+            } else {
+                $this->activePhase = $lead->isBulkOpen() ? $lead->openFrom() : (int) $lead->phase;
+                if ($this->activePhase < 1 || $this->activePhase > 7) $this->activePhase = 1;
+            }
             $this->isFirstVisit = (bool) $lead->is_first_visit;
         } else {
             $this->received_date = now()->toDateString();
@@ -642,6 +732,18 @@ new class extends Component
         }
     }
 
+    /** Phase C1.b rev4 2026-08-01: gộp save + chuyển section Booking (phase 4). */
+    public function saveAndGoToBooking(): void
+    {
+        session()->put('go_to_booking_after_save', true);
+        $this->save();
+        // Update mode: save() không redirect, chỉ set activePhase.
+        if ($this->lead?->exists) {
+            $this->activePhase = 4;
+            session()->forget('go_to_booking_after_save');
+        }
+    }
+
     public function save(): void
     {
         // Phase 6.20 — Gate write: readonly user (VD Team booking chỉ có lead.read_booking) không được phép lưu.
@@ -797,8 +899,14 @@ new class extends Component
         session()->flash('status', 'Đã tạo lead mới.');
         // Phase 6.21g — sau tạo mới, đưa thẳng vào form Edit (giao diện 7 phase)
         // thay vì trang chi tiết (bất tiện, phải bấm sang edit).
+        // Phase C1.b rev4 2026-08-01: nếu bấm "Lưu thông tin" (saveAndGoToBooking) → redirect kèm ?phase=4.
+        $params = ['lead' => $lead];
+        if (session('go_to_booking_after_save')) {
+            $params['phase'] = 4;
+            session()->forget('go_to_booking_after_save');
+        }
         if ($lead->canOpenEditForm($user)) {
-            $this->redirectRoute('leads.edit', $lead);
+            $this->redirectRoute('leads.edit', $params);
         } elseif ($user->hasPermission('lead.view')) {
             $this->redirectRoute('leads.show', $lead);
         } else {
@@ -1192,33 +1300,17 @@ new class extends Component
         </div>
         <div class="flex flex-wrap items-center gap-3">
             <a href="{{ $lead ? route('leads.show', $lead) : (auth()->user()->hasPermission('lead.view') ? route('leads.index') : route('dashboard')) }}" class="text-sm font-semibold text-ink/60 border border-gold-200 px-5 py-2.5 rounded-md hover:bg-gold-50">Hủy</a>
-            @if ($canBookAction)
-                @if ($bookingClinicUrl)
-                    <div x-data="{ open: false }" @click.outside="open = false" class="relative">
-                        <button type="button" @click="open = !open"
-                                class="flex items-center gap-2 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 px-5 py-2.5 rounded-md"
-                                title="Mở form đặt lịch bên hệ thống Booking">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3.75 8.25h16.5M4.5 6h15a.75.75 0 01.75.75v12a.75.75 0 01-.75.75h-15a.75.75 0 01-.75-.75v-12A.75.75 0 014.5 6z"/></svg>
-                            Đặt booking
-                            <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"/></svg>
-                        </button>
-                        <div x-show="open" x-cloak x-transition class="absolute z-20 mt-1 right-0 w-56 bg-white border border-gold-200 rounded-lg shadow-card overflow-hidden">
-                            <a href="{{ $bookingClinicUrl }}" target="_blank" rel="noopener" @click="open = false"
-                               class="block px-4 py-2.5 text-sm text-ink/70 hover:bg-gold-50 border-b border-gold-100">🏥 Đặt phòng khám</a>
-                            <a href="{{ $bookingServiceUrl }}" target="_blank" rel="noopener" @click="open = false"
-                               class="block px-4 py-2.5 text-sm text-ink/70 hover:bg-gold-50">💆 Đặt dịch vụ</a>
-                        </div>
-                    </div>
-                @else
-                    <span class="flex items-center gap-2 text-sm font-semibold text-ink/40 border border-ink/10 px-5 py-2.5 rounded-md cursor-not-allowed"
-                          title="Cơ sở '{{ $lead->facility?->name ?? 'chưa gán' }}' chưa map sang cơ sở bên Booking. Admin vào Cài đặt › Kết nối Booking để nhập slug.">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3.75 8.25h16.5M4.5 6h15a.75.75 0 01.75.75v12a.75.75 0 01-.75.75h-15a.75.75 0 01-.75-.75v-12A.75.75 0 014.5 6z"/></svg>
-                        Đặt booking (chưa map cơ sở)
-                    </span>
-                @endif
+            {{-- Phase C1.b rev4 2026-08-01: gộp "Đặt booking" cũ (mở tab sbooking) + "Lưu thông tin" thành 2 nút cùng chuyển sang section Booking (phase 4). --}}
+            @if ($canBookAction && $lead?->exists)
+                <button type="button" @click="phase = 4" x-on:click="document.documentElement.scrollTo({top:0,behavior:'smooth'})"
+                        class="flex items-center gap-2 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 px-5 py-2.5 rounded-md"
+                        title="Chuyển thẳng sang tab Booking (phase 4) để tạo booking mới bên sbooking">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3.75 8.25h16.5M4.5 6h15a.75.75 0 01.75.75v12a.75.75 0 01-.75.75h-15a.75.75 0 01-.75-.75v-12A.75.75 0 014.5 6z"/></svg>
+                    Đặt booking
+                </button>
             @endif
             @if (! $isReadonly)
-                <button wire:click="save" class="bg-gold-600 hover:bg-gold-700 text-white font-semibold text-sm px-6 py-2.5 rounded-md">Lưu thông tin</button>
+                <button wire:click="saveAndGoToBooking" class="bg-gold-600 hover:bg-gold-700 text-white font-semibold text-sm px-6 py-2.5 rounded-md">Lưu thông tin</button>
             @endif
         </div>
     </div>
@@ -1346,6 +1438,7 @@ new class extends Component
                 </div>
             </div>
             @if (session('cf_ok'))<div class="mb-3 px-4 py-2 bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm rounded">✓ {{ session('cf_ok') }}</div>@endif
+            @if (session('cf_warn'))<div class="mb-3 px-4 py-2 bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded">⚠ {{ session('cf_warn') }}</div>@endif
             @if (session('cf_error'))<div class="mb-3 px-4 py-2 bg-red-50 border border-red-200 text-red-800 text-sm rounded">✗ {{ session('cf_error') }}</div>@endif
             <div class="flex gap-1 overflow-x-auto pb-1">
                 @foreach ($cfPhases as $idx => $label)
@@ -1678,6 +1771,55 @@ new class extends Component
                                     </span>
                                 </div>
                                 @if ($bl->note)<div class="text-ink/80 text-xs italic">📝 {{ $bl->note }}</div>@endif
+                                {{-- Phase C1.b 2026-08-01: badge sync + retry --}}
+                                @if ($bl->sync_status === 'done')
+                                    <div class="text-xs text-purple-800 font-semibold flex items-center gap-1.5">
+                                        🏁 Đã xong · <b>{{ $bl->sbooking_booking_ma ?: '#'.$bl->sbooking_booking_id }}</b>
+                                        @if ($bl->synced_at) <span class="text-ink/40 font-normal">· {{ $bl->synced_at->diffForHumans() }}</span> @endif
+                                    </div>
+                                @elseif ($bl->sync_status === 'checkedin')
+                                    <div class="text-xs text-teal-800 font-semibold flex items-center gap-1.5">
+                                        🚪 Khách đã tới · <b>{{ $bl->sbooking_booking_ma ?: '#'.$bl->sbooking_booking_id }}</b>
+                                        @if ($bl->synced_at) <span class="text-ink/40 font-normal">· {{ $bl->synced_at->diffForHumans() }}</span> @endif
+                                    </div>
+                                @elseif ($bl->sync_status === 'canceled')
+                                    <div class="text-xs text-orange-800 font-semibold flex items-center gap-1.5">
+                                        🚫 Khách hủy · <b>{{ $bl->sbooking_booking_ma ?: '#'.$bl->sbooking_booking_id }}</b>
+                                        @if ($bl->synced_at) <span class="text-ink/40 font-normal">· {{ $bl->synced_at->diffForHumans() }}</span> @endif
+                                    </div>
+                                @elseif ($bl->sync_status === 'approved')
+                                    <div class="text-xs text-emerald-800 font-semibold flex items-center gap-1.5">
+                                        ✅ Sbooking đã duyệt · <b>{{ $bl->sbooking_booking_ma ?: '#'.$bl->sbooking_booking_id }}</b>
+                                        @if ($bl->synced_at) <span class="text-ink/40 font-normal">· {{ $bl->synced_at->diffForHumans() }}</span> @endif
+                                    </div>
+                                @elseif ($bl->sync_status === 'synced')
+                                    <div class="text-xs text-blue-700 flex items-center gap-1.5">
+                                        ⏳ Đã gửi sbooking, chờ duyệt · <b>{{ $bl->sbooking_booking_ma ?: '#'.$bl->sbooking_booking_id }}</b>
+                                        @if ($bl->synced_at) <span class="text-ink/40">· {{ $bl->synced_at->diffForHumans() }}</span> @endif
+                                    </div>
+                                @elseif ($bl->sync_status === 'deleted')
+                                    <div class="text-xs text-slate-700 font-semibold flex items-center gap-1.5 line-through">
+                                        🗑 Đã bị Admin sbooking xóa
+                                        @if ($bl->synced_at) <span class="text-ink/40 font-normal no-underline">· {{ $bl->synced_at->diffForHumans() }}</span> @endif
+                                    </div>
+                                @elseif ($bl->sync_status === 'rejected')
+                                    <div class="text-xs text-rose-700 font-semibold flex items-center gap-1.5">
+                                        ❌ Sbooking từ chối
+                                        @if ($bl->sync_error) <span class="font-normal">— {{ $bl->sync_error }}</span> @endif
+                                        @if ($bl->synced_at) <span class="text-ink/40 font-normal">· {{ $bl->synced_at->diffForHumans() }}</span> @endif
+                                    </div>
+                                @elseif ($bl->sync_status === 'failed')
+                                    <div class="text-xs text-red-700 flex items-center gap-2">
+                                        <span>⚠ Chưa đồng bộ sbooking: {{ $bl->sync_error }}</span>
+                                        <button type="button" wire:click="retrySbookingSync({{ $bl->id }})"
+                                                wire:loading.attr="disabled" wire:target="retrySbookingSync({{ $bl->id }})"
+                                                class="text-xs bg-white border border-red-300 text-red-700 hover:bg-red-50 px-2 py-0.5 rounded">
+                                            🔄 Thử lại
+                                        </button>
+                                    </div>
+                                @elseif ($bl->sync_status === 'pending')
+                                    <div class="text-xs text-amber-700">⏳ Đang đồng bộ sbooking…</div>
+                                @endif
                             </div>
                         @endforeach
                     </div>
@@ -2142,8 +2284,8 @@ new class extends Component
                     Ghi nhận booking <span class="text-sm text-ink/50 font-normal">(log nội bộ — tracking bên CRM)</span>
                 </h2>
                 <div class="mb-4 p-2.5 bg-blue-50 border border-blue-200 rounded text-xs text-blue-900 leading-relaxed">
-                    ⚠️ Khung này chỉ <b>ghi log nội bộ</b> (cơ sở / bác sĩ / dịch vụ / CV cho từng lần định đặt) — <b>KHÔNG</b> đẩy sang hệ thống Booking.
-                    Muốn tạo lịch thật (có phòng + khung giờ chuẩn), bấm nút <b>"Đặt booking"</b> màu xanh ở cuối form → mở lara-sbooking để đặt.
+                    ℹ️ Bấm <b>Thêm booking</b> → tạo record bên lara-sbooking ở trạng thái <b>Chờ duyệt</b>. Admin sbooking duyệt xong → tự cập nhật trạng thái <b>Đã duyệt</b> về đây.
+                    <b>Chưa map cơ sở sang sbooking</b> (Thiết lập → Kết nối Booking) → <b>không cho ghi</b>.
                 </div>
 
                 {{-- TRẠNG THÁI ĐẶT LỊCH (tổng thể) — readonly, tự sync từ booking_logs mới nhất --}}
@@ -2179,11 +2321,33 @@ new class extends Component
                                 Chờ xác nhận
                                 <span class="ml-auto text-[10px]">🔒</span>
                             </div>
-                            <input type="datetime-local" wire:model="newBookingScheduledAt" class="border border-slate-300 rounded px-2 py-1.5 text-sm">
+                            {{-- Phase C1.b rev3 2026-08-01: khung giờ đọc từ sbooking (API /sync/khung-gio). Fallback hardcode 8:30-12/13:30-18 nếu API fail hoặc chưa chọn cơ sở. --}}
+                            @php
+                                $slotFallback = ['08:30','09:00','09:30','10:00','10:30','11:00','11:30','13:30','14:00','14:30','15:00','15:30','16:00','16:30','17:00','17:30'];
+                                $slotList = collect($availableSlots)->pluck('gio_bat_dau')->all();
+                                if (empty($slotList)) $slotList = $slotFallback;
+                            @endphp
+                            <div x-data="{
+                                    slots: @js($slotList),
+                                    get date() { return ($wire.newBookingScheduledAt || '').split('T')[0] || ''; },
+                                    set date(v) { const t = this.time; $wire.newBookingScheduledAt = v && t ? v + 'T' + t : (v ? v + 'T09:00' : ''); },
+                                    get time() { return (($wire.newBookingScheduledAt || '').split('T')[1] || '').substring(0,5); },
+                                    set time(v) { const d = this.date || new Date().toISOString().split('T')[0]; $wire.newBookingScheduledAt = v ? d + 'T' + v : (d ? d + 'T09:00' : ''); }
+                                 }" class="flex gap-1.5">
+                                <input type="date" x-model="date"
+                                       class="border border-slate-300 rounded px-2 py-1.5 text-sm flex-1 min-w-0"
+                                       title="Chọn ngày">
+                                <select x-model="time"
+                                        class="border border-slate-300 rounded px-2 py-1.5 text-sm"
+                                        title="{{ empty($availableSlots) ? 'Fallback khung giờ mặc định — chọn cơ sở để load thật từ sbooking' : 'Khung giờ đọc từ sbooking (' . count($availableSlots) . ' slot)' }}">
+                                    <option value="">— Giờ —</option>
+                                    <template x-for="s in slots" :key="s"><option :value="s" x-text="s"></option></template>
+                                </select>
+                            </div>
                         </div>
                         {{-- Hàng 2: Cơ sở | Bác sĩ | Dịch vụ --}}
                         <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
-                            <select wire:model="newBookingFacilityId" class="border border-slate-300 rounded px-2 py-1.5 text-sm">
+                            <select wire:model.live="newBookingFacilityId" class="border border-slate-300 rounded px-2 py-1.5 text-sm">
                                 <option value="">— Cơ sở —</option>
                                 @foreach ($facilities as $fac)
                                     <optgroup label="{{ $fac->name }}">
@@ -2293,7 +2457,33 @@ new class extends Component
                             @endforeach
                             <button type="button" wire:click="addBookingConsultantSlot" class="text-xs font-semibold text-gold-700 hover:text-gold-800">+ Thêm CV</button>
                         </div>
-                        <input wire:model="newBookingNote" placeholder="Ghi chú sau booking..." class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm">
+                        {{-- Phase C1.b rev9 2026-08-02: 4 field bổ sung đồng bộ với sbooking. --}}
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-2 pt-2 border-t border-slate-200">
+                            <div>
+                                <label class="block text-[11px] text-ink/50 mb-0.5">Số liệu trình</label>
+                                <input wire:model="newBookingSoLieuTrinh" placeholder="VD: 1/10" class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-[11px] text-ink/50 mb-0.5">Số lượng lọ</label>
+                                <input wire:model="newBookingSoLuongLo" placeholder="VD: 3" class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-[11px] text-ink/50 mb-0.5">Dung tích lọ</label>
+                                <select wire:model="newBookingDungTichLo" class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm">
+                                    <option value="">— Chọn —</option>
+                                    @foreach (['8M','10M','16M','20M','450M','1 LT','2 LT'] as $dt)
+                                        <option value="{{ $dt }}">{{ $dt }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+                            <div class="flex items-end">
+                                <label class="inline-flex items-center gap-2 text-sm cursor-pointer select-none py-1.5">
+                                    <input type="checkbox" wire:model="newBookingKetHopMedical" class="rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+                                    <span>Kết hợp medical</span>
+                                </label>
+                            </div>
+                        </div>
+                        <input wire:model="newBookingNote" placeholder="Ghi chú" class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm">
                         <button type="button" wire:click="addBookingLog" class="text-sm bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-4 py-1.5 rounded">+ Tạo booking</button>
                     </div>
                 @else
@@ -2307,11 +2497,41 @@ new class extends Component
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z"/></svg>
                     Check-in <span class="text-sm text-ink/50 font-normal">(tạm thời là bước cuối)</span>
                 </h2>
+                {{-- Phase C1.b rev5 2026-08-01: log tới trễ (nếu có), luôn hiện ở đầu section. --}}
+                @if ($lead?->exists)
+                    @php $lateLogs = \App\Models\BookingLateLog::where('lead_id', $lead->id)->orderByDesc('created_at')->get(); @endphp
+                    @foreach ($lateLogs as $late)
+                        <div class="mb-3 p-3 bg-amber-50 border border-amber-200 rounded text-sm text-amber-900">
+                            ⚠ <b>Khách tới trễ</b>
+                            @if ($late->sbooking_booking_ma) · <span class="font-mono text-xs">{{ $late->sbooking_booking_ma }}</span> @endif
+                            @if ($late->late_minutes !== null) · <b>trễ {{ $late->late_minutes }} phút</b> @endif
+                            @if ($late->expected_at) · hẹn {{ $late->expected_at->format('d/m/Y H:i') }} @endif
+                            @if ($late->arrived_at) · tới {{ $late->arrived_at->format('H:i') }} @endif
+                            @if ($late->marked_by) <div class="text-xs text-amber-700 mt-0.5">Ghi bởi: {{ $late->marked_by }}</div> @endif
+                        </div>
+                    @endforeach
+                @endif
                 @if ($lead?->exists && $lead->phaseClosures->firstWhere('phase', 5))
-                    @php $ci = $lead->phaseClosures->firstWhere('phase', 5); @endphp
-                    <div class="p-3 bg-emerald-50 border border-emerald-200 rounded text-sm text-emerald-800 mb-4">
-                        ✓ Đã check-in lúc {{ $ci->closed_at->format('d/m/Y H:i') }} bởi <b>{{ \App\Models\User::find($ci->closed_by)?->name ?? 'system' }}</b>
-                        @if ($ci->note)<div class="text-xs text-emerald-700 mt-1">{{ $ci->note }}</div>@endif
+                    @php
+                        $ci = $lead->phaseClosures->firstWhere('phase', 5);
+                        // Phase C1.b rev8 2026-08-01: nếu closure do sbooking auto-close (note bắt đầu "Auto:") → hiển thị "Admin vận hành (sbooking)" thay vì tên user push.
+                        $isAutoBySbooking = str_starts_with((string) $ci->note, 'Auto:');
+                        $closerLabel = $isAutoBySbooking ? 'Admin vận hành (sbooking)' : (\App\Models\User::find($ci->closed_by)?->name ?? 'system');
+                        // Khách tới trễ → box màu amber, không xanh.
+                        $isLate = isset($lateLogs) && $lateLogs->isNotEmpty();
+                        $boxCls = $isLate
+                            ? 'bg-amber-50 border-amber-200 text-amber-800'
+                            : 'bg-emerald-50 border-emerald-200 text-emerald-800';
+                        $noteCls = $isLate ? 'text-amber-700' : 'text-emerald-700';
+                        $icon = $isLate ? '⚠' : '✓';
+                    @endphp
+                    <div class="p-3 {{ $boxCls }} border rounded text-sm mb-4">
+                        {!! $icon !!} Đã check-in lúc {{ $ci->closed_at->format('d/m/Y H:i') }} bởi <b>{{ $closerLabel }}</b>
+                        @if ($ci->note)<div class="text-xs {{ $noteCls }} mt-1">{{ $ci->note }}</div>@endif
+                    </div>
+                @elseif (! auth()->user()->hasPermission('phase.close.checkin') && ! auth()->user()->hasPermission('phase.rollback'))
+                    <div class="p-3 bg-slate-50 border border-slate-200 rounded text-sm text-slate-600 mb-4 italic">
+                        🔒 Chờ Admin sbooking check-in khi khách tới. Bạn không có quyền check-in tay ở đây.
                     </div>
                 @else
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
@@ -2346,42 +2566,44 @@ new class extends Component
                 @endif
             </div>
 
-            {{-- ============= Phase 6.21 — Section MARK RETURNING (Phase 5 done + first_visit) ============= --}}
-            @if ($lead?->exists && (int) $lead->phase === 5 && $lead->is_first_visit && $lead->phaseClosures->firstWhere('phase', 5))
-                <div class="bg-purple-50 border border-purple-200 rounded-xl p-4" x-show="phase === 5">
-                    <div class="text-sm text-purple-800 mb-2 font-semibold">Khách quay lại thăm khám?</div>
-                    <button type="button" wire:click="markReturning" onclick="return confirm('Reset lead về phase 3 (Gọi điện) cho lần khám mới? Lịch sử cũ vẫn giữ.')"
-                            class="text-sm bg-purple-600 hover:bg-purple-700 text-white font-semibold px-4 py-1.5 rounded">
-                        Khởi động lần thăm khám mới
-                    </button>
-                </div>
-            @endif
-
             {{-- Trường bổ sung — đã chuyển lên dưới "Thông tin khách hàng" (Phase 6.14) --}}
         </fieldset>{{-- close phase-lock fieldset --}}
     </div>
     </fieldset>
 
-    <div class="border-t border-gold-100 mt-6 pt-5 flex flex-wrap justify-end gap-3">
-        <a href="{{ $lead ? route('leads.show', $lead) : (auth()->user()->hasPermission('lead.view') ? route('leads.index') : route('dashboard')) }}" class="text-sm font-semibold text-ink/60 border border-gold-200 px-5 py-2.5 rounded-md hover:bg-gold-50">Hủy</a>
-        @if ($canBookAction && $bookingClinicUrl)
-            <div x-data="{ open: false }" @click.outside="open = false" class="relative">
-                <button type="button" @click="open = !open"
-                        class="flex items-center gap-2 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 px-5 py-2.5 rounded-md">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3.75 8.25h16.5M4.5 6h15a.75.75 0 01.75.75v12a.75.75 0 01-.75.75h-15a.75.75 0 01-.75-.75v-12A.75.75 0 014.5 6z"/></svg>
-                    Đặt booking
-                    <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"/></svg>
-                </button>
-                <div x-show="open" x-cloak x-transition class="absolute z-20 mb-1 bottom-full right-0 w-56 bg-white border border-gold-200 rounded-lg shadow-card overflow-hidden">
-                    <a href="{{ $bookingClinicUrl }}" target="_blank" rel="noopener" @click="open = false"
-                       class="block px-4 py-2.5 text-sm text-ink/70 hover:bg-gold-50 border-b border-gold-100">🏥 Đặt phòng khám</a>
-                    <a href="{{ $bookingServiceUrl }}" target="_blank" rel="noopener" @click="open = false"
-                       class="block px-4 py-2.5 text-sm text-ink/70 hover:bg-gold-50">💆 Đặt dịch vụ</a>
+    {{-- Phase 6.21 MARK RETURNING — Phase C1.b rev8 2026-08-01: 2 luồng riêng cho Tele/Sale, ngoài fieldset phase-lock. --}}
+    @if ($lead?->exists && (int) $lead->phase === 5 && $lead->is_first_visit && $lead->phaseClosures->firstWhere('phase', 5))
+        @php
+            $canCall = $lead->canRestartCall(auth()->user());
+            $canBook = $lead->canRestartBooking(auth()->user());
+        @endphp
+        @if ($canCall || $canBook)
+            <div class="mt-4 bg-purple-50 border border-purple-200 rounded-xl p-4" x-show="phase === 5">
+                <div class="text-sm text-purple-800 mb-2 font-semibold">Khách quay lại?</div>
+                <div class="text-xs text-purple-700 mb-3">Chọn luồng phù hợp — Tele: gọi lại từ đầu; Sale: đặt lịch mới (nếu đã có thông tin/booking cũ).</div>
+                <div class="flex flex-wrap gap-2">
+                    @if ($canCall)
+                        <button type="button" wire:click="markReturning(3)" onclick="return confirm('Khởi động CUỘC GỌI MỚI: reset lead về phase 3 (Gọi điện). Lịch sử cũ vẫn giữ. Tiếp tục?')"
+                                class="text-sm bg-purple-600 hover:bg-purple-700 text-white font-semibold px-4 py-1.5 rounded">
+                            📞 Khởi động cuộc gọi mới
+                        </button>
+                    @endif
+                    @if ($canBook)
+                        <button type="button" wire:click="markReturning(4)" onclick="return confirm('Khởi động ĐẶT LỊCH MỚI: reset lead về phase 4 (Booking). Lịch sử cũ vẫn giữ. Tiếp tục?')"
+                                class="text-sm bg-blue-600 hover:bg-blue-700 text-white font-semibold px-4 py-1.5 rounded">
+                            📅 Khởi động đặt lịch mới
+                        </button>
+                    @endif
                 </div>
             </div>
         @endif
+    @endif
+
+    <div class="border-t border-gold-100 mt-6 pt-5 flex flex-wrap justify-end gap-3">
+        <a href="{{ $lead ? route('leads.show', $lead) : (auth()->user()->hasPermission('lead.view') ? route('leads.index') : route('dashboard')) }}" class="text-sm font-semibold text-ink/60 border border-gold-200 px-5 py-2.5 rounded-md hover:bg-gold-50">Hủy</a>
+        {{-- Phase C1.b 2026-08-01: gỡ nút "Đặt booking" cũ. Booking bên sbooking giờ tự tạo khi ghi booking log status = "Đã xác nhận" ở tab Booking. --}}
         @if (! $isReadonly)
-            <button wire:click="save" class="bg-gold-600 hover:bg-gold-700 text-white font-semibold text-sm px-6 py-2.5 rounded-md">Lưu thông tin khách hàng</button>
+            <button wire:click="saveAndGoToBooking" class="bg-gold-600 hover:bg-gold-700 text-white font-semibold text-sm px-6 py-2.5 rounded-md">Lưu thông tin khách hàng</button>
         @endif
 
         {{-- ============= Phase 6.21 — Customer Flow action buttons ============= --}}
@@ -2394,7 +2616,14 @@ new class extends Component
                 $cfCanRollback = auth()->user()->hasPermission(\App\Models\Lead::CF_ROLLBACK_PERM);
                 $cfClosuresMap = $lead->phaseClosures->keyBy('phase');
             @endphp
+            {{-- Phase C1.b rev11 2026-08-02: bulk mode → 2 nút (Lưu chốt N phase bulk + Kết thúc phase hiện tại riêng). --}}
             @if ($cfIsBulk && $activePhase >= $cfOpen && $activePhase <= $cfStart)
+                @unless ($cfClosuresMap->has($activePhase))
+                    <button type="button" wire:click="closePhaseNow({{ $activePhase }})"
+                            class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm px-5 py-2.5 rounded-md">
+                        Kết thúc phase {{ $activePhase }} (riêng)
+                    </button>
+                @endunless
                 <button type="button" wire:click="bulkSavePhases"
                         class="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm px-5 py-2.5 rounded-md">
                     Lưu chốt {{ $cfStart - $cfOpen + 1 }} phase ({{ $cfOpen }}→{{ $cfStart }})

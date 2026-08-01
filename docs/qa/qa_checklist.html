@@ -164,6 +164,36 @@ const data = [
       { acct: "admin.hn", step: "Nếu số 0 hết → chạy CLI 'php artisan stats:aggregate --from=... --to=...'", exp: "Re-aggregate xong, refresh có số" },
     ],
   },
+  {
+    title: "🔄 Phase C1 — Đồng bộ dịch vụ từ Sbooking",
+    rows: [
+      { acct: "admin (connection.manage)", step: "Menu Thiết lập → Kết nối Booking → cuộn xuống section 'Đồng bộ dữ liệu từ Booking (Phase C1)'", exp: "Thấy dòng 'Dịch vụ (dich_vu)' + nút '🔄 Đồng bộ dịch vụ'" },
+      { acct: "admin", step: "Bấm 'Test kết nối' trước", exp: "OK · tổng booking = N (verify token đúng)" },
+      { acct: "admin", step: "Bấm '🔄 Đồng bộ dịch vụ' lần 1", exp: "Banner xanh 'OK · N dịch vụ trong DB.' (N = số dich_vu bên sbooking)" },
+      { acct: "admin", step: "Bấm lại lần 2 ngay", exp: "Số dịch vụ KHÔNG tăng gấp đôi (idempotent qua sbooking_id)" },
+      { acct: "CLI", step: "php artisan sb:sync-services --dry-run", exp: "In JSON, KHÔNG ghi DB (count bảng không đổi)" },
+      { acct: "CLI", step: "php artisan sb:sync-services", exp: "Xong. Tạo mới: X, cập nhật: Y" },
+      { acct: "CLI", step: "php artisan tinker → SbService::count()", exp: "Bằng số dich_vu bên sbooking" },
+      { neg:1, acct: "admin — token rỗng", step: "Xóa Booking API Token → Lưu → bấm 'Đồng bộ dịch vụ'", exp: "Banner đỏ 'Fail · Thiếu BOOKING_API_TOKEN...'" },
+      { neg:1, acct: "admin — token sai", step: "Nhập token bậy → Lưu → bấm 'Đồng bộ dịch vụ'", exp: "Banner đỏ 'Fail · HTTP 401'" },
+    ],
+  },
+  {
+    title: "📅 Phase C1.b — Gộp form Booking + auto push sang sbooking",
+    rows: [
+      { acct: "admin (connection.manage)", step: "Thiết lập → Kết nối Booking → cột 'Sbooking co_so_id' cạnh mỗi cơ sở", exp: "Input number, hiện đủ 3 cơ sở HN/HCM/DN" },
+      { acct: "admin", step: "Nhập HN=1, HCM=2, DN=3 (hoặc id thật bên sbooking) → Lưu", exp: "Flash xanh 'Đã lưu cấu hình...'; reload vẫn giữ" },
+      { acct: "hn.book01 (Team Tele)", step: "Vào lead HN có cơ sở HN đã map → tab Booking → chọn Loại/Cơ sở/BS/DV → status='Đã xác nhận' → Thêm booking", exp: "cf_ok xanh 'Đã ghi booking mới'. Badge dòng booking: '✓ Đã đồng bộ sbooking · id N'" },
+      { acct: "hn.book01", step: "Mở lara-sbooking → duyệt lịch cơ sở HN", exp: "Có booking mới với nguồn 'SCRM', crm_khach_ma = code lead, trang_thai='Chờ duyệt'" },
+      { acct: "hn.book01", step: "Tạo booking status='Chờ xác nhận' (thay vì Đã xác nhận)", exp: "KHÔNG có badge sync, không push sbooking" },
+      { neg:1, acct: "hn.book01 — cơ sở chưa map", step: "Xóa sbooking_co_so_id → tạo booking (bất kỳ status)", exp: "cf_error đỏ 'Cơ sở chưa được kết nối sbooking'. KHÔNG tạo booking_log local" },
+      { neg:1, acct: "hn.book01 — thiếu cơ sở", step: "Không chọn cơ sở → Thêm booking", exp: "cf_error 'Chọn cơ sở — booking phải gắn cơ sở để đẩy sang sbooking'" },
+      { acct: "hn.book01 — Admin sbooking duyệt", step: "Sau khi tạo booking scrm → sang sbooking đăng nhập tài khoản có perm duyet_booking → bấm 'Duyệt' lịch tương ứng", exp: "Về scrm reload lead → badge dòng booking đổi từ '⏳ Đã gửi sbooking, chờ duyệt' → '✅ Sbooking đã duyệt · id N'" },
+      { acct: "hn.book01 — Admin sbooking bỏ duyệt", step: "Bấm 'Bỏ duyệt' lại → badge scrm về '⏳ Chờ duyệt'", exp: "sync_status → synced" },
+      { neg:1, acct: "hn.book01", step: "Trong lead-form + lead-detail cũ tìm nút 'Đặt booking' màu xanh dropdown", exp: "KHÔNG còn (đã gỡ)" },
+      { acct: "CLI curl", step: "curl POST http://lara-sbooking.test:81/api/bookings với token + payload", exp: "HTTP 201, response {id, ma_booking, khach_hang_id, trang_thai:'cho_duyet'}" },
+    ],
+  },
 ];
 
 const root = document.getElementById('root');

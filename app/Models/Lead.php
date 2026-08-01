@@ -839,12 +839,17 @@ class Lead extends Model
         return $this->owner_id !== null && $this->owner_id === $user->id;
     }
 
-    /** User có được ghi check-in (phase 5) không. Rule giống canLogCall — chỉ owner. */
+    /**
+     * User có được ghi check-in (phase 5) không.
+     * Phase C1.b rev5 2026-08-01: đổi rule — chỉ user có perm `phase.close.checkin`
+     * (Admin / Lễ tân) hoặc `phase.rollback`. Owner (sale) chỉ xem readonly vì
+     * check-in phải do sbooking Admin bấm khi khách tới, hoặc lễ tân bấm tay.
+     */
     public function canCheckin(User $user): bool
     {
         if (! $this->isVisibleTo($user)) return false;
-        if ($user->hasPermission('phase.rollback')) return true;
-        return $this->owner_id !== null && $this->owner_id === $user->id;
+        return $user->hasPermission('phase.rollback')
+            || $user->hasPermission('phase.close.checkin');
     }
 
     /** User có được ghi booking_log không. */
@@ -894,7 +899,13 @@ class Lead extends Model
     /** Chốt 1 phase tuần tự. */
     public function closePhase(int $idx, User $user, ?string $note = null): void
     {
-        if ($idx !== (int) $this->phase) {
+        // Phase C1.b rev11 2026-08-02: bulk mode → cho phép chốt từng phase riêng
+        // trong khoảng [openFrom, startPhase]. Tuần tự → chỉ được chốt phase hiện tại.
+        if ($this->isBulkOpen()) {
+            if ($idx < $this->openFrom() || $idx > $this->startPhase()) {
+                throw new \RuntimeException("Phase {$idx} nằm ngoài khoảng mở thông ({$this->openFrom()}→{$this->startPhase()}).");
+            }
+        } elseif ($idx !== (int) $this->phase) {
             throw new \RuntimeException("Chỉ chốt được phase hiện tại (đang ở phase {$this->phase}).");
         }
         $perm = self::CF_PHASE_CLOSE_PERM[$idx] ?? null;
@@ -905,7 +916,13 @@ class Lead extends Model
             ['lead_id' => $this->id, 'phase' => $idx],
             ['closed_by' => $user->id, 'closed_at' => now(), 'note' => $note]
         );
-        $this->update(['phase' => min($idx + 1, 5)]);
+        // Tính phase kế tiếp = phase nhỏ nhất trong 1..5 chưa closed; nếu đã closed hết → min(startPhase+1, 5).
+        $closed = $this->phaseClosures()->pluck('phase')->all();
+        $nextPhase = null;
+        for ($p = 1; $p <= 5; $p++) {
+            if (! in_array($p, $closed, true)) { $nextPhase = $p; break; }
+        }
+        $this->update(['phase' => $nextPhase ?: min($this->startPhase() + 1, 5)]);
     }
 
     /** Lùi phase (Admin vận hành only). Xóa closure từ $idx trở đi, set phase = $idx. */
@@ -921,14 +938,46 @@ class Lead extends Model
         $this->update(['phase' => $idx]);
     }
 
-    /** Khách quay lại: bỏ tick is_first_visit → phase reset về 3, giữ lịch sử. */
-    public function markReturning(User $user): void
+    /**
+     * Khách quay lại: bỏ tick is_first_visit → phase reset về $targetPhase, giữ lịch sử.
+     * Phase C1.b rev8 2026-08-01: 2 luồng —
+     *   - Tele "khởi động cuộc gọi mới" → phase 3 (Gọi điện). Gate: canRestartCall.
+     *   - Sale "khởi động đặt lịch mới" → phase 4 (Booking). Gate: canRestartBooking.
+     */
+    public function markReturning(User $user, int $targetPhase = 3): void
     {
-        if (! $user->hasPermission(self::CF_ROLLBACK_PERM)
-            && ! $user->hasPermission('phase.close.checkin')) {
-            throw new \RuntimeException('Không có quyền khởi động lần thăm khám mới.');
+        if (! in_array($targetPhase, [3, 4], true)) {
+            throw new \RuntimeException('Phase đích không hợp lệ (chỉ 3 hoặc 4).');
         }
-        $this->update(['is_first_visit' => false, 'phase' => 3]);
+        $can = $targetPhase === 3 ? $this->canRestartCall($user) : $this->canRestartBooking($user);
+        if (! $can) {
+            throw new \RuntimeException($targetPhase === 3
+                ? 'Không có quyền khởi động cuộc gọi mới. Chỉ Tele đã gọi khách này (hoặc Admin) mới bấm được.'
+                : 'Không có quyền khởi động đặt lịch mới. Chỉ Sale phụ trách (hoặc Admin) mới bấm được.');
+        }
+        // Xóa closure từ $targetPhase trở đi để mở lại tab edit (nếu không xóa → tab vẫn readonly do lockedByClosure).
+        $this->phaseClosures()->where('phase', '>=', $targetPhase)->delete();
+        $this->update(['is_first_visit' => false, 'phase' => $targetPhase]);
+    }
+
+    /** Tele đã từng gọi khách này (có call_log), hoặc receiver, hoặc Admin có perm. */
+    public function canRestartCall(User $user): bool
+    {
+        if (! $this->isVisibleTo($user)) return false;
+        if ($user->hasPermission(self::CF_ROLLBACK_PERM)) return true;
+        if ($user->hasPermission('phase.close.checkin')) return true; // Admin cơ sở / Admin.
+        if ($this->receiver_id === $user->id) return true;
+        return $this->callLogs()->where('user_id', $user->id)->exists();
+    }
+
+    /** Sale đang giữ (owner) hoặc từng book cho khách này, hoặc Admin có perm. */
+    public function canRestartBooking(User $user): bool
+    {
+        if (! $this->isVisibleTo($user)) return false;
+        if ($user->hasPermission(self::CF_ROLLBACK_PERM)) return true;
+        if ($user->hasPermission('phase.close.checkin')) return true;
+        if ($this->owner_id === $user->id) return true;
+        return $this->bookingLogs()->where('user_id', $user->id)->exists();
     }
 
     /** Label ngắn cho arrow-breadcrumb + tab. */

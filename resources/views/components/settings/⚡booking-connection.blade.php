@@ -2,6 +2,8 @@
 
 use App\Models\AppSetting;
 use App\Models\Facility;
+use App\Models\SbService;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Http;
 use Livewire\Component;
 
@@ -11,8 +13,12 @@ new class extends Component
     public string $bookingApiToken = '';
     /** @var array<int, string> facility_id => slug */
     public array $facilitySlugs = [];
+    /** @var array<int, ?int> facility_id => sbooking_co_so_id */
+    public array $facilitySbCoSoIds = [];
     public ?string $testResult = null;
     public ?string $testStatus = null; // 'ok' | 'err'
+    public ?string $syncResult = null;
+    public ?string $syncStatus = null; // 'ok' | 'err'
 
     public function mount(): void
     {
@@ -21,6 +27,8 @@ new class extends Component
         $this->bookingApiToken = AppSetting::get('booking_api_token', (string) config('services.booking.api_token'));
         $this->facilitySlugs = Facility::roots()->orderBy('name')->pluck('booking_co_so_slug', 'id')
             ->map(fn ($s) => (string) $s)->all();
+        $this->facilitySbCoSoIds = Facility::roots()->orderBy('name')->pluck('sbooking_co_so_id', 'id')
+            ->map(fn ($v) => $v ? (int) $v : null)->all();
     }
 
     public function save(): void
@@ -30,6 +38,8 @@ new class extends Component
             'bookingApiToken' => ['nullable', 'string', 'max:255'],
             'facilitySlugs' => ['array'],
             'facilitySlugs.*' => ['nullable', 'string', 'max:60', 'regex:/^[a-z0-9\-_]*$/i'],
+            'facilitySbCoSoIds' => ['array'],
+            'facilitySbCoSoIds.*' => ['nullable', 'integer', 'min:1'],
         ], [
             'facilitySlugs.*.regex' => 'Slug chỉ được chứa chữ / số / dấu - _ (VD: 59ntn, 207nvt, dn).',
         ]);
@@ -38,10 +48,42 @@ new class extends Component
         AppSetting::set('booking_api_token', $this->bookingApiToken);
 
         foreach ($this->facilitySlugs as $facilityId => $slug) {
-            Facility::where('id', $facilityId)->update(['booking_co_so_slug' => trim($slug) ?: null]);
+            Facility::where('id', $facilityId)->update([
+                'booking_co_so_slug' => trim($slug) ?: null,
+                'sbooking_co_so_id'  => $this->facilitySbCoSoIds[$facilityId] ?? null,
+            ]);
         }
 
         session()->flash('ok', 'Đã lưu cấu hình kết nối Booking + mapping cơ sở.');
+    }
+
+    public function syncServices(): void
+    {
+        try {
+            $exit = Artisan::call('sb:sync-services');
+            $output = trim(Artisan::output());
+            if ($exit === 0) {
+                $this->syncStatus = 'ok';
+                $this->syncResult = 'OK · ' . SbService::count() . ' dịch vụ trong DB. ' . $output;
+            } else {
+                $this->syncStatus = 'err';
+                $this->syncResult = 'Fail · ' . $output;
+            }
+        } catch (\Throwable $e) {
+            $this->syncStatus = 'err';
+            $this->syncResult = 'Exception: ' . $e->getMessage();
+        }
+    }
+
+    public function getSbServicesCountProperty(): int
+    {
+        return SbService::count();
+    }
+
+    public function getSbServicesLastSyncProperty(): ?string
+    {
+        $last = SbService::max('synced_at');
+        return $last ? \Carbon\Carbon::parse($last)->diffForHumans() : null;
     }
 
     public function testConnection(): void
@@ -99,16 +141,25 @@ new class extends Component
 
         <div class="border-t border-gold-100 pt-5">
             <h2 class="text-sm font-bold text-gold-700 mb-1">Mapping cơ sở SCRM ↔ Booking</h2>
-            <p class="text-xs text-ink/50 mb-3">Nhập <strong>slug URL cơ sở bên lara-sbooking</strong> cho từng cơ sở SCRM. Nút "Đặt booking" ở chi tiết khách hàng ghép URL theo: <code>{{ rtrim($bookingUrl ?: 'BOOKING_URL', '/') }}/&lt;slug&gt;/tao-moi</code>. Bỏ trống = chưa map, nút bị disable với khách của cơ sở đó.</p>
+            <p class="text-xs text-ink/50 mb-3">Slug URL cho luồng cũ (chưa dùng nữa nhưng giữ backward compat). <strong>ID cơ sở sbooking</strong> dùng cho luồng mới: form Booking ở lead-form → auto tạo booking bên sbooking. Bỏ trống = chưa map, chỉ ghi log local (có nút "🔄 Thử lại" retry).</p>
             <div class="space-y-2">
+                <div class="grid grid-cols-[1fr_auto_auto] items-center gap-3 text-xs font-semibold text-ink/50">
+                    <div>Cơ sở SCRM</div>
+                    <div class="w-40 text-center">Slug (cũ)</div>
+                    <div class="w-32 text-center">Sbooking co_so_id</div>
+                </div>
                 @foreach (\App\Models\Facility::roots()->orderBy('name')->get() as $_fac)
-                    <div class="grid grid-cols-[1fr_auto] items-center gap-3">
+                    <div class="grid grid-cols-[1fr_auto_auto] items-center gap-3">
                         <label class="text-sm">{{ $_fac->name }}</label>
                         <input type="text" wire:model="facilitySlugs.{{ $_fac->id }}"
-                               placeholder="VD: 59ntn, 207nvt, dn"
+                               placeholder="59ntn"
                                class="w-40 border border-gold-200 rounded-md px-3 py-1.5 text-sm font-mono focus:outline-none focus:border-gold-500">
+                        <input type="number" min="1" wire:model="facilitySbCoSoIds.{{ $_fac->id }}"
+                               placeholder="1"
+                               class="w-32 border border-gold-200 rounded-md px-3 py-1.5 text-sm font-mono focus:outline-none focus:border-gold-500">
                     </div>
                     @error('facilitySlugs.' . $_fac->id)<p class="text-xs text-red-600 mt-0.5">{{ $message }}</p>@enderror
+                    @error('facilitySbCoSoIds.' . $_fac->id)<p class="text-xs text-red-600 mt-0.5">{{ $message }}</p>@enderror
                 @endforeach
             </div>
         </div>
@@ -119,6 +170,37 @@ new class extends Component
             @if ($testResult)
                 <span class="text-sm {{ $testStatus === 'ok' ? 'text-green-700' : 'text-red-700' }}">{{ $testResult }}</span>
             @endif
+        </div>
+
+        <div class="border-t border-gold-100 pt-5">
+            <h2 class="text-sm font-bold text-gold-700 mb-1">Đồng bộ dữ liệu từ Booking (Phase C1)</h2>
+            <p class="text-xs text-ink/50 mb-3">Kéo danh mục dịch vụ, cơ sở, bác sĩ từ lara-sbooking về Data Source để dùng cho phase Booking. Sync 1 chiều, an toàn chạy lại nhiều lần (idempotent).</p>
+
+            <div class="grid grid-cols-[1fr_auto] items-center gap-3 mb-3">
+                <div>
+                    <div class="text-sm font-semibold">Dịch vụ (dich_vu)</div>
+                    <div class="text-xs text-ink/50">
+                        Hiện có <strong>{{ $this->sbServicesCount }}</strong> dịch vụ trong Data Source.
+                        @if ($this->sbServicesLastSync)
+                            · Sync lần cuối {{ $this->sbServicesLastSync }}
+                        @else
+                            · Chưa từng sync.
+                        @endif
+                    </div>
+                </div>
+                <button wire:click="syncServices" type="button"
+                        wire:loading.attr="disabled" wire:target="syncServices"
+                        class="border border-gold-300 text-ink/70 hover:bg-gold-50 font-semibold text-sm px-4 py-2 rounded-md">
+                    <span wire:loading.remove wire:target="syncServices">🔄 Đồng bộ dịch vụ</span>
+                    <span wire:loading wire:target="syncServices">Đang đồng bộ…</span>
+                </button>
+            </div>
+
+            @if ($syncResult)
+                <div class="text-xs p-2 rounded {{ $syncStatus === 'ok' ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800' }}">{{ $syncResult }}</div>
+            @endif
+
+            <p class="text-xs text-ink/40 mt-3">CLI: <code>php artisan sb:sync-services</code> (thêm <code>--dry-run</code> để xem không ghi DB).</p>
         </div>
     </div>
 </div>

@@ -185,7 +185,53 @@ new class extends Component
             'status_2' => 'Tình trạng 2',
             'note' => 'Ghi chú (hiện tại)',
             'note_history' => 'Lịch sử ghi chú',
+            'booking_history' => 'Lịch sử đặt lịch',
         ];
+    }
+
+    /**
+     * Phase C1.b rev4 2026-08-01 — gộp tất cả booking_logs thành 1 cell multi-line cho export.
+     * Format mỗi dòng:
+     *   [BKG-XXX] dd/mm/YYYY HH:MM · 🩺 Thăm khám · Cơ sở › Phòng · BS: X · DV: Y · CV: A, B · [Sync status]
+     *     Ghi chú: ...
+     */
+    private function bookingHistoryCell(Lead $lead): string
+    {
+        $logs = $lead->bookingLogs()
+            ->with(['facility.parent', 'doctor', 'service', 'consultants'])
+            ->orderBy('created_at')
+            ->get();
+
+        if ($logs->isEmpty()) return '';
+
+        $syncLabels = [
+            'done' => '🏁 Đã xong',
+            'checkedin' => '🚪 Khách đã tới',
+            'canceled' => '🚫 Khách hủy',
+            'approved' => '✅ Đã duyệt',
+            'synced' => '⏳ Chờ duyệt',
+            'rejected' => '❌ Bị từ chối',
+            'deleted' => '🗑 Đã xóa',
+            'failed' => '⚠ Chưa đồng bộ',
+            'pending' => '⏳ Đang gửi',
+        ];
+
+        return $logs->map(function ($bl) use ($syncLabels) {
+            $ma = $bl->sbooking_booking_ma ?: ($bl->sbooking_booking_id ? '#' . $bl->sbooking_booking_id : 'chưa gửi');
+            $when = $bl->scheduled_at?->format('d/m/Y H:i') ?? 'chưa đặt';
+            $type = $bl->type === 'tham_kham' ? '🩺 Thăm khám' : ($bl->type === 'dich_vu' ? '💆 Dịch vụ' : '-');
+            $fac = $bl->facility ? (($bl->facility->parent?->name ? $bl->facility->parent->name . ' › ' : '') . $bl->facility->name) : '-';
+            $bs = $bl->doctor?->name ?: '-';
+            $dv = $bl->service?->name ?: '-';
+            $cv = $bl->consultants->isNotEmpty() ? $bl->consultants->pluck('name')->implode(', ') : '-';
+            $status = \App\Models\BookingLog::STATUSES[$bl->status] ?? $bl->status;
+            $sync = $syncLabels[$bl->sync_status] ?? '';
+
+            $line = "[{$ma}] {$when} · {$type} · {$fac} · BS: {$bs} · DV: {$dv} · CV: {$cv} · [{$status}]" . ($sync ? " · {$sync}" : '');
+            if ($bl->sync_error) $line .= " · lỗi: {$bl->sync_error}";
+            if ($bl->note) $line .= "\n  Ghi chú: " . trim($bl->note);
+            return $line;
+        })->implode("\n");
     }
 
     /** Trường tùy biến trong phạm vi user, làm cột xuất tùy chọn. */
@@ -257,10 +303,13 @@ new class extends Component
             ->with(['owner', 'receiver', 'orgUnit', 'customValues'])
             ->when($this->search, function ($q) {
                 $normalized = Lead::normalizePhone($this->search);
+                $needle = trim($this->search);
                 $q->where(fn ($qq) => $qq
-                    ->where('name', 'like', "%{$this->search}%")
-                    ->orWhere('code', 'like', "%{$this->search}%")
-                    ->when($normalized, fn ($qqq) => $qqq->orWhere('phone', $normalized)));
+                    ->where('name', 'like', "%{$needle}%")
+                    ->orWhere('code', 'like', "%{$needle}%")
+                    ->when($normalized, fn ($qqq) => $qqq->orWhere('phone', $normalized))
+                    // Phase C1.b rev4 2026-08-01: search theo mã booking sbooking (BKG-...).
+                    ->orWhereHas('bookingLogs', fn ($bl) => $bl->where('sbooking_booking_ma', 'like', "%{$needle}%")));
             })
             ->when($this->fClassification, fn ($q) => $q->where('classification', $this->fClassification))
             ->when($this->fCamp, function ($q) {
@@ -346,6 +395,7 @@ new class extends Component
             'status_2' => (string) $lead->status_2,
             'note' => (string) $lead->note,
             'note_history' => $this->noteHistoryCell($lead),
+            'booking_history' => $this->bookingHistoryCell($lead),
             default => (function () use ($lead, $key, $cfs) {
                 $id = (int) str_replace('cf_', '', $key);
                 $cf = $cfs->get($id);
@@ -390,12 +440,15 @@ new class extends Component
         $sheet->fromArray([$header, ...$rows]);
 
         // Phase 6.24 — cột note_history có multi-line → bật wrap text + rộng cột
-        $noteHistoryIdx = array_search('note_history', $cols, true);
-        if ($noteHistoryIdx !== false) {
-            $colLetter = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($noteHistoryIdx + 1);
-            $sheet->getStyle($colLetter . ':' . $colLetter)->getAlignment()
-                ->setWrapText(true)->setVertical(\PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_TOP);
-            $sheet->getColumnDimension($colLetter)->setWidth(60);
+        // Phase C1.b rev4 2026-08-01 — booking_history cùng cách xử lý.
+        foreach (['note_history' => 60, 'booking_history' => 80] as $wideKey => $width) {
+            $idx = array_search($wideKey, $cols, true);
+            if ($idx !== false) {
+                $colLetter = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($idx + 1);
+                $sheet->getStyle($colLetter . ':' . $colLetter)->getAlignment()
+                    ->setWrapText(true)->setVertical(\PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_TOP);
+                $sheet->getColumnDimension($colLetter)->setWidth($width);
+            }
         }
 
         AuditLog::record('export', null, ['report' => 'leads', 'count' => count($rows), 'cols' => $cols]);
@@ -531,7 +584,7 @@ new class extends Component
         </div>
         <div class="min-w-[180px] flex-[2]">
             <label class="block text-xs font-semibold text-ink/50 mb-1">Tìm kiếm</label>
-            <input type="search" wire:model.live.debounce.300ms="search" placeholder="Tên hoặc SĐT..."
+            <input type="search" wire:model.live.debounce.300ms="search" placeholder="Tên / SĐT / mã KH / mã booking (BKG-…)"
                    class="w-full border border-gold-200 rounded-md px-2.5 py-2 text-sm focus:outline-none focus:border-gold-500">
         </div>
     </div>

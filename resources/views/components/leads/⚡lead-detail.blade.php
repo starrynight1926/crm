@@ -109,11 +109,11 @@ new class extends Component
     {
         abort_unless($this->canAddNote(), 403);
         // Khách đã có ghi chú "Lần đầu" trước đó → bỏ cờ, tránh double-mark do race/devtools.
-        // Khách đã tới/tới trễ/đã xong (từ booking) → bỏ cờ luôn (không phải "lần đầu" nữa).
-        $visitedStatuses = [Lead::BOOKING_KHACH_DA_TOI, Lead::BOOKING_KHACH_TOI_TRE, Lead::BOOKING_DA_XONG];
+        // Phase C1.b rev11 2026-08-02: chỉ chặn nếu lead đã "quay lại" (is_first_visit=false).
+        // Booking đến/trễ/xong KHÔNG chặn — đó có thể chính là lần đầu.
         if ($this->noteIsFirstVisit && (
             LeadStatusLog::where('lead_id', $this->lead->id)->where('is_first_visit', true)->exists()
-            || in_array($this->lead->booking_status, $visitedStatuses, true)
+            || ! (bool) $this->lead->is_first_visit
         )) {
             $this->noteIsFirstVisit = false;
         }
@@ -411,12 +411,9 @@ new class extends Component
             'contributions' => Contribution::with('user')->where('lead_id', $this->lead->id)->orderByDesc('percent')->get(),
             'canSetContribution' => auth()->user()->hasPermission('contribution.set'),
             'hasFirstVisit' => \App\Models\LeadStatusLog::where('lead_id', $this->lead->id)->where('is_first_visit', true)->exists(),
-            // Khách đã đến rồi (đến/trễ/xong) → không được tick "Lần đầu" nữa. Khách hủy không tính.
-            'customerHasVisited' => in_array($this->lead->booking_status, [
-                \App\Models\Lead::BOOKING_KHACH_DA_TOI,
-                \App\Models\Lead::BOOKING_KHACH_TOI_TRE,
-                \App\Models\Lead::BOOKING_DA_XONG,
-            ], true),
+            // Phase C1.b rev11 2026-08-02: chỉ lock "Lần đầu" khi lead đã bấm "Khởi động lần khám mới" (is_first_visit=false).
+            // Booking status khach_da_toi vẫn coi là lần đầu (khách vừa đến CHÍNH LÀ lần đầu, không phải cấm ghi chú).
+            'customerHasVisited' => ! (bool) $this->lead->is_first_visit,
             'lastPayment' => $lastPayment,
             'totalPaid' => $totalPaid,
             'paymentMethods' => $paymentMethods,
@@ -483,29 +480,7 @@ new class extends Component
                     $bookingClinicUrl = $bookingBase ? $bookingBase . '/tao-moi?' . $bookingQuery : null;
                     $bookingServiceUrl = $bookingBase ? $bookingBase . '/dat-lich-dich-vu?' . $bookingQuery : null;
                 @endphp
-                @if ($bookingClinicUrl)
-                    <div x-data="{ open: false }" @click.outside="open = false" class="relative">
-                        <button type="button" @click="open = !open"
-                                class="flex items-center gap-2 text-sm font-semibold text-ink/70 border border-gold-200 px-5 py-2.5 rounded-md hover:bg-gold-50"
-                                title="Mở form đặt lịch bên hệ thống Booking, sau khi đặt xong sẽ tự cập nhật khách">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3.75 8.25h16.5M4.5 6h15a.75.75 0 01.75.75v12a.75.75 0 01-.75.75h-15a.75.75 0 01-.75-.75v-12A.75.75 0 014.5 6z"/></svg>
-                            Đặt booking
-                            <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"/></svg>
-                        </button>
-                        <div x-show="open" x-cloak x-transition class="absolute z-20 mt-1 right-0 w-56 bg-white border border-gold-200 rounded-lg shadow-card overflow-hidden">
-                            <a href="{{ $bookingClinicUrl }}" target="_blank" rel="noopener" @click="open = false"
-                               class="block px-4 py-2.5 text-sm hover:bg-gold-50 border-b border-gold-100">🏥 Đặt phòng khám</a>
-                            <a href="{{ $bookingServiceUrl }}" target="_blank" rel="noopener" @click="open = false"
-                               class="block px-4 py-2.5 text-sm hover:bg-gold-50">💆 Đặt dịch vụ</a>
-                        </div>
-                    </div>
-                @else
-                    <span class="flex items-center gap-2 text-sm font-semibold text-ink/40 border border-ink/10 px-5 py-2.5 rounded-md cursor-not-allowed"
-                          title="Cơ sở '{{ $facility?->name ?? 'chưa gán' }}' chưa map sang cơ sở bên Booking. Admin vào Cài đặt › Kết nối Booking để nhập slug.">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3.75 8.25h16.5M4.5 6h15a.75.75 0 01.75.75v12a.75.75 0 01-.75.75h-15a.75.75 0 01-.75-.75v-12A.75.75 0 014.5 6z"/></svg>
-                        Đặt booking (chưa map cơ sở)
-                    </span>
-                @endif
+                {{-- Phase C1.b 2026-08-01: gỡ nút "Đặt booking" (mở tab sbooking). Booking bây giờ tạo tự động từ tab Booking khi status = "Đã xác nhận". --}}
                 <button type="button" wire:click="syncFromBooking" wire:loading.attr="disabled" wire:target="syncFromBooking"
                         class="flex items-center gap-2 text-sm font-semibold text-ink/70 border border-gold-200 px-4 py-2.5 rounded-md hover:bg-gold-50 disabled:opacity-50 disabled:cursor-wait"
                         title="Kiểm tra bên hệ thống Booking xem SĐT khách này đã có lịch chưa. Nếu có, cập nhật Data Source về trạng thái Đã đặt + phân loại Booking.">
@@ -900,7 +875,7 @@ new class extends Component
                     <div class="flex flex-wrap items-center gap-3">
                         @php $firstVisitLocked = $hasFirstVisit || $customerHasVisited; @endphp
                         <label class="flex items-center gap-2 text-sm {{ $firstVisitLocked ? 'cursor-not-allowed opacity-50' : 'cursor-pointer' }}"
-                               title="{{ $firstVisitLocked ? ($hasFirstVisit ? 'Khách đã có ghi chú Lần đầu.' : 'Khách đã tới/tới trễ/đã xong → không phải lần đầu.') : '' }}">
+                               title="{{ $firstVisitLocked ? ($hasFirstVisit ? 'Khách đã có ghi chú Lần đầu.' : 'Khách đã bấm "Khởi động lần khám mới" — giờ là lần quay lại, không phải lần đầu.') : '' }}">
                             <input type="checkbox" wire:model.live="noteIsFirstVisit" {{ $firstVisitLocked ? 'disabled' : '' }} class="rounded border-gold-300 text-green-600 w-4 h-4 disabled:cursor-not-allowed">
                             <span class="font-semibold text-green-700">🆕 Lần đầu</span>
                         </label>

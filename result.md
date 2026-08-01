@@ -2,6 +2,212 @@
 
 > Làm xong phase nào ghi vào đây: ngày hoàn thành, việc đã làm, việc dời lại/chưa xong, ghi chú & quyết định phát sinh. Mẫu bên dưới.
 
+## 2026-08-01 — Phase C1.b rev3: Sync khung giờ từ sbooking ✅
+
+User feedback: hardcode giờ 8:30-12/13:30-18 không dùng được. Logic BS capacity phức tạp (1 BS = 1 tư vấn + 6 khám lâm sàng/giờ, mỗi BS `nhan_tu_van`/`nhan_kham_ls` khác nhau) → không thể replicate scrm-side, phải hỏi sbooking. Chọn hướng B: đọc khung giờ động từ sbooking.
+
+### Đã làm
+
+**Sbooking:**
+- Endpoint mới `GET /api/sync/khung-gio?co_so_id=X` — trả distinct `gio_bat_dau` của tất cả `khung_gio` thuộc phòng active của cơ sở, loại slot <30' (data test có nhiều 5' slot).
+- Response: `{co_so_id, count, slots:[{gio_bat_dau, label}]}`.
+- Test tay: cơ sở id=1 → **17 slot** từ 08:00 → 17:30 (mỗi 30 phút).
+
+**Scrm:**
+- Public property `availableSlots` trong `⚡lead-form`.
+- Livewire hook `updatedNewBookingFacilityId(mixed $value)`: khi user chọn cơ sở → walk parent chain lấy `sbooking_co_so_id` → HTTP GET `/sync/khung-gio` → set `availableSlots`. Fail silent (form dùng fallback).
+- Dropdown giờ đọc từ `$availableSlots` (server-side inject vào Alpine x-data). Fallback hardcode 8:30-12/13:30-18 nếu chưa chọn cơ sở hoặc API fail.
+- Đổi `wire:model="newBookingFacilityId"` → `wire:model.live` để trigger hook.
+- Title tooltip select giờ hiện rõ đang dùng "fallback" hay "sbooking (N slot)".
+
+### Chưa xử lý (đúng ý user, để tương lai)
+
+- **Check capacity BS slot cụ thể**: endpoint hiện chỉ trả khung giờ chung của cơ sở, không loại slot đã đầy. Muốn check "BS X đã đủ 1 tư vấn + 6 khám lâm sàng chưa" cần:
+  - Endpoint mới `GET /api/sync/check-capacity?bac_si_id=X&ngay=Y&gio=HH:MM&dich_vu_id=Z` gọi lại logic `checkBacSiCapacity()` sẵn có bên sbooking.
+  - Điều kiện: BS scrm ↔ BS sbooking đã map (task Phase C3 staff sync).
+- **Xử lý duyệt fail bên sbooking**: khi Admin sbooking duyệt fail do conflict (`BookingController::duyet` return early với error), hiện KHÔNG push callback về scrm → badge scrm vẫn `synced` sai. Cần thêm push với `trang_thai='cho_duyet'` + reason khi duyệt fail. Task nhỏ, làm sau.
+
+### Test
+- `SbookingClient` + `SyncServicesFromSbooking` 8/8 pass.
+- E2E: curl `/api/sync/khung-gio?co_so_id=1` → 17 slot chuẩn. Livewire hook chưa test tự động (test manual F5 form).
+
+### Ghi chú thiết kế
+- Endpoint không filter theo ngày. Vì `khung_gio` bên sbooking là template lặp (không per ngày). Ngày nghỉ (`ngay_nghi`) là bảng riêng, có thể extend endpoint sau nếu cần.
+- Distinct theo `gio_bat_dau` only — không trả `gio_ket_thuc` vì mỗi phòng có `gio_ket_thuc` riêng cùng `gio_bat_dau`. Scrm chỉ cần start time; Admin sbooking resolve slot đầy đủ khi duyệt.
+- Slot ≥ 30 phút: filter cứng qua `TIMESTAMPDIFF(MINUTE, ...) >= 30` để loại rác test 5-10 phút. Nếu cần chỉnh sau thì sửa condition.
+
+---
+
+## 2026-08-01 — Phase C1.b rev2: nguồn = source_group + form ngày/giờ slot + callback từ chối ✅
+
+3 điểm bổ sung sau khi test tay lần 2 (Trần Hoà):
+
+### 1. Nguồn booking bên sbooking = source_group scrm
+- Trước: `SbookingClient::pushBooking` gửi `nguon='SCRM'` cứng → sbooking hiện "SCRM" thay vì nguồn thật.
+- Sau: `nguon => $lead->source_group ?: 'SCRM'`. Payload push mkt/mkt_br/bdm/bod/sa/ba/wi tương ứng lead.
+- Sbooking dropdown `nguon` đã có 7 mã này từ Phase 2026-07-28.
+
+### 2. Form chọn ngày/giờ booking
+- Trước: `<input type="datetime-local">` — 1 field lộn xộn, không giới hạn khung giờ làm việc.
+- Sau: Alpine.js x-data tách 2 field `<input type="date">` + `<select>` slot giờ.
+- **Khung giờ hardcode**: 8:30-12:00 (7 slot) + 13:30-18:00 (9 slot) = 16 slot 30 phút.
+- Binding: getter/setter trên `$wire.newBookingScheduledAt` — combine `date + 'T' + time`. Backward compat với logic backend cũ.
+
+### 3. Callback từ chối từ sbooking → scrm cập nhật `rejected`
+- Sbooking `BookingController::tuChoi()` giờ gọi `CrmPushService::pushStatus()` sau save.
+- Payload push thêm `ly_do_tu_choi`.
+- Scrm `BookingEventController` case status: `tu_choi` → `sync_status='rejected'`, lưu `ly_do_tu_choi` vào `sync_error`.
+- UI badge scrm: `❌ Sbooking từ chối — {lý do}` (rose).
+
+### Fix bonus khi debug
+- `CRM_URL` bên sbooking `.env` cũ trỏ `127.0.0.1:1999` không tồn tại → sửa `http://lara-scrm.test:81`. Không có config này thì tất cả callback trước đó silent fail.
+- Sbooking user `admin@sweetsica.com` chưa có `api_token` → gán khớp với scrm user `hn.cms04@longevity.com.vn`. Cần setup thêm cho các user khác nếu họ cũng bấm duyệt.
+- `SbookingClient::pushBooking` giờ walk parent chain: nếu user chọn cơ sở con "Khối chuyên môn" (không map), tự leo lên root (HN=1) lấy `sbooking_co_so_id`.
+- Gate `newBookingFacilityId` chuyển thành **required** — không cho gửi thiếu cơ sở. Cùng walk parent chain khi check `sbooking_co_so_id`.
+
+### Chưa làm / dời lại
+- **Sync `lich_lam_viec` từ sbooking**: user gợi ý "chưa sync giờ làm việc bên này qua à?" — sbooking đã có bảng `lich_lam_viec` per bác sĩ per ngày. Hiện scrm hardcode 8:30-12/13:30-18. Đúng luồng phải: chọn cơ sở + BS + ngày → gọi API sbooking lấy slot khả dụng → hiện dropdown động. Task riêng, gộp vào Phase C3 (staff) hoặc tạo Phase C1.d.
+- **Setup api_token đại trà**: hiện chỉ 2 user scrm có token. Cần script seed/sync để mọi user bấm duyệt bên sbooking đều gọi callback thành công. Nếu không → badge `synced` sẽ không tự đổi thành `approved`.
+
+---
+
+## 2026-08-01 — Phase C1.b rev: Chặn cứng + callback duyệt từ sbooking ✅
+
+Nối tiếp C1.b chiều nay, user QA thấy wording sai + luồng lỏng lẻo. Sửa 4 điểm:
+
+### Đã làm
+
+1. **Wording box lead-form (khối "Ghi nhận booking")**:
+   - Trước: "lễ tân sbooking gán phòng + khung giờ khi duyệt".
+   - Sau: "Bấm Thêm booking → tạo record bên sbooking ở trạng thái Chờ duyệt. Admin sbooking duyệt → tự cập nhật trạng thái Đã duyệt về đây. Chưa map cơ sở → không cho ghi."
+
+2. **Chặn cứng ghi khi cơ sở chưa map**:
+   - Validation `newBookingFacilityId` giờ **required**, không nullable.
+   - Sau validate, kiểm tra `facility.sbooking_co_so_id` null → `session()->flash('cf_error', ...)` + return. Không tạo booking_log local nữa.
+   - Bỏ điều kiện `status === da_xac_nhan` trước khi push — mọi booking đều push (hợp lý vì đã chặn cứng, cơ sở chắc chắn map).
+
+3. **Sbooking auto callback về scrm khi Admin duyệt**:
+   - `BookingController::duyet()` — sau `$booking->save()`, gọi `CrmPushService::pushStatus($booking, auth()->id())`. Nếu fail → warn message.
+   - `CrmPushService::pushStatus()` payload thêm `sbooking_booking_id => $booking->id` để scrm match log dễ hơn (thay vì phải parse ma_booking).
+
+4. **Scrm nhận callback duyệt → cập nhật booking_log**:
+   - `BookingEventController::__invoke` case `status`: nếu payload có `sbooking_booking_id` → tìm `BookingLog::where('sbooking_booking_id', X)` + update `sync_status` theo `trang_thai` sbooking:
+     - `da_duyet` → `approved`
+     - `cho_duyet` (bỏ duyệt) → `synced`
+   - Ghi `synced_at = now()`.
+   - UI badge cập nhật: `approved` (xanh đậm ✅ Sbooking đã duyệt), `synced` (xanh nhạt ⏳ Chờ duyệt).
+
+### Retry
+- Bỏ điều kiện `status = da_xac_nhan` trong `retrySbookingSync` — retry được cho mọi log failed.
+
+### Enum ý nghĩa mới của `booking_logs.sync_status`
+- `pending`: đang gửi (transient).
+- `synced`: đã tạo bên sbooking, chờ Admin duyệt.
+- `approved`: Admin sbooking đã duyệt.
+- `failed`: gửi lỗi (network / cơ sở chưa map / ...), giữ log local, có nút "🔄 Thử lại".
+
+### Test
+- `SbookingClient` 4/4 + `SyncServicesFromSbooking` 4/4 = **8/8 pass** (không phá).
+- E2E callback duyệt cần user bấm nút "Duyệt" bên sbooking → theo dõi `booking_logs.sync_status` thay đổi. Cần user bên sbooking có `api_token` khớp với user bên scrm (setup Phase A/B).
+
+### Chưa làm / dời lại
+- **Test tự động cho callback approved**: hiện chỉ có test cho `SbookingClient::pushBooking`. Feature test cho `BookingEventController::status` type=da_duyet + update BookingLog chưa viết. Task nhỏ, làm sau nếu bug bash phát hiện.
+- **Từ chối (`tu_choi`) và bỏ duyệt (`cho_duyet` lần 2)**: sync_status hiện chỉ handle `da_duyet` + `cho_duyet`. Nếu Admin sbooking bấm "Từ chối" (trang_thai='tu_choi') → hiện match default (giữ nguyên sync_status). Có thể cần thêm giá trị `rejected` sau.
+
+---
+
+## 2026-08-01 — Phase C1.b: Gộp form booking CRM + auto push sang sbooking ✅
+
+Nối tiếp Phase C1 sáng nay. User chốt: form "Ghi nhận booking" trong lead-form phải **tạo lịch thật bên sbooking** khi save (status=`Đã xác nhận`), không còn tách log CRM và nút "Đặt booking" cũ nữa. Design B trong đề xuất trước, 5 điểm chốt: 1a/2a/3a/4-hack/5x.
+
+### Đã làm
+
+**Sbooking:**
+- Endpoint mới `POST /api/bookings` ([SyncApiController → BookingApiController::store](../../lara-sbooking/app/Http/Controllers/Api/BookingApiController.php)) — validate payload, upsert `khach_hang` theo `so_dien_thoai`, insert `booking` với `trang_thai='cho_duyet'`, không yêu cầu `phong_id`/`khung_gio_id` (lễ tân sbooking gán sau).
+- Route trong group `scrm.token`. E2E test tay bằng curl → tạo được booking id=6 khách_hang_id=4 status=cho_duyet.
+- **Lưu ý enum**: `loai_dat_lich` bên sbooking là `phong_kham`/`dich_vu` — không phải `tham_kham`. Client scrm tự map `tham_kham` → `phong_kham` khi push.
+
+**Scrm:**
+- Migration `2026_08_01_130000_add_sbooking_sync_to_booking_logs_and_facilities`: `booking_logs` thêm `sbooking_booking_id`, `sync_status` (`pending|synced|failed`), `sync_error`, `synced_at`. `facilities` thêm `sbooking_co_so_id` (map tay, chờ Phase C2 auto sync).
+- Service `App\Services\SbookingClient::pushBooking(BookingLog)`: build payload (map service.name → sb_services.sbooking_id best-effort, phone/name/code lead, facility.sbooking_co_so_id, scheduled_at tách ngày+giờ), gọi `Http::withToken()->post($BOOKING_API_URL.'/bookings')`. Không rollback nếu fail — ghi `sync_status=failed` + `sync_error`, giữ log local.
+- Trigger trong `⚡lead-form::addBookingLog()`: sau khi tạo booking_log, nếu `status=da_xac_nhan` → gọi `SbookingClient::pushBooking()`. Flash `cf_warn` nếu fail.
+- Method mới `retrySbookingSync(int $bookingLogId)` — user bấm nút "🔄 Thử lại" trong badge sync.
+- UI:
+  - Đổi wording khối "Ghi nhận booking" — bỏ note "chỉ ghi log nội bộ", thay bằng giải thích rõ Data Source auto push khi status=Đã xác nhận.
+  - Gỡ nút "Đặt booking" dropdown xanh cũ ở `⚡lead-form` footer + `⚡lead-detail` header (2 chỗ).
+  - Badge sync ở mỗi booking_log: `synced` xanh + id + diffForHumans, `failed` đỏ + nút "🔄 Thử lại", `pending` amber.
+  - Flash `cf_warn` amber (thêm mới).
+  - `⚡booking-connection`: thêm cột "Sbooking co_so_id" (input number) vào bảng mapping cơ sở, save cùng `booking_co_so_slug` cũ.
+- Model: `BookingLog` fillable + casts thêm `sbooking_booking_id`/`sync_status`/`sync_error`/`synced_at`. `Facility` fillable thêm `sbooking_co_so_id`.
+
+### Design chốt (5 điểm B)
+- **1a**: Không chọn phòng/khung giờ ở form CRM. Sbooking status=`cho_duyet`, lễ tân sbooking gán.
+- **2a**: Không push update khi edit. Muốn sửa lịch thật → sang sbooking sửa tay.
+- **3a**: Không push cancel. Cần cancel → sang sbooking cancel.
+- **4-hack**: Thêm cột `facilities.sbooking_co_so_id` map tay. Phase C2 (facilities) sẽ auto sync sau.
+- **5x**: Gỡ hoàn toàn nút "Đặt booking" cũ.
+
+### Test
+- `SbookingClientTest` (4 case, 12 assertions): push success + mark synced; fail khi facility chưa map; fail HTTP 500; map service.name → sb_service.sbooking_id. **4/4 pass** (Http::fake, cô lập).
+- `SyncServicesFromSbookingTest` (4 case): pre-existing từ C1 sáng, vẫn pass.
+- Full regression: 173/188 pass. 3 fail + 12 error đều **pre-existing** (đã ghi 2026-07-31): DistributionEngine notification, ProcessRawLead KH-001-MKT format, Hcm/BookingEvent/SyncFromBooking cần DB `lara_scrm` MySQL, SlaRecall sqlite NOT NULL. **Không có test nào tao gây fail.**
+- E2E curl: POST /api/bookings với token → 201 `{id, ma_booking, khach_hang_id, trang_thai}`. Booking thật id=6 tạo bên sbooking.
+
+### Config cần verify khi mày test tay
+1. Vào `/settings/booking-connection` map từng cơ sở SCRM → `sbooking_co_so_id` (VD: HN → 1, HCM → 2, ĐN → 3). Bỏ trống = chỉ ghi log local.
+2. Form Booking trong lead-form, chọn cơ sở đã map + status=`Đã xác nhận` + Thêm booking → booking sinh bên sbooking (mở URL `/lo23tdn/duyet-lich` để verify).
+3. Chưa map → flash amber cảnh báo, badge `failed` đỏ với lý do, có nút "🔄 Thử lại".
+
+### Chưa làm / dời lại
+- **C1.c — Đổi dropdown chọn dịch vụ trong lead-form từ `Service` → `SbService`**: `⚡lead-form:2271` vẫn dùng `\App\Models\Service::where(...)`. `SbookingClient` hiện map best-effort theo `service.name → sb_services.ten` (không hoàn toàn chính xác). Muốn đổi thẳng sang `SbService` → đụng FK `booking_logs.service_id → services.id`. Cần chốt design (giữ FK cũ + thêm cột `sb_service_id` mới, hay drop FK + migrate). Task riêng, không block C1.b này.
+- **C1.d — Auto push khi edit/cancel** (điểm 2/3 phương án b): giữ nguyên chốt "không push", làm sau nếu user thấy vướng.
+- **Endpoint list co_so bên sbooking** — hiện map tay ID bằng số. Sau khi có endpoint `GET /api/sync/co-so` (Phase C2) → dropdown map thay input number.
+- **Observer auto-push khi tạo dich_vu/co_so/bac_si bên sbooking**: chưa làm, dùng sync manual.
+
+### Ghi chú kỹ thuật
+- `SbookingClient::pushBooking` catch mọi exception → ghi vào `sync_error`. Không throw ra ngoài → save booking_log không rollback.
+- `retrySbookingSync` chỉ push khi status=`da_xac_nhan` (không retry log status `cho_xac_nhan`/`huy_doi_lich`).
+- Payload `crm_khach_ma` = `leads.code` (VD `KH-001-MKT`) → sbooking lưu vào `booking.crm_khach_ma`, dùng tracking 2 hệ sau này.
+- Booking `trang_thai='cho_duyet'` + `da_duyet=false` — như tạo tay trong sbooking. Lễ tân sbooking duyệt qua `/lo23tdn/duyet-lich` như thường.
+
+---
+
+## 2026-08-01 — Phase C1: Sync dịch vụ sbooking → scrm ✅ (core)
+
+Chi tiết plan: [plan-schema-unification.md](plan-schema-unification.md) §Phase C1. Master data 2 hệ chốt design: `services` (scrm, có giá + phase, phục vụ thu tiền + % đóng góp) giữ **nguyên**; data booking (dịch vụ / cơ sở / bác sĩ) master = **sbooking**, scrm mirror lại chỉ để làm dropdown ở phase booking.
+
+### Design chốt sau khi bàn với user
+- **Câu 1** (cột giá của scrm): giữ ở scrm-only. Không dời sang sbooking, không gộp bảng.
+- **Câu 2** (co_so_id bên sbooking): giữ ở sbooking, mirror qua scrm kèm `sbooking_co_so_id`. Sbooking đang quản 4 cơ sở, sync sang phase booking scrm.
+- **Câu 3** (map sb_services ↔ scrm.services): không cần. Sbooking chỉ chọn từ danh mục do sbooking quản, không link tới bảng giá bên scrm. Hai concept độc lập.
+
+### Đã làm
+- **scrm migration** `2026_08_01_120000_create_sb_services_table`: bảng `sb_services` (sbooking_id unique, sbooking_co_so_id nullable, ten, thoi_gian_phut, thuoc_nhom, la_dich_vu, active, synced_at). Idempotent theo sbooking_id.
+- **scrm model** `App\Models\SbService` — Fillable + casts.
+- **scrm command** `App\Console\Commands\SyncServicesFromSbooking` (`php artisan sb:sync-services [--dry-run]`): gọi `GET {BOOKING_API_URL}/sync/dich-vu` với `Http::withToken(BOOKING_API_TOKEN)`, upsert theo sbooking_id, log số tạo mới/cập nhật.
+- **sbooking controller** `App\Http\Controllers\Api\SyncApiController::dichVu()` — trả JSON `{count, data:[…]}` toàn bộ `dich_vu`, order theo id.
+- **sbooking route** `GET /api/sync/dich-vu` trong group middleware `scrm.token` (dùng lại token đã config Phase A/B).
+- **scrm UI**: gộp vào trang **Thiết lập → Kết nối Booking** (`⚡booking-connection`) section mới "Đồng bộ dữ liệu từ Booking (Phase C1)": hiển thị `SbService::count()` + `synced_at` (`diffForHumans`), nút "🔄 Đồng bộ dịch vụ" gọi `Artisan::call('sb:sync-services')` + flash banner OK/Fail. Có `wire:loading` indicator.
+- **Test** `SyncServicesFromSbookingTest` (4/4 pass, `Http::fake`): tạo mới, upsert idempotent, fail khi thiếu token, fail HTTP 401.
+- **QA checklist**: thêm section "🔄 Phase C1 — Đồng bộ dịch vụ từ Sbooking" trong `docs/qa/qa_checklist.html` (9 case cả positive + negative).
+
+### Config cần verify
+- scrm `.env`: `BOOKING_URL=http://localhost:8001` + `BOOKING_API_TOKEN=…` (đã có từ Phase A/B).
+- sbooking `.env`: `SCRM_API_TOKEN=…` khớp token trên (đã có).
+- Nếu sbooking chạy port khác 8001, sửa `BOOKING_API_URL` trong scrm `.env` hoặc AppSetting `booking_url`.
+
+### Chưa làm / dời lại
+- **C1.b — Đổi dropdown chọn dịch vụ ở phase booking sang `sb_services`**: hiện `⚡lead-form.blade.php:2271` đang query `Service::where('active',true)->where('service_type',$newBookingType)`. Đổi sang `SbService` sẽ đụng FK `booking_logs.service_id → services.id` (có data thực). Cần chốt design C1.b trước: (a) thêm cột `booking_logs.sb_service_id` nullable song song, dropdown ghi vào cột mới, giữ FK cũ cho backward compat; hoặc (b) migrate hẳn FK sang `sb_services` (drop FK cũ, backfill service_id ↔ sb_services theo tên). Đề xuất (a) để không mất data booking cũ.
+- **C1.c — Observer bên sbooking auto-push khi save dich_vu**: hiện chỉ có sync manual (bấm nút / CLI). Optional, làm sau nếu user thấy phải bấm nhiều.
+- **C2 (facilities) + C3 (staff)**: chưa động. Khi làm C2 xong sẽ backfill `sb_services.facility_id` map từ `sbooking_co_so_id`.
+
+### Ghi chú kỹ thuật
+- Sync 1 chiều **sbooking → scrm**. Bên scrm KHÔNG được UI sửa `sb_services` (readonly mirror). Muốn thêm/sửa dịch vụ mới → làm bên sbooking, sync lại.
+- Idempotent: chạy `sb:sync-services` bao nhiêu lần cũng cho cùng kết quả. Row đã tồn tại → update; row mới → create. Chưa xử lý soft-delete (nếu bên sbooking xóa dich_vu, bên scrm vẫn giữ). Nếu cần → thêm bước diff sau này.
+- Test dùng `Http::fake()` — không đụng sbooking server. Chạy được cả khi sbooking offline.
+
+---
+
 ## 2026-07-31 — Rebrand tele + filter Phase + assert booking-first + dimension phase cho báo cáo ✅
 
 Nhánh `fifth`. Chốt bằng flow ảnh mới (7 bước, 7 nguồn — file `public/images/flow.jpg`), fix xong 4 mảng:

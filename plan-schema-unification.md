@@ -130,7 +130,8 @@ Sau MỖI phase, thêm:
 
 ## Trạng thái
 
-- [ ] Phase C1 — services (master sbooking)
+- [x] Phase C1 — services (đảo master: sbooking cho data booking, scrm giữ services có giá) — 2026-08-01, xem result.md.
+- [x] Phase C1.b — gộp form booking CRM + auto push sang sbooking — 2026-08-01, xem result.md. Còn C1.c (đổi dropdown Service → SbService) chưa làm.
 - [ ] Phase C2 — facilities (master scrm)
 - [ ] Phase C3 — staff_members (master scrm)
 - [ ] Phase C4 — users (master scrm)
