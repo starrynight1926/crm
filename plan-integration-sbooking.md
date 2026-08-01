@@ -161,7 +161,7 @@
 
 ## Trạng thái
 
-- [ ] Phase A — BS dropdown
-- [ ] Phase B — UI settings
+- [x] Phase A — BS dropdown ✅ (2026-08-01)
+- [x] Phase B — UI settings ✅ (2026-08-01)
 - [ ] Phase C — Sync master data
 - [ ] Phase D — Push booking

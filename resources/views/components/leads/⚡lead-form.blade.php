@@ -2193,12 +2193,76 @@ new class extends Component
                                     </optgroup>
                                 @endforeach
                             </select>
-                            <select wire:model="newBookingDoctorId" class="border border-slate-300 rounded px-2 py-1.5 text-sm">
-                                <option value="">— Bác sĩ —</option>
-                                @foreach (\App\Models\StaffMember::where('role','doctor')->where('active',true)->orderBy('name')->get() as $d)
-                                    <option value="{{ $d->id }}">{{ $d->name }}</option>
-                                @endforeach
-                            </select>
+                            {{-- Phase A 2026-08-01: dropdown BS group Cơ sở > Phòng > BS, filter theo newBookingFacilityId. --}}
+                            @php $__bsCurrent = $newBookingDoctorId ? ($allStaff->firstWhere('id', $newBookingDoctorId)) : null; @endphp
+                            <div x-data="{
+                                open: false,
+                                search: '',
+                                selectedId: {{ $newBookingDoctorId ?: 'null' }},
+                                selectedName: @js($__bsCurrent?->displayName() ?? ''),
+                                get hasSelection() { return this.selectedId != null && this.selectedId > 0; },
+                                get filtered() {
+                                    let q = this.search.toLowerCase().trim();
+                                    let fid = parseInt($wire.newBookingFacilityId) || 0;
+                                    let tree = window.__staffTree || [];
+                                    // Nếu đã chọn cơ sở → chỉ hiện fac chứa dept đó, và chỉ dept đó.
+                                    let base = fid
+                                        ? tree.map(fac => ({...fac, depts: fac.depts.filter(d => d.id === fid)})).filter(fac => fac.depts.length > 0)
+                                        : tree;
+                                    if (!q) return base.map(f => ({...f, depts: f.depts.filter(d => (d.doctors || []).length > 0)})).filter(f => f.depts.length > 0);
+                                    return base.map(fac => ({
+                                        ...fac,
+                                        depts: fac.depts.map(d => ({...d, doctors: (d.doctors || []).filter(s => s.name.toLowerCase().includes(q))})).filter(d => d.doctors.length > 0)
+                                    })).filter(fac => fac.depts.length > 0);
+                                },
+                                pick(id, name) {
+                                    this.selectedId = id; this.selectedName = name;
+                                    this.open = false; this.search = '';
+                                    $wire.set('newBookingDoctorId', id);
+                                },
+                                clear() {
+                                    this.selectedId = null; this.selectedName = '';
+                                    $wire.set('newBookingDoctorId', null);
+                                }
+                            }" @click.outside="open = false; search = ''" class="relative">
+                                <div x-show="hasSelection" x-cloak class="flex items-center justify-between gap-2 border border-slate-300 bg-blue-50 rounded px-2 py-1.5 text-sm">
+                                    <span class="font-medium text-ink/80 truncate" x-text="selectedName"></span>
+                                    <button type="button" @click="clear()" class="text-xs text-ink/50 hover:text-red-600 shrink-0">✕</button>
+                                </div>
+                                <button x-show="!hasSelection" type="button" @click="open = !open"
+                                        class="w-full flex items-center justify-between border border-slate-300 rounded px-2 py-1.5 text-sm text-ink/40 bg-white hover:border-slate-400">
+                                    <span>— Bác sĩ —</span>
+                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"/></svg>
+                                </button>
+                                <div x-show="open" x-cloak class="absolute z-30 mt-1 w-full bg-white border border-slate-300 rounded-lg shadow-lg max-h-72 flex flex-col">
+                                    <div class="p-2 border-b border-slate-100">
+                                        <input type="text" x-model="search" placeholder="Nhập tên BS..." @keydown.escape="open = false; search = ''"
+                                               class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-blue-500">
+                                    </div>
+                                    <div class="overflow-y-auto flex-1 py-1">
+                                        <template x-for="fac in filtered" :key="fac.name">
+                                            <div>
+                                                <div class="px-2 py-1 text-[10px] font-bold text-blue-700 uppercase tracking-wider bg-blue-50" x-text="'🏥 ' + fac.name"></div>
+                                                <template x-for="dept in fac.depts" :key="dept.id">
+                                                    <div>
+                                                        <div class="px-3 py-1 text-[11px] font-semibold text-ink/60" x-text="'▸ ' + dept.name"></div>
+                                                        <template x-for="s in dept.doctors" :key="s.id">
+                                                            <button type="button" @click="pick(s.id, s.name)"
+                                                                    class="block w-full text-left pl-6 pr-2 py-1 text-sm hover:bg-blue-50"
+                                                                    :class="{'bg-blue-100 font-semibold text-blue-800': selectedId === s.id}">
+                                                                <span x-text="s.name"></span>
+                                                            </button>
+                                                        </template>
+                                                    </div>
+                                                </template>
+                                            </div>
+                                        </template>
+                                        <template x-if="filtered.length === 0">
+                                            <p class="px-3 py-2 text-sm text-ink/40 italic">Không tìm thấy BS phù hợp{{ '.' }}</p>
+                                        </template>
+                                    </div>
+                                </div>
+                            </div>
                             <select wire:model="newBookingServiceId" @disabled(! $newBookingType) class="border border-slate-300 rounded px-2 py-1.5 text-sm">
                                 <option value="">
                                     {{ $newBookingType ? '— ' . ($newBookingType === 'tham_kham' ? 'Chọn thăm khám' : 'Chọn dịch vụ') . ' —' : '— Chọn loại trước —' }}

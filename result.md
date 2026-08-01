@@ -1304,3 +1304,20 @@ Vào `/leads/create` tạo mới với các nguồn khác nhau. Vào `/leads/{id
 - 3 lựa chọn cân nhắc: (1) giữ nút "Đặt booking" cũ redirect + prefill, form scrm chỉ ghi local để tracking; (2) mở rộng form scrm duplicate y hệt form sbooking (~700 dòng logic + fetch dynamic phòng/khung giờ); (3) sbooking build API "quick-book" bypass hết conflict check (data lệch).
 - **Chốt (1)**: form "Tạo booking" đổi tên thành **"Ghi nhận booking"** (log nội bộ). Thêm banner xanh cảnh báo "chỉ ghi log nội bộ — muốn tạo lịch thật bấm 'Đặt booking'". Nút "Đặt booking" (redirect sbooking + callback) đã có sẵn ở footer form, giữ nguyên.
 - Lý do: form sbooking là feature hoàn chỉnh với business logic phòng/khung giờ/conflict — replicate hoặc bypass = phá vỡ integrity. Sau này nếu cần tự động push, phải build lại form scrm hoặc thay đổi contract 2 phía (task riêng, ~1-2 session).
+
+### 6.21k — Phase A integration: fix dropdown BS Phase 4 (2026-08-01, nhánh sixth)
+- Thay `<select>` phẳng của `newBookingDoctorId` bằng searchable dropdown Alpine group **Cơ sở > Phòng > Bác sĩ**, dùng `window.__staffTree` sẵn có.
+- Filter cứng theo `newBookingFacilityId`: nếu user chọn cơ sở trước, dropdown BS chỉ hiện BS thuộc cơ sở đó (không hiện BS cơ sở khác gây nhầm).
+- Search box theo tên BS, escape để đóng, click ngoài để đóng.
+- Chỉ đụng 1 file `⚡lead-form.blade.php` ~line 2196.
+- Đánh dấu ✅ Phase A trong `plan-integration-sbooking.md`.
+
+### 6.21m — Phase B integration: UI config token (bỏ .env) (2026-08-01, nhánh sixth)
+- **Bên scrm**: đã có sẵn trang `/settings/booking-connection` (Phase 6) — dùng `AppSetting::get/set('booking_url'|'booking_api_token')` + Facility slug + nút Test connection. **Không phải làm gì mới**.
+- **Bên sbooking**: mở rộng trang `Thiết lập > Kết nối SCRM` (đã có phần whitelist hosts) → thêm ô nhập **`scrm_api_token`**:
+  - Controller `ScrmConnectionController` giờ nhận thêm field, encrypt bằng `Crypt::encryptString` trước khi lưu vào `AppSetting('scrm_api_token')`. Bỏ trống = giữ nguyên.
+  - Route mới POST `/thiet-lap/ket-noi/scrm/xoa-token` để xoá token khỏi DB (fallback về env).
+  - View: hiển thị masked token (`••••••••1234`) khi đã set; báo trạng thái đang dùng DB / env / chưa có.
+  - Middleware `EnsureScrmToken`: đọc `AppSetting::get('scrm_api_token')` với decrypt trước, fallback `config('services.scrm.api_token')` cũ — 100% backward compat.
+- **Skip**: nút "Test connection" bên sbooking (scrm chưa có `/api/health`, không đáng build chỉ cho test này); encrypt `booking_api_token` bên scrm (improvement, không blocking).
+- **Đánh dấu ✅ Phase B** trong `plan-integration-sbooking.md`.
