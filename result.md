@@ -1321,3 +1321,14 @@ Vào `/leads/create` tạo mới với các nguồn khác nhau. Vào `/leads/{id
   - Middleware `EnsureScrmToken`: đọc `AppSetting::get('scrm_api_token')` với decrypt trước, fallback `config('services.scrm.api_token')` cũ — 100% backward compat.
 - **Skip**: nút "Test connection" bên sbooking (scrm chưa có `/api/health`, không đáng build chỉ cho test này); encrypt `booking_api_token` bên scrm (improvement, không blocking).
 - **Đánh dấu ✅ Phase B** trong `plan-integration-sbooking.md`.
+
+### 6.21n — Phase C detour: chọn Option 2 schema unification (2026-08-01, nhánh sixth)
+- Investigated: schema 4 bảng master (facilities/staff/services/users) 2 phía LỆCH nhiều (tree vs flat, role phân loại vs không, cột riêng bên A không có bên B). Option 3 (map ID tay) đơn giản nhất nhưng user chọn **Option 2** — thống nhất schema 2 hệ.
+- Chốt master schema:
+  - `services` ↔ `dich_vu`: master **sbooking**.
+  - `facilities` ↔ `co_so`: master **scrm** (tree).
+  - `staff_members` ↔ `bac_si+ktv`: master **scrm** (1 bảng có role).
+  - `users`: master **scrm**.
+- Tạo `plan-schema-unification.md` với 4 phase con (C1→C4), effort tổng ~25-40h, spread nhiều session. Mỗi phase = 1 branch riêng, test kỹ mới sang phase tiếp.
+- **Không code hôm nay** — chờ user duyệt plan + chốt design cho C1 (services) rồi mới bắt đầu session tiếp.
+- Cross-ref: đánh dấu [~] Phase C trong `plan-integration-sbooking.md` → chuyển sang `plan-schema-unification.md`.

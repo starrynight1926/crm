@@ -163,5 +163,5 @@
 
 - [x] Phase A — BS dropdown ✅ (2026-08-01)
 - [x] Phase B — UI settings ✅ (2026-08-01)
-- [ ] Phase C — Sync master data
+- [~] Phase C — Sync master data (đổi hướng: Option 2 → schema unification, xem [plan-schema-unification.md](plan-schema-unification.md))
 - [ ] Phase D — Push booking
