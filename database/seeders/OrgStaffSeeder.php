@@ -160,7 +160,7 @@ class OrgStaffSeeder extends Seeder
                 'desc' => 'CM Phòng Booking — up nguồn nhóm 1 (MKT / MKT BR / BDM), chia lead trong kho booking cho team booking, thu deposit booking (nếu cơ sở áp dụng)',
                 'perms' => ['lead.book_action','lead.create','lead.view_pool','lead.distribute','lead.distribute_tele','lead.distribute_to_sale','lead.read_booking','lead.recall','lead.update','lead.update_booking','lead.view','lead.view_phone','payment.record','report.view'],
             ],
-            'Team booking' => [
+            'Team Tele' => [
                 'desc' => 'Team booking — sửa được info khách khi phase=booking, bấm nút Đặt booking. Chuyển sang phase Sale sau khi có data booking (không ghi note dịch vụ).',
                 'perms' => ['lead.book_action','lead.create','lead.read_booking','lead.update','lead.update_booking','lead.view','lead.view_phone'],
             ],
@@ -381,8 +381,8 @@ class OrgStaffSeeder extends Seeder
             ['hcm.trucpage@longevity.com.vn', 'Trực Page', 'team-nhap-lead-hcm', Assignment::SCOPE_SELF, []],
             ['dn.trucpage@longevity.com.vn',  'Trực Page', 'team-nhap-lead-dn',  Assignment::SCOPE_SELF, []],
             ['cmbktg@longevity.com.vn',   'CM booking',     'team-giang-booking', Assignment::SCOPE_TEAM, []],
-            ['book1@longevity.com.vn',  'Team booking',   'team-giang-booking', Assignment::SCOPE_SELF, []],
-            ['book2@longevity.com.vn',  'Team booking',   'team-hoi-booking',   Assignment::SCOPE_SELF, []],
+            ['book1@longevity.com.vn',  'Team Tele',   'team-giang-booking', Assignment::SCOPE_SELF, []],
+            ['book2@longevity.com.vn',  'Team Tele',   'team-hoi-booking',   Assignment::SCOPE_SELF, []],
             ['cmsale@longevity.com.vn', 'CM sale',        'team-hoi-sale',      Assignment::SCOPE_TEAM, []],
         ];
 
