@@ -35,7 +35,7 @@ class TeamHoiCustomFieldSeeder extends Seeder
                 'label' => 'Phân loại',
                 'field_type' => 'select',
                 'options' => ['Quan tâm', 'Tìm hiểu', 'Không nhu cầu', 'KLLD', 'Tài chính yếu', 'Gọi lại sau', 'Nét', 'Tham khảo', 'Bệnh nặng, sai tệp'],
-                'required' => true,
+                'required' => false, // 2026-08-03: Tele fill ở phase 3, không bắt buộc lúc chia số
                 'position' => 1,
             ],
             [
@@ -44,7 +44,7 @@ class TeamHoiCustomFieldSeeder extends Seeder
                 'label' => 'Kết quả',
                 'field_type' => 'select',
                 'options' => ['Missed', 'Follow', 'Booking', 'Show', 'Close'],
-                'required' => true,
+                'required' => false, // 2026-08-03: Tele fill ở phase 3
                 'position' => 2,
             ],
             [
