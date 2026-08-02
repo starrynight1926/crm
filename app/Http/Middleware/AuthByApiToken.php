@@ -19,6 +19,15 @@ class AuthByApiToken
         if (! $token) {
             return response()->json(['error' => 'Missing bearer token'], 401);
         }
+        // 2026-08-03: cho phép shared secret (config services.booking.api_token — cùng chuỗi 2 hệ) —
+        //   fallback khi 2 hệ dùng email khác domain, không map được user per-user.
+        //   Actor gán user id=1 (admin chính) để log/audit rõ đây là "system push".
+        $shared = config('services.booking.api_token');
+        if ($shared && hash_equals((string) $shared, (string) $token)) {
+            $sysUser = User::find(1) ?? User::first();
+            if ($sysUser) auth()->setUser($sysUser);
+            return $next($request);
+        }
         $user = User::where('api_token', $token)->first();
         if (! $user) {
             return response()->json(['error' => 'Invalid token'], 401);
