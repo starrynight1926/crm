@@ -57,6 +57,7 @@ Route::middleware('auth')->group(function () {
         Route::view('/', 'leads.index')->name('leads.index');
         Route::view('/import', 'leads.import')->middleware('permission:lead.import')->name('leads.import');
         Route::view('/failed', 'leads.failed')->middleware('permission:lead.import')->name('leads.failed');
+        Route::view('/trash', 'leads.trash')->middleware('permission:phase.rollback')->name('leads.trash');
         Route::view('/approvals', 'leads.approvals')->middleware('permission:lead.approve_source')->name('leads.approvals');
         Route::get('/{lead}', fn (\App\Models\Lead $lead) => view('leads.show', ['lead' => $lead]))->name('leads.show');
         Route::get('/{lead}/booking-callback', \App\Http\Controllers\BookingCallbackController::class)->name('leads.booking-callback');

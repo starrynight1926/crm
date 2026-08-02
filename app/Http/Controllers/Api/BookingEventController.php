@@ -160,13 +160,73 @@ class BookingEventController extends Controller
                     break;
 
                 case 'comment':
-                    $note = 'Bình luận Booking ' . ($bookingMa ?: '?') . ': ' . ($data['comment'] ?? '');
+                    $content = trim((string) ($data['comment'] ?? ''));
+                    // Phase C1.f 2026-08-02: lưu vào booking_log_comments (source=sbooking) để thread 2 chiều.
+                    if ($content !== '' && ! empty($data['sbooking_booking_id'])) {
+                        $bl = BookingLog::where('sbooking_booking_id', $data['sbooking_booking_id'])
+                            ->where('lead_id', $lead->id)->first();
+                        if ($bl) {
+                            $sbookingUserName = null;
+                            $sbookingUserId = $data['sbooking_user_id'] ?? null;
+                            if ($sbookingUserId) {
+                                $sbookingUserName = \App\Models\SbUser::where('sbooking_id', $sbookingUserId)->value('ten');
+                            }
+                            \App\Models\BookingLogComment::create([
+                                'booking_log_id' => $bl->id,
+                                'lead_id' => $lead->id,
+                                'source' => 'sbooking',
+                                'user_id' => null,
+                                'sbooking_user_id' => $sbookingUserId,
+                                'user_name' => $sbookingUserName ?? 'Admin sbooking',
+                                'content' => $content,
+                            ]);
+                        }
+                    }
+                    $note = 'Bình luận Booking ' . ($bookingMa ?: '?') . ': ' . $content;
                     LeadStatusLog::record($lead, 'note', null, $note, $actorId);
                     $lead->update(['last_care_at' => now()]);
                     AuditLog::record('booking_comment_push', $lead, ['booking_ma' => $bookingMa]);
                     break;
 
                 case 'edit':
+                    // Phase C1.e.2 (2026-08-02) — apply structured changes vào booking_log.
+                    if (! empty($data['sbooking_booking_id']) && ! empty($data['changes']) && is_array($data['changes'])) {
+                        $bl = BookingLog::where('sbooking_booking_id', $data['sbooking_booking_id'])
+                            ->where('lead_id', $lead->id)->first();
+                        if ($bl) {
+                            $ch = $data['changes'];
+                            $update = [];
+                            if (array_key_exists('ghi_chu', $ch)) $update['note'] = $ch['ghi_chu'];
+                            if (array_key_exists('phong_id', $ch)) $update['sb_phong_id'] = $ch['phong_id'];
+                            if (array_key_exists('bac_si_id', $ch)) $update['sb_bac_si_id'] = $ch['bac_si_id'];
+                            if (array_key_exists('so_lieu_trinh', $ch)) $update['so_lieu_trinh'] = $ch['so_lieu_trinh'];
+                            if (array_key_exists('so_luong_lo', $ch)) $update['so_luong_lo'] = $ch['so_luong_lo'];
+                            if (array_key_exists('dung_tich_lo', $ch)) $update['dung_tich_lo'] = $ch['dung_tich_lo'];
+                            if (array_key_exists('ket_hop_medical', $ch)) $update['ket_hop_medical'] = (bool) $ch['ket_hop_medical'];
+                            if (array_key_exists('co_tu_van', $ch)) $update['co_tu_van'] = (bool) $ch['co_tu_van'];
+                            if (array_key_exists('co_kham_cls', $ch)) $update['co_kham_cls'] = (bool) $ch['co_kham_cls'];
+                            // Combine ngay + gio → scheduled_at.
+                            if (! empty($ch['ngay_dat']) && ! empty($ch['gio_thuc_hien'])) {
+                                $update['scheduled_at'] = $ch['ngay_dat'] . ' ' . substr($ch['gio_thuc_hien'], 0, 8);
+                            }
+                            // Resolve sbooking dich_vu_id → scrm.services.id qua sb_services.ten → services.name (best-effort).
+                            if (array_key_exists('dich_vu_id', $ch) && $ch['dich_vu_id']) {
+                                $sbSvc = \App\Models\SbService::where('sbooking_id', $ch['dich_vu_id'])->first();
+                                if ($sbSvc) {
+                                    $scrmSvc = \App\Models\Service::where('name', $sbSvc->ten)->first();
+                                    if ($scrmSvc) $update['service_id'] = $scrmSvc->id;
+                                }
+                            }
+                            $bl->update($update);
+                            // Resolve sale_id sbooking → CV#1 scrm.user qua users.sbooking_user_id, sync pivot.
+                            if (array_key_exists('sale_id', $ch) && $ch['sale_id']) {
+                                $scrmUser = \App\Models\User::where('sbooking_user_id', $ch['sale_id'])->first();
+                                if ($scrmUser) {
+                                    $bl->consultants()->sync([$scrmUser->id => ['position' => 1]]);
+                                }
+                            }
+                        }
+                    }
                     $note = 'Booking ' . ($bookingMa ?: '?') . ' đã đổi: ' . ($data['summary'] ?? 'không mô tả');
                     LeadStatusLog::record($lead, 'note', null, $note, $actorId);
                     $lead->update(['last_care_at' => now()]);

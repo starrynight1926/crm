@@ -8,11 +8,18 @@ new class extends Component
 
     public function toggle(): void
     {
+        // 2026-08-02: KHÔNG auto mark all read khi mở — chỉ mark khi user click entry hoặc bấm "Đánh dấu tất cả".
         $this->open = ! $this->open;
+    }
 
-        if ($this->open) {
-            auth()->user()->unreadNotifications()->whereNull('hidden_at')->update(['read_at' => now()]);
-        }
+    public function markRead(string $id): void
+    {
+        auth()->user()->notifications()->where('id', $id)->whereNull('read_at')->update(['read_at' => now()]);
+    }
+
+    public function markAllRead(): void
+    {
+        auth()->user()->unreadNotifications()->whereNull('hidden_at')->update(['read_at' => now()]);
     }
 
     public function hide(string $id): void
@@ -55,11 +62,17 @@ new class extends Component
     @if ($open)
         <div class="absolute right-0 top-11 w-96 bg-white border border-gold-200 rounded-lg shadow-card z-50">
             <div class="px-4 py-3 border-b border-gold-100 flex items-center justify-between gap-2">
-                <div class="font-bold text-sm">Thông báo</div>
+                <div class="font-bold text-sm">Thông báo @if ($unread > 0) <span class="text-xs font-normal text-red-600">({{ $unread }} chưa đọc)</span> @endif</div>
                 @if ($notifications->isNotEmpty())
-                    <button type="button" wire:click="hideAll"
-                            wire:confirm="Xóa tất cả thông báo? (Admin vẫn xem được trong nhật ký)"
-                            class="text-xs text-red-600 hover:underline">Xóa tất cả</button>
+                    <div class="flex items-center gap-3">
+                        @if ($unread > 0)
+                            <button type="button" wire:click="markAllRead"
+                                    class="text-xs text-blue-600 hover:underline">Đánh dấu đã đọc</button>
+                        @endif
+                        <button type="button" wire:click="hideAll"
+                                wire:confirm="Xóa tất cả thông báo? (Admin vẫn xem được trong nhật ký)"
+                                class="text-xs text-red-600 hover:underline">Xóa tất cả</button>
+                    </div>
                 @endif
             </div>
             <div class="max-h-96 overflow-y-auto divide-y divide-gold-50">
@@ -69,17 +82,66 @@ new class extends Component
                         $link = $d['link'] ?? (isset($d['lead_id']) ? '/leads/'.$d['lead_id'] : '#');
                         $title= $d['tieu_de'] ?? $d['message'] ?? 'Thông báo';
                         $body = $d['noi_dung'] ?? null;
+                        $event = $d['event'] ?? '';
+                        $bodyLower = mb_strtolower((string) $body);
+                        // Map màu + icon theo event + keyword trong body.
+                        //  - Xanh lá: duyệt / booked / assigned / đến / hoàn thành.
+                        //  - Đỏ: từ chối / hủy / no-show / recalled / delete.
+                        //  - Amber: đến trễ / cảnh báo.
+                        //  - Xanh dương: đổi trạng thái / đổi lịch / ghi chú / bình luận.
+                        //  - Gold: default (lead mới, chuyển).
+                        [$color, $icon] = match (true) {
+                            str_contains($bodyLower, 'từ chối'), str_contains($bodyLower, 'hủy'), str_contains($bodyLower, 'no-show'),
+                            $event === 'lead.recalled', str_contains($title, 'bị xóa')
+                                => ['red', '❌'],
+                            str_contains($bodyLower, 'đến trễ'), str_contains($bodyLower, 'tới trễ')
+                                => ['amber', '⏰'],
+                            str_contains($bodyLower, 'đã duyệt'), str_contains($bodyLower, 'da_duyet'),
+                            str_contains($bodyLower, 'đã tới'), str_contains($bodyLower, 'da_toi'),
+                            str_contains($bodyLower, 'đã xong'), str_contains($bodyLower, 'da_xong'),
+                            $event === 'lead.booked', $event === 'lead.assigned'
+                                => ['emerald', '✅'],
+                            $event === 'booking.status_changed', $event === 'booking.rescheduled',
+                            $event === 'booking.note_added', $event === 'lead.note_added'
+                                => ['blue', '💬'],
+                            $event === 'lead.transferred'
+                                => ['purple', '↪️'],
+                            default => ['gold', '🔔'],
+                        };
+                        $borderCls = [
+                            'red' => 'border-l-red-500 bg-red-50/60',
+                            'amber' => 'border-l-amber-500 bg-amber-50/60',
+                            'emerald' => 'border-l-emerald-500 bg-emerald-50/60',
+                            'blue' => 'border-l-blue-500 bg-blue-50/60',
+                            'purple' => 'border-l-purple-500 bg-purple-50/60',
+                            'gold' => 'border-l-gold-500 bg-gold-50/40',
+                        ][$color];
+                        $textCls = [
+                            'red' => 'text-red-800',
+                            'amber' => 'text-amber-800',
+                            'emerald' => 'text-emerald-800',
+                            'blue' => 'text-blue-800',
+                            'purple' => 'text-purple-800',
+                            'gold' => 'text-gold-800',
+                        ][$color];
                     @endphp
-                    <div class="relative group" wire:key="notif-{{ $n->id }}">
-                        <a href="{{ $link }}" class="block px-4 py-3 pr-10 hover:bg-gold-50 text-sm">
-                            <div class="{{ $n->read_at ? 'text-ink/60' : 'font-semibold' }}">{{ $title }}</div>
-                            @if ($body)
-                                <div class="text-xs text-ink/60 line-clamp-2 mt-0.5">{{ $body }}</div>
-                            @endif
-                            <div class="text-xs text-ink/40 mt-0.5">{{ $n->created_at->diffForHumans() }}</div>
+                    <div class="relative group border-l-4 {{ $borderCls }} {{ $n->read_at ? 'opacity-70' : '' }}" wire:key="notif-{{ $n->id }}">
+                        <a href="{{ $link }}"
+                           @if (! $n->read_at) wire:click="markRead('{{ $n->id }}')" @endif
+                           class="block px-3 py-2.5 pr-9 hover:bg-white text-sm transition-colors">
+                            <div class="flex items-start gap-2">
+                                <span class="text-base leading-none mt-0.5">{{ $icon }}</span>
+                                <div class="flex-1 min-w-0">
+                                    <div class="{{ $textCls }} {{ $n->read_at ? 'font-normal' : 'font-semibold' }} truncate">{{ $title }}</div>
+                                    @if ($body)
+                                        <div class="text-xs text-ink/60 line-clamp-2 mt-0.5">{{ $body }}</div>
+                                    @endif
+                                    <div class="text-[11px] text-ink/40 mt-0.5">{{ $n->created_at->diffForHumans() }}</div>
+                                </div>
+                            </div>
                         </a>
                         <button type="button" wire:click="hide('{{ $n->id }}')" title="Xóa"
-                                class="absolute top-2 right-2 w-6 h-6 rounded-full text-ink/40 hover:bg-red-50 hover:text-red-600 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                class="absolute top-2 right-2 w-6 h-6 rounded-full text-ink/40 hover:bg-red-100 hover:text-red-600 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
                         </button>
                     </div>
@@ -92,7 +154,10 @@ new class extends Component
                     </div>
                 @endforelse
             </div>
-            <a href="{{ route('notifications.index') }}" class="block px-4 py-2 border-t border-gold-100 text-center text-xs font-semibold text-gold-700 hover:bg-gold-50">Xem tất cả</a>
+            <a href="{{ route('notifications.index') }}" class="block px-4 py-2.5 border-t border-gold-100 text-center text-sm font-semibold text-gold-700 hover:bg-gold-50 flex items-center justify-center gap-1.5">
+                📋 Xem tất cả thông báo
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5"/></svg>
+            </a>
         </div>
     @endif
 </div>

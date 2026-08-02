@@ -62,9 +62,9 @@ class PermissionSeeder extends Seeder
         ],
         'source_up' => [
             'source.up.trucpage' => 'Up lead nguồn MKT (Trực Page)',
-            'source.up.sale'     => 'Up lead nguồn MKT BR / SA (Sale tự nhận)',
+            'source.up.sale'     => 'Up lead nguồn MKT BR (Sale nhân viên tự nhận)',
             'source.up.tele'     => 'Up lead nguồn BA (Tele tự nhận)',
-            'source.up.admin'    => 'Up lead nguồn BDM / BOD / Walk-in (Admin)',
+            'source.up.admin'    => 'Up lead nguồn SA / BDM / BOD / Walk-in (QL Sale / Admin cơ sở)',
         ],
         'customer_flow' => [
             'phase.close.new' => 'Chốt phase 1 — Thêm mới khách hàng',

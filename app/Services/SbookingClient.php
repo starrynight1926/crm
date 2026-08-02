@@ -75,6 +75,9 @@ class SbookingClient
             'ngay_dat'      => $log->scheduled_at?->format('Y-m-d') ?? now()->format('Y-m-d'),
             'gio_thuc_hien' => $log->scheduled_at?->format('H:i:s'),
             'dich_vu_id'    => $sbookingDichVuId,
+            // Phase C1.d 2026-08-02: gửi thêm phòng + BS đã chọn ở form scrm.
+            'phong_id'      => $log->sb_phong_id,
+            'bac_si_id'     => $log->sb_bac_si_id,
             // Map scrm booking_logs.type (tham_kham/dich_vu) → sbooking enum (phong_kham/dich_vu).
             'loai_dat_lich' => $log->type === 'dich_vu' ? 'dich_vu' : 'phong_kham',
             // Phase C1.b rev 2026-08-01: nguon = source_group scrm (mkt/mkt_br/bdm/bod/sa/ba/wi), fallback 'SCRM'.
@@ -86,6 +89,8 @@ class SbookingClient
             'so_luong_lo'     => $log->so_luong_lo,
             'dung_tich_lo'    => $log->dung_tich_lo,
             'ket_hop_medical' => (bool) $log->ket_hop_medical,
+            'co_tu_van'       => (bool) $log->co_tu_van,
+            'co_kham_cls'     => (bool) $log->co_kham_cls,
         ];
 
         try {
@@ -97,7 +102,12 @@ class SbookingClient
         }
 
         if (! $response->successful()) {
-            $this->markFailed($log, 'HTTP ' . $response->status() . ': ' . substr($response->body(), 0, 500));
+            // Parse JSON message nếu có (VD sbooking trả 409 room_full với {message: "..."})
+            $body = $response->json();
+            $reason = is_array($body) && ! empty($body['message'])
+                ? $body['message']
+                : 'HTTP ' . $response->status() . ': ' . substr($response->body(), 0, 500);
+            $this->markFailed($log, $reason);
             return false;
         }
 
@@ -115,7 +125,109 @@ class SbookingClient
             'synced_at' => now(),
         ]);
 
+        // Phase C1.f 2026-08-02: nếu có note ban đầu → auto tạo 1 bình luận bên sbooking
+        // để nội dung hiện luôn trong "Trạng thái lịch hẹn" (danh sách binh_luan).
+        if (! empty($log->note)) {
+            $userName = $log->user?->name ?? 'Data Source';
+            $this->pushComment($log->fresh(), $log->note, $log->user_id, $userName);
+        }
+
         return true;
+    }
+
+    /**
+     * Phase C1.e (2026-08-02) — push edit sang sbooking khi user sửa booking bên scrm.
+     * Chỉ chạy cho booking đã sync (có sbooking_booking_id). Silent fail nếu lỗi — sync_error ghi log.
+     * Payload gồm: note, sale_id (CV#1 map qua users.sbooking_user_id), slot fields, extra fields.
+     */
+    public function pushBookingUpdate(BookingLog $log): bool
+    {
+        if (! $log->sbooking_booking_id) return false;
+
+        $token = config('services.booking.api_token');
+        $baseUrl = rtrim(config('services.booking.api_url') ?: '', '/');
+        if (! $token || ! $baseUrl) {
+            $this->markFailed($log, 'Chưa cấu hình BOOKING_API_URL/TOKEN.');
+            return false;
+        }
+
+        // Resolve CV#1 → sbooking sale_id qua users.sbooking_user_id.
+        $saleId = null;
+        $cv1 = $log->consultants()->orderBy('booking_log_consultants.position')->first();
+        if ($cv1 && $cv1->sbooking_user_id) {
+            $saleId = (int) $cv1->sbooking_user_id;
+        }
+
+        // Resolve service.name → sb_services.sbooking_id (giống pushBooking).
+        $sbookingDichVuId = null;
+        if ($log->service_id && $log->service) {
+            $sbookingDichVuId = SbService::where('ten', $log->service->name)->where('active', true)->value('sbooking_id');
+        }
+
+        $payload = [
+            'ghi_chu'         => $log->note,
+            'sale_id'         => $saleId,
+            'ngay_dat'        => $log->scheduled_at?->format('Y-m-d'),
+            'gio_thuc_hien'   => $log->scheduled_at?->format('H:i:s'),
+            'dich_vu_id'      => $sbookingDichVuId,
+            'bac_si_id'       => $log->sb_bac_si_id,
+            'phong_id'        => $log->sb_phong_id,
+            'so_lieu_trinh'   => $log->so_lieu_trinh,
+            'so_luong_lo'     => $log->so_luong_lo,
+            'dung_tich_lo'    => $log->dung_tich_lo,
+            'ket_hop_medical' => (bool) $log->ket_hop_medical,
+            'co_tu_van'       => (bool) $log->co_tu_van,
+            'co_kham_cls'     => (bool) $log->co_kham_cls,
+        ];
+
+        try {
+            $response = \Illuminate\Support\Facades\Http::withToken($token)->timeout(15)->acceptJson()
+                ->put($baseUrl . '/bookings/' . $log->sbooking_booking_id, $payload);
+        } catch (Throwable $e) {
+            $this->markFailed($log, 'PUT fail: ' . $e->getMessage());
+            return false;
+        }
+
+        if (! $response->successful()) {
+            $body = $response->json();
+            $reason = is_array($body) && ! empty($body['message'])
+                ? $body['message']
+                : 'HTTP ' . $response->status() . ': ' . substr($response->body(), 0, 500);
+            $this->markFailed($log, $reason);
+            return false;
+        }
+
+        $log->update(['sync_error' => null, 'synced_at' => now()]);
+        return true;
+    }
+
+    /**
+     * Phase C1.f (2026-08-02) — push comment sang sbooking (POST /bookings/{id}/comments).
+     * Chỉ chạy cho booking đã sync. Silent fail — ghi sync_error, không throw.
+     */
+    public function pushComment(BookingLog $log, string $content, ?int $scrmUserId = null, ?string $scrmUserName = null): bool
+    {
+        if (! $log->sbooking_booking_id) return false;
+        $token = config('services.booking.api_token');
+        $baseUrl = rtrim(config('services.booking.api_url') ?: '', '/');
+        if (! $token || ! $baseUrl) return false;
+
+        $sbookingUserId = null;
+        if ($scrmUserId) {
+            $sbookingUserId = \App\Models\User::where('id', $scrmUserId)->value('sbooking_user_id');
+        }
+
+        try {
+            $r = \Illuminate\Support\Facades\Http::withToken($token)->timeout(10)->acceptJson()
+                ->post($baseUrl . '/bookings/' . $log->sbooking_booking_id . '/comments', [
+                    'noi_dung' => $content,
+                    'sbooking_user_id' => $sbookingUserId,
+                    'scrm_user_name' => $scrmUserName,
+                ]);
+            return $r->successful();
+        } catch (Throwable $e) {
+            return false;
+        }
     }
 
     private function markFailed(BookingLog $log, string $reason): void

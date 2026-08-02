@@ -91,7 +91,7 @@ new class extends Component
             @if (auth()->user()->hasPermission('lead.create'))
                 <a href="{{ route('leads.create') }}" class="text-sm font-semibold text-white bg-gold-600 hover:bg-gold-700 px-4 py-2.5 rounded-md inline-flex items-center gap-1.5">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
-                    Thêm mới khách hàng
+                    Thêm mới lead
                 </a>
             @endif
             @if (auth()->user()->hasAnyPermission(['report.view', 'report.view_all']))
@@ -204,8 +204,10 @@ new class extends Component
                 </tr>
             </thead>
             <tbody class="divide-y divide-gold-100">
+                @php $isSale = auth()->user()->hasPermission('lead.consult'); @endphp
                 @foreach ($recentLeads as $lead)
-                    <tr class="hover:bg-gold-50/40 cursor-pointer" onclick="window.location='{{ route('leads.show', $lead) }}'">
+                    @php $rowHref = $isSale ? route('leads.show', $lead) : route('leads.edit', $lead); @endphp
+                    <tr class="hover:bg-gold-50/40 cursor-pointer" onclick="window.location='{{ $rowHref }}'">
                         <td class="px-5 py-3">{{ $lead->received_date->format('d/m/Y') }}</td>
                         <td class="px-5 py-3 font-mono text-xs text-gold-700">{{ $lead->code }}</td>
                         <td class="px-5 py-3 font-semibold">{{ $lead->name }}</td>

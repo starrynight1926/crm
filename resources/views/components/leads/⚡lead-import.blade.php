@@ -123,29 +123,33 @@ new class extends Component
 
     // Field lead chuẩn (scope.md mục 4)
     public const TARGETS = [
-        'name' => 'Tên khách hàng *',
-        'phone' => 'SĐT *',
-        'received_date' => 'Ngày',
-        'page' => 'PAGE',
-        'camp' => 'Camp',
-        'insight' => 'Insight',
-        'link' => 'Link',
-        'region' => 'Khu vực',
-        'note' => 'NOTE',
-        'owner' => 'CHIA CHO (tên hoặc email sale)',
+        'name'             => 'Tên khách hàng',
+        'phone'            => 'SĐT',
+        'received_date'    => 'Ngày nhập',
+        'source_group'     => 'Nhóm nguồn',
+        'insight'          => 'Ghi chú insight khách',
+        'link'             => 'Link',
+        'birthday'         => 'Ngày sinh',
+        'occupation'       => 'Nghề nghiệp',
+        'address'          => 'Địa chỉ',
+        'medical_history'  => 'Khai thác tiền sử',
+        'booking_owner'    => 'Email Booking phụ trách',
+        'sale_owner'       => 'Email Sale phụ trách',
     ];
 
     private const GUESS = [
-        'name' => ['tên', 'ten', 'name', 'họ tên', 'khách hàng'],
-        'phone' => ['sđt', 'sdt', 'phone', 'điện thoại', 'so dien thoai'],
-        'received_date' => ['ngày', 'ngay', 'date'],
-        'page' => ['page'],
-        'camp' => ['camp', 'chiến dịch'],
-        'insight' => ['insight'],
-        'link' => ['link'],
-        'region' => ['khu vực', 'khu vuc', 'region'],
-        'note' => ['note', 'ghi chú'],
-        'owner' => ['chia cho', 'chia', 'phụ trách', 'phu trach'],
+        'name'             => ['tên', 'ten', 'name', 'họ tên', 'khách hàng'],
+        'phone'            => ['sđt', 'sdt', 'phone', 'điện thoại', 'so dien thoai'],
+        'received_date'    => ['ngày nhập', 'ngày', 'ngay', 'date'],
+        'source_group'     => ['nhóm nguồn', 'nguồn', 'nguon', 'source', 'source_group'],
+        'insight'          => ['insight', 'ghi chú insight', 'ghi chu insight'],
+        'link'             => ['link', 'url'],
+        'birthday'         => ['ngày sinh', 'ngay sinh', 'birthday', 'dob'],
+        'occupation'       => ['nghề nghiệp', 'nghe nghiep', 'occupation'],
+        'address'          => ['địa chỉ', 'dia chi', 'address'],
+        'medical_history'  => ['tiền sử', 'tien su', 'medical', 'khai thác'],
+        'booking_owner'    => ['người booking', 'nguoi booking', 'booking phụ trách', 'booking_owner', 'tele phụ trách'],
+        'sale_owner'       => ['người sale', 'nguoi sale', 'sale phụ trách', 'sale_owner', 'chia cho', 'owner'],
     ];
 
     /** Trường tùy biến đang áp (active) → ['cf_<id>' => 'Nhãn #MÃ (Phòng)']. */
@@ -381,7 +385,12 @@ new class extends Component
 
         $fields = CustomField::applicableTo($orgUnit);
 
-        $headers = array_values(self::TARGETS);
+        // Phase C1.f 2026-08-02: template rút gọn chỉ 4 cột core + trường bổ sung phòng.
+        //   Trực Page / Admin cơ sở nhập ban đầu — các field khác (note, chia cho, phân loại, …)
+        //   nhập tay sau ở app. Cột khác vẫn map tay được ở bước 2 nếu file user có sẵn.
+        // 2026-08-02: header sạch (không có * / hướng dẫn) để import auto-map exact. Legend nằm ở sheet "Hướng dẫn".
+        $coreHeaders = self::TARGETS;
+        $headers = array_values($coreHeaders);
         foreach ($fields as $f) {
             if ($f->field_type === 'code' && ($f->rules['code_kind'] ?? '') === 'fixed') {
                 continue;
@@ -399,12 +408,160 @@ new class extends Component
             $sheet->getColumnDimension($col)->setAutoSize(true);
             $sheet->getStyle($col . '1')->getFont()->setBold(true);
         }
+        // Sample row (dòng 2) demo giá trị đúng format.
+        $sheet->setCellValue('A2', 'Nguyễn Văn A (demo — xoá dòng này)');
+        $sheet->setCellValue('B2', '0999000001');
+        $sheet->setCellValue('C2', now()->format('Y-m-d'));
+        $sheet->setCellValue('D2', 'MKT');
+        $sheet->getStyle('A2:D2')->getFont()->getColor()->setARGB('FF888888');
+        $sheet->freezePane('A2');
+        $sheet->setTitle('Import');
 
-        $this->appendSalesReferenceSheet($spreadsheet, $orgUnit);
+        $this->appendGuideSheet($spreadsheet);
+        $this->appendSourceLegendSheet($spreadsheet);
+        $this->appendBookingListSheet($spreadsheet);
+        $this->appendSaleListSheet($spreadsheet);
 
         return response()->streamDownload(function () use ($spreadsheet) {
             (new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet))->save('php://output');
         }, "mau-import-{$slug}.xlsx");
+    }
+
+    /** Sheet "7 nguồn" — bảng tham chiếu mã nguồn ↔ mô tả ↔ ai up. */
+    private function appendSourceLegendSheet(\PhpOffice\PhpSpreadsheet\Spreadsheet $spreadsheet): void
+    {
+        $sheet = $spreadsheet->createSheet();
+        $sheet->setTitle('7 nguồn');
+        $rows = [
+            ['Mã nguồn', 'Tên đầy đủ', 'Ai up (theo flow)'],
+            ['MKT',    'Marketing (fanpage / QC)',              'Trực Page'],
+            ['MKT_BR', 'Marketing Branch (chi nhánh chạy QC)',  'Sale nhân viên'],
+            ['BDM',    'Business Development Manager',           'QL Sale / Admin cơ sở'],
+            ['BOD',    'Ban lãnh đạo giới thiệu',                'QL Sale / Admin cơ sở'],
+            ['SA',     'Sale Appointment (Sale mang về)',        'QL Sale / Admin cơ sở'],
+            ['BA',     'Booking Appointment (Booker mang về)',   'Tele (Booker)'],
+            ['WI',     'Walk-in (khách tự đến)',                 'QL Sale / Admin cơ sở'],
+        ];
+        foreach ($rows as $r => $row) {
+            foreach ($row as $c => $val) {
+                $col = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($c + 1);
+                $sheet->setCellValue($col . ($r + 1), $val);
+            }
+        }
+        $sheet->getStyle('A1:C1')->getFont()->setBold(true);
+        $sheet->getStyle('A1:C1')->getFill()->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)->getStartColor()->setARGB('FFEEE9D6');
+        foreach (['A', 'B', 'C'] as $col) $sheet->getColumnDimension($col)->setAutoSize(true);
+    }
+
+    /** Sheet "Hướng dẫn" — giải thích từng cột (giữ tên cột trong sheet Import sạch để import auto-map). */
+    private function appendGuideSheet(\PhpOffice\PhpSpreadsheet\Spreadsheet $spreadsheet): void
+    {
+        $sheet = $spreadsheet->createSheet();
+        $sheet->setTitle('Hướng dẫn');
+
+        $rows = [
+            ['Cột', 'Bắt buộc', 'Format / Ghi chú'],
+            ['Tên khách hàng',        'CÓ',      'Họ tên đầy đủ. VD: Nguyễn Văn A'],
+            ['SĐT',                   'CÓ',      'Bắt đầu 0 hoặc +84. VD: 0912345678'],
+            ['Ngày nhập',             'không',   'DD-MM-YYYY (VD: 25-12-1990) hoặc YYYY-MM-DD. Bỏ trống = ngày hôm nay.'],
+            ['Nhóm nguồn',            'CÓ',      'Mã 1 trong 7 nguồn — xem sheet "List nguồn". VD: MKT / SA / BOD / BDM / WI / BA / MKT_BR.'],
+            ['Ghi chú insight khách', 'không',   'Text tự do — ghi chú insight ban đầu về khách.'],
+            ['Link',                  'không',   'URL nguồn (fanpage, comment, form, …).'],
+            ['Ngày sinh',             'không',   'DD-MM-YYYY. VD: 25-12-1990.'],
+            ['Nghề nghiệp',           'không',   'Text tự do.'],
+            ['Địa chỉ',               'không',   'Text tự do.'],
+            ['Khai thác tiền sử',     'không',   'Text nhiều dòng — bệnh lý, dịch vụ đã dùng, …'],
+            ['Email Booking phụ trách', 'không', 'Email chính xác của Tele/Booker — xem sheet "List Booking". Trùng tên → chỉ nhận email.'],
+            ['Email Sale phụ trách',    'không', 'Email chính xác của Sale — xem sheet "List Sale". Bỏ trống = vào kho chờ CM chia.'],
+            ['(Trường bổ sung)',      'tùy',     'Các cột phía sau là trường tùy biến của phòng đã chọn (có * = bắt buộc theo config phòng).'],
+        ];
+        foreach ($rows as $r => $row) {
+            foreach ($row as $c => $val) {
+                $col = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($c + 1);
+                $sheet->setCellValue($col . ($r + 1), $val);
+            }
+        }
+        $sheet->getStyle('A1:C1')->getFont()->setBold(true);
+        $sheet->getStyle('A1:C1')->getFill()->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)->getStartColor()->setARGB('FFEEE9D6');
+        $sheet->getStyle('A2:A' . (count($rows)))->getFont()->setBold(true);
+        foreach (['A', 'B', 'C'] as $col) $sheet->getColumnDimension($col)->setAutoSize(true);
+        $sheet->getColumnDimension('C')->setWidth(80);
+    }
+
+    /** Sheet "List Booking" — Tele (Team Nhập Lead + Team Tele) chia theo cơ sở. */
+    private function appendBookingListSheet(\PhpOffice\PhpSpreadsheet\Spreadsheet $spreadsheet): void
+    {
+        $this->appendStaffPerFacilitySheet($spreadsheet, 'List Booking', ['lead.import', 'source.up.tele']);
+    }
+
+    /** Sheet "List Sale" — user có perm consult (Sale / CM sale) chia theo cơ sở. */
+    private function appendSaleListSheet(\PhpOffice\PhpSpreadsheet\Spreadsheet $spreadsheet): void
+    {
+        $this->appendStaffPerFacilitySheet($spreadsheet, 'List Sale', ['lead.consult']);
+    }
+
+    /**
+     * Helper: list user active có ÍT NHẤT 1 trong các perm được nêu, group theo cơ sở gốc.
+     * Layout: mỗi cơ sở 1 nhóm — hàng header cơ sở đậm nền vàng nhạt, các user liệt kê bên dưới (tên · email).
+     */
+    private function appendStaffPerFacilitySheet(\PhpOffice\PhpSpreadsheet\Spreadsheet $spreadsheet, string $title, array $anyPerms): void
+    {
+        $sheet = $spreadsheet->createSheet();
+        $sheet->setTitle($title);
+
+        // Root orgs = chi nhánh cơ sở (depth=1) hoặc theo Facility::roots.
+        $roots = \App\Models\Facility::roots()->orderBy('name')->get();
+        if ($roots->isEmpty()) {
+            // Fallback theo OrgUnit depth 1.
+            $roots = OrgUnit::where('depth', 1)->orderBy('name')->get();
+        }
+
+        $sheet->setCellValue('A1', 'Cơ sở');
+        $sheet->setCellValue('B1', 'Tên nhân viên');
+        $sheet->setCellValue('C1', 'Email / Username');
+        $sheet->setCellValue('D1', 'Vai trò');
+        $sheet->getStyle('A1:D1')->getFont()->setBold(true);
+        $sheet->getStyle('A1:D1')->getFill()->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)->getStartColor()->setARGB('FFEEE9D6');
+
+        $row = 2;
+        foreach ($roots as $root) {
+            // Resolve org subtree cho branch này.
+            $branchOrg = OrgUnit::where('name', 'like', '%' . $root->name . '%')->orWhere('code', 'like', '%' . \Illuminate\Support\Str::slug($root->name) . '%')->first();
+            $orgIds = $branchOrg
+                ? OrgUnit::where('path', 'like', $branchOrg->path . '%')->pluck('id')
+                : collect();
+
+            $users = User::query()
+                ->where('status', User::STATUS_ACTIVE)
+                ->when($orgIds->isNotEmpty(), fn ($q) => $q->whereHas('assignments', fn ($a) => $a->where('active', true)->whereIn('org_unit_id', $orgIds)))
+                ->with(['assignments' => fn ($q) => $q->where('active', true)->with(['role', 'orgUnit'])])
+                ->orderBy('name')
+                ->get()
+                ->filter(function ($u) use ($anyPerms) {
+                    foreach ($anyPerms as $p) if ($u->hasPermission($p)) return true;
+                    return false;
+                });
+
+            if ($users->isEmpty()) continue;
+
+            // Header cơ sở
+            $sheet->setCellValue('A' . $row, '📍 ' . $root->name);
+            $sheet->mergeCells('A' . $row . ':D' . $row);
+            $sheet->getStyle('A' . $row)->getFont()->setBold(true);
+            $sheet->getStyle('A' . $row)->getFill()->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)->getStartColor()->setARGB('FFF5EAD0');
+            $row++;
+
+            foreach ($users as $u) {
+                $roleName = $u->assignments->first()?->role?->name ?? '';
+                $sheet->setCellValue('B' . $row, $u->name);
+                $sheet->setCellValue('C' . $row, $u->email ?: $u->username);
+                $sheet->setCellValue('D' . $row, $roleName);
+                $row++;
+            }
+            $row++; // spacer
+        }
+
+        foreach (['A', 'B', 'C', 'D'] as $col) $sheet->getColumnDimension($col)->setAutoSize(true);
     }
 
     /**

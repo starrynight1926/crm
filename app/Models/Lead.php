@@ -104,16 +104,16 @@ class Lead extends Model
         return self::SOURCE_GROUP_CODES[$this->source_group] ?? '';
     }
 
-    // Permission cần có để thấy nhóm nguồn đó ở form thêm lead (Phase 6.21f, 2026-07-30).
+    // Permission cần có để thấy nhóm nguồn đó ở form thêm lead (Phase 6.21f, 2026-07-30; sửa 2026-08-02 theo flow chuẩn).
     // Mapping:
-    //   MKT              → source.up.trucpage (Trực Page)
-    //   MKT_BR, SA       → source.up.sale     (Sale tự nhận)
-    //   BA               → source.up.tele     (Tele tự nhận)
-    //   BDM, BOD, WI     → source.up.admin    (Admin)
+    //   MKT                 → source.up.trucpage (Trực Page)
+    //   MKT_BR              → source.up.sale     (Sale nhân viên tự nhận)
+    //   BA                  → source.up.tele     (Tele tự nhận)
+    //   SA, BDM, BOD, WI    → source.up.admin    (QL Sale / Admin cơ sở up — nằm 1 bucket)
     public const SOURCE_PERMISSIONS = [
         self::SOURCE_MKT    => 'source.up.trucpage',
         self::SOURCE_MKT_BR => 'source.up.sale',
-        self::SOURCE_SA     => 'source.up.sale',
+        self::SOURCE_SA     => 'source.up.admin',
         self::SOURCE_BA     => 'source.up.tele',
         self::SOURCE_BDM    => 'source.up.admin',
         self::SOURCE_BOD    => 'source.up.admin',
@@ -387,11 +387,9 @@ class Lead extends Model
     /** Danh sách nguồn user hiện tại được phép chọn khi tạo lead. */
     public static function allowedSourceGroupsFor(User $user): array
     {
-        // Perm bypass — user có `lead.source_all` thấy & chọn được mọi nguồn.
         if ($user->hasPermission('lead.source_all')) {
             return self::SOURCE_GROUPS;
         }
-
         $out = [];
         foreach (self::SOURCE_GROUPS as $key => $label) {
             $perm = self::SOURCE_PERMISSIONS[$key];
@@ -399,7 +397,6 @@ class Lead extends Model
                 $out[$key] = $label;
             }
         }
-
         return $out;
     }
 
@@ -857,9 +854,9 @@ class Lead extends Model
     {
         if (! $this->isVisibleTo($user)) return false;
         if ($user->hasPermission('phase.rollback')) return true;
-        // Book action là perm phase 4 chuẩn — nhưng chỉ owner (đang giữ lead) mới
-        // được ghi booking_log. Admin/CM Sale có book_action nhưng không giữ →
-        // không được ghi (chỉ xem).
+        // 2026-08-02: đồng bộ với canRestartBooking — Admin cơ sở (phase.close.checkin)
+        // cũng ghi được booking_log để khởi động đặt lịch mới, không cần là owner.
+        if ($user->hasPermission('phase.close.checkin') && $user->hasPermission('lead.book_action')) return true;
         return $this->owner_id !== null && $this->owner_id === $user->id
             && $user->hasPermission('lead.book_action');
     }

@@ -60,18 +60,31 @@ new class extends Component
         'camp' => 'Camp',
         'nguon' => 'Nguồn',
         'region' => 'Khu vực',
+        'status' => 'Trạng thái',
         'owner' => 'Chia cho',
         'classification' => 'Danh mục',
     ];
 
+    /** Cột mặc định cho Trực Page (up lead nguồn MKT). */
+    private const TRUC_PAGE_DEFAULT_COLS = [
+        'code', 'received_date', 'name', 'phone', 'nguon', 'status', 'owner',
+    ];
+
     public function mount(): void
     {
-        $prefs = auth()->user()->report_prefs ?? [];
+        $user = auth()->user();
+        $prefs = $user->report_prefs ?? [];
         $saved = $prefs['lead_list_columns'] ?? null;
         $valid = array_keys(self::TABLE_COLUMNS);
-        $this->visibleCols = $saved
-            ? array_values(array_intersect($saved, $valid))
-            : $valid;
+
+        if ($saved) {
+            $this->visibleCols = array_values(array_intersect($saved, $valid));
+        } elseif ($user->hasPermission('source.up.trucpage') && ! $user->hasPermission('lead.book_action')) {
+            // Trực Page: mặc định gọn — STT, Mã KH, Ngày, Tên, SĐT, Nguồn, Trạng thái, Chia cho.
+            $this->visibleCols = self::TRUC_PAGE_DEFAULT_COLS;
+        } else {
+            $this->visibleCols = $valid;
+        }
     }
 
     public function updated($property): void
@@ -166,26 +179,40 @@ new class extends Component
         session()->flash('status', "Đã xóa {$count} khách hàng.");
     }
 
-    /** Cột lõi có thể xuất: key => nhãn. */
+    /**
+     * Cột lõi có thể xuất: key => nhãn.
+     * Phase C1.f 2026-08-02: header khớp với TARGETS import để round-trip export → import lại được.
+     */
     private function coreColumns(): array
     {
         return [
-            'code' => 'Mã KH',
-            'name' => 'Họ tên khách',
-            'phone' => 'SĐT',
-            'receiver' => 'Người thu thập',
-            'owner' => 'Người phụ trách',
-            'received_date' => 'Ngày thu thập',
-            'classification' => 'Danh mục',
-            'job_title' => 'Chức danh',
-            'region' => 'Khu vực',
-            'camp' => 'Camp',
-            'page' => 'Page',
-            'status_1' => 'Tình trạng 1',
-            'status_2' => 'Tình trạng 2',
-            'note' => 'Ghi chú (hiện tại)',
-            'note_history' => 'Lịch sử ghi chú',
-            'booking_history' => 'Lịch sử đặt lịch',
+            'code'                => 'Mã KH',
+            'name'                => 'Tên khách hàng',
+            'phone'               => 'SĐT',
+            'received_date'       => 'Ngày nhập',
+            'source_group'        => 'Nhóm nguồn',
+            'insight'             => 'Ghi chú insight khách',
+            'link'                => 'Link',
+            'birthday'            => 'Ngày sinh',
+            'occupation'          => 'Nghề nghiệp',
+            'address'             => 'Địa chỉ',
+            'medical_history'     => 'Khai thác tiền sử',
+            'booking_owner_email' => 'Email Booking phụ trách',
+            'sale_owner_email'    => 'Email Sale phụ trách',
+            'status_1'            => 'Ghi nhận tình trạng lần 1',
+            'status_2'            => 'Ghi nhận tình trạng lần 2',
+            'note'                => 'NOTE',
+            'region'              => 'Khu vực',
+            'classification'      => 'Phân loại',
+            'page'                => 'PAGE',
+            'camp'                => 'CAMP',
+            'imported_by'         => 'Người nhập lead',
+            'receiver'            => 'Người thu thập',
+            'owner'               => 'Người phụ trách hiện tại',
+            'job_title'           => 'Chức danh',
+            'phase'               => 'Phase (1-7)',
+            'note_history'        => 'Lịch sử ghi chú',
+            'booking_history'     => 'Lịch sử đặt lịch',
         ];
     }
 
@@ -318,25 +345,10 @@ new class extends Component
                     $q->whereHas('customValues', fn ($cv) => $cv->whereIn('custom_field_id', $campIds)->where('value', $this->fCamp));
                 }
             })
-            ->when($this->fNguon, fn ($q) => $q->whereHas('customValues', fn ($cv) =>
-                $cv->where('custom_field_id', 1)->where('value', $this->fNguon)))
+            ->when($this->fNguon, fn ($q) => $q->where('source_group', $this->fNguon))
             ->when($this->fDateFrom, fn ($q) => $q->where('received_date', '>=', $this->fDateFrom))
             ->when($this->fDateTo, fn ($q) => $q->where('received_date', '<=', $this->fDateTo))
-            ->when($this->fPhase, function ($q) {
-                match ($this->fPhase) {
-                    'waiting_tele' => $q->where('pipeline_phase', Lead::PHASE_BOOKING)
-                        ->where('pipeline_status', Lead::PSTATUS_WAITING),
-                    'waiting_sale' => $q->where('pipeline_phase', Lead::PHASE_SALE)
-                        ->where('pipeline_status', Lead::PSTATUS_WAITING),
-                    'in_care' => $q->where('pipeline_status', Lead::PSTATUS_IN_CARE)
-                        ->whereIn('booking_status', [Lead::BOOKING_NOT_BOOKED, Lead::BOOKING_RESCHEDULED]),
-                    'booked' => $q->where('booking_status', Lead::BOOKING_BOOKED),
-                    'checkin' => $q->whereIn('booking_status', [
-                        Lead::BOOKING_KHACH_DA_TOI, Lead::BOOKING_KHACH_TOI_TRE, Lead::BOOKING_DA_XONG,
-                    ]),
-                    default => null,
-                };
-            })
+            ->when($this->fPhase !== '' && is_numeric($this->fPhase), fn ($q) => $q->where('phase', (int) $this->fPhase))
             ->orderByDesc('received_date')
             ->orderByDesc('id');
     }
@@ -383,17 +395,28 @@ new class extends Component
             'code' => (string) $lead->code,
             'name' => (string) $lead->name,
             'phone' => (string) $lead->phoneFor(auth()->user()),
-            'receiver' => (string) $lead->receiver?->name,
-            'owner' => (string) $lead->owner?->name,
             'received_date' => (string) $lead->received_date?->toDateString(),
-            'classification' => $lead->classificationLabel(),
-            'job_title' => (string) $lead->owner?->job_title,
-            'region' => (string) $lead->region,
-            'camp' => (string) $lead->camp,
-            'page' => (string) $lead->page,
+            'source_group' => (string) ($lead->source_group ? strtoupper($lead->source_group) : ''),
+            'insight' => (string) $lead->insight,
+            'link' => (string) $lead->link,
+            'birthday' => $lead->birthday ? $lead->birthday->format('d-m-Y') : '',
+            'occupation' => (string) $lead->occupation,
+            'address' => (string) $lead->address,
+            'medical_history' => (string) $lead->medical_history,
+            'booking_owner_email' => (string) ($lead->receiver?->email ?? ''),
+            'sale_owner_email' => (string) ($lead->owner?->email ?? ''),
             'status_1' => (string) $lead->status_1,
             'status_2' => (string) $lead->status_2,
             'note' => (string) $lead->note,
+            'region' => (string) $lead->region,
+            'classification' => $lead->classificationLabel(),
+            'page' => (string) $lead->page,
+            'camp' => (string) $lead->camp,
+            'imported_by' => (string) (\App\Models\User::find($lead->imported_by)?->name ?? ''),
+            'receiver' => (string) $lead->receiver?->name,
+            'owner' => (string) $lead->owner?->name,
+            'job_title' => (string) $lead->owner?->job_title,
+            'phase' => (string) ($lead->phase ?? ''),
             'note_history' => $this->noteHistoryCell($lead),
             'booking_history' => $this->bookingHistoryCell($lead),
             default => (function () use ($lead, $key, $cfs) {
@@ -497,13 +520,16 @@ new class extends Component
                 <a href="{{ route('leads.failed') }}" class="text-sm font-semibold text-ink/60 border border-gold-200 px-4 py-2.5 rounded-md hover:bg-gold-50">Lead lỗi</a>
                 <a href="{{ route('leads.import') }}" class="text-sm font-semibold text-gold-700 border border-gold-300 px-4 py-2.5 rounded-md hover:bg-gold-50">⬆ Import</a>
             @endif
+            @if (auth()->user()->hasPermission('phase.rollback'))
+                <a href="{{ route('leads.trash') }}" class="text-sm font-semibold text-ink/60 border border-gold-200 px-4 py-2.5 rounded-md hover:bg-gold-50">🗑 Thùng rác</a>
+            @endif
             @if ($canExport)
                 <button wire:click="openExport" class="text-sm font-semibold text-gold-700 border border-gold-300 px-4 py-2.5 rounded-md hover:bg-gold-50">⬇ Export</button>
             @endif
             @if (auth()->user()->hasPermission('lead.create'))
                 <a href="{{ route('leads.create') }}"
                    class="bg-gold-600 hover:bg-gold-700 text-white font-semibold px-5 py-2.5 rounded-md text-sm">
-                    + Tạo mới Lead
+                    + Thêm mới lead
                 </a>
             @endif
         </div>
@@ -534,11 +560,11 @@ new class extends Component
         @endif
         @if ($this->colVisible('nguon'))
             <div class="min-w-[140px] flex-1">
-                <label class="block text-xs font-semibold text-ink/50 mb-1">Nguồn data</label>
+                <label class="block text-xs font-semibold text-ink/50 mb-1">Nguồn khách</label>
                 <select wire:model.live="fNguon" class="w-full border border-gold-200 rounded-md px-2.5 py-2 text-sm bg-white focus:outline-none focus:border-gold-500">
-                    <option value="">Tất cả</option>
-                    @foreach ($nguonOptions as $opt)
-                        <option value="{{ $opt }}">{{ $opt }}</option>
+                    <option value="">Tất cả 7 nguồn</option>
+                    @foreach (\App\Models\Lead::SOURCE_GROUPS as $key => $label)
+                        <option value="{{ $key }}">{{ \App\Models\Lead::SOURCE_GROUP_CODES[$key] ?? $key }} — {{ $label }}</option>
                     @endforeach
                 </select>
             </div>
@@ -554,31 +580,12 @@ new class extends Component
                 </select>
             </div>
         @endif
-        @php
-            $_u = auth()->user();
-            $_phaseOpts = [
-                'in_care' => 'Đang care',
-                'booked'  => 'Đã đặt booking',
-                'checkin' => 'Đã check-in',
-            ];
-            if ($_u->hasPermission('lead.distribute_tele')) {
-                $_phaseOpts = ['waiting_tele' => 'Chờ chia — Tele'] + $_phaseOpts;
-            }
-            if ($_u->hasPermission('lead.distribute_sale')) {
-                // chèn "Chờ chia — Sale" ngay sau (hoặc trước) waiting_tele
-                $_phaseOpts = array_merge(
-                    array_slice($_phaseOpts, 0, isset($_phaseOpts['waiting_tele']) ? 1 : 0),
-                    ['waiting_sale' => 'Chờ chia — Sale'],
-                    array_slice($_phaseOpts, isset($_phaseOpts['waiting_tele']) ? 1 : 0),
-                );
-            }
-        @endphp
-        <div class="min-w-[160px] flex-1">
-            <label class="block text-xs font-semibold text-ink/50 mb-1">Trạng thái xử lý</label>
+        <div class="min-w-[180px] flex-1">
+            <label class="block text-xs font-semibold text-ink/50 mb-1">Trạng thái (7 phase)</label>
             <select wire:model.live="fPhase" class="w-full border border-gold-200 rounded-md px-2.5 py-2 text-sm bg-white focus:outline-none focus:border-gold-500">
                 <option value="">Tất cả</option>
-                @foreach ($_phaseOpts as $key => $label)
-                    <option value="{{ $key }}">{{ $label }}</option>
+                @foreach (\App\Models\Lead::CF_PHASE_LABELS as $key => $label)
+                    <option value="{{ $key }}">Phase {{ $key }} · {{ $label }}</option>
                 @endforeach
             </select>
         </div>
@@ -604,26 +611,48 @@ new class extends Component
         {{-- Thanh chọn cột --}}
         <div class="px-5 py-2.5 border-b border-gold-100 flex items-center justify-between">
             <span class="text-xs text-ink/40">Hiển thị {{ count($visibleCols) }}/{{ count($tableColumns) }} cột</span>
-            <div class="relative" x-data="{ open: false }">
+            <div class="relative" x-data="{
+                    open: false,
+                    localCols: @js($visibleCols),
+                    initialCols: @js($visibleCols),
+                    toggle(k) {
+                        this.localCols = this.localCols.includes(k)
+                            ? this.localCols.filter(x => x !== k)
+                            : [...this.localCols, k];
+                    },
+                    apply() {
+                        // Chỉ gọi Livewire khi có thay đổi thật — tránh round-trip vô ích.
+                        if (JSON.stringify([...this.localCols].sort()) === JSON.stringify([...this.initialCols].sort())) {
+                            this.open = false; return;
+                        }
+                        $wire.set('visibleCols', this.localCols);
+                        this.initialCols = [...this.localCols];
+                        this.open = false;
+                    }
+                 }">
                 <button @click="open = !open" class="inline-flex items-center gap-1.5 text-sm font-semibold text-gold-700 border border-gold-300 px-3 py-1.5 rounded-md hover:bg-gold-50">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 1 1-3 0m3 0a1.5 1.5 0 1 0-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-9.75 0h9.75"/></svg>
                     Chọn cột
                 </button>
-                <div x-show="open" @click.outside="open = false" x-cloak x-transition
+                <div x-show="open" @click.outside="apply()" x-cloak x-transition
                      class="absolute right-0 top-full mt-1 w-56 bg-white border border-gold-200 rounded-xl shadow-lg z-30 py-2">
                     <div class="px-3 pb-2 mb-1 border-b border-gold-100 flex items-center justify-between">
                         <span class="text-[11px] font-semibold uppercase tracking-wider text-ink/40">Cột hiển thị</span>
-                        <button wire:click="showAllColumns" class="text-[11px] font-semibold text-gold-600 hover:underline">Hiện tất cả</button>
+                        <button type="button" @click="localCols = @js(array_keys($tableColumns))" class="text-[11px] font-semibold text-gold-600 hover:underline">Hiện tất cả</button>
                     </div>
                     @foreach ($tableColumns as $key => $label)
-                        <label class="flex items-center gap-2.5 px-3 py-1.5 hover:bg-gold-50 cursor-pointer text-sm" wire:key="col-{{ $key }}">
+                        <label class="flex items-center gap-2.5 px-3 py-1.5 hover:bg-gold-50 cursor-pointer text-sm">
                             <input type="checkbox"
-                                   @checked(in_array($key, $visibleCols))
-                                   wire:click="toggleColumn('{{ $key }}')"
+                                   :checked="localCols.includes('{{ $key }}')"
+                                   @change="toggle('{{ $key }}')"
                                    class="rounded border-gold-300 text-gold-600 focus:ring-gold-500 w-4 h-4">
                             {{ $label }}
                         </label>
                     @endforeach
+                    <div class="px-3 pt-2 mt-1 border-t border-gold-100 flex justify-end gap-2">
+                        <button type="button" @click="localCols = [...initialCols]; open = false" class="text-[11px] font-semibold text-ink/50 hover:underline">Hủy</button>
+                        <button type="button" @click="apply()" class="text-[11px] font-semibold text-gold-700 bg-gold-100 hover:bg-gold-200 px-2 py-1 rounded">Áp dụng</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -645,6 +674,7 @@ new class extends Component
                     @if ($this->colVisible('camp'))        <th class="px-4 py-3 font-semibold">Camp</th> @endif
                     @if ($this->colVisible('nguon'))       <th class="px-4 py-3 font-semibold">Nguồn</th> @endif
                     @if ($this->colVisible('region'))      <th class="px-4 py-3 font-semibold">Khu vực</th> @endif
+                    @if ($this->colVisible('status'))      <th class="px-4 py-3 font-semibold">Trạng thái</th> @endif
                     @if ($this->colVisible('owner'))       <th class="px-4 py-3 font-semibold">Chia cho</th> @endif
                     @if ($this->colVisible('classification'))<th class="px-4 py-3 font-semibold">Danh mục</th> @endif
                     @if ($canUpdate || $canDelete)
@@ -680,15 +710,23 @@ new class extends Component
                             <td class="px-4 py-3 text-ink/60">{{ $lead->camp ?: '—' }}</td>
                         @endif
                         @if ($this->colVisible('nguon'))
-                            @php $nguonVal = $lead->customValues->firstWhere('custom_field_id', 1)?->value; @endphp
                             <td class="px-4 py-3">
-                                @if ($nguonVal)
-                                    <span class="text-xs bg-blue-50 border border-blue-200 px-2 py-0.5 rounded">{{ $nguonVal }}</span>
+                                @if ($lead->source_group)
+                                    <span class="text-xs bg-blue-50 border border-blue-200 px-2 py-0.5 rounded">
+                                        {{ \App\Models\Lead::SOURCE_GROUPS[$lead->source_group] ?? $lead->source_group }}
+                                    </span>
                                 @else — @endif
                             </td>
                         @endif
                         @if ($this->colVisible('region'))
                             <td class="px-4 py-3 text-ink/60">{{ $lead->region ?: '—' }}</td>
+                        @endif
+                        @if ($this->colVisible('status'))
+                            <td class="px-4 py-3">
+                                <span class="text-xs font-medium px-2 py-1 rounded bg-gold-50 border border-gold-200 text-gold-800">
+                                    {{ $lead->pipelineLabel() }}
+                                </span>
+                            </td>
                         @endif
                         @if ($this->colVisible('owner'))
                             <td class="px-4 py-3">{{ $lead->owner?->name ?: '—' }}</td>

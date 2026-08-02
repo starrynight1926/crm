@@ -81,7 +81,12 @@ class ProcessRawLead implements ShouldQueue
 
         // --- Xác định org đích của lead trước khi validate ---
         // Nếu có "CHIA CHO" khớp user → org = org của user đó. Nếu không → kho chung (null).
-        $targetOwner = $this->resolveOwner(trim((string) ($payload['owner'] ?? '')));
+        // Phase C1.f 2026-08-02: tách rõ 2 owner theo phase.
+        //   - sale_owner (alias 'owner' cũ) → owner_id sale.
+        //   - booking_owner → receiver_id (Tele/Booker phụ trách).
+        $saleOwner = $this->resolveOwner(trim((string) ($payload['sale_owner'] ?? $payload['owner'] ?? '')));
+        $bookingOwner = $this->resolveOwner(trim((string) ($payload['booking_owner'] ?? '')));
+        $targetOwner = $saleOwner ?? $bookingOwner;
         $targetOrg = $targetOwner
             ? \App\Models\OrgUnit::find(Assignment::where('user_id', $targetOwner->id)->value('org_unit_id'))
             : null;
@@ -141,7 +146,25 @@ class ProcessRawLead implements ShouldQueue
         // Nhóm nguồn: excel import từ trực page marketing default = MKT (nhóm 1) → phase=booking
         // (kho booking chờ CM booking chia). Nguồn direct-sale từ file phải khai qua source_group
         // trong payload, còn không thì fallback MKT là an toàn nhất cho trực page.
-        $sourceGroup = $payload['source_group'] ?? Lead::SOURCE_MKT;
+        $sourceGroup = trim((string) ($payload['source_group'] ?? Lead::SOURCE_MKT));
+        // Chuẩn hoá alias: cho phép nhập chữ hoa/thường/có gạch. VD "MKT BR" → "mkt_br".
+        $sourceGroup = strtolower(str_replace([' ', '-'], '_', $sourceGroup));
+        if (! isset(Lead::SOURCE_GROUPS[$sourceGroup])) {
+            $this->fail_($raw, "Nhóm nguồn không hợp lệ: '{$payload['source_group']}'. Xem sheet 'List nguồn' — dùng 1 trong: " . implode(', ', array_keys(Lead::SOURCE_GROUPS)));
+            return;
+        }
+        // Phase C1.f 2026-08-02: block up nguồn ngoài quyền uploader.
+        //   VD Trực Page chỉ có source.up.trucpage → chỉ up MKT. Up BOD/BDM → block.
+        if ($importedBy) {
+            $uploader = \App\Models\User::find($importedBy);
+            if ($uploader) {
+                $allowed = Lead::allowedSourceGroupsFor($uploader);
+                if (! isset($allowed[$sourceGroup])) {
+                    $this->fail_($raw, "Bạn không có quyền up nguồn '{$sourceGroup}'. Được phép: " . implode(', ', array_keys($allowed)));
+                    return;
+                }
+            }
+        }
         [$initPhase, $initStatus] = Lead::initialPipelineFor($sourceGroup, $targetOwner?->id);
 
         $lead = Lead::create([
@@ -151,10 +174,15 @@ class ProcessRawLead implements ShouldQueue
             'phone' => $phone,
             'insight' => $payload['insight'] ?? null,
             'link' => $payload['link'] ?? null,
+            'birthday' => $this->parseDate($payload['birthday'] ?? null),
+            'occupation' => $payload['occupation'] ?? null,
+            'address' => $payload['address'] ?? null,
+            'medical_history' => $payload['medical_history'] ?? null,
             'region' => $payload['region'] ?? null,
             'note' => $payload['note'] ?? null,
             'classification' => 'new',
             'imported_by' => $importedBy,
+            'receiver_id' => $bookingOwner?->id,
             'source_group' => $sourceGroup,
             'pipeline_phase' => $initPhase,
             'pipeline_status' => $initStatus,
@@ -204,18 +232,22 @@ class ProcessRawLead implements ShouldQueue
      */
     private function resolveOwner(string $value): ?User
     {
+        // Phase C1.f 2026-08-02: match CHỈ theo email — tránh trùng tên ăn cứt data.
+        //   User phải nhập email chính xác (xem sheet "List Booking"/"List Sale" trong file mẫu).
         $value = trim($value);
-        if ($value === '') {
+        if ($value === '' || ! str_contains($value, '@')) {
             return null;
         }
 
-        if (str_contains($value, '@')) {
-            return User::query()
-                ->where('status', User::STATUS_ACTIVE)
-                ->whereRaw('LOWER(email) = ?', [mb_strtolower($value)])
-                ->first();
-        }
+        return User::query()
+            ->where('status', User::STATUS_ACTIVE)
+            ->whereRaw('LOWER(email) = ?', [mb_strtolower($value)])
+            ->first();
+    }
 
+    /** @deprecated giữ code cũ dưới đây để reference — không dùng nữa. */
+    private function resolveOwnerByNameLegacy(string $value): ?User
+    {
         $norm = fn ($s) => mb_strtolower(trim(preg_replace('/\s+/u', ' ', (string) $s)));
         $target = $norm($value);
         $users = User::query()->where('status', User::STATUS_ACTIVE)->get(['id', 'name']);

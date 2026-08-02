@@ -28,6 +28,8 @@ return new class extends Migration {
     private const PERMS = [
         // Xem
         'lead.view', 'lead.view_phone',
+        // Nhập + import + xóa mềm + up nguồn QL Sale (2026-08-02: Admin cơ sở = QL Sale — up SA/BDM/BOD/WI qua source.up.admin; delete = ẩn; KHÔNG có quyền vào Thùng rác).
+        'lead.create', 'lead.import', 'lead.delete', 'source.up.admin',
         // Chia số phase 2 (kho Tele + kho Sale)
         'lead.view_pool', 'lead.distribute', 'lead.distribute_tele', 'lead.distribute_sale',
         'lead.distribute_to_team', 'lead.distribute_to_sale', 'lead.recall',

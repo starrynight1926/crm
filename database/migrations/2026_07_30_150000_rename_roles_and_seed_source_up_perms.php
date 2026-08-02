@@ -38,9 +38,9 @@ return new class extends Migration
         // 2. Tạo 4 permissions
         $perms = [
             'source.up.trucpage' => ['label' => 'Up lead nguồn MKT (Trực Page)',                 'group' => 'source_up'],
-            'source.up.sale'     => ['label' => 'Up lead nguồn MKT BR / SA (Sale tự nhận)',      'group' => 'source_up'],
+            'source.up.sale'     => ['label' => 'Up lead nguồn MKT BR (Sale nhân viên tự nhận)', 'group' => 'source_up'],
             'source.up.tele'     => ['label' => 'Up lead nguồn BA (Tele tự nhận)',               'group' => 'source_up'],
-            'source.up.admin'    => ['label' => 'Up lead nguồn BDM / BOD / Walk-in (Admin)',     'group' => 'source_up'],
+            'source.up.admin'    => ['label' => 'Up lead nguồn SA / BDM / BOD / Walk-in (QL Sale)', 'group' => 'source_up'],
         ];
         $created = [];
         $position = (int) (Permission::max('position') ?? 0) + 1;

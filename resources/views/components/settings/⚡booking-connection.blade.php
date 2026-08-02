@@ -2,7 +2,11 @@
 
 use App\Models\AppSetting;
 use App\Models\Facility;
+use App\Models\SbBacSi;
+use App\Models\SbRoom;
 use App\Models\SbService;
+use App\Models\SbUser;
+use App\Models\User;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Http;
 use Livewire\Component;
@@ -28,6 +32,9 @@ new class extends Component
         $this->facilitySlugs = Facility::roots()->orderBy('name')->pluck('booking_co_so_slug', 'id')
             ->map(fn ($s) => (string) $s)->all();
         $this->facilitySbCoSoIds = Facility::roots()->orderBy('name')->pluck('sbooking_co_so_id', 'id')
+            ->map(fn ($v) => $v ? (int) $v : null)->all();
+        $this->userMappings = User::where('status', User::STATUS_ACTIVE)->orderBy('name')
+            ->pluck('sbooking_user_id', 'id')
             ->map(fn ($v) => $v ? (int) $v : null)->all();
     }
 
@@ -59,12 +66,46 @@ new class extends Component
 
     public function syncServices(): void
     {
+        $this->runSyncCommand('sb:sync-services', fn () => SbService::count() . ' dịch vụ');
+    }
+
+    public function syncRooms(): void
+    {
+        $this->runSyncCommand('sb:sync-rooms', fn () => SbRoom::count() . ' phòng');
+    }
+
+    public function syncBacSi(): void
+    {
+        $this->runSyncCommand('sb:sync-bac-si', fn () => SbBacSi::count() . ' bác sĩ');
+    }
+
+    public function syncUsers(): void
+    {
+        $this->runSyncCommand('sb:sync-users', fn () => SbUser::count() . ' users');
+    }
+
+    /** @var array<int, ?int> scrm.users.id => sbooking_user_id (từ sb_users.sbooking_id). */
+    public array $userMappings = [];
+
+    public function saveUserMappings(): void
+    {
+        abort_unless(auth()->user()?->hasPermission('connection.manage'), 403);
+        foreach ($this->userMappings as $userId => $sbookingUserId) {
+            User::where('id', (int) $userId)->update([
+                'sbooking_user_id' => $sbookingUserId ? (int) $sbookingUserId : null,
+            ]);
+        }
+        session()->flash('ok', 'Đã lưu mapping user scrm ↔ sbooking.');
+    }
+
+    private function runSyncCommand(string $signature, \Closure $countSummary): void
+    {
         try {
-            $exit = Artisan::call('sb:sync-services');
+            $exit = Artisan::call($signature);
             $output = trim(Artisan::output());
             if ($exit === 0) {
                 $this->syncStatus = 'ok';
-                $this->syncResult = 'OK · ' . SbService::count() . ' dịch vụ trong DB. ' . $output;
+                $this->syncResult = 'OK · ' . $countSummary() . ' trong DB. ' . $output;
             } else {
                 $this->syncStatus = 'err';
                 $this->syncResult = 'Fail · ' . $output;
@@ -83,6 +124,25 @@ new class extends Component
     public function getSbServicesLastSyncProperty(): ?string
     {
         $last = SbService::max('synced_at');
+        return $last ? \Carbon\Carbon::parse($last)->diffForHumans() : null;
+    }
+
+    public function getSbRoomsCountProperty(): int { return SbRoom::count(); }
+    public function getSbRoomsLastSyncProperty(): ?string
+    {
+        $last = SbRoom::max('synced_at');
+        return $last ? \Carbon\Carbon::parse($last)->diffForHumans() : null;
+    }
+    public function getSbBacSiCountProperty(): int { return SbBacSi::count(); }
+    public function getSbBacSiLastSyncProperty(): ?string
+    {
+        $last = SbBacSi::max('synced_at');
+        return $last ? \Carbon\Carbon::parse($last)->diffForHumans() : null;
+    }
+    public function getSbUsersCountProperty(): int { return SbUser::count(); }
+    public function getSbUsersLastSyncProperty(): ?string
+    {
+        $last = SbUser::max('synced_at');
         return $last ? \Carbon\Carbon::parse($last)->diffForHumans() : null;
     }
 
@@ -195,6 +255,105 @@ new class extends Component
                     <span wire:loading wire:target="syncServices">Đang đồng bộ…</span>
                 </button>
             </div>
+
+            {{-- Phase C1.d 2026-08-02: sync Phòng --}}
+            <div class="grid grid-cols-[1fr_auto] items-center gap-3 mb-3">
+                <div>
+                    <div class="text-sm font-semibold">Phòng (phong)</div>
+                    <div class="text-xs text-ink/50">
+                        Hiện có <strong>{{ $this->sbRoomsCount }}</strong> phòng trong Data Source.
+                        @if ($this->sbRoomsLastSync)
+                            · Sync lần cuối {{ $this->sbRoomsLastSync }}
+                        @else
+                            · Chưa từng sync.
+                        @endif
+                        <span class="block text-[11px] text-ink/40 mt-0.5">Yêu cầu: đã map "Sbooking co_so_id" cho các Cơ sở ở trên.</span>
+                    </div>
+                </div>
+                <button wire:click="syncRooms" type="button"
+                        wire:loading.attr="disabled" wire:target="syncRooms"
+                        class="border border-gold-300 text-ink/70 hover:bg-gold-50 font-semibold text-sm px-4 py-2 rounded-md">
+                    <span wire:loading.remove wire:target="syncRooms">🔄 Đồng bộ phòng</span>
+                    <span wire:loading wire:target="syncRooms">Đang đồng bộ…</span>
+                </button>
+            </div>
+
+            {{-- Phase C1.d 2026-08-02: sync Bác sĩ --}}
+            <div class="grid grid-cols-[1fr_auto] items-center gap-3 mb-3">
+                <div>
+                    <div class="text-sm font-semibold">Bác sĩ (bac_si)</div>
+                    <div class="text-xs text-ink/50">
+                        Hiện có <strong>{{ $this->sbBacSiCount }}</strong> bác sĩ trong Data Source.
+                        @if ($this->sbBacSiLastSync)
+                            · Sync lần cuối {{ $this->sbBacSiLastSync }}
+                        @else
+                            · Chưa từng sync.
+                        @endif
+                    </div>
+                </div>
+                <button wire:click="syncBacSi" type="button"
+                        wire:loading.attr="disabled" wire:target="syncBacSi"
+                        class="border border-gold-300 text-ink/70 hover:bg-gold-50 font-semibold text-sm px-4 py-2 rounded-md">
+                    <span wire:loading.remove wire:target="syncBacSi">🔄 Đồng bộ bác sĩ</span>
+                    <span wire:loading wire:target="syncBacSi">Đang đồng bộ…</span>
+                </button>
+            </div>
+
+            {{-- Phase C1.e 2026-08-02: sync Users --}}
+            <div class="grid grid-cols-[1fr_auto] items-center gap-3 mb-3">
+                <div>
+                    <div class="text-sm font-semibold">Users (nhân viên sbooking)</div>
+                    <div class="text-xs text-ink/50">
+                        Hiện có <strong>{{ $this->sbUsersCount }}</strong> user sbooking mirror trong Data Source.
+                        @if ($this->sbUsersLastSync)
+                            · Sync lần cuối {{ $this->sbUsersLastSync }}
+                        @else
+                            · Chưa từng sync.
+                        @endif
+                        <span class="block text-[11px] text-ink/40 mt-0.5">Cần sync trước khi map user bên dưới.</span>
+                    </div>
+                </div>
+                <button wire:click="syncUsers" type="button"
+                        wire:loading.attr="disabled" wire:target="syncUsers"
+                        class="border border-gold-300 text-ink/70 hover:bg-gold-50 font-semibold text-sm px-4 py-2 rounded-md">
+                    <span wire:loading.remove wire:target="syncUsers">🔄 Đồng bộ users</span>
+                    <span wire:loading wire:target="syncUsers">Đang đồng bộ…</span>
+                </button>
+            </div>
+        </div>
+
+        {{-- Phase C1.e 2026-08-02: mapping user scrm ↔ sbooking --}}
+        <div class="border-t border-gold-100 pt-5">
+            <h2 class="text-sm font-bold text-gold-700 mb-1">Map user SCRM ↔ Sbooking</h2>
+            <p class="text-xs text-ink/50 mb-3">Khi user scrm được chọn làm CV#1 cho 1 booking, hệ thống push CV#1 → sbooking.sale_id qua mapping này. Chưa map → sale_id gửi null, Admin sbooking gán tay.</p>
+            @php $sbUsersForPick = SbUser::orderBy('ten')->get(); @endphp
+            <div class="border border-gold-100 rounded-lg divide-y divide-gold-100 max-h-96 overflow-y-auto">
+                <div class="grid grid-cols-[1fr_1.2fr] gap-3 px-3 py-2 text-xs font-semibold text-ink/50 bg-gold-50/60 sticky top-0">
+                    <div>Nhân viên SCRM</div>
+                    <div>Map sang sbooking user</div>
+                </div>
+                @foreach (User::where('status', User::STATUS_ACTIVE)->orderBy('name')->get() as $_u)
+                    <div class="grid grid-cols-[1fr_1.2fr] gap-3 items-center px-3 py-2 text-sm">
+                        <div>
+                            <div class="font-medium">{{ $_u->name }}</div>
+                            <div class="text-xs text-ink/40">{{ $_u->email ?: $_u->username }}</div>
+                        </div>
+                        <select wire:model="userMappings.{{ $_u->id }}"
+                                class="w-full border border-gold-200 rounded-md px-2 py-1 text-sm focus:outline-none focus:border-gold-500">
+                            <option value="">— Chưa map —</option>
+                            @foreach ($sbUsersForPick as $_sbu)
+                                <option value="{{ $_sbu->sbooking_id }}">
+                                    {{ $_sbu->displayName() }} @if ($_sbu->email) · {{ $_sbu->email }} @endif
+                                </option>
+                            @endforeach
+                        </select>
+                    </div>
+                @endforeach
+            </div>
+            <button wire:click="saveUserMappings" type="button"
+                    class="mt-3 bg-gold-600 hover:bg-gold-700 text-white font-semibold text-sm px-5 py-2 rounded-md">
+                Lưu mapping user
+            </button>
 
             @if ($syncResult)
                 <div class="text-xs p-2 rounded {{ $syncStatus === 'ok' ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800' }}">{{ $syncResult }}</div>

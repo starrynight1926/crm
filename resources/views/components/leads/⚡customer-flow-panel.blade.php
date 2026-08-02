@@ -270,7 +270,7 @@ new class extends Component
 
             {{-- ==================== PHASE 1: Thêm mới ==================== --}}
             @if ($activePhase === 1)
-                <h3 class="font-semibold text-ink/80 mb-3">Phase 1 — Thêm mới khách hàng</h3>
+                <h3 class="font-semibold text-ink/80 mb-3">Phase 1 — Thêm mới lead</h3>
                 <div class="grid grid-cols-2 gap-4 text-sm">
                     <div>
                         <label class="block text-xs text-ink/50 mb-1">Họ tên</label>
