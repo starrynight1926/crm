@@ -26,10 +26,28 @@ class FreshAll extends Command
             return self::SUCCESS;
         }
 
-        $this->info('→ Drop schema public bên pgsql...');
+        $this->info('→ Drop từng table pgsql (shared host thường không có DROP SCHEMA)...');
         try {
-            DB::connection('pgsql')->unprepared('DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
-            $this->info('  pgsql wiped.');
+            $pg = DB::connection('pgsql');
+            // Thử DROP SCHEMA trước — chỉ chạy được nếu user là owner.
+            try {
+                $pg->unprepared('DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
+                $this->info('  pgsql: DROP SCHEMA OK.');
+            } catch (\Throwable) {
+                // Fallback: drop từng bảng.
+                $tables = $pg->select("SELECT tablename FROM pg_tables WHERE schemaname = 'public'");
+                if (! empty($tables)) {
+                    $names = array_map(fn ($t) => '"' . $t->tablename . '"', $tables);
+                    $pg->unprepared('DROP TABLE IF EXISTS ' . implode(', ', $names) . ' CASCADE;');
+                    $this->info('  pgsql: đã drop ' . count($tables) . ' bảng.');
+                } else {
+                    $this->info('  pgsql: không có bảng nào để drop.');
+                }
+                // Xóa cả migration history bên pgsql nếu có bảng migrations.
+                if (in_array('migrations', array_map(fn ($t) => $t->tablename, $tables), true)) {
+                    // Đã drop ở trên, skip.
+                }
+            }
         } catch (\Throwable $e) {
             $this->warn('  pgsql skip: ' . $e->getMessage());
         }
