@@ -152,7 +152,7 @@ class OrgStaffSeeder extends Seeder
                 'desc' => 'Directional Manager HCM — cao nhất khu vực HCM',
                 'perms' => ['contribution.set','field.approve','field.manage','lead.approve_source','lead.book_action','lead.create','lead.delete','lead.view_pool','lead.distribute','lead.distribute_tele','lead.distribute_sale','lead.distribute_to_team','lead.distribute_to_sale','lead.export','lead.import','lead.read_booking','lead.recall','lead.update','lead.update_booking','lead.update_sale','lead.view','lead.view_phone','payment.record','report.view','report.view_all','rule.manage','service.manage','user.manage'],
             ],
-            'Team nhập lead' => [
+            'Trực Page' => [
                 'desc' => 'Team nhập lead marketing — up lead nguồn MKT / MKT BR / BDM. Xem lại được data đã up (imported_by), chia lại từ kho chung xuống team/sale cho CHÍNH lead mình up (scope theo imported_by).',
                 'perms' => ['lead.create','lead.import','lead.view'],
             ],
@@ -377,9 +377,9 @@ class OrgStaffSeeder extends Seeder
             ['lpd@longevity.com.vn',  'Sale', 'team-ashley-sale', Assignment::SCOPE_SELF, []],
 
             // Luồng 7 nguồn
-            ['hn.trucpage@longevity.com.vn',  'Team nhập lead', 'team-nhap-lead',     Assignment::SCOPE_SELF, []],
-            ['hcm.trucpage@longevity.com.vn', 'Team nhập lead', 'team-nhap-lead-hcm', Assignment::SCOPE_SELF, []],
-            ['dn.trucpage@longevity.com.vn',  'Team nhập lead', 'team-nhap-lead-dn',  Assignment::SCOPE_SELF, []],
+            ['hn.trucpage@longevity.com.vn',  'Trực Page', 'team-nhap-lead',     Assignment::SCOPE_SELF, []],
+            ['hcm.trucpage@longevity.com.vn', 'Trực Page', 'team-nhap-lead-hcm', Assignment::SCOPE_SELF, []],
+            ['dn.trucpage@longevity.com.vn',  'Trực Page', 'team-nhap-lead-dn',  Assignment::SCOPE_SELF, []],
             ['cmbktg@longevity.com.vn',   'CM booking',     'team-giang-booking', Assignment::SCOPE_TEAM, []],
             ['book1@longevity.com.vn',  'Team booking',   'team-giang-booking', Assignment::SCOPE_SELF, []],
             ['book2@longevity.com.vn',  'Team booking',   'team-hoi-booking',   Assignment::SCOPE_SELF, []],
