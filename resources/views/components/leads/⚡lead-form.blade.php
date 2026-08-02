@@ -185,7 +185,7 @@ new class extends Component
             'newBookingFacilityId'    => 'required|exists:facilities,id',
             'newBookingRoomId'        => 'required|exists:sb_rooms,sbooking_id',
             'newBookingSbBacSiId'     => 'nullable|exists:sb_bac_si,sbooking_id',
-            'newBookingServiceId'     => 'nullable|exists:services,id',
+            'newBookingServiceId'     => 'nullable|integer',
             'newBookingNote'          => 'nullable|string|max:1000',
             'newBookingSoLieuTrinh'   => 'nullable|string|max:40',
             'newBookingSoLuongLo'     => 'nullable|string|max:40',
@@ -220,6 +220,22 @@ new class extends Component
         } elseif ($this->newBookingScheduledAt) {
             $scheduledAt = $this->newBookingScheduledAt;
         }
+        // 2026-08-03: newBookingServiceId có thể là sb_services.sbooking_id (mirror) hoặc services.id (legacy).
+        //   Resolve về services.id để tránh FK fail — best-effort match theo name.
+        $resolvedServiceId = null;
+        if ($this->newBookingServiceId) {
+            $direct = \App\Models\Service::find($this->newBookingServiceId);
+            if ($direct) {
+                $resolvedServiceId = $direct->id;
+            } else {
+                $sb = \App\Models\SbService::where('sbooking_id', $this->newBookingServiceId)->first();
+                if ($sb) {
+                    $match = \App\Models\Service::where('name', $sb->ten)->first();
+                    $resolvedServiceId = $match?->id;
+                }
+            }
+        }
+
         $bl = BookingLog::create([
             'lead_id'      => $this->lead->id,
             'user_id'      => $user->id,
@@ -230,7 +246,7 @@ new class extends Component
             'sb_phong_id'  => $this->newBookingRoomId,
             'sb_bac_si_id' => $this->newBookingSbBacSiId,
             'doctor_id'    => null,
-            'service_id'   => $this->newBookingServiceId,
+            'service_id'   => $resolvedServiceId,
             'note'         => $this->newBookingNote ?: null,
             'so_lieu_trinh' => $this->newBookingSoLieuTrinh ?: null,
             'so_luong_lo'   => $this->newBookingSoLuongLo ?: null,
@@ -403,12 +419,18 @@ new class extends Component
         $this->roomStatus = null;
         if (! $this->newBookingRoomId) return;
 
-        // Resolve scrm.services.id → sb_services.sbooking_id qua tên.
+        // Resolve newBookingServiceId → sb_services.sbooking_id.
+        //   - Nếu value đã là sb_services.sbooking_id → dùng luôn.
+        //   - Nếu là scrm.services.id (legacy) → map qua name.
         $sbDichVuId = null;
         if ($this->newBookingServiceId) {
-            $svc = \App\Models\Service::find($this->newBookingServiceId);
-            if ($svc) {
-                $sbDichVuId = \App\Models\SbService::where('ten', $svc->name)->where('active', true)->value('sbooking_id');
+            if (\App\Models\SbService::where('sbooking_id', $this->newBookingServiceId)->exists()) {
+                $sbDichVuId = (int) $this->newBookingServiceId;
+            } else {
+                $svc = \App\Models\Service::find($this->newBookingServiceId);
+                if ($svc) {
+                    $sbDichVuId = \App\Models\SbService::where('ten', $svc->name)->where('active', true)->value('sbooking_id');
+                }
             }
         }
 
@@ -2894,14 +2916,31 @@ new class extends Component
                         </div>
                         {{-- Hàng 3 (Phase C1.d rev2): Dịch vụ | Giờ (subdivided theo dịch vụ) | (empty) --}}
                         <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
+                            {{-- 2026-08-03: đọc từ sb_services (mirror sbooking). tham_kham = la_dich_vu=false. dich_vu = la_dich_vu=true. --}}
                             <select wire:model.live="newBookingServiceId" @disabled(! $newBookingType) class="border border-slate-300 rounded px-2 py-1.5 text-sm">
                                 <option value="">
                                     {{ $newBookingType ? '— ' . ($newBookingType === 'tham_kham' ? 'Chọn thăm khám' : 'Chọn dịch vụ') . ' —' : '— Chọn loại trước —' }}
                                 </option>
                                 @if ($newBookingType)
-                                    @foreach (\App\Models\Service::where('active',true)->where('service_type', $newBookingType)->orderBy('name')->get() as $s)
-                                        <option value="{{ $s->id }}">{{ $s->name }}</option>
+                                    @php
+                                        $__isDv = $newBookingType === 'dich_vu';
+                                        $__svcOptions = \App\Models\SbService::where('active', true)
+                                            ->where('la_dich_vu', $__isDv)
+                                            ->orderBy('ten')->get();
+                                        // Fallback: nếu sb_services trống → đọc scrm.services như cũ để không đứng hình.
+                                        if ($__svcOptions->isEmpty()) {
+                                            $__legacy = \App\Models\Service::where('active', true)->where('service_type', $newBookingType)->orderBy('name')->get();
+                                            foreach ($__legacy as $l) $__svcOptions->push((object)['id' => $l->id, 'sbooking_id' => null, 'ten' => $l->name, 'thoi_gian_phut' => null]);
+                                        }
+                                    @endphp
+                                    @foreach ($__svcOptions as $s)
+                                        <option value="{{ $s->sbooking_id ?? $s->id }}" data-src="{{ $s->sbooking_id ? 'sb' : 'legacy' }}">
+                                            {{ $s->ten }}@if($s->thoi_gian_phut) ({{ $s->thoi_gian_phut }}') @endif
+                                        </option>
                                     @endforeach
+                                    @if ($__svcOptions->isEmpty())
+                                        <option value="" disabled>(chưa có {{ $newBookingType === 'tham_kham' ? 'thăm khám' : 'dịch vụ' }} — sync bên sbooking trước)</option>
+                                    @endif
                                 @endif
                             </select>
                             @php
