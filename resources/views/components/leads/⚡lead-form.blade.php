@@ -1205,16 +1205,25 @@ new class extends Component
     /** Thuộc tính owner/org/pool theo đích chia; $existing để giữ assigned_at khi owner không đổi. */
     private function poolAttributes(?Lead $existing = null): array
     {
+        // 2026-08-03: sau khi chia số phase 2 (owner hoặc team), transition WAITING → IN_CARE để
+        // pipeline label đổi "Chờ CM booking chia" → "Booking · Đang chăm sóc" / "Sale · Đang chăm sóc".
         if ($this->personId) {
             return [
                 'owner_id' => $this->personId,
                 'org_unit_id' => $this->userOrgId($this->personId),
                 'pool_level' => Lead::POOL_PERSONAL,
                 'assigned_at' => ($existing && $existing->owner_id === $this->personId) ? $existing->assigned_at : now(),
+                'pipeline_status' => Lead::PSTATUS_IN_CARE,
             ];
         }
         if (str_starts_with($this->poolTarget, 'org:')) {
-            return ['owner_id' => null, 'org_unit_id' => (int) substr($this->poolTarget, 4), 'pool_level' => Lead::POOL_TEAM, 'assigned_at' => null];
+            return [
+                'owner_id' => null,
+                'org_unit_id' => (int) substr($this->poolTarget, 4),
+                'pool_level' => Lead::POOL_TEAM,
+                'assigned_at' => null,
+                'pipeline_status' => Lead::PSTATUS_IN_CARE,
+            ];
         }
 
         // Fallback: nguồn "sale nhận trực tiếp" mà user không có perm distribute
