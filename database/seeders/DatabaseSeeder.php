@@ -20,7 +20,7 @@ class DatabaseSeeder extends Seeder
             RealCmStaffSeeder::class,        // CM sale + Team Leader + Sale (Team Giang / Team Hợi HN)
             TeamHoiStaffSeeder::class,       // Nhân sự Team Hợi mở rộng
             ServiceSeeder::class,            // Bảng giá dịch vụ (gói khám, lẻ...)
-            DemoDataSeeder::class,           // Leads/dịch vụ/payment demo (chỉ dùng phần data ngoài nhân sự)
+            // DemoDataSeeder::class,        // BỎ (2026-08-03) — không seed khách hàng ảo nữa. Muốn demo → chạy riêng.
             TeamHoiCustomFieldSeeder::class, // Custom fields cho Team Hợi
             SyncCrmAccountsSeeder::class,    // Đồng bộ username + password với Booking (admin=59ntn, user=59@ntn)
             HnDnTestFlowSeeder::class,       // 1 CM sale cho team-giang-sale (team này chưa có CM real)

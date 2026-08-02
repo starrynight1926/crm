@@ -192,7 +192,7 @@ class RealCmStaffSeeder extends Seeder
         }
 
         $this->reassignHoiStaff($subUnits['team-hoi-booking'], $subUnits['team-hoi-sale']);
-        $this->seedHoiLeads($subUnits['team-hoi-booking'], $subUnits['team-hoi-sale']);
+        // 2026-08-03: bỏ seed khách hàng ảo (seedHoiLeads) — chỉ giữ staff/role/perm.
     }
 
     /** Chuyển các Sale không xung đột role về sub-team Booking/Sale của Team Hợi. */
