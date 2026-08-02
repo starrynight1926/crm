@@ -2593,14 +2593,14 @@ new class extends Component
                                     <option value="company">🏢 Công ty (kho chung)</option>
                                     @foreach ($assignableOrgs as $o)
                                         @php
-                                            // Chỉ chia tới cấp Team owner (depth ≤ 3) — sub-team booking/tele/sale
-                                            // (depth 4) là nội bộ, không cho chọn ở đây.
-                                            if ($o->depth === 0 || $o->depth > 3) continue;
+                                            // 2026-08-03: cho chia thẳng xuống sub-team (depth 4 = Team Booking / Team Sale con của Team Giang/Hợi).
+                                            if ($o->depth === 0) continue;
                                             $indent = str_repeat('　', $o->depth - 1);
                                             $prefix = match ($o->depth) {
                                                 1 => '📍 Chi nhánh',
-                                                2 => '🏬 Địa điểm',
+                                                2 => '🏬 Địa điểm / Phòng',
                                                 3 => '👥 Team',
+                                                default => '↳ Sub-team',
                                             };
                                         @endphp
                                         <option value="org:{{ $o->id }}">{{ $indent }}{{ $prefix }}: {{ $o->name }}</option>
