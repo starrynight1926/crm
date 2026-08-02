@@ -614,14 +614,77 @@ new class extends Component
     }
 
     /**
-     * Phase 6.21h — Placeholder: đồng bộ trạng thái booking từ hệ thống booking (lara-sbooking).
-     * Chưa có API thật — tạm flash message. Sẽ tích hợp sau khi có endpoint.
+     * Phase C1.f 2026-08-03 — pull booking từ sbooking cho lead này (khớp theo SĐT).
+     * Upsert BookingLog theo sbooking_booking_id — dùng khi callback pushStatus bị miss
+     * hoặc booking cũ tạo trước lúc setup callback.
      */
     public function syncBookingsFromExternal(): void
     {
-        if (! $this->lead) return;
-        // TODO: gọi API lara-sbooking, lấy list booking + status → update booking_logs.
-        session()->flash('cf_ok', 'Đã yêu cầu đồng bộ từ bên booking. (Chưa có API — placeholder.)');
+        if (! $this->lead || ! $this->lead->phone) return;
+
+        $token = config('services.booking.api_token');
+        $baseUrl = rtrim(config('services.booking.api_url') ?: '', '/');
+        if (! $token || ! $baseUrl) {
+            session()->flash('cf_error', 'Chưa cấu hình BOOKING_URL / TOKEN (Thiết lập → Kết nối Booking).');
+            return;
+        }
+
+        try {
+            $r = \Illuminate\Support\Facades\Http::withToken($token)->timeout(15)->acceptJson()
+                ->get($baseUrl . '/bookings', ['so_dien_thoai' => $this->lead->phone, 'per_page' => 100]);
+        } catch (\Throwable $e) {
+            session()->flash('cf_error', 'HTTP fail: ' . $e->getMessage());
+            return;
+        }
+        if (! $r->successful()) {
+            session()->flash('cf_error', 'HTTP ' . $r->status() . ': ' . substr($r->body(), 0, 300));
+            return;
+        }
+
+        $rows = $r->json('data') ?? [];
+        $syncMap = [
+            'da_xong' => 'done',
+            'da_duyet' => 'approved',
+            'cho_duyet' => 'synced',
+            'tu_choi' => 'rejected',
+        ];
+        $created = 0; $updated = 0;
+        foreach ($rows as $b) {
+            $scheduledAt = null;
+            if (! empty($b['ngay_dat'])) {
+                $ngay = substr((string) $b['ngay_dat'], 0, 10);
+                $gio = ! empty($b['gio_thuc_hien']) ? substr((string) $b['gio_thuc_hien'], 0, 8) : '00:00:00';
+                $scheduledAt = $ngay . ' ' . $gio;
+            }
+            $attrs = [
+                'lead_id' => $this->lead->id,
+                'user_id' => auth()->id(),
+                'type' => ($b['loai_dat_lich'] ?? 'phong_kham') === 'dich_vu' ? 'dich_vu' : 'tham_kham',
+                'status' => \App\Models\BookingLog::STATUS_CHO_XAC_NHAN,
+                'scheduled_at' => $scheduledAt,
+                'sb_phong_id' => $b['phong_id'] ?? null,
+                'sb_bac_si_id' => $b['bac_si_id'] ?? null,
+                'note' => $b['ghi_chu'] ?? null,
+                'so_lieu_trinh' => $b['so_lieu_trinh'] ?? null,
+                'so_luong_lo' => $b['so_luong_lo'] ?? null,
+                'dung_tich_lo' => $b['dung_tich_lo'] ?? null,
+                'ket_hop_medical' => (bool) ($b['ket_hop_medical'] ?? false),
+                'co_tu_van' => (bool) ($b['co_tu_van'] ?? false),
+                'co_kham_cls' => (bool) ($b['co_kham_cls'] ?? false),
+                'sbooking_booking_ma' => $b['ma_booking'] ?? null,
+                'sync_status' => $syncMap[$b['trang_thai'] ?? ''] ?? 'synced',
+                'sync_error' => ($b['trang_thai'] ?? '') === 'tu_choi' ? ($b['ly_do_tu_choi'] ?? null) : null,
+                'synced_at' => now(),
+            ];
+
+            $existing = \App\Models\BookingLog::where('sbooking_booking_id', $b['id'])->first();
+            if ($existing) { $existing->update($attrs); $updated++; }
+            else { \App\Models\BookingLog::create(array_merge(['sbooking_booking_id' => $b['id']], $attrs)); $created++; }
+        }
+
+        \App\Models\BookingLog::syncLeadBookingStatus($this->lead->id);
+        $this->lead->refresh();
+        session()->flash('cf_ok', "Đã đồng bộ: {$created} mới, {$updated} cập nhật (tổng " . count($rows) . " booking từ sbooking).");
     }
 
     public function markReturning(int $targetPhase = 3): void

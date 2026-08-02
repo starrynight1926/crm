@@ -236,17 +236,19 @@ class Lead extends Model
     /** Nhãn phase-status đọc được (VD "Booking · Chờ CM booking chia"). */
     public function pipelineLabel(): string
     {
-        // Lead mới nhập chưa qua vòng nào (chưa có receiver_id) + đang ở kho chung
-        // → dùng label rõ ràng thay vì "Sale · Đang chăm sóc" sai lệch. Lead đã từng
-        // có owner (receiver_id != null) mà trở lại kho chung là chờ chia phase kế tiếp
-        // → giữ label phase-status như cũ (VD "Sale · Chờ CM sale chia").
         if ($this->owner_id === null && $this->pool_level === self::POOL_COMMON && $this->receiver_id === null) {
             return 'Kho chung · Chưa chia';
         }
 
+        // 2026-08-03: sau khi Kết thúc phase 3 (Gọi điện) — Tele đã care xong, chờ book thăm khám.
+        //   Điều kiện: đã có closure phase 3 + chưa book (booking_status = not_booked / rescheduled) + phase >= 4.
+        if ((int) $this->phase >= self::CF_PHASE_BOOKING
+            && in_array($this->booking_status, [self::BOOKING_NOT_BOOKED, self::BOOKING_RESCHEDULED], true)
+            && $this->phaseClosures->contains('phase', self::CF_PHASE_CALL)) {
+            return 'Chờ book thăm khám';
+        }
+
         $phase = self::PHASES[$this->pipeline_phase] ?? $this->pipeline_phase;
-        // Với PSTATUS_WAITING, hiển thị rõ ai đang phải chia (CM booking hay CM sale)
-        // để phân biệt trong 2 phase.
         if ($this->pipeline_status === self::PSTATUS_WAITING) {
             $statusLabel = $this->pipeline_phase === self::PHASE_BOOKING
                 ? 'Chờ CM booking chia'
