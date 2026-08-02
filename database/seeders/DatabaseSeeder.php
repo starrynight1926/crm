@@ -14,6 +14,7 @@ class DatabaseSeeder extends Seeder
         $this->call([
             PermissionSeeder::class,
             OrgStaffSeeder::class,           // Cây org + role + user + assignment (gộp)
+            AdminCoSoSeeder::class,          // 3 tài khoản Admin cơ sở HN/HCM/DN (sau OrgStaffSeeder để có branch)
             OrgUnitManagerSeeder::class,     // Người quản lý mỗi đơn vị
             RealDoctorsSeeder::class,        // 32 nhân sự Khối chuyên môn (3 cơ sở HN/HCM/ĐN)
             RealCmStaffSeeder::class,        // CM sale + Team Leader + Sale (Team Giang / Team Hợi HN)
