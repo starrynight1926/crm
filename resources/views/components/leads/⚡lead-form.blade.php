@@ -2847,8 +2847,9 @@ new class extends Component
                                     @if ($upsBlockedHere)<span class="text-[10px] bg-white/20 px-1 rounded">chưa chốt</span>@endif
                                 </button>
                                 {{-- Popup: liệt kê sale check-in hôm nay + trạng thái busy/free. --}}
+                                {{-- 2026-08-04 mobile: dùng w calc để không tràn mép trên iPhone 11 (390-430px). --}}
                                 <div x-show="show" @click.outside="show = false" x-transition x-cloak
-                                     class="absolute right-0 mt-2 w-80 bg-white border border-gold-200 rounded-lg shadow-xl z-30 max-h-96 overflow-auto">
+                                     class="absolute right-0 mt-2 w-[calc(100vw-2rem)] sm:w-80 max-w-sm bg-white border border-gold-200 rounded-lg shadow-xl z-30 max-h-96 overflow-auto">
                                     @php
                                         $__today = now()->toDateString();
                                         $__atts = \App\Models\DailyAttendance::with('user')

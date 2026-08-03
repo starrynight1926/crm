@@ -34,6 +34,81 @@ new class extends Component
             }));
     }
 
+    /**
+     * 2026-08-04 — Widget theo role: UPS hôm nay, khách được nhận, chờ duyệt, chờ chia.
+     * Trả về array của widget đã cho phép hiển thị theo permission.
+     */
+    private function todayWidgets(): array
+    {
+        $user = auth()->user();
+        $today = now()->toDateString();
+        $widgets = [];
+
+        // 1. UPS hôm nay (BO / Admin) — % cơ sở đã chốt UPS.
+        if ($user->hasAnyPermission(['ups.view', 'ups.confirm_daily', 'user.manage'])) {
+            $totalFacilities = \App\Models\PoolUnit::where('kind', 'facility')->where('is_active', true)->count();
+            $confirmed = \App\Models\UpsDailyConfirm::whereDate('work_date', $today)->count();
+            $widgets[] = [
+                'key' => 'ups_today', 'label' => 'UPS hôm nay',
+                'value' => "{$confirmed}/{$totalFacilities}", 'suffix' => 'cơ sở đã chốt',
+                'color' => $confirmed >= $totalFacilities ? 'emerald' : ($confirmed === 0 ? 'red' : 'amber'),
+                'link' => route($user->hasPermission('ups.view') ? 'ups.list' : 'ups.today'),
+                'icon' => 'M13 10V3L4 14h7v7l9-11h-7z',
+            ];
+        }
+
+        // 2. Khách mới hôm nay (mọi role).
+        $newToday = $this->reportLeadQuery()->whereDate('received_date', $today)->count();
+        $widgets[] = [
+            'key' => 'new_today', 'label' => 'Khách mới hôm nay',
+            'value' => (string) $newToday, 'suffix' => 'lead',
+            'color' => 'blue', 'link' => route('leads.index') . '?received=today',
+            'icon' => 'M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z',
+        ];
+
+        // 3. Khách bạn được nhận (Sale — có owner_id).
+        if ($user->hasAnyPermission(['lead.view', 'lead.read_booking'])) {
+            $myAssigned = Lead::where('owner_id', $user->id)
+                ->whereDate('assigned_at', '>=', now()->subDays(7))
+                ->count();
+            $widgets[] = [
+                'key' => 'my_assigned', 'label' => 'Khách bạn được nhận (7 ngày)',
+                'value' => (string) $myAssigned, 'suffix' => 'lead',
+                'color' => 'gold', 'link' => route('leads.index') . '?owner=me',
+                'icon' => 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z',
+            ];
+        }
+
+        // 4. Chờ duyệt (CM/Admin có lead.approve).
+        if ($user->hasPermission('lead.approve')) {
+            $pendingApproval = $this->reportLeadQuery()
+                ->where('approval_status', Lead::APPROVAL_PENDING)
+                ->count();
+            $widgets[] = [
+                'key' => 'pending_approval', 'label' => 'Chờ duyệt',
+                'value' => (string) $pendingApproval, 'suffix' => 'lead',
+                'color' => $pendingApproval > 0 ? 'red' : 'slate', 'link' => route('leads.index') . '?approval=pending',
+                'icon' => 'M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z',
+            ];
+        }
+
+        // 5. Chờ chia (CM / Team Booking / Admin — lead pool_level=common hoặc team).
+        if ($user->hasAnyPermission(['lead.distribute', 'lead.distribute_sale'])) {
+            $pendingDistribution = $this->reportLeadQuery()
+                ->whereIn('pool_level', [Lead::POOL_COMMON, Lead::POOL_TEAM])
+                ->whereNull('owner_id')
+                ->count();
+            $widgets[] = [
+                'key' => 'pending_distribution', 'label' => 'Chờ chia',
+                'value' => (string) $pendingDistribution, 'suffix' => 'lead trong kho',
+                'color' => $pendingDistribution > 0 ? 'amber' : 'slate', 'link' => route('distribution.pools'),
+                'icon' => 'M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5',
+            ];
+        }
+
+        return $widgets;
+    }
+
     public function with(): array
     {
         $user = auth()->user();
@@ -76,6 +151,7 @@ new class extends Component
             'topSaleUsers' => $topSaleUsers,
             'overdue' => $overdue,
             'recentLeads' => $this->reportLeadQuery()->with('owner')->orderByDesc('id')->limit(6)->get(),
+            'todayWidgets' => $this->todayWidgets(),
         ];
     }
 };
@@ -99,6 +175,34 @@ new class extends Component
             @endif
         </div>
     </div>
+
+    {{-- 2026-08-04: widget hôm nay theo role — UPS, khách mới, được nhận, chờ duyệt, chờ chia. --}}
+    @if (! empty($todayWidgets))
+        @php
+            $colorMap = [
+                'emerald' => 'bg-emerald-50 border-emerald-200 text-emerald-800',
+                'amber'   => 'bg-amber-50 border-amber-200 text-amber-800',
+                'red'     => 'bg-red-50 border-red-200 text-red-800',
+                'blue'    => 'bg-blue-50 border-blue-200 text-blue-800',
+                'gold'    => 'bg-gold-50 border-gold-200 text-gold-800',
+                'slate'   => 'bg-slate-50 border-slate-200 text-slate-700',
+            ];
+        @endphp
+        {{-- Mobile: 2 col compact (iPhone 11+ = 390px vẫn fit); md 3 col; lg 5 col. --}}
+        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 mb-6">
+            @foreach ($todayWidgets as $w)
+                <a href="{{ $w['link'] }}" class="block border rounded-xl p-4 hover:shadow-md transition-shadow {{ $colorMap[$w['color']] ?? $colorMap['slate'] }}">
+                    <div class="flex items-center justify-between mb-2">
+                        <svg class="w-5 h-5 opacity-70" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="{{ $w['icon'] }}"/></svg>
+                        <span class="text-[10px] font-bold uppercase tracking-wide opacity-60">Hôm nay</span>
+                    </div>
+                    <div class="text-2xl font-bold leading-none tabular-nums">{{ $w['value'] }}</div>
+                    <div class="text-[11px] opacity-70 mt-0.5">{{ $w['suffix'] }}</div>
+                    <div class="text-xs font-semibold mt-2 leading-tight">{{ $w['label'] }}</div>
+                </a>
+            @endforeach
+        </div>
+    @endif
 
     {{-- Stat cards funnel --}}
     @php

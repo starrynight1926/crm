@@ -288,8 +288,10 @@ new class extends Component
     public function openExport(): void
     {
         abort_unless(auth()->user()->hasPermission('lead.export'), 403);
+        // 2026-08-04 fix "cột thông minh": mặc định chỉ tick core columns theo 6 phase.
+        // Custom field (page/camp/phan_loai/…) tick manual nếu cần — tránh xuất trường tùy biến "dở hơi".
         if ($this->exportCols === []) {
-            $this->exportCols = $this->allExportKeys();
+            $this->exportCols = array_keys($this->coreColumns());
         }
         $this->showExportModal = true;
     }
@@ -510,21 +512,22 @@ new class extends Component
         <p class="mb-4 text-sm text-green-700 bg-green-50 border border-green-200 rounded-md px-4 py-2">{{ session('status') }}</p>
     @endif
 
-    <div class="flex flex-wrap items-start justify-between gap-4 mb-6">
-        <div>
-            <h1 class="text-3xl font-bold mb-1">Danh sách khách hàng</h1>
-            <p class="text-sm text-ink/60">Quản lý và theo dõi các khách hàng tiềm năng trên tất cả các kênh.</p>
+    {{-- 2026-08-04 mobile: header stack vertical, action button co gọn, ẩn tiêu đề phụ dưới sm. --}}
+    <div class="flex flex-wrap items-start justify-between gap-3 mb-6">
+        <div class="min-w-0 flex-1">
+            <h1 class="text-xl md:text-3xl font-bold mb-1">Danh sách khách hàng</h1>
+            <p class="text-xs md:text-sm text-ink/60 hidden sm:block">Quản lý và theo dõi các khách hàng tiềm năng trên tất cả các kênh.</p>
         </div>
-        <div class="flex items-center gap-3">
+        <div class="flex flex-wrap items-center gap-2 md:gap-3">
             @if (auth()->user()->hasPermission('lead.import'))
-                <a href="{{ route('leads.failed') }}" class="text-sm font-semibold text-ink/60 border border-gold-200 px-4 py-2.5 rounded-md hover:bg-gold-50">Lead lỗi</a>
-                <a href="{{ route('leads.import') }}" class="text-sm font-semibold text-gold-700 border border-gold-300 px-4 py-2.5 rounded-md hover:bg-gold-50">⬆ Import</a>
+                <a href="{{ route('leads.failed') }}" class="text-sm font-semibold text-ink/60 border border-gold-200 px-3 md:px-4 py-2 md:py-2.5 rounded-md hover:bg-gold-50">Lead lỗi</a>
+                <a href="{{ route('leads.import') }}" class="text-sm font-semibold text-gold-700 border border-gold-300 px-3 md:px-4 py-2 md:py-2.5 rounded-md hover:bg-gold-50">⬆ Import</a>
             @endif
             @if (auth()->user()->hasPermission('phase.rollback'))
-                <a href="{{ route('leads.trash') }}" class="text-sm font-semibold text-ink/60 border border-gold-200 px-4 py-2.5 rounded-md hover:bg-gold-50">🗑 Thùng rác</a>
+                <a href="{{ route('leads.trash') }}" class="text-sm font-semibold text-ink/60 border border-gold-200 px-3 md:px-4 py-2 md:py-2.5 rounded-md hover:bg-gold-50">🗑 Thùng rác</a>
             @endif
             @if ($canExport)
-                <button wire:click="openExport" class="text-sm font-semibold text-gold-700 border border-gold-300 px-4 py-2.5 rounded-md hover:bg-gold-50">⬇ Export</button>
+                <button wire:click="openExport" class="text-sm font-semibold text-gold-700 border border-gold-300 px-3 md:px-4 py-2 md:py-2.5 rounded-md hover:bg-gold-50">⬇ Export</button>
             @endif
             @if (auth()->user()->hasPermission('lead.create'))
                 <a href="{{ route('leads.create') }}"
