@@ -9,6 +9,8 @@ Route::post('/webhook/lead/{token}', [WebhookController::class, 'store'])->name(
 
 // Hướng dẫn sử dụng — trang tĩnh, không cần đăng nhập
 Route::view('/huong-dan', 'guide')->name('guide');
+// 2026-08-04: QA checklist page (public — mở được không cần login để tester bên ngoài truy cập).
+Route::view('/qa', 'qa-checklist')->name('qa');
 
 Route::get('/', fn () => redirect()->route('dashboard'));
 
