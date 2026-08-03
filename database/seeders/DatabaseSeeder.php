@@ -26,6 +26,8 @@ class DatabaseSeeder extends Seeder
             HnDnTestFlowSeeder::class,       // 1 CM sale cho team-giang-sale (team này chưa có CM real)
             HcmTestFlowSeeder::class,        // 1 CM booking cho team-ashley-booking (team này chưa có CM real)
             RenameUsersToPositionFormatSeeder::class, // Đổi username+email sang <cơ_sở>.<chức_vụ>NN
+            PoolUnitSeeder::class,                    // Cây Kho số Longevity Medical (Phase 6.22)
+            BoRoleSeeder::class,                      // Role BO (Lễ Tân) + 3 tk BO HN/DN/HCM (Phase 6.22)
             RolePermissionSyncSeeder::class,          // SNAPSHOT role→perms — SOURCE OF TRUTH, CHẠY SAU CÙNG
         ]);
     }

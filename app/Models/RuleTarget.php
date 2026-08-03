@@ -12,8 +12,11 @@ class RuleTarget extends Model
 
     public function targetLabel(): string
     {
-        return $this->target_type === 'user'
-            ? (User::find($this->target_id)?->name ?? "user#{$this->target_id}")
-            : (OrgUnit::find($this->target_id)?->name ?? "org#{$this->target_id}");
+        return match ($this->target_type) {
+            'user'      => User::find($this->target_id)?->name ?? "user#{$this->target_id}",
+            'pool_unit' => PoolUnit::find($this->target_id)?->name ?? "pool#{$this->target_id}",
+            'org_unit'  => OrgUnit::find($this->target_id)?->name ?? "org#{$this->target_id}",
+            default     => "{$this->target_type}#{$this->target_id}",
+        };
     }
 }

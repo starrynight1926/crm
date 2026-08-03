@@ -273,7 +273,7 @@ class DistributionEngine
                 : $lead->pipeline_status,
         ]);
 
-        $this->autoClosePhase($lead, Lead::CF_PHASE_DISTRIBUTE, null);
+        $this->autoClosePhase($lead, Lead::CF_PHASE_NEW, null);
         $this->notifyAssigned($lead, (int) $target->target_id);
     }
 
@@ -350,8 +350,11 @@ class DistributionEngine
         ]);
     }
 
-    /** Chuyển lead vào kho chung của một phòng/team cụ thể (pool_level=team, org chỉ định). */
-    public function moveToTeam(Lead $lead, int $orgUnitId, int $actorId): void
+    /**
+     * Phase 6.24 — Chuyển lead vào kho pool cụ thể (chi nhánh / cơ sở / phòng KD).
+     * Tham số $poolUnitId là id của PoolUnit (cây Kho số mới), không còn là org_unit.
+     */
+    public function moveToTeam(Lead $lead, int $poolUnitId, int $actorId): void
     {
         LeadDistributionLog::create([
             'lead_id' => $lead->id,
@@ -359,7 +362,7 @@ class DistributionEngine
             'from_pool_level' => $lead->pool_level,
             'to_pool_level' => Lead::POOL_TEAM,
             'from_owner_id' => $lead->owner_id,
-            'org_unit_id' => $orgUnitId,
+            'org_unit_id' => null,
             'actor_id' => $actorId,
             'created_at' => now(),
         ]);
@@ -368,7 +371,7 @@ class DistributionEngine
             'owner_id' => null,
             'assigned_at' => null,
             'pool_level' => Lead::POOL_TEAM,
-            'org_unit_id' => $orgUnitId,
+            'pool_unit_id' => $poolUnitId,
         ]);
     }
 
@@ -400,7 +403,7 @@ class DistributionEngine
                 : $lead->pipeline_status,
         ]);
 
-        $this->autoClosePhase($lead, Lead::CF_PHASE_DISTRIBUTE, $actorId);
+        $this->autoClosePhase($lead, Lead::CF_PHASE_NEW, $actorId);
         $this->notifyAssigned($lead, $user->id, $prevOwnerId);
     }
 
