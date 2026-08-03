@@ -104,16 +104,17 @@ class Lead extends Model
         return self::SOURCE_GROUP_CODES[$this->source_group] ?? '';
     }
 
-    // Permission cần có để thấy nhóm nguồn đó ở form thêm lead (Phase 6.21f, 2026-07-30; sửa 2026-08-02 theo flow chuẩn).
+    // Permission cần có để thấy nhóm nguồn đó ở form thêm lead (Phase 6.21f, 2026-07-30; sửa 2026-08-03 tách SA ra perm riêng).
     // Mapping:
-    //   MKT                 → source.up.trucpage (Trực Page)
-    //   MKT_BR              → source.up.sale     (Sale nhân viên tự nhận)
-    //   BA                  → source.up.tele     (Tele tự nhận)
-    //   SA, BDM, BOD, WI    → source.up.admin    (QL Sale / Admin cơ sở up — nằm 1 bucket)
+    //   MKT              → source.up.trucpage (Trực Page)
+    //   MKT_BR           → source.up.sale     (Sale nhân viên tự nhận)
+    //   SA               → source.up.sa       (Sale hẹn lại — Sale tự nhận + CM sale / Admin cơ sở up hộ)
+    //   BA               → source.up.tele     (Tele tự nhận)
+    //   BDM, BOD, WI     → source.up.admin    (QL Sale / Admin cơ sở up)
     public const SOURCE_PERMISSIONS = [
         self::SOURCE_MKT    => 'source.up.trucpage',
         self::SOURCE_MKT_BR => 'source.up.sale',
-        self::SOURCE_SA     => 'source.up.admin',
+        self::SOURCE_SA     => 'source.up.sa',
         self::SOURCE_BA     => 'source.up.tele',
         self::SOURCE_BDM    => 'source.up.admin',
         self::SOURCE_BOD    => 'source.up.admin',

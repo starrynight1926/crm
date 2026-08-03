@@ -72,7 +72,7 @@
 <header class="top">
   <div class="wrap" style="padding:0">
     <h1>Lara-SCRM — Hướng dẫn vận hành chi tiết</h1>
-    <p class="sub">Ai làm gì · Khách đi qua đâu · Vì sao chặn/mở. Cập nhật 2026-07-31 (nhánh <code style="background:rgba(255,255,255,.2);color:#fff">fifth</code>)</p>
+    <p class="sub">Ai làm gì · Khách đi qua đâu · Vì sao chặn/mở. Cập nhật 2026-08-03 (nhánh <code style="background:rgba(255,255,255,.2);color:#fff">sixth</code>)</p>
   </div>
 </header>
 
@@ -91,8 +91,12 @@
     <li><a href="#report">Báo cáo (Funnel + Hiệu suất) theo Phase</a></li>
     <li><a href="#data">Cấu trúc data cốt lõi</a></li>
     <li><a href="#tk">Tổng hợp tài khoản</a></li>
+    <li><a href="#sbooking">Tích hợp Sbooking (Phase C1)</a></li>
+    <li><a href="#devops">DevOps · Seed · CLI</a></li>
   </ol>
 </div>
+
+<p style="margin:0 0 20px"><img src="/images/flow.jpg" alt="Sơ đồ luồng 7 phase × 7 nguồn" style="max-width:100%; height:auto; border:1px solid var(--border); border-radius:8px; display:block"></p>
 
 <section id="tongquan" class="card">
   <h2>1. Tổng quan</h2>
@@ -120,13 +124,14 @@
   </div>
 
   <div class="rule">
-    <strong>Engine chặn ở đâu:</strong> khi bấm nút "Thêm mới khách hàng", dropdown Nguồn sẽ <strong>disable</strong> option user không có quyền. Cơ chế map trong <code>Lead::SOURCE_PERMISSIONS</code> → mỗi nguồn cần 1 permission cụ thể (<code>source.up.trucpage</code> / <code>.sale</code> / <code>.tele</code> / <code>.admin</code>). Role <strong>Admin cơ sở</strong> có <code>lead.source_all</code> — bypass, thấy đủ 7 option.
+    <strong>Engine chặn ở đâu:</strong> khi bấm nút "Thêm mới khách hàng", dropdown Nguồn sẽ <strong>disable</strong> option user không có quyền. Cơ chế map trong <code>Lead::SOURCE_PERMISSIONS</code> → 5 perm: <code>source.up.trucpage</code> (MKT) · <code>source.up.sale</code> (MKT BR) · <code>source.up.sa</code> (SA — Sale hẹn lại) · <code>source.up.tele</code> (BA) · <code>source.up.admin</code> (BDM/BOD/WI). Role có <code>lead.source_all</code> bypass toàn bộ (Admin công ty).
   </div>
 </section>
 
 <section id="phase" class="card">
   <h2>3. 7 phase — vòng đời của khách</h2>
   <p>Cột "Ai xử lý" mặc định — có thể lệch nếu nguồn cho phép sale tự làm A→Z.</p>
+
 
   <div class="flow">
     <div class="step" style="background:var(--p1)"><h4><span class="badge p1">P1</span> Thêm mới</h4>Trực Page / Tele / QL Sale / Sale (tùy nguồn)<small>Nhập tên, SĐT, nguồn, custom fields</small></div>
@@ -410,7 +415,7 @@
 
 <section id="tk" class="card">
   <h2>10. Tổng hợp tài khoản test</h2>
-  <p>Password chung: <code>59@ntn</code></p>
+  <p><strong>Password theo cơ sở</strong> — không chung. Liên hệ Admin để lấy password cho từng nhóm tài khoản (HN / HCM / ĐN / VH mỗi cơ sở 1 password riêng).</p>
   <table>
     <thead><tr><th>Role</th><th>Tài khoản</th><th>Cơ sở</th></tr></thead>
     <tbody>
@@ -429,7 +434,71 @@
   </table>
 </section>
 
-<p style="text-align:center; color:var(--muted); font-size:12px; margin:30px 0 10px">Tài liệu này generate từ code hiện tại (branch <code>fifth</code>, commit sau <code>af17226</code>). Nếu code đổi, xin update lại.</p>
+<section id="sbooking" class="card">
+  <h2>11. Tích hợp Sbooking (Phase C1)</h2>
+  <p>Scrm ↔ lara-sbooking đồng bộ 2 chiều: scrm push booking → sbooking duyệt → callback về scrm; scrm pull master data (dịch vụ / phòng / bác sĩ / users) từ sbooking.</p>
+
+  <h3>11.1 Cấu hình kết nối</h3>
+  <p>Menu <strong>Thiết lập → Kết nối Booking</strong> (gate perm <code>connection.manage</code>). Nhập <code>BOOKING_API_URL</code> + <code>BOOKING_API_TOKEN</code> qua UI — <code>AppServiceProvider</code> override <code>config('services.booking')</code> từ <code>AppSetting</code>, ưu tiên DB hơn <code>.env</code>. Cột <em>Sbooking co_so_id</em> cạnh mỗi cơ sở HN/HCM/DN — map id cơ sở scrm ↔ sbooking, bắt buộc điền trước khi push booking.</p>
+
+  <h3>11.2 Sync master data từ sbooking (pull)</h3>
+  <table>
+    <thead><tr><th>Loại</th><th>Nút UI</th><th>CLI</th><th>Model scrm</th></tr></thead>
+    <tbody>
+      <tr><td>Dịch vụ (dich_vu)</td><td>🔄 Đồng bộ dịch vụ</td><td><code>php artisan sb:sync-services</code></td><td><code>SbService</code></td></tr>
+      <tr><td>Phòng</td><td>🔄 Đồng bộ phòng</td><td><code>sb:sync-rooms</code></td><td><code>SbRoom</code></td></tr>
+      <tr><td>Bác sĩ</td><td>🔄 Đồng bộ bác sĩ</td><td><code>sb:sync-bac-si</code></td><td><code>SbBacSi</code></td></tr>
+      <tr><td>Users (Tele/Sale sbooking)</td><td>🔄 Đồng bộ users</td><td><code>sb:sync-users</code></td><td><code>SbUser</code></td></tr>
+    </tbody>
+  </table>
+  <div class="rule"><strong>Idempotent</strong> qua <code>sbooking_id</code> unique. Bấm lại không tạo trùng, chỉ update. Mọi command đều có <code>--dry-run</code> để test không ghi DB.</div>
+  <div class="rule"><strong>Dropdown Dịch vụ / Thăm khám</strong> ở form Booking đọc từ <code>sb_services</code> (mirror sbooking) — không dùng bảng <code>services</code> nội bộ.</div>
+
+  <h3>11.3 Push booking scrm → sbooking</h3>
+  <ul>
+    <li>Form booking ở lead-detail (Phase 4): chọn Loại / Cơ sở / BS / DV / ngày+giờ → status <strong>Đã xác nhận</strong> → <em>Thêm booking</em>. Chỉ status "Đã xác nhận" mới auto push.</li>
+    <li><code>SbookingClient::pushBooking</code> gửi <code>nguon = $lead->source_group</code> (mkt/mkt_br/…) — không hardcode "SCRM" nữa.</li>
+    <li>Dropdown giờ đọc từ endpoint sbooking <code>GET /api/sync/khung-gio?co_so_id=X</code> khi user chọn cơ sở (Livewire hook <code>updatedNewBookingFacilityId</code>). Fail silent → fallback hardcode 8:30-12 / 13:30-18.</li>
+    <li>Sau khi push: local <code>booking_log</code> có badge <em>"⏳ Đã gửi sbooking, chờ duyệt"</em>. Payload push kèm <code>crm_khach_ma</code> = code lead + <code>nguon</code>.</li>
+  </ul>
+  <div class="rule err"><strong>Rule chặn:</strong> nếu cơ sở chưa map <code>sbooking_co_so_id</code> hoặc user không chọn cơ sở → error đỏ, KHÔNG tạo booking local. Buộc admin cấu hình trước.</div>
+
+  <h3>11.4 Callback duyệt từ sbooking → scrm</h3>
+  <p>Admin sbooking bấm <em>Duyệt / Bỏ duyệt / Từ chối</em> → sbooking POST callback về scrm → badge dòng booking đổi:</p>
+  <ul>
+    <li>Duyệt → <em>"✅ Sbooking đã duyệt · id N"</em>, <code>sync_status = confirmed</code>.</li>
+    <li>Bỏ duyệt → về <em>"⏳ Chờ duyệt"</em>, <code>sync_status = synced</code>.</li>
+    <li>Từ chối → <em>"❌ Sbooking từ chối"</em> + lý do.</li>
+  </ul>
+  <div class="rule"><strong>Auth callback (2 hệ email khác domain):</strong> sbooking (@sweetsica.com / @59ntn.local) ↔ scrm (@longevity.com.vn) không map được user per-user → dùng shared token <code>SCRM_API_TOKEN</code> (cả 2 phía cùng giá trị). Middleware <code>AuthByApiToken</code> chấp nhận token này thay vì Sanctum per-user.</div>
+
+  <h3>11.5 Sync booking sbooking → scrm (pull theo SĐT)</h3>
+  <p>Khi mở lead có SĐT → <code>syncBookingsFromExternal($phone)</code> gọi <code>GET /api/bookings?so_dien_thoai=X</code> bên sbooking, upsert vào <code>booking_logs</code> theo <code>sbooking_booking_id</code>. Kéo cả booking do khách gọi thẳng sbooking (không qua scrm).</p>
+</section>
+
+<section id="devops" class="card">
+  <h2>12. DevOps · Seed · CLI</h2>
+  <h3>Reset toàn bộ DB (local)</h3>
+  <p><code>php artisan db:fresh-all</code> — drop cả 2 connection <strong>mysql (clean) + pgsql (raw)</strong> rồi <code>migrate:fresh --seed</code>. Tránh lỗi <em>"relation import_batches already exists"</em> vì <code>migrate:fresh</code> mặc định chỉ drop default connection. Trên shared host thiếu quyền <code>DROP SCHEMA</code> — fallback drop từng bảng pgsql.</p>
+
+  <h3>Seed sau reset</h3>
+  <ul>
+    <li><strong>0 khách hàng ảo</strong> — <code>DemoDataSeeder</code> + <code>seedHoiLeads()</code> đã comment out. Fresh seed sinh <strong>83 users · 23 nhân sự trong scope admin.hn · 0 leads</strong>. Muốn có lead phải tự import hoặc tạo tay.</li>
+    <li><code>RolePermissionSyncSeeder</code> — snapshot 14 role → perms lấy từ DB local làm source of truth. Sửa perm ở DB dev → chạy lệnh này để dump lại seed.</li>
+    <li><code>TeamHoiCustomFieldSeeder</code> — 2 field "Phân loại" + "Kết quả" set <code>required=false</code> (để Tele fill phase 3, không bắt buộc lúc admin chia số phase 2).</li>
+  </ul>
+
+  <h3>Rename role tồn dư</h3>
+  <p>Migration rename chạy trước seed, nếu seed cũ tạo lại role cũ trắng perm sẽ bug. Đã fix cho: <em>Team booking → Team Tele</em> (400e2a6), <em>Team nhập lead → Trực Page</em> (8ddd07c / 715115b). Nếu clone host cũ về thấy dropdown "Nhân viên phụ trách" phase Booking không hiện <code>hn.book01/02</code> → chạy lại <code>migrate:fresh --seed</code>.</p>
+
+  <h3>Fix chia số kẹt badge</h3>
+  <ul>
+    <li><code>poolAttributes</code> chia số (person/org): set <code>pipeline_status = IN_CARE</code> ngay khi chia. Trước đây giữ <code>WAITING</code> → badge kẹt <em>"Chờ CM booking chia"</em> dù đã chia xong.</li>
+    <li>Dropdown chia số mở cho <strong>depth 4</strong> (sub-team Booking/Sale) — có prefix <code>↳ Sub-team</code>. Trước filter cứng ≤ depth 3 → sub-team Tele/Sale bị ẩn.</li>
+  </ul>
+</section>
+
+<p style="text-align:center; color:var(--muted); font-size:12px; margin:30px 0 10px">Tài liệu này generate từ code hiện tại (branch <code>sixth</code>, commit gần nhất <code>1c2a3c9</code>). Nếu code đổi, xin update lại.</p>
 
 </div>
 </body>
