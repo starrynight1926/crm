@@ -82,6 +82,9 @@ new class extends Component
     /** Chia trực tiếp cho cá nhân (ưu tiên hơn kho nếu có). */
     public ?int $personId = null;
 
+    /** 2026-08-04 — CM tick khi chia để bật luật thu hồi tự động theo cột (Quy tắc PKD): col 1-3 sau 1 ngày, col 4-5 sau 3 ngày. */
+    public bool $recallByColumns = false;
+
     /** Ô search tên khi chia cá nhân. */
     public string $personSearch = '';
 
@@ -843,6 +846,7 @@ new class extends Component
             $this->poolTarget = 'company';
         }
         $this->syncPoolCascadeFromTarget();
+        $this->recallByColumns = (bool) ($lead->recall_by_columns ?? false);
         $this->status_1 = $lead->status_1 ?? '';
         $this->status_2 = $lead->status_2 ?? '';
         $this->note = $lead->note ?? '';
@@ -1440,6 +1444,8 @@ new class extends Component
                 'pool_level' => Lead::POOL_PERSONAL,
                 'assigned_at' => ($existing && $existing->owner_id === $this->personId) ? $existing->assigned_at : now(),
                 'pipeline_status' => Lead::PSTATUS_IN_CARE,
+                // 2026-08-04: bật luật thu hồi theo cột nếu CM tick.
+                'recall_by_columns' => $this->recallByColumns,
             ];
         }
         if (str_starts_with($this->poolTarget, 'org:')) {
@@ -2941,6 +2947,17 @@ new class extends Component
                                     @else Cấp thấp nhất được chọn = kho áp dụng. Nhân sự trong phạm vi kho đó thấy được lead. @endif
                                 </p>
                                 @error('poolTarget')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
+
+                                {{-- 2026-08-04: tick "Áp dụng luật thu hồi" theo Quy tắc PKD Update.docx. --}}
+                                <label class="mt-3 flex items-start gap-2 text-sm bg-amber-50 border border-amber-200 rounded-md px-3 py-2 cursor-pointer">
+                                    <input type="checkbox" wire:model="recallByColumns" class="rounded border-amber-300 mt-0.5">
+                                    <span>
+                                        <span class="font-semibold text-amber-900">Áp dụng luật thu hồi tự động</span>
+                                        <span class="block text-xs text-amber-700 mt-0.5">
+                                            Sale phải cập nhật <b>col 1,2,3</b> (page/camp/phan_loai) trong <b>1 ngày</b> và đủ <b>5 cột</b> (thêm ket_qua/sic) trong <b>3 ngày</b>. Không đủ → hệ thống tự thu hồi về kho team.
+                                        </span>
+                                    </span>
+                                </label>
                             </div>
                             <div x-data="{ open: false }" @click.outside="open = false">
                                 <label class="block text-sm font-medium mb-1.5">NHÂN VIÊN PHỤ TRÁCH</label>
