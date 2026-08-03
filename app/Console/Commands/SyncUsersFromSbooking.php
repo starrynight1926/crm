@@ -3,7 +3,9 @@
 namespace App\Console\Commands;
 
 use App\Models\SbUser;
+use App\Models\User;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -70,7 +72,24 @@ class SyncUsersFromSbooking extends Command
         }
 
         $this->info("Xong. Tạo mới: {$created}, cập nhật: {$updated}, tổng: " . count($rows));
-        Log::info('sb:sync-users', ['created' => $created, 'updated' => $updated, 'total' => count($rows)]);
+
+        // 2026-08-03 fix bug #1+#4: auto-map scrm.users.sbooking_user_id theo local-part email
+        //   scrm.users.email  = "hn.sale04@longevity.com.vn" → local-part = "hn.sale04"
+        //   sb_users.username = "hn.sale04" → khớp → set users.sbooking_user_id = sb_users.sbooking_id
+        // Không đè record đã map thủ công (chỉ set khi đang NULL) để tôn trọng UI map trong Settings.
+        $mapped = 0; $conflict = 0;
+        $scrmUsers = User::whereNull('sbooking_user_id')->whereNotNull('email')->get(['id', 'email', 'name']);
+        foreach ($scrmUsers as $u) {
+            $local = strstr(strtolower($u->email), '@', true) ?: strtolower($u->email);
+            $matches = SbUser::where('username', $local)->get();
+            if ($matches->isEmpty()) continue;
+            if ($matches->count() > 1) { $conflict++; continue; }
+            $u->update(['sbooking_user_id' => (int) $matches->first()->sbooking_id]);
+            $mapped++;
+        }
+        $this->info("Auto-map users↔sbooking: {$mapped} mapped, {$conflict} bỏ qua (nhiều match).");
+
+        Log::info('sb:sync-users', ['created' => $created, 'updated' => $updated, 'total' => count($rows), 'auto_mapped' => $mapped, 'conflict' => $conflict]);
         return self::SUCCESS;
     }
 }

@@ -58,14 +58,22 @@ class SbookingClient
             return false;
         }
 
-        // service_id hiện đang trỏ scrm.services. Map sang sb_services theo tên (best-effort).
-        $sbookingDichVuId = null;
-        if ($log->service_id) {
-            $svc = $log->service; // scrm.services
+        // 2026-08-03 fix — ưu tiên sb_dich_vu_id direct (do frontend lưu); fallback map theo tên.
+        $sbookingDichVuId = $log->sb_dich_vu_id ? (int) $log->sb_dich_vu_id : null;
+        if (! $sbookingDichVuId && $log->service_id) {
+            $svc = $log->service;
             if ($svc) {
-                $match = SbService::where('ten', $svc->name)->where('active', true)->first();
-                $sbookingDichVuId = $match?->sbooking_id;
+                $sbookingDichVuId = SbService::where('ten', $svc->name)->where('active', true)->value('sbooking_id');
             }
+        }
+
+        // Phase 6.25.C fix (2026-08-03) — resolve CV#1 để push sale_id + tiep_don_user_id.
+        // CV1 = tư vấn viên chính do CM/Admin gán ở phase 3 Booking scrm.
+        // Sbooking dùng sale_id (booking.sale_id) và tiep_don_user_id (nút "Đang tiếp đón").
+        $sbookingSaleId = null;
+        $cv1 = $log->consultants()->orderBy('booking_log_consultants.position')->first();
+        if ($cv1 && $cv1->sbooking_user_id) {
+            $sbookingSaleId = (int) $cv1->sbooking_user_id;
         }
 
         $payload = [
@@ -74,10 +82,13 @@ class SbookingClient
             'co_so_id'      => $sbookingCoSoId,
             'ngay_dat'      => $log->scheduled_at?->format('Y-m-d') ?? now()->format('Y-m-d'),
             'gio_thuc_hien' => $log->scheduled_at?->format('H:i:s'),
+            'gio_ket_thuc'  => $log->scheduled_end_at, // Phase 6.25.C fix
             'dich_vu_id'    => $sbookingDichVuId,
             // Phase C1.d 2026-08-02: gửi thêm phòng + BS đã chọn ở form scrm.
             'phong_id'      => $log->sb_phong_id,
             'bac_si_id'     => $log->sb_bac_si_id,
+            // 2026-08-03 fix bug #2: gửi khung_gio_id để sbooking chốt slot khớp form scrm.
+            'khung_gio_id'  => $log->sb_khung_gio_id,
             // Map scrm booking_logs.type (tham_kham/dich_vu) → sbooking enum (phong_kham/dich_vu).
             'loai_dat_lich' => $log->type === 'dich_vu' ? 'dich_vu' : 'phong_kham',
             // Phase C1.b rev 2026-08-01: nguon = source_group scrm (mkt/mkt_br/bdm/bod/sa/ba/wi), fallback 'SCRM'.
@@ -91,6 +102,9 @@ class SbookingClient
             'ket_hop_medical' => (bool) $log->ket_hop_medical,
             'co_tu_van'       => (bool) $log->co_tu_van,
             'co_kham_cls'     => (bool) $log->co_kham_cls,
+            // Phase 6.25.C fix — gán CV1 làm sale + tiep_don_user để bên sbooking hiện nút "Đang tiếp đón".
+            'sale_id'            => $sbookingSaleId,
+            'tiep_don_user_id'   => $sbookingSaleId,
         ];
 
         try {
@@ -172,6 +186,8 @@ class SbookingClient
             'dich_vu_id'      => $sbookingDichVuId,
             'bac_si_id'       => $log->sb_bac_si_id,
             'phong_id'        => $log->sb_phong_id,
+            'khung_gio_id'    => $log->sb_khung_gio_id,
+            'gio_ket_thuc'    => $log->scheduled_end_at,
             'so_lieu_trinh'   => $log->so_lieu_trinh,
             'so_luong_lo'     => $log->so_luong_lo,
             'dung_tich_lo'    => $log->dung_tich_lo,
