@@ -95,13 +95,15 @@ class BookingEventController extends Controller
 
                     // Phase 6.25.C — Khách checkin (da_toi) → auto-chia sale từ Sale Tiếp Đón (A→B→C→OFF)
                     // + mark sale busy + broadcast realtime để sbooking không phải F5.
+                    // 2026-08-04 fix Bug U7: BỎ QUA auto-chia nếu chưa chốt UPS hôm nay ở cơ sở đó
+                    // (trước đây pickGreet không check UpsDailyConfirm → chia dù chưa chốt).
                     if ($newStatus === Lead::BOOKING_KHACH_DA_TOI && $lead->pool_unit_id) {
                         $poolNode = \App\Models\PoolUnit::find($lead->pool_unit_id);
                         $facility = $poolNode;
                         while ($facility && $facility->kind !== 'facility') {
                             $facility = $facility->parent;
                         }
-                        if ($facility) {
+                        if ($facility && \App\Models\UpsDailyConfirm::isConfirmed($facility->id, now()->toDateString())) {
                             $picked = app(\App\Services\Ups\UpsDispatcher::class)->pickGreet($facility->id);
                             if ($picked) {
                                 app(\App\Services\Ups\UpsDispatcher::class)->markBusy($picked->id);

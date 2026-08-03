@@ -26,11 +26,23 @@ class UpsDispatcher
     /**
      * Chọn 1 sale từ Sale-tiếp-đón (A → B → C → OFF), round-robin trong bucket.
      * Skip sale đang bận.
+     *
+     * 2026-08-04 fix Bug U4: nếu TẤT CẢ sale trong mọi bucket đều busy → wrap-around,
+     * chọn theo round-robin từ A→B→C→OFF bất chấp is_busy (khách 4 vẫn phải có sale
+     * dù cả 3 người bận). User quy tắc: "khách 4 về người 1".
      */
     public function pickGreet(int $facilityPoolUnitId, ?string $workDate = null): ?User
     {
         foreach (self::BUCKET_ORDER_GREET as $bucket) {
             $sale = $this->pickFromBucket($facilityPoolUnitId, $bucket, $workDate);
+            if ($sale) {
+                return $sale;
+            }
+        }
+
+        // Fallback wrap-around: bỏ qua is_busy filter, vẫn round-robin.
+        foreach (self::BUCKET_ORDER_GREET as $bucket) {
+            $sale = $this->pickFromBucket($facilityPoolUnitId, $bucket, $workDate, includeBusy: true);
             if ($sale) {
                 return $sale;
             }
@@ -42,61 +54,60 @@ class UpsDispatcher
     /**
      * Chọn sale kế tiếp trong 1 bucket theo round-robin.
      * State lưu ở ups_rr_state (last_user_id đã chia gần nhất).
-     * Skip sale is_busy=true.
+     * Skip sale is_busy=true (trừ khi $includeBusy=true — fallback wrap-around).
+     *
+     * 2026-08-04 fix Bug U1: SELECT ... FOR UPDATE + transaction để tránh race condition
+     * khi 2 request đồng thời gọi pickFromBucket (VD 2 khách check-in cùng lúc) → cả 2
+     * cùng đọc last_user_id → cùng chọn sale kế → 1 sale bị chia 2 lead cùng lúc.
      */
-    public function pickFromBucket(int $facilityPoolUnitId, string $bucket, ?string $workDate = null): ?User
+    public function pickFromBucket(int $facilityPoolUnitId, string $bucket, ?string $workDate = null, bool $includeBusy = false): ?User
     {
         $workDate ??= now()->toDateString();
 
-        $sales = DailyAttendance::with('user')
-            ->where('facility_pool_unit_id', $facilityPoolUnitId)
-            ->whereDate('work_date', $workDate)
-            ->where('list_bucket', $bucket)
-            ->where('is_busy', false)
-            ->orderBy('checkin_at')
-            ->get()
-            ->pluck('user')
-            ->filter()
-            ->values();
+        return DB::transaction(function () use ($facilityPoolUnitId, $bucket, $workDate, $includeBusy) {
+            $q = DailyAttendance::with('user')
+                ->where('facility_pool_unit_id', $facilityPoolUnitId)
+                ->whereDate('work_date', $workDate)
+                ->where('list_bucket', $bucket)
+                ->orderBy('checkin_at');
+            if (! $includeBusy) $q->where('is_busy', false);
+            $sales = $q->get()->pluck('user')->filter()->values();
 
-        if ($sales->isEmpty()) {
-            return null;
-        }
+            if ($sales->isEmpty()) return null;
 
-        // Round-robin: tìm index của sale kế sau last_user_id
-        $state = DB::table('ups_rr_state')
-            ->where('facility_pool_unit_id', $facilityPoolUnitId)
-            ->where('work_date', $workDate)
-            ->where('bucket', $bucket)
-            ->first();
+            // Lock row ups_rr_state (hoặc nothing nếu chưa tồn tại — lock table qua updateOrInsert).
+            $state = DB::table('ups_rr_state')
+                ->where('facility_pool_unit_id', $facilityPoolUnitId)
+                ->where('work_date', $workDate)
+                ->where('bucket', $bucket)
+                ->lockForUpdate()
+                ->first();
 
-        $lastUserId = $state?->last_user_id;
-        $lastIdx = -1;
-        if ($lastUserId) {
-            foreach ($sales as $i => $s) {
-                if ($s->id === $lastUserId) {
-                    $lastIdx = $i;
-                    break;
+            $lastUserId = $state?->last_user_id;
+            $lastIdx = -1;
+            if ($lastUserId) {
+                foreach ($sales as $i => $s) {
+                    if ($s->id === $lastUserId) { $lastIdx = $i; break; }
                 }
             }
-        }
-        $nextIdx = ($lastIdx + 1) % $sales->count();
-        $picked = $sales[$nextIdx];
+            $nextIdx = ($lastIdx + 1) % $sales->count();
+            $picked = $sales[$nextIdx];
 
-        DB::table('ups_rr_state')->updateOrInsert(
-            [
-                'facility_pool_unit_id' => $facilityPoolUnitId,
-                'work_date' => $workDate,
-                'bucket' => $bucket,
-            ],
-            [
-                'last_user_id' => $picked->id,
-                'updated_at' => now(),
-                'created_at' => $state ? $state->created_at : now(),
-            ]
-        );
+            DB::table('ups_rr_state')->updateOrInsert(
+                [
+                    'facility_pool_unit_id' => $facilityPoolUnitId,
+                    'work_date' => $workDate,
+                    'bucket' => $bucket,
+                ],
+                [
+                    'last_user_id' => $picked->id,
+                    'updated_at' => now(),
+                    'created_at' => $state ? $state->created_at : now(),
+                ]
+            );
 
-        return $picked;
+            return $picked;
+        });
     }
 
     /** Đánh dấu sale bận (tiếp khách) — tự động skip trong pickFromBucket lần sau. */
