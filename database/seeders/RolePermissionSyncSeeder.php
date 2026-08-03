@@ -25,10 +25,11 @@ class RolePermissionSyncSeeder extends Seeder
             'lead.update', 'lead.update_booking', 'lead.update_sale', 'lead.view',
             'lead.view_phone', 'lead.view_pool', 'ops.manage', 'org.manage',
             'payment.record', 'phase.close.booking', 'phase.close.call',
-            'phase.close.checkin', 'phase.close.distribute', 'phase.close.new',
+            'phase.close.checkin', 'phase.close.new',
             'phase.rollback', 'report.view', 'report.view_all', 'role.manage',
             'rule.manage', 'service.manage', 'source.up.admin', 'source.up.sa',
             'source.up.sale', 'source.up.tele', 'source.up.trucpage', 'staff.manage',
+            'ups.checkin', 'ups.confirm_daily', 'ups.override', 'ups.view',
             'user.manage',
         ],
         'DM HCM' => [
@@ -39,7 +40,7 @@ class RolePermissionSyncSeeder extends Seeder
             'lead.recall', 'lead.update', 'lead.update_booking', 'lead.update_sale',
             'lead.view', 'lead.view_phone', 'lead.view_pool', 'payment.record',
             'phase.close.booking', 'phase.close.call', 'phase.close.checkin',
-            'phase.close.distribute', 'phase.close.new', 'report.view', 'report.view_all',
+            'phase.close.new', 'report.view', 'report.view_all',
             'rule.manage', 'service.manage', 'source.up.admin', 'source.up.sa',
             'source.up.sale', 'source.up.tele', 'source.up.trucpage', 'user.manage',
         ],
@@ -49,7 +50,7 @@ class RolePermissionSyncSeeder extends Seeder
             'lead.distribute_to_team', 'lead.read_booking', 'lead.recall', 'lead.update',
             'lead.update_booking', 'lead.update_sale', 'lead.view', 'lead.view_phone',
             'lead.view_pool', 'phase.close.booking', 'phase.close.call',
-            'phase.close.checkin', 'phase.close.distribute', 'phase.close.new',
+            'phase.close.checkin', 'phase.close.new',
             'report.view', 'source.up.sa', 'source.up.sale',
         ],
         'Admin cơ sở' => [
@@ -57,22 +58,23 @@ class RolePermissionSyncSeeder extends Seeder
             'lead.distribute_sale', 'lead.distribute_tele', 'lead.distribute_to_sale',
             'lead.distribute_to_team', 'lead.import', 'lead.read_booking', 'lead.recall',
             'lead.update_booking', 'lead.view', 'lead.view_phone', 'lead.view_pool',
-            'phase.close.booking', 'phase.close.call', 'phase.close.checkin',
-            'phase.close.distribute', 'report.view', 'source.up.admin', 'source.up.sa',
+            'phase.close.new', 'phase.close.booking', 'phase.close.call', 'phase.close.checkin',
+            'report.view', 'source.up.admin', 'source.up.sa',
+            'ups.view',
         ],
         'CM sale' => [
             'lead.book_action', 'lead.consult', 'lead.create', 'lead.distribute',
             'lead.distribute_sale', 'lead.distribute_to_sale', 'lead.recall',
             'lead.update', 'lead.update_sale', 'lead.view', 'lead.view_phone',
             'payment.record', 'phase.close.booking', 'phase.close.call',
-            'phase.close.distribute', 'phase.close.new', 'report.view',
+            'phase.close.new', 'report.view',
             'source.up.admin', 'source.up.sa', 'source.up.sale',
         ],
         'CM Tele' => [
             'lead.book_action', 'lead.create', 'lead.distribute', 'lead.distribute_tele',
             'lead.distribute_to_sale', 'lead.read_booking', 'lead.recall', 'lead.update',
             'lead.update_booking', 'lead.view', 'lead.view_phone', 'lead.view_pool',
-            'payment.record', 'phase.close.call', 'phase.close.distribute',
+            'payment.record', 'phase.close.call',
             'phase.close.new', 'report.view', 'source.up.tele',
         ],
         'Team Leader' => [
@@ -80,7 +82,7 @@ class RolePermissionSyncSeeder extends Seeder
             'lead.distribute_sale', 'lead.distribute_tele', 'lead.distribute_to_sale',
             'lead.read_booking', 'lead.recall', 'lead.update', 'lead.view',
             'lead.view_phone', 'lead.view_pool', 'payment.record',
-            'phase.close.booking', 'phase.close.call', 'phase.close.distribute',
+            'phase.close.booking', 'phase.close.call',
             'phase.close.new', 'report.view', 'source.up.sa', 'source.up.sale',
         ],
         'Sale' => [
@@ -92,20 +94,20 @@ class RolePermissionSyncSeeder extends Seeder
         'Team sale' => [
             'lead.book_action', 'lead.consult', 'lead.update', 'lead.update_sale',
             'lead.view', 'lead.view_phone', 'payment.record', 'phase.close.booking',
-            'phase.close.call', 'phase.close.distribute', 'phase.close.new',
+            'phase.close.call', 'phase.close.new',
             'report.view', 'source.up.sa', 'source.up.sale',
         ],
         'Team sale ĐN' => [
             'lead.book_action', 'lead.consult', 'lead.create', 'lead.read_booking',
             'lead.update', 'lead.update_booking', 'lead.update_sale', 'lead.view',
             'lead.view_phone', 'payment.record', 'phase.close.booking',
-            'phase.close.call', 'phase.close.distribute', 'phase.close.new',
+            'phase.close.call', 'phase.close.new',
             'report.view', 'source.up.sa', 'source.up.sale',
         ],
         'Team Tele' => [
             'lead.book_action', 'lead.create', 'lead.read_booking', 'lead.update',
             'lead.update_booking', 'lead.view', 'lead.view_phone', 'phase.close.call',
-            'phase.close.distribute', 'phase.close.new', 'source.up.tele',
+            'phase.close.new', 'source.up.tele',
         ],
         'Trực Page' => [
             'lead.create', 'lead.import', 'lead.view', 'phase.close.new',
@@ -113,6 +115,10 @@ class RolePermissionSyncSeeder extends Seeder
         ],
         'Trợ lý kinh doanh' => [
             'lead.view', 'report.view',
+        ],
+        'BO (Lễ Tân)' => [
+            'lead.distribute_sale', 'lead.view', 'lead.view_phone',
+            'ups.checkin', 'ups.confirm_daily', 'ups.override', 'ups.view',
         ],
         'Observer' => [
             'lead.export', 'lead.view', 'lead.view_phone', 'report.view',

@@ -67,12 +67,17 @@ class PermissionSeeder extends Seeder
             'source.up.tele'     => 'Up lead nguồn BA (Tele tự nhận)',
             'source.up.admin'    => 'Up lead nguồn BDM / BOD / Walk-in (QL Sale / Admin cơ sở)',
         ],
+        'ups' => [
+            'ups.view' => 'Xem bảng UPS check-in',
+            'ups.checkin' => 'Bấm check-in sale đầu ngày',
+            'ups.override' => 'Sửa bucket / bỏ OFF LIST (BO only)',
+            'ups.confirm_daily' => 'Chốt UPS hôm nay (mở khóa chia số)',
+        ],
         'customer_flow' => [
-            'phase.close.new' => 'Chốt phase 1 — Thêm mới khách hàng',
-            'phase.close.distribute' => 'Chốt phase 2 — Chia số',
-            'phase.close.call' => 'Chốt phase 3 — Gọi điện',
-            'phase.close.booking' => 'Chốt phase 4 — Booking thăm khám',
-            'phase.close.checkin' => 'Chốt phase 5 — Check-in',
+            'phase.close.new' => 'Chốt phase 1 — Tạo mới & Chia số (gộp)',
+            'phase.close.call' => 'Chốt phase 2 — Gọi điện',
+            'phase.close.booking' => 'Chốt phase 3 — Booking thăm khám',
+            'phase.close.checkin' => 'Chốt phase 4 — Check-in',
             'phase.rollback' => 'Lùi phase (Admin vận hành only)',
         ],
     ];

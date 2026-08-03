@@ -45,6 +45,10 @@ Route::middleware('auth')->group(function () {
     Route::view('/distribution/rules', 'distribution.rules')->middleware('permission:rule.manage')->name('distribution.rules');
     Route::view('/distribution/pools', 'distribution.pools')->middleware('permission:lead.view')->name('distribution.pools');
 
+    // UPS check-in đầu ngày (Phase 6.22)
+    Route::view('/ups-list', 'ups.index')->middleware('permission:ups.view')->name('ups.list');
+    Route::view('/ups-today', 'ups.today')->name('ups.today'); // read-only, cho mọi user có scope
+
     Route::view('/services', 'services.catalog')->middleware('permission:service.manage')->name('services.catalog');
     Route::view('/payments', 'services.payments')->middleware('permission:payment.record')->name('payments.index');
     Route::view('/reports', 'reports.index')->middleware('permission:report.view,report.view_all')->name('reports.index');
