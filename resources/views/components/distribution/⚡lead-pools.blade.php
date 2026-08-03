@@ -5,6 +5,7 @@ use App\Models\Lead;
 use App\Models\OrgUnit;
 use App\Models\User;
 use App\Services\DistributionEngine;
+use App\Services\Ups\UpsGate;
 use Livewire\Component;
 use Livewire\WithPagination;
 
@@ -15,6 +16,11 @@ new class extends Component
     public string $tab = Lead::POOL_COMMON; // common / team / personal
 
     public string $fOrgUnit = '';
+
+    // 2026-08-03 cascade: 3 select thay dropdown flat cho filter Team.
+    public string $fBranchId = '';
+    public string $fFacilityId = '';
+    public string $fDepartmentId = '';
 
     public int $perPage = 20;
 
@@ -61,6 +67,16 @@ new class extends Component
         $this->resetPage();
     }
 
+    // 2026-08-03 cascade filter Team.
+    public function updatedFBranchId(): void   { $this->fFacilityId = ''; $this->fDepartmentId = ''; $this->recomputeFOrgUnit(); }
+    public function updatedFFacilityId(): void { $this->fDepartmentId = ''; $this->recomputeFOrgUnit(); }
+    public function updatedFDepartmentId(): void { $this->recomputeFOrgUnit(); }
+    private function recomputeFOrgUnit(): void
+    {
+        $this->fOrgUnit = (string) ($this->fDepartmentId ?: ($this->fFacilityId ?: $this->fBranchId));
+        $this->resetPage();
+    }
+
     /** Query kho theo tab + filter, chưa phân trang. */
     private function filtered()
     {
@@ -68,9 +84,9 @@ new class extends Component
 
         return Lead::query()
             ->where('pool_level', $this->tab)
-            ->with(['owner', 'orgUnit'])
+            ->with(['owner', 'poolUnit'])
             ->when($this->tab !== Lead::POOL_COMMON, fn ($q) => $q->visibleTo($user))
-            ->when($this->tab === Lead::POOL_TEAM && $this->fOrgUnit, fn ($q) => $q->where('org_unit_id', $this->fOrgUnit))
+            ->when($this->tab === Lead::POOL_TEAM && $this->fOrgUnit, fn ($q) => $q->where('pool_unit_id', $this->fOrgUnit))
             ->orderByDesc('id');
     }
 
@@ -88,14 +104,14 @@ new class extends Component
             : array_values(array_unique(array_merge($this->selected, $pageIds)));
     }
 
-    /** Phòng/team (loại node gốc công ty) được phép đưa lead vào kho, theo phạm vi. */
+    /**
+     * Phase 6.24 — Danh sách Kho (chi nhánh / cơ sở / phòng KD) để đưa lead vào.
+     * Node gốc "Công ty" = kho chung, dùng option 'common' riêng.
+     */
     private function poolOrgs()
     {
-        $ids = auth()->user()->visibleOrgUnitIds();
-
-        return OrgUnit::where('active', true)
-            ->where('depth', '>', 0) // node gốc "Công ty" = kho chung, dùng option riêng
-            ->when($ids !== [], fn ($q) => $q->whereIn('id', $ids))
+        return \App\Models\PoolUnit::where('is_active', true)
+            ->where('depth', '>', 0)
             ->orderBy('path')
             ->get();
     }
@@ -122,6 +138,16 @@ new class extends Component
      * (không phải CM cơ sở toàn quyền) → chỉ chia được lead CHÍNH MÌNH đã import
      * (imported_by = user). Lead do nguồn khác vào kho chung vẫn chờ CM chia.
      */
+    /** Guard UPS: chi nhánh chưa chốt UPS hôm nay → chặn chia. */
+    private function upsGuard(): void
+    {
+        abort_if(
+            app(UpsGate::class)->isBlockedFor(auth()->user()),
+            423,
+            'UPS chưa được chốt — liên hệ bộ phận BO để xác nhận.'
+        );
+    }
+
     public function canDistributeLead(Lead $lead): bool
     {
         $user = auth()->user();
@@ -136,6 +162,7 @@ new class extends Component
 
     public function autoDistribute(int $leadId): void
     {
+        $this->upsGuard();
         $lead = Lead::findOrFail($leadId);
         abort_unless($this->canDistributeLead($lead), 403);
         app(DistributionEngine::class)->distribute($lead);
@@ -144,7 +171,7 @@ new class extends Component
         session()->flash('status', $lead->owner_id
             ? "Đã chia {$lead->name} cho {$lead->owner->name}."
             : ($lead->pool_level === Lead::POOL_TEAM
-                ? "{$lead->name} đã về kho team {$lead->orgUnit?->name}, chưa có rule/sale nhận tiếp."
+                ? "{$lead->name} đã về kho team {$lead->poolUnit?->name}, chưa có rule/sale nhận tiếp."
                 : "Không có rule nào khớp — {$lead->name} vẫn ở kho chung."));
     }
 
@@ -158,6 +185,7 @@ new class extends Component
 
     public function confirmAssign(): void
     {
+        $this->upsGuard();
         $this->validate(['assignUserId' => 'required|exists:users,id'], [], ['assignUserId' => 'sale nhận']);
 
         $lead = Lead::findOrFail($this->assigningLeadId);
@@ -195,6 +223,7 @@ new class extends Component
 
     public function confirmPool(): void
     {
+        $this->upsGuard();
         if ($this->poolOrgId === '') {
             $this->addError('poolOrgId', 'Chọn kho để chuyển.');
             return;
@@ -219,6 +248,7 @@ new class extends Component
 
     public function pullLead(int $leadId): void
     {
+        $this->upsGuard();
         abort_unless(auth()->user()->hasPermission('lead.pull_pool'), 403);
         $lead = Lead::findOrFail($leadId);
         if ($lead->pool_level === Lead::POOL_PERSONAL) {
@@ -239,6 +269,7 @@ new class extends Component
 
     public function bulkAssign(): void
     {
+        $this->upsGuard();
         $this->validate(['bulkUserId' => 'required|exists:users,id'], [], ['bulkUserId' => 'sale nhận']);
 
         $user = User::findOrFail((int) $this->bulkUserId);
@@ -256,6 +287,7 @@ new class extends Component
 
     public function bulkPool(): void
     {
+        $this->upsGuard();
         // Gate per-lead in the loop below via canDistributeLead().
         if ($this->bulkOrgId === '') {
             $this->addError('bulkOrgId', 'Chọn kho để chuyển.');
@@ -295,7 +327,7 @@ new class extends Component
                 Lead::POOL_TEAM => Lead::where('pool_level', Lead::POOL_TEAM)->visibleTo($user)->count(),
                 Lead::POOL_PERSONAL => Lead::where('pool_level', Lead::POOL_PERSONAL)->visibleTo($user)->count(),
             ],
-            'teamOptions' => OrgUnit::where('active', true)->orderBy('path')->get(),
+            'teamOptions' => \App\Models\PoolUnit::where('is_active', true)->where('depth', '>', 0)->orderBy('path')->get(),
             'poolOrgs' => $this->poolOrgs(),
             'assignableUsers' => User::where('status', 'active')
                 // Chỉ user "nhận lead": role có lead.update NHƯNG không có quyền chia số
@@ -339,12 +371,27 @@ new class extends Component
         @endforeach
         <div class="flex-1"></div>
         @if ($tab === Lead::POOL_TEAM)
-            <select wire:model.live="fOrgUnit" class="border border-gold-200 rounded-md px-3 py-1.5 text-sm bg-white font-normal normal-case mb-2 focus:outline-none focus:border-gold-500">
-                <option value="">Tất cả team</option>
-                @foreach ($teamOptions as $unit)
-                    <option value="{{ $unit->id }}">{{ str_repeat('— ', $unit->depth) }}{{ $unit->name }}</option>
-                @endforeach
-            </select>
+            {{-- 2026-08-03 cascade filter: Địa điểm → Cơ sở → Phòng ban. --}}
+            <div class="flex flex-wrap items-center gap-2 mb-2">
+                <select wire:model.live="fBranchId" class="border border-gold-200 rounded-md px-2.5 py-1.5 text-sm bg-white">
+                    <option value="">Tất cả địa điểm</option>
+                    @foreach (\App\Models\PoolUnit::where('is_active',true)->where('kind','branch')->orderBy('sort')->orderBy('name')->get() as $b)
+                        <option value="{{ $b->id }}">{{ $b->name }}</option>
+                    @endforeach
+                </select>
+                <select wire:model.live="fFacilityId" @disabled(! $fBranchId) class="border border-gold-200 rounded-md px-2.5 py-1.5 text-sm bg-white disabled:bg-slate-100">
+                    <option value="">{{ $fBranchId ? 'Tất cả cơ sở' : '—' }}</option>
+                    @foreach (($fBranchId ? \App\Models\PoolUnit::where('is_active',true)->where('kind','facility')->where('parent_id',$fBranchId)->orderBy('sort')->orderBy('name')->get() : []) as $f)
+                        <option value="{{ $f->id }}">{{ $f->name }}</option>
+                    @endforeach
+                </select>
+                <select wire:model.live="fDepartmentId" @disabled(! $fFacilityId) class="border border-gold-200 rounded-md px-2.5 py-1.5 text-sm bg-white disabled:bg-slate-100">
+                    <option value="">{{ $fFacilityId ? 'Tất cả phòng ban' : '—' }}</option>
+                    @foreach (($fFacilityId ? \App\Models\PoolUnit::where('is_active',true)->where('kind','department')->where('parent_id',$fFacilityId)->orderBy('sort')->orderBy('name')->get() : []) as $d)
+                        <option value="{{ $d->id }}">{{ $d->name }}</option>
+                    @endforeach
+                </select>
+            </div>
         @endif
     </div>
 
@@ -365,7 +412,18 @@ new class extends Component
                 <select wire:model="bulkOrgId" class="border border-gold-200 rounded-md px-2.5 py-1.5 text-sm bg-white">
                     <option value="">— chọn kho —</option>
                     <option value="common">Kho chung công ty</option>
-                    @foreach ($poolOrgs as $o)<option value="{{ $o->id }}">Kho {{ str_repeat('— ', $o->depth) }}{{ $o->name }}</option>@endforeach
+                    {{-- 2026-08-03: group by branch cho dễ đọc thay flat. Inline select không đủ chỗ cho 3 cascade → dùng optgroup. --}}
+                    @foreach (\App\Models\PoolUnit::where('is_active',true)->where('kind','branch')->orderBy('sort')->get() as $__b)
+                        <optgroup label="📍 {{ $__b->name }}">
+                            <option value="{{ $__b->id }}">Kho địa điểm: {{ $__b->name }}</option>
+                            @foreach ($poolOrgs->where('parent_id', $__b->id) as $__f)
+                                <option value="{{ $__f->id }}">&nbsp;&nbsp;🏢 Cơ sở: {{ $__f->name }}</option>
+                                @foreach ($poolOrgs->where('parent_id', $__f->id) as $__d)
+                                    <option value="{{ $__d->id }}">&nbsp;&nbsp;&nbsp;&nbsp;👥 {{ $__d->name }}</option>
+                                @endforeach
+                            @endforeach
+                        </optgroup>
+                    @endforeach
                 </select>
                 <button wire:click="bulkPool" class="text-sm font-semibold bg-gold-600 text-white px-4 py-1.5 rounded-md">Xác nhận chuyển kho</button>
                 <button wire:click="$set('bulkMode', '')" class="text-sm text-ink/50">Hủy</button>
@@ -412,7 +470,7 @@ new class extends Component
                         </td>
                         <td class="px-4 py-3 font-mono">{{ $lead->phoneFor(auth()->user()) }}</td>
                         <td class="px-4 py-3 text-ink/60">{{ $lead->region ?: '—' }}</td>
-                        @if ($tab !== 'common')<td class="px-4 py-3">{{ $lead->orgUnit?->name ?: '—' }}</td>@endif
+                        @if ($tab !== 'common')<td class="px-4 py-3">{{ $lead->poolUnit?->name ?: '—' }}</td>@endif
                         @if ($tab === 'personal')
                             <td class="px-4 py-3 font-semibold text-gold-700">{{ $lead->owner?->name }}</td>
                             <td class="px-4 py-3 text-ink/50">{{ $lead->assigned_at?->diffForHumans() }}</td>
@@ -443,7 +501,18 @@ new class extends Component
                                     <select wire:model="poolOrgId" class="border border-gold-200 rounded-md px-2 py-1.5 text-xs bg-white focus:outline-none focus:border-gold-500">
                                         <option value="">— chọn kho —</option>
                                         <option value="common">Kho chung công ty</option>
-                                        @foreach ($poolOrgs as $o)<option value="{{ $o->id }}">Kho {{ str_repeat('— ', $o->depth) }}{{ $o->name }}</option>@endforeach
+                                        {{-- 2026-08-03: group by branch cho dễ đọc thay flat. Inline select không đủ chỗ cho 3 cascade → dùng optgroup. --}}
+                    @foreach (\App\Models\PoolUnit::where('is_active',true)->where('kind','branch')->orderBy('sort')->get() as $__b)
+                        <optgroup label="📍 {{ $__b->name }}">
+                            <option value="{{ $__b->id }}">Kho địa điểm: {{ $__b->name }}</option>
+                            @foreach ($poolOrgs->where('parent_id', $__b->id) as $__f)
+                                <option value="{{ $__f->id }}">&nbsp;&nbsp;🏢 Cơ sở: {{ $__f->name }}</option>
+                                @foreach ($poolOrgs->where('parent_id', $__f->id) as $__d)
+                                    <option value="{{ $__d->id }}">&nbsp;&nbsp;&nbsp;&nbsp;👥 {{ $__d->name }}</option>
+                                @endforeach
+                            @endforeach
+                        </optgroup>
+                    @endforeach
                                     </select>
                                     <button wire:click="confirmPool" class="text-xs font-semibold bg-gold-600 text-white px-3 py-1.5 rounded-md">OK</button>
                                     <button wire:click="$set('poolingLeadId', null)" class="text-xs text-ink/50">Hủy</button>
@@ -505,7 +574,7 @@ new class extends Component
                                 'Khu vực' => $detailLead->region ?: '—',
                                 'Camp' => $detailLead->camp ?: '—',
                                 'Phân loại' => $detailLead->classificationLabel(),
-                                'Kho' => ucfirst($detailLead->pool_level) . ($detailLead->orgUnit ? ' · ' . $detailLead->orgUnit->name : ''),
+                                'Kho' => ucfirst($detailLead->pool_level) . ($detailLead->poolUnit ? ' · ' . $detailLead->poolUnit->name : ''),
                                 'Người thu thập' => $detailLead->receiver?->name ?? '—',
                                 'Người phụ trách' => $detailLead->owner?->name ?? '— (chưa chia)',
                                 'Ghi chú' => $detailLead->note ?: '—',

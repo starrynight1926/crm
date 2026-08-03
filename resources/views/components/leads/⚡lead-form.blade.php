@@ -17,11 +17,22 @@ use App\Models\OrgUnit;
 use App\Models\Service;
 use App\Models\StaffMember;
 use App\Models\User;
+use Livewire\Attributes\On;
 use Livewire\Component;
 
 new class extends Component
 {
     public ?Lead $lead = null;
+
+    // 2026-08-04: refresh khi có callback booking từ sbooking (script inject qua edit.blade.php + Echo).
+    #[On('refresh-lead')]
+    public function refreshFromCallback(): void
+    {
+        if ($this->lead) {
+            $this->lead->refresh();
+            $this->bookingStatus = $this->lead->booking_status ?? 'not_booked';
+        }
+    }
 
     public string $name = '';
 
@@ -60,6 +71,13 @@ new class extends Component
 
     /** Kho: '' = kho chung công ty | 'org:{id}' = kho chung phòng/team. */
     public string $poolTarget = '';
+
+    // 2026-08-03: cascade chia số — 3 select thay cho dropdown flat.
+    // poolCompanyMode=true → poolTarget='company'; else poolTarget='org:<lowest_selected>'.
+    public bool $poolCompanyMode = false;
+    public string $poolBranchId = '';
+    public string $poolFacilityId = '';
+    public string $poolDepartmentId = '';
 
     /** Chia trực tiếp cho cá nhân (ưu tiên hơn kho nếu có). */
     public ?int $personId = null;
@@ -140,8 +158,25 @@ new class extends Component
     public ?int $checkinDoctorId = null;
     public string $checkinNote = '';
 
+    /**
+     * 2026-08-03 bug #5: CV-only (chỉ được gán vào booking, không role quản lý) chỉ được viết
+     * bình luận + phản hồi khách. Mọi action destructive khác 403. Gọi ở đầu action method.
+     */
+    private function guardNotCvOnly(): void
+    {
+        if ($this->lead && $this->lead->isCvViewerOnly(auth()->user())) {
+            abort(403, 'Bạn là chuyên viên tư vấn (CV) — chỉ được viết bình luận/phản hồi khách. Liên hệ CM/Admin để chỉnh thông tin.');
+        }
+    }
+
+    public function getIsCvOnlyProperty(): bool
+    {
+        return $this->lead && auth()->check() && $this->lead->isCvViewerOnly(auth()->user());
+    }
+
     public function addCallLog(): void
     {
+        $this->guardNotCvOnly();
         if (! $this->lead) {
             session()->flash('cf_error', 'Lead chưa được tạo. Bấm "Lưu thông tin khách hàng" trước.');
             return;
@@ -169,6 +204,7 @@ new class extends Component
 
     public function addBookingLog(): void
     {
+        $this->guardNotCvOnly();
         if (! $this->lead) {
             session()->flash('cf_error', 'Lead chưa được tạo. Bấm "Lưu thông tin khách hàng" trước.');
             return;
@@ -213,25 +249,46 @@ new class extends Component
             session()->flash('cf_error', 'Cơ sở "' . ($facilityForCheck?->name ?? '?') . '" (hoặc cơ sở cha) chưa được kết nối sbooking. Vào Thiết lập → Kết nối Booking để map sbooking_co_so_id trước khi ghi booking.');
             return;
         }
-        // Combine date + time thành scheduled_at.
+        // Combine date + time thành scheduled_at + parse end time + khung_gio_id.
+        // 2026-08-03 fix bug #2: newBookingTime từ dropdown mã hoá "kg_id|start|end" (start/end HH:mm).
+        // Legacy fallback: "HH:mm" hoặc "HH:mm-HH:mm" (không có kg_id).
         $scheduledAt = null;
+        $scheduledEndAt = null;
+        $sbKhungGioId = null;
         if ($this->newBookingDate && $this->newBookingTime) {
-            $scheduledAt = $this->newBookingDate . ' ' . $this->newBookingTime . ':00';
+            $tm = $this->newBookingTime;
+            if (substr_count($tm, '|') === 2) {
+                [$kgId, $start, $end] = explode('|', $tm);
+                $sbKhungGioId = ((int) $kgId) ?: null;
+                if ($start) $scheduledAt = $this->newBookingDate . ' ' . $start . ':00';
+                if ($end)   $scheduledEndAt = $end . ':00';
+            } elseif (str_contains($tm, '-')) {
+                [$start, $end] = array_map('trim', explode('-', $tm, 2));
+                $scheduledAt = $this->newBookingDate . ' ' . $start . ':00';
+                $scheduledEndAt = strlen($end) === 5 ? $end . ':00' : $end;
+            } else {
+                $scheduledAt = $this->newBookingDate . ' ' . $tm . ':00';
+            }
         } elseif ($this->newBookingScheduledAt) {
             $scheduledAt = $this->newBookingScheduledAt;
         }
-        // 2026-08-03: newBookingServiceId có thể là sb_services.sbooking_id (mirror) hoặc services.id (legacy).
-        //   Resolve về services.id để tránh FK fail — best-effort match theo name.
+        // 2026-08-03 fix bug #3: dropdown value = sb_services.sbooking_id (ưu tiên).
+        // TRƯỚC ĐÂY check Service::find() trước → collision id (VD services.id=114 khác sb_services.sbooking_id=114) làm lưu sai service_id + mất sb_dich_vu_id.
+        // Chỉ fallback sang scrm.services khi sb_services không có record match (legacy).
         $resolvedServiceId = null;
+        $sbDichVuId = null;
         if ($this->newBookingServiceId) {
-            $direct = \App\Models\Service::find($this->newBookingServiceId);
-            if ($direct) {
-                $resolvedServiceId = $direct->id;
+            $sb = \App\Models\SbService::where('sbooking_id', $this->newBookingServiceId)->first();
+            if ($sb) {
+                $sbDichVuId = (int) $sb->sbooking_id;
+                $match = \App\Models\Service::where('name', $sb->ten)->first();
+                $resolvedServiceId = $match?->id;
             } else {
-                $sb = \App\Models\SbService::where('sbooking_id', $this->newBookingServiceId)->first();
-                if ($sb) {
-                    $match = \App\Models\Service::where('name', $sb->ten)->first();
-                    $resolvedServiceId = $match?->id;
+                $direct = \App\Models\Service::find($this->newBookingServiceId);
+                if ($direct) {
+                    $resolvedServiceId = $direct->id;
+                    $mirror = \App\Models\SbService::where('ten', $direct->name)->first();
+                    $sbDichVuId = $mirror?->sbooking_id;
                 }
             }
         }
@@ -242,9 +299,12 @@ new class extends Component
             'type'         => $this->newBookingType,
             'status'       => $this->newBookingStatus,
             'scheduled_at' => $scheduledAt,
+            'scheduled_end_at' => $scheduledEndAt,
             'facility_id'  => $this->newBookingFacilityId,
             'sb_phong_id'  => $this->newBookingRoomId,
             'sb_bac_si_id' => $this->newBookingSbBacSiId,
+            'sb_dich_vu_id' => $sbDichVuId,
+            'sb_khung_gio_id' => $sbKhungGioId,
             'doctor_id'    => null,
             'service_id'   => $resolvedServiceId,
             'note'         => $this->newBookingNote ?: null,
@@ -346,6 +406,7 @@ new class extends Component
 
     public function saveBookingNote(int $bookingLogId): void
     {
+        $this->guardNotCvOnly();
         $bl = BookingLog::find($bookingLogId);
         if (! $bl || $bl->lead_id !== $this->lead?->id) {
             session()->flash('cf_error', 'Booking không tồn tại.');
@@ -461,7 +522,9 @@ new class extends Component
         if (! $this->newBookingRoomId || ! $this->newBookingFacilityId || ! $this->newBookingDate || ! $this->newBookingTime) return;
 
         $ngay = $this->newBookingDate;
-        $gio = $this->newBookingTime;
+        // newBookingTime có thể là "kg_id|start|end" (mới) hoặc "HH:mm" (legacy) — tách start.
+        $tm = $this->newBookingTime;
+        $gio = substr_count($tm, '|') === 2 ? explode('|', $tm)[1] : $tm;
 
         $sbCoSoId = $this->resolveSbCoSoId((int) $this->newBookingFacilityId);
         if (! $sbCoSoId) return;
@@ -499,6 +562,7 @@ new class extends Component
 
     public function addBookingConsultantSlot(): void
     {
+        $this->guardNotCvOnly();
         $this->newBookingConsultantIds[] = null;
     }
 
@@ -519,7 +583,7 @@ new class extends Component
             $closed = $this->lead->bulkSave(auth()->user());
             $this->lead->refresh();
             $this->lead->load('phaseClosures'); // Phase C1.b rev11: reload relation để breadcrumb đổi màu.
-            $this->activePhase = min((int) $this->lead->phase, 5);
+            $this->activePhase = min((int) $this->lead->phase, 4);
             session()->flash('cf_ok', 'Đã chốt ' . count($closed) . ' phase (' . min($closed) . '→' . max($closed) . ').');
         } catch (\Throwable $e) {
             session()->flash('cf_error', $e->getMessage());
@@ -528,6 +592,7 @@ new class extends Component
 
     public function closePhaseNow(int $idx): void
     {
+        $this->guardNotCvOnly();
         if (! $this->lead) {
             session()->flash('cf_error', 'Lead chưa tồn tại.');
             return;
@@ -547,7 +612,7 @@ new class extends Component
             $this->lead->closePhase($idx, auth()->user(), $note);
             $this->lead->refresh();
             $this->lead->load('phaseClosures'); // Phase C1.b rev11: reload để breadcrumb đổi màu.
-            $this->activePhase = min((int) $this->lead->phase, 5);
+            $this->activePhase = min((int) $this->lead->phase, 4);
             session()->flash('cf_ok', 'Đã kết thúc phase ' . $idx . '.');
         } catch (\Throwable $e) {
             session()->flash('cf_error', $e->getMessage());
@@ -582,6 +647,7 @@ new class extends Component
      */
     public function assignToSale(int $userId, int $slot = 1): void
     {
+        $this->guardNotCvOnly();
         if (! $this->lead) {
             session()->flash('cf_error', 'Lead chưa tồn tại.');
             return;
@@ -749,7 +815,7 @@ new class extends Component
                 $this->activePhase = $queryPhase;
             } else {
                 $this->activePhase = $lead->isBulkOpen() ? $lead->openFrom() : (int) $lead->phase;
-                if ($this->activePhase < 1 || $this->activePhase > 7) $this->activePhase = 1;
+                if ($this->activePhase < 1 || $this->activePhase > 6) $this->activePhase = 1;
             }
             $this->isFirstVisit = (bool) $lead->is_first_visit;
         } else {
@@ -770,11 +836,13 @@ new class extends Component
         $this->personId = $lead->owner_id;
         if ($lead->owner_id) {
             $this->poolTarget = '';
-        } elseif ($lead->pool_level === Lead::POOL_TEAM && $lead->org_unit_id) {
-            $this->poolTarget = 'org:' . $lead->org_unit_id;
+        } elseif ($lead->pool_level === Lead::POOL_TEAM && ($lead->pool_unit_id ?? $lead->org_unit_id)) {
+            // Phase 6.24 — ưu tiên pool_unit_id (mới); fallback org_unit_id (legacy).
+            $this->poolTarget = 'org:' . ($lead->pool_unit_id ?? $lead->org_unit_id);
         } else {
             $this->poolTarget = 'company';
         }
+        $this->syncPoolCascadeFromTarget();
         $this->status_1 = $lead->status_1 ?? '';
         $this->status_2 = $lead->status_2 ?? '';
         $this->note = $lead->note ?? '';
@@ -826,6 +894,7 @@ new class extends Component
 
     public function addUpsellRow(): void
     {
+        $this->guardNotCvOnly();
         $this->upsellRows[] = ['staff_member_id' => '', 'service_id' => '', 'amount' => ''];
     }
 
@@ -837,6 +906,7 @@ new class extends Component
 
     public function addTreatmentRow(): void
     {
+        $this->guardNotCvOnly();
         $this->treatmentRows[] = ['performed_at' => '', 'performing_doctor_id' => '', 'quality_rating' => ''];
     }
 
@@ -849,7 +919,64 @@ new class extends Component
     /** Chọn kho (dù là kho chung công ty) thì bỏ chia cá nhân. */
     public function updatedPoolTarget(): void
     {
+        $this->guardNotCvOnly();
         $this->personId = null;
+    }
+
+    // 2026-08-03 cascade chia số: 3 select drive poolTarget.
+    public function updatedPoolCompanyMode(): void
+    {
+        $this->guardNotCvOnly();
+        if ($this->poolCompanyMode) {
+            $this->poolBranchId = $this->poolFacilityId = $this->poolDepartmentId = '';
+            $this->poolTarget = 'company';
+        } else {
+            $this->poolTarget = '';
+        }
+        $this->personId = null;
+    }
+
+    public function updatedPoolBranchId(): void
+    {
+        $this->guardNotCvOnly();
+        $this->poolFacilityId = $this->poolDepartmentId = '';
+        $this->recomputePoolTargetFromCascade();
+    }
+
+    public function updatedPoolFacilityId(): void
+    {
+        $this->guardNotCvOnly();
+        $this->poolDepartmentId = '';
+        $this->recomputePoolTargetFromCascade();
+    }
+
+    public function updatedPoolDepartmentId(): void
+    {
+        $this->guardNotCvOnly();
+        $this->recomputePoolTargetFromCascade();
+    }
+
+    private function recomputePoolTargetFromCascade(): void
+    {
+        $lowest = $this->poolDepartmentId ?: ($this->poolFacilityId ?: $this->poolBranchId);
+        $this->poolTarget = $lowest ? ('org:' . $lowest) : '';
+        $this->personId = null;
+    }
+
+    /** Init 3 select từ poolTarget hiện có (khi mở lead cũ). */
+    private function syncPoolCascadeFromTarget(): void
+    {
+        $this->poolCompanyMode = ($this->poolTarget === 'company');
+        $this->poolBranchId = $this->poolFacilityId = $this->poolDepartmentId = '';
+        if (! str_starts_with($this->poolTarget, 'org:')) return;
+        $id = (int) substr($this->poolTarget, 4);
+        $node = \App\Models\PoolUnit::find($id);
+        while ($node) {
+            if ($node->kind === 'department') $this->poolDepartmentId = (string) $node->id;
+            if ($node->kind === 'facility')   $this->poolFacilityId   = (string) $node->id;
+            if ($node->kind === 'branch')     $this->poolBranchId     = (string) $node->id;
+            $node = $node->parent_id ? \App\Models\PoolUnit::find($node->parent_id) : null;
+        }
     }
 
     /** Org của một user theo assignment hiệu lực. */
@@ -890,9 +1017,8 @@ new class extends Component
                 if ($field->required) {
                     $this->addError("custom.{$field->id}", "Trường \"{$field->label}\" là bắt buộc.");
                     $hasError = true;
-                    // 2026-08-02: các custom field required nằm ở panel phase 3 → auto nhảy sang tab đó
-                    // để user thấy dấu * đỏ + lỗi ngay, không phải tự đi tìm.
-                    $this->activePhase = 3;
+                    // Phase 6.23: custom field required nằm ở panel phase 2 (Gọi điện) → auto nhảy tab đó.
+                    $this->activePhase = 2;
                 }
                 continue;
             }
@@ -1015,25 +1141,13 @@ new class extends Component
     /** Phase C1.b rev4 2026-08-01: gộp save + chuyển section Booking (phase 4). */
     public function saveAndGoToBooking(): void
     {
+        $this->guardNotCvOnly();
         session()->put('go_to_booking_after_save', true);
         $prevPhase = $this->activePhase;
         $this->save();
-        // Bug fix 2026-08-02: chỉ nhảy sang phase 4 khi save() thực sự thành công.
+        // Sau khi save thành công: nhảy tab sang phase 3 (Booking) để đặt booking tiếp.
         if ($this->lead?->exists && ! $this->getErrorBag()->isNotEmpty()) {
-            // 2026-08-02: nếu đang ở phase 2 (Chia số) — auto-close phase 2 khi save
-            // (thay nút "Kết thúc phase 2" bằng chính nút "Lưu thông tin"). User chia
-            // nhầm → save lại cũng OK (closure đã có → skip; UI phase 2 vẫn cho edit).
-            if ($prevPhase === 2 && auth()->user()->hasPermission(\App\Models\Lead::CF_PHASE_CLOSE_PERM[2] ?? 'phase.close.distribute')) {
-                \App\Models\LeadPhaseClosure::firstOrCreate(
-                    ['lead_id' => $this->lead->id, 'phase' => 2],
-                    ['closed_by' => auth()->id(), 'closed_at' => now(), 'note' => 'Auto-close khi save phase 2 (chia số)']
-                );
-                $this->lead->refresh();
-                if ((int) $this->lead->phase < 3) {
-                    $this->lead->update(['phase' => 3]);
-                }
-            }
-            $this->activePhase = 4;
+            $this->activePhase = 3;
         }
         session()->forget('go_to_booking_after_save');
     }
@@ -1090,7 +1204,34 @@ new class extends Component
             }
         }
 
-        if ($this->personId && ! $this->assignableUserIds()->contains($this->personId)) {
+        // Phase 6.25 — Auto-assign MKT từ MKT List UPS: chỉ chạy khi tạo mới, nguồn MKT, chưa chọn sale tay.
+        $mktAutoAssigned = false;
+        if (! $this->lead?->exists && $this->sourceGroup === Lead::SOURCE_MKT && ! $this->personId) {
+            if (! str_starts_with($this->poolTarget, 'org:')) {
+                $this->addError('poolTarget', 'Nguồn Marketing: bắt buộc chọn kho ở cấp Cơ sở hoặc Phòng KD (không dùng Công ty/Chi nhánh) để hệ thống chia từ MKT List.');
+                return;
+            }
+            $poolId = (int) substr($this->poolTarget, 4);
+            $pool = \App\Models\PoolUnit::find($poolId);
+            $facility = $pool;
+            while ($facility && $facility->kind !== 'facility') {
+                $facility = $facility->parent;
+            }
+            if (! $facility) {
+                $this->addError('poolTarget', 'Không xác định được cơ sở từ kho đã chọn — chọn Cơ sở hoặc Phòng KD.');
+                return;
+            }
+            $picked = app(\App\Services\Ups\UpsDispatcher::class)->pickMkt($facility->id);
+            if (! $picked) {
+                $this->addError('poolTarget', 'Chưa có Sale nào được phân xử lý nguồn Marketing trong UPS hôm nay ở cơ sở "'.$facility->name.'". Liên hệ BO chốt UPS trước khi up lead.');
+                return;
+            }
+            $this->personId = $picked->id;
+            $mktAutoAssigned = true;
+            session()->flash('status', "MKT List: Đã chia lead cho {$picked->name} (round-robin).");
+        }
+
+        if (! $mktAutoAssigned && $this->personId && ! $this->assignableUserIds()->contains($this->personId)) {
             $this->addError('personId', 'Không thể chia cho nhân sự này.');
             return;
         }
@@ -1190,7 +1331,7 @@ new class extends Component
             ['lead_id' => $lead->id, 'phase' => Lead::CF_PHASE_NEW],
             ['closed_by' => $user->id, 'closed_at' => now(), 'note' => 'Auto-close khi tạo lead']
         );
-        $lead->update(['phase' => min(Lead::CF_PHASE_NEW + 1, 5)]);
+        $lead->update(['phase' => min(Lead::CF_PHASE_NEW + 1, 4)]);
 
         LeadStatusLog::record($lead, 'created', null, 'Nhập tay bởi ' . $user->name, $user->id);
         AuditLog::record('create', $lead);
@@ -1198,10 +1339,10 @@ new class extends Component
         session()->flash('status', 'Đã tạo lead mới.');
         // Phase 6.21g — sau tạo mới, đưa thẳng vào form Edit (giao diện 7 phase)
         // thay vì trang chi tiết (bất tiện, phải bấm sang edit).
-        // Phase C1.b rev4 2026-08-01: nếu bấm "Lưu thông tin" (saveAndGoToBooking) → redirect kèm ?phase=4.
+        // Phase 6.23: sau khi gộp 7→6 phase, Booking chuyển từ phase 4 → phase 3.
         $params = ['lead' => $lead];
         if (session('go_to_booking_after_save')) {
-            $params['phase'] = 4;
+            $params['phase'] = 3; // Booking (was 4 pre-6.23)
             session()->forget('go_to_booking_after_save');
         }
         if ($lead->canOpenEditForm($user)) {
@@ -1302,9 +1443,12 @@ new class extends Component
             ];
         }
         if (str_starts_with($this->poolTarget, 'org:')) {
+            // Phase 6.24 — poolTarget bây giờ mang pool_unit_id (cây Kho số), không còn org_unit_id.
+            // Giữ prefix "org:" cho tương thích với code cũ khi parse.
             return [
                 'owner_id' => null,
-                'org_unit_id' => (int) substr($this->poolTarget, 4),
+                'org_unit_id' => null,
+                'pool_unit_id' => (int) substr($this->poolTarget, 4),
                 'pool_level' => Lead::POOL_TEAM,
                 'assigned_at' => null,
                 'pipeline_status' => Lead::PSTATUS_IN_CARE,
@@ -1412,20 +1556,20 @@ new class extends Component
         return $this->assignableUsers()->pluck('id');
     }
 
-    /** Phòng/team có thể đưa vào kho chung: các org trong phạm vi của người thao tác. */
+    /**
+     * Phase 6.24 — Kho có thể đưa lead vào = cây Kho số (PoolUnit) toàn bộ.
+     * Sort: HN → DN → HCM → khác.
+     */
     private function assignableOrgs()
     {
-        $ids = auth()->user()->visibleOrgUnitIds();
-        if ($ids === []) return collect();
-        $orgs = OrgUnit::whereIn('id', $ids)->orderBy('path')->get();
+        $pools = \App\Models\PoolUnit::where('is_active', true)->orderBy('path')->get();
+        $branchPriority = ['pool-branch-hn' => 1, 'pool-branch-dn' => 2, 'pool-branch-hcm' => 3];
+        $byId = $pools->keyBy('id');
 
-        // Sort custom: HN → DN → HCM → khác. Giữ subtree order theo path bên trong mỗi branch.
-        $branchPriority = ['branch-hn' => 1, 'branch-dn' => 2, 'branch-hcm' => 3];
-        $orgsById = $orgs->keyBy('id');
-        return $orgs->sortBy(function ($o) use ($branchPriority, $orgsById) {
+        return $pools->sortBy(function ($o) use ($branchPriority, $byId) {
             $priority = 0;
             foreach (array_filter(explode('/', $o->path)) as $pid) {
-                $node = $orgsById->get((int) $pid);
+                $node = $byId->get((int) $pid);
                 if ($node && $node->depth === 1) {
                     $priority = $branchPriority[$node->code] ?? 90;
                     break;
@@ -1468,19 +1612,25 @@ new class extends Component
 
         $users = $this->assignableUsers();
 
-        // Phase 6.21g — Nếu đã chọn kho org:{id} → filter user thuộc org đó + subtree.
+        // Phase 6.24 — poolTarget mang pool_unit_id (cây Kho số). Filter user thuộc org
+        // đã map với pool đó (org_pool_map) + subtree.
         if ($this->poolTarget && str_starts_with($this->poolTarget, 'org:')) {
-            $orgId = (int) substr($this->poolTarget, 4);
-            $root = OrgUnit::find($orgId);
-            if ($root) {
-                $subtreePath = rtrim($root->path, '/') . '/';
-                $subtreeIds = OrgUnit::where(function ($q) use ($orgId, $subtreePath) {
-                    $q->where('id', $orgId)->orWhere('path', 'like', $subtreePath . '%');
-                })->pluck('id')->all();
+            $poolId = (int) substr($this->poolTarget, 4);
+            $mappedOrgIds = \Illuminate\Support\Facades\DB::table('org_pool_map')
+                ->where('pool_unit_id', $poolId)->pluck('org_unit_id')->all();
+            if ($mappedOrgIds) {
+                $subtreeIds = [];
+                foreach (OrgUnit::whereIn('id', $mappedOrgIds)->get() as $root) {
+                    $subtreeIds = array_merge($subtreeIds, $root->subtreeIds());
+                }
+                $subtreeIds = array_unique($subtreeIds);
                 $users = $users->filter(fn ($u) => $u->assignments
                     ->pluck('org_unit_id')
                     ->intersect($subtreeIds)
                     ->isNotEmpty());
+            } else {
+                // Pool chưa có mapping → không sale nào thấy được
+                $users = collect();
             }
         }
 
@@ -1635,6 +1785,14 @@ new class extends Component
         <div class="mb-5 bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 text-sm text-blue-700 flex items-center gap-2">
             <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"/></svg>
             <span>Bạn đang xem ở chế độ chỉ đọc — không có quyền chỉnh sửa thông tin ở phase này. @if ($canBookAction)Có thể bấm nút <strong>Đặt booking</strong> để chuyển sang hệ thống đặt lịch.@endif</span>
+        </div>
+    @endif
+
+    {{-- 2026-08-03 bug #5: banner cho CV-only (chỉ được viết bình luận/phản hồi khách). --}}
+    @if ($this->isCvOnly)
+        <div class="mb-5 bg-amber-50 border border-amber-300 rounded-lg px-4 py-3 text-sm text-amber-800 flex items-center gap-2">
+            <span>🔒</span>
+            <span>Bạn được gán làm <strong>Chuyên viên tư vấn</strong> cho lead này — chỉ được viết bình luận/phản hồi khách. Các thao tác sửa thông tin, đặt booking, đổi phase… đã khoá. Liên hệ CM/Admin nếu cần thay đổi.</span>
         </div>
     @endif
 
@@ -1882,7 +2040,7 @@ new class extends Component
         {{-- Arrow-breadcrumb 7 phase — sizing lớn theo mockup (Phase 6.21e) --}}
         <div class="bg-white border border-gold-200 rounded-xl shadow-card p-5">
             <div class="flex items-center justify-between mb-4 flex-wrap gap-3">
-                <div class="text-sm uppercase tracking-wide text-gold-700 font-bold">Customer Flow — 7 phase</div>
+                <div class="text-sm uppercase tracking-wide text-gold-700 font-bold">Customer Flow — 6 phase</div>
                 <div class="flex items-center gap-3 text-xs text-ink/60 flex-wrap">
                     <span class="inline-flex items-center gap-1.5"><span class="w-3.5 h-3.5 rounded bg-emerald-500"></span>Đã chốt</span>
                     <span class="inline-flex items-center gap-1.5"><span class="w-3.5 h-3.5 rounded bg-blue-400"></span>Cần điền thông tin</span>
@@ -2100,7 +2258,7 @@ new class extends Component
 
         {{-- Trường bổ sung — hiển thị ở phase 3 (Tele điền lúc gọi khách) — 2026-08-02 --}}
         @if ($customFields->isNotEmpty())
-        <div x-show="phase === 3" x-cloak class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
+        <div x-show="phase === 2" x-cloak class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
             <h2 class="font-bold text-gold-700 mb-1 flex items-center gap-2">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.28z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
                 Trường bổ sung
@@ -2189,7 +2347,7 @@ new class extends Component
                     ? ($currentTele?->assignments->first()?->orgUnit?->name ?? $lead?->orgUnit?->name)
                     : ($lead?->orgUnit?->name);
             @endphp
-            <div x-show="phase === 4" x-cloak class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
+            <div x-show="phase === 3" x-cloak class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
                 <h2 class="font-bold text-gold-700 mb-5 flex items-center gap-2">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5"/></svg>
                     Phân bổ nhân viên tư vấn
@@ -2226,7 +2384,7 @@ new class extends Component
 
             {{-- ============= Phase 4 rework 2026-08-01 — LỊCH SỬ BOOKING (list record) ============= --}}
             {{-- Mỗi booking = 1 record chứa cơ sở/bác sĩ/dịch vụ/CV[]. Chờ duyệt lên đầu. --}}
-            <div x-show="phase === 4" x-cloak class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
+            <div x-show="phase === 3" x-cloak class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
                 <h2 class="font-bold text-gold-700 mb-5 flex items-center gap-2">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5"/></svg>
                     Lịch sử booking <span class="text-sm text-ink/50 font-normal">(mỗi lần đặt/đổi/hủy = 1 record — Chờ duyệt lên đầu)</span>
@@ -2367,7 +2525,7 @@ new class extends Component
             </div>
 
             {{-- INSIGHT — Phase 3 (Gọi điện) — order 3 (dưới cùng) --}}
-            <div x-show="phase === 3" x-cloak class="order-3 bg-white border border-gold-200 rounded-xl shadow-card p-6">
+            <div x-show="phase === 2" x-cloak class="order-3 bg-white border border-gold-200 rounded-xl shadow-card p-6">
                 <h2 class="font-bold text-gold-700 mb-5 flex items-center gap-2">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 18v-5.25m0 0a6.01 6.01 0 001.5-.189m-1.5.189a6.01 6.01 0 01-1.5-.189m3.75 7.478a12.06 12.06 0 01-4.5 0m3.75 2.383a14.406 14.406 0 01-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 10-7.517 0c.85.493 1.509 1.333 1.509 2.316V18"/></svg>
                     INSIGHT
@@ -2465,7 +2623,7 @@ new class extends Component
             </div>
 
             {{-- Trạng thái chăm sóc — Phase 3 (Gọi điện) — order 2 (giữa) --}}
-            <div x-show="phase === 3" x-cloak class="order-2 bg-white border border-gold-200 rounded-xl shadow-card p-6 @if ($phaseLocked[3] ?? false) opacity-70 @endif">
+            <div x-show="phase === 2" x-cloak class="order-2 bg-white border border-gold-200 rounded-xl shadow-card p-6 @if ($phaseLocked[3] ?? false) opacity-70 @endif">
                 <h2 class="font-bold text-gold-700 mb-5 flex items-center gap-2">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                     Trạng thái chăm sóc
@@ -2489,7 +2647,7 @@ new class extends Component
             </div>
 
             {{-- DV tiềm năng + UPSELL — Phase 6 (Bán hàng) --}}
-            <div x-show="phase === 6" x-cloak class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
+            <div x-show="phase === 5" x-cloak class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
                 <h2 class="font-bold text-gold-700 mb-5 flex items-center gap-2">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18L9 11.25l4.306 4.307a11.95 11.95 0 015.814-5.519l2.74-1.22m0 0l-5.94-2.281m5.94 2.28l-2.28 5.941"/></svg>
                     Dịch vụ tiềm năng & UPSELL
@@ -2633,7 +2791,7 @@ new class extends Component
             {{-- "Phân phối & Nguồn" đã gộp vào tab Trạng thái (khi $canDistribute). --}}
 
             {{-- ============= Phase 6.21g — Section CHIA SỐ (Phase 2) — panel Phân phối động ============= --}}
-            <div x-show="phase === 2" x-cloak class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
+            <div x-show="phase === 1" x-cloak class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
                 <h2 class="font-bold text-gold-700 mb-5 flex items-center gap-2">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5"/></svg>
                     Chia số (Phân phối)
@@ -2669,10 +2827,64 @@ new class extends Component
                 {{-- Form Phân phối — chỉ hiện khi user có perm chia --}}
                 @if ($canDistribute)
                     <div class="border-t border-gold-200 pt-5">
-                        <h3 class="font-bold text-gold-700 mb-4 flex items-center gap-2 text-sm">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5"/></svg>
-                            Chia lead vào kho / cho sale
-                        </h3>
+                        @php $upsBlockedHere = app(\App\Services\Ups\UpsGate::class)->isBlockedFor(auth()->user()); @endphp
+                        <div class="flex items-center justify-between flex-wrap gap-2 mb-4">
+                            <h3 class="font-bold text-gold-700 flex items-center gap-2 text-sm">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5"/></svg>
+                                Chia lead vào kho / cho sale
+                            </h3>
+                            {{-- 2026-08-04: nút Check UPS mở popup danh sách sale + tình trạng (không nhảy trang). --}}
+                            <div x-data="{ show: false }" class="relative">
+                                <button type="button" @click="show = !show"
+                                        class="text-xs font-bold px-3 py-1.5 rounded whitespace-nowrap inline-flex items-center gap-1.5 {{ $upsBlockedHere ? 'bg-red-600 hover:bg-red-700 text-white animate-pulse' : 'bg-white border border-gold-300 text-gold-700 hover:bg-gold-50' }}">
+                                    ⚡ Check UPS System
+                                    @if ($upsBlockedHere)<span class="text-[10px] bg-white/20 px-1 rounded">chưa chốt</span>@endif
+                                </button>
+                                {{-- Popup: liệt kê sale check-in hôm nay + trạng thái busy/free. --}}
+                                <div x-show="show" @click.outside="show = false" x-transition x-cloak
+                                     class="absolute right-0 mt-2 w-80 bg-white border border-gold-200 rounded-lg shadow-xl z-30 max-h-96 overflow-auto">
+                                    @php
+                                        $__today = now()->toDateString();
+                                        $__atts = \App\Models\DailyAttendance::with('user')
+                                            ->whereDate('work_date', $__today)
+                                            ->orderBy('list_bucket')->orderBy('checkin_at')->get();
+                                    @endphp
+                                    <div class="px-3 py-2 border-b border-gold-100 bg-gold-50 flex items-center justify-between">
+                                        <div class="text-xs font-bold text-gold-800">UPS hôm nay · {{ $__atts->count() }} sale check-in</div>
+                                        <a href="{{ route(auth()->user()->hasPermission('ups.view') ? 'ups.list' : 'ups.today') }}" target="_blank" class="text-[11px] text-gold-700 hover:underline">Xem đầy đủ →</a>
+                                    </div>
+                                    @if ($__atts->isEmpty())
+                                        <div class="px-3 py-6 text-center text-xs text-ink/40">Chưa có sale nào check-in hôm nay.</div>
+                                    @else
+                                        <ul class="divide-y divide-gold-50">
+                                            @foreach ($__atts as $__a)
+                                                @php
+                                                    $__busy = (bool) $__a->is_busy;
+                                                    $__off  = (bool) $__a->is_off;
+                                                    $__label = $__off ? 'Offlist' : ($__busy ? 'Đang tiếp đón' : 'Đang chờ');
+                                                    $__cls   = $__off ? 'bg-rose-100 text-rose-700' : ($__busy ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700');
+                                                    $__bkc   = match ($__a->list_bucket) { 'A'=>'bg-blue-100 text-blue-800', 'B'=>'bg-teal-100 text-teal-800', 'C'=>'bg-slate-200 text-slate-800', 'OFF'=>'bg-rose-100 text-rose-800', 'MKT'=>'bg-amber-100 text-amber-800', default=>'bg-gold-100 text-gold-800' };
+                                                @endphp
+                                                <li class="px-3 py-2 flex items-center gap-2 hover:bg-gold-50/40">
+                                                    <div class="flex-1 min-w-0">
+                                                        <div class="text-sm font-semibold text-ink truncate">{{ $__a->user?->name ?? 'Sale #'.$__a->user_id }}</div>
+                                                        <div class="text-[11px] text-ink/50">Check-in {{ optional($__a->checkin_at)?->setTimezone('Asia/Ho_Chi_Minh')->format('H:i') }}</div>
+                                                    </div>
+                                                    <span class="text-[10px] font-bold px-1.5 py-0.5 rounded {{ $__bkc }}">{{ $__a->list_bucket }}</span>
+                                                    <span class="text-[11px] font-semibold px-2 py-0.5 rounded {{ $__cls }} whitespace-nowrap">{{ $__label }}</span>
+                                                </li>
+                                            @endforeach
+                                        </ul>
+                                    @endif
+                                </div>
+                            </div>
+                        </div>
+
+                        @if ($upsBlockedHere)
+                            <div class="bg-red-50 border border-red-300 text-red-800 text-xs px-3 py-2 rounded mb-3">
+                                <strong>UPS chưa được chốt hôm nay</strong> — chia số sẽ bị khóa. Bấm nút bên trên để xem/chốt.
+                            </div>
+                        @endif
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                             @if ($lead?->code)
                             <div class="md:col-span-2">
@@ -2680,29 +2892,53 @@ new class extends Component
                                 <p class="text-sm"><code class="font-mono text-gold-700">{{ $lead->code }}</code></p>
                             </div>
                             @endif
+                            {{-- 2026-08-03 cascade: Công ty (readonly) → Địa điểm → Cơ sở → Phòng ban. Toggle "Kho chung" phía trên. --}}
                             <div>
-                                <label class="block text-sm font-medium mb-1.5">Chia số <span class="text-xs font-normal text-ink/50">(kho công ty / chi nhánh / địa điểm / team)</span></label>
-                                <select wire:model.live="poolTarget" @disabled($selectedPerson) @class(['w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-gold-500', 'opacity-50 cursor-not-allowed' => $selectedPerson])>
-                                    <option value="">— Chọn —</option>
-                                    <option value="company">🏢 Công ty (kho chung)</option>
-                                    @foreach ($assignableOrgs as $o)
-                                        @php
-                                            // 2026-08-03: cho chia thẳng xuống sub-team (depth 4 = Team Booking / Team Sale con của Team Giang/Hợi).
-                                            if ($o->depth === 0) continue;
-                                            $indent = str_repeat('　', $o->depth - 1);
-                                            $prefix = match ($o->depth) {
-                                                1 => '📍 Chi nhánh',
-                                                2 => '🏬 Địa điểm / Phòng',
-                                                3 => '👥 Team',
-                                                default => '↳ Sub-team',
-                                            };
-                                        @endphp
-                                        <option value="org:{{ $o->id }}">{{ $indent }}{{ $prefix }}: {{ $o->name }}</option>
-                                    @endforeach
-                                </select>
+                                <label class="block text-sm font-medium mb-1.5">Chia số <span class="text-xs font-normal text-ink/50">(chọn cấp thấp nhất muốn áp — được phép dừng ở bất kỳ cấp nào)</span></label>
+                                @php $__company = \App\Models\PoolUnit::where('kind','company')->first(); @endphp
+                                <div class="space-y-2">
+                                    <label class="flex items-center gap-2 text-sm bg-slate-50 border border-gold-200 rounded-md px-3 py-2 {{ $selectedPerson ? 'opacity-50 cursor-not-allowed' : '' }}">
+                                        <input type="checkbox" wire:model.live="poolCompanyMode" @disabled($selectedPerson) class="rounded border-gold-300">
+                                        <span>🏢 Kho chung công ty <span class="text-ink/40">({{ $__company?->name ?? 'Longevity Medical' }} — mọi Sale trong công ty thấy được)</span></span>
+                                    </label>
+                                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 {{ $poolCompanyMode ? 'opacity-40 pointer-events-none' : '' }}">
+                                        <div>
+                                            <label class="block text-[10px] text-ink/50 mb-1">Công ty</label>
+                                            <input type="text" readonly value="{{ $__company?->name ?? 'Longevity Medical' }}"
+                                                   class="w-full border border-gold-200 rounded-md px-2 py-2 text-sm bg-slate-50 text-ink/70 cursor-not-allowed">
+                                        </div>
+                                        <div>
+                                            <label class="block text-[10px] text-ink/50 mb-1">Địa điểm</label>
+                                            <select wire:model.live="poolBranchId" @disabled($selectedPerson || $poolCompanyMode) class="w-full border border-gold-200 rounded-md px-2 py-2 text-sm bg-white">
+                                                <option value="">— chọn địa điểm —</option>
+                                                @foreach (\App\Models\PoolUnit::where('is_active',true)->where('kind','branch')->orderBy('sort')->orderBy('name')->get() as $b)
+                                                    <option value="{{ $b->id }}">{{ $b->name }}</option>
+                                                @endforeach
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label class="block text-[10px] text-ink/50 mb-1">Cơ sở</label>
+                                            <select wire:model.live="poolFacilityId" @disabled($selectedPerson || $poolCompanyMode || ! $poolBranchId) class="w-full border border-gold-200 rounded-md px-2 py-2 text-sm bg-white disabled:bg-slate-100">
+                                                <option value="">{{ $poolBranchId ? '— chọn cơ sở —' : '— chọn địa điểm trước —' }}</option>
+                                                @foreach (($poolBranchId ? \App\Models\PoolUnit::where('is_active',true)->where('kind','facility')->where('parent_id',$poolBranchId)->orderBy('sort')->orderBy('name')->get() : []) as $f)
+                                                    <option value="{{ $f->id }}">{{ $f->name }}</option>
+                                                @endforeach
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label class="block text-[10px] text-ink/50 mb-1">Phòng ban</label>
+                                            <select wire:model.live="poolDepartmentId" @disabled($selectedPerson || $poolCompanyMode || ! $poolFacilityId) class="w-full border border-gold-200 rounded-md px-2 py-2 text-sm bg-white disabled:bg-slate-100">
+                                                <option value="">{{ $poolFacilityId ? '— chọn phòng ban —' : '— chọn cơ sở trước —' }}</option>
+                                                @foreach (($poolFacilityId ? \App\Models\PoolUnit::where('is_active',true)->where('kind','department')->where('parent_id',$poolFacilityId)->orderBy('sort')->orderBy('name')->get() : []) as $d)
+                                                    <option value="{{ $d->id }}">{{ $d->name }}</option>
+                                                @endforeach
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
                                 <p class="text-xs text-ink/50 mt-1.5">
                                     @if ($selectedPerson)Đã gán nhân viên phụ trách → lead không nằm trong kho chung.
-                                    @else Chọn kho nào thì nhân sự trong phạm vi kho đó thấy được lead. @endif
+                                    @else Cấp thấp nhất được chọn = kho áp dụng. Nhân sự trong phạm vi kho đó thấy được lead. @endif
                                 </p>
                                 @error('poolTarget')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
                             </div>
@@ -2734,7 +2970,7 @@ new class extends Component
                                 @endif
                             </div>
                         </div>
-                        <p class="text-xs text-ink/50 mt-4 italic">Chọn xong bấm "Lưu thông tin" ở footer — hệ thống tự chốt phase 2 và chuyển sang Gọi điện. Chia nhầm có thể mở lại phase 2 sửa và save lại.</p>
+                        <p class="text-xs text-ink/50 mt-4 italic">Chọn xong bấm "Lưu thông tin" ở footer — hệ thống lưu lead + chia số ở phase 1 và chuyển sang phase 3 (Booking thăm khám).</p>
                     </div>
                 @else
                     <div class="border-t border-gold-200 pt-4 text-sm text-ink/60 italic">
@@ -2744,7 +2980,7 @@ new class extends Component
             </div>
 
             {{-- ============= Phase 6.21 — Section CALL LOGS (Phase 3) — order 1 (trên cùng) ============= --}}
-            <div x-show="phase === 3" x-cloak class="order-1 bg-white border border-gold-200 rounded-xl shadow-card p-6">
+            <div x-show="phase === 2" x-cloak class="order-1 bg-white border border-gold-200 rounded-xl shadow-card p-6">
                 <h2 class="font-bold text-gold-700 mb-5 flex items-center gap-2">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 002.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 01-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 00-1.091-.852H4.5A2.25 2.25 0 002.25 4.5v2.25z"/></svg>
                     Lịch sử cuộc gọi <span class="text-sm text-ink/50 font-normal">(mỗi lần gọi = 1 record)</span>
@@ -2805,7 +3041,7 @@ new class extends Component
             </div>
 
             {{-- ============= Phase 4 rework 2026-08-01 — GHI NHẬN BOOKING (log nội bộ) ============= --}}
-            <div x-show="phase === 4" x-cloak class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
+            <div x-show="phase === 3" x-cloak class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
                 <h2 class="font-bold text-gold-700 mb-2 flex items-center gap-2">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
                     Ghi nhận booking <span class="text-sm text-ink/50 font-normal">(log nội bộ — tracking bên CRM)</span>
@@ -2902,6 +3138,14 @@ new class extends Component
                                             $q->where('sbooking_co_so_id', $sbCoSoForBs)->orWhere('xuat_hien_moi_co_so', true);
                                         })->where('active', true)->orderBy('ten')->get()
                                     : collect();
+                                // 2026-08-03 fix: filter BS theo capability của dịch vụ đã chọn (tránh sbooking chặn duyệt).
+                                //   dv.thuoc_nhom='tu_van' → BS phải nhan_tu_van; 'kham_ls' → nhan_kham_ls.
+                                $__svcNhom = null;
+                                if ($newBookingServiceId) {
+                                    $__svcNhom = \App\Models\SbService::where('sbooking_id', $newBookingServiceId)->value('thuoc_nhom');
+                                }
+                                if ($__svcNhom === 'tu_van')  $bsList = $bsList->where('nhan_tu_van', true)->values();
+                                if ($__svcNhom === 'kham_ls') $bsList = $bsList->where('nhan_kham_ls', true)->values();
                             @endphp
                             <select wire:model.live="newBookingSbBacSiId"
                                     @if($bsList->isEmpty()) disabled @endif
@@ -2924,9 +3168,17 @@ new class extends Component
                                 @if ($newBookingType)
                                     @php
                                         $__isDv = $newBookingType === 'dich_vu';
-                                        $__svcOptions = \App\Models\SbService::where('active', true)
-                                            ->where('la_dich_vu', $__isDv)
-                                            ->orderBy('ten')->get();
+                                        // 2026-08-03 fix: filter theo cơ sở đã chọn (sb_services x4 vì sync mọi cơ sở → lặp x3-x4 lần).
+                                        //   Ưu tiên: match sbooking_co_so_id (đúng cơ sở). Nếu vẫn empty → fallback all.
+                                        //   Sau đó dedupe theo tên để tránh trường hợp cùng cơ sở vẫn có duplicate.
+                                        $__svcQuery = \App\Models\SbService::where('active', true)->where('la_dich_vu', $__isDv);
+                                        if ($sbCoSoForBs) $__svcQuery->where(function ($q) use ($sbCoSoForBs) {
+                                            $q->where('sbooking_co_so_id', $sbCoSoForBs)->orWhereNull('sbooking_co_so_id');
+                                        });
+                                        $__svcAll = $__svcQuery->orderBy('ten')->get();
+                                        // Dedupe: ưu tiên record có sbooking_co_so_id khớp cơ sở đã chọn.
+                                        $__svcOptions = $__svcAll->sortByDesc(fn ($s) => $s->sbooking_co_so_id === $sbCoSoForBs ? 1 : 0)
+                                            ->unique('ten')->sortBy('ten')->values();
                                         // Fallback: nếu sb_services trống → đọc scrm.services như cũ để không đứng hình.
                                         if ($__svcOptions->isEmpty()) {
                                             $__legacy = \App\Models\Service::where('active', true)->where('service_type', $newBookingType)->orderBy('name')->get();
@@ -2958,7 +3210,8 @@ new class extends Component
                                         title="{{ $slotHint }}">
                                     <option value="">— Giờ —</option>
                                     @foreach ($availableSlots as $slot)
-                                        <option value="{{ $slot['gio_bat_dau'] ?? '' }}" @if(($slot['full'] ?? false)) disabled @endif>
+                                        {{-- Value encode: khung_gio_id|start|end (start dạng H:i, end dạng H:i). --}}
+                                        <option value="{{ ($slot['id'] ?? '') . '|' . ($slot['gio_bat_dau'] ?? '') . '|' . ($slot['gio_ket_thuc'] ?? '') }}" @if(($slot['full'] ?? false)) disabled @endif>
                                             {{ $slot['label'] ?? ($slot['gio_bat_dau'] ?? '') }}{{ ($slot['full'] ?? false) ? ' (đầy)' : '' }}
                                         </option>
                                     @endforeach
@@ -2973,7 +3226,7 @@ new class extends Component
                             @foreach ($newBookingConsultantIds as $cvIdx => $cvVal)
                                 <div class="flex items-center gap-2" wire:key="new-cv-{{ $cvIdx }}">
                                     <span class="text-xs text-ink/50 w-6 text-right">#{{ $cvIdx + 1 }}</span>
-                                    <select wire:model="newBookingConsultantIds.{{ $cvIdx }}" class="flex-1 border border-slate-300 rounded px-2 py-1.5 text-sm">
+                                    <select wire:model.live="newBookingConsultantIds.{{ $cvIdx }}" class="flex-1 border border-slate-300 rounded px-2 py-1.5 text-sm">
                                         <option value="">— Chọn CV —</option>
                                         @foreach ($consultantUsers ?? [] as $cu)
                                             <option value="{{ $cu['id'] }}">{{ $cu['name'] }}</option>
@@ -3031,7 +3284,7 @@ new class extends Component
             </div>
 
             {{-- ============= Phase 6.21 — Section CHECK-IN (Phase 5) đúng field mockup ============= --}}
-            <div x-show="phase === 5" x-cloak class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
+            <div x-show="phase === 4" x-cloak class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
                 <h2 class="font-bold text-gold-700 mb-5 flex items-center gap-2">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z"/></svg>
                     Check-in <span class="text-sm text-ink/50 font-normal">(tạm thời là bước cuối)</span>
@@ -3114,7 +3367,7 @@ new class extends Component
             $canBook = $lead->canRestartBooking(auth()->user());
         @endphp
         @if ($canCall || $canBook)
-            <div class="mt-4 bg-purple-50 border border-purple-200 rounded-xl p-4" x-show="phase === 5">
+            <div class="mt-4 bg-purple-50 border border-purple-200 rounded-xl p-4" x-show="phase === 4">
                 <div class="text-sm text-purple-800 mb-2 font-semibold">Khách quay lại?</div>
                 <div class="text-xs text-purple-700 mb-3">Chọn luồng phù hợp — Tele: gọi lại từ đầu; Sale: đặt lịch mới (nếu đã có thông tin/booking cũ).</div>
                 <div class="flex flex-wrap gap-2">
@@ -3159,7 +3412,7 @@ new class extends Component
                             class="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm px-5 py-2.5 rounded-md">
                         Lưu chốt {{ $cfStart - $cfOpen + 1 }} phase ({{ $cfOpen }}→{{ $cfStart }})
                     </button>
-                @elseif (! $cfIsBulk && $activePhase === $cfCurPhase && $activePhase <= 5 && $activePhase !== 2)
+                @elseif (! $cfIsBulk && $activePhase === $cfCurPhase && $activePhase <= 4)
                     <button type="button" wire:click="closePhaseNow({{ $activePhase }})"
                             class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm px-5 py-2.5 rounded-md">
                         Kết thúc phase {{ $activePhase }}

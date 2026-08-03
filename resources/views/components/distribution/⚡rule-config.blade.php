@@ -17,7 +17,14 @@ new class extends Component
 
     public string $level = DistributionRule::LEVEL_POOL_TO_TEAM;
 
-    public string $orgUnitId = '';
+    public string $poolUnitId = ''; // Phase 6.24 — thay cho $orgUnitId cũ
+
+    // 2026-08-03: cascade select cho Kho áp dụng.
+    // Cấp: company (readonly Longevity) → branch (Địa điểm) → facility (Cơ sở) → department (Phòng ban).
+    // poolUnitId = cấp thấp nhất được chọn. Được phép dừng ở branch (kho về "Địa điểm") theo yêu cầu.
+    public string $poolBranchId = '';
+    public string $poolFacilityId = '';
+    public string $poolDepartmentId = '';
 
     public int $priority = 10;
 
@@ -51,7 +58,7 @@ new class extends Component
 
     public function openCreate(string $level): void
     {
-        $this->reset('editingId', 'name', 'orgUnitId', 'condRegion', 'condCamp', 'condPage');
+        $this->reset('editingId', 'name', 'poolUnitId', 'poolBranchId', 'poolFacilityId', 'poolDepartmentId', 'condRegion', 'condCamp', 'condPage');
         $this->level = $level;
         $this->priority = ((int) DistributionRule::where('level', $level)->max('priority')) + 10;
         $this->strategy = 'round_robin';
@@ -66,7 +73,18 @@ new class extends Component
         $this->editingId = $rule->id;
         $this->name = $rule->name;
         $this->level = $rule->level;
-        $this->orgUnitId = (string) ($rule->org_unit_id ?? '');
+        $this->poolUnitId = (string) ($rule->pool_unit_id ?? '');
+        // 2026-08-03: walk parent chain để populate 3 cascade selects.
+        $this->poolBranchId = $this->poolFacilityId = $this->poolDepartmentId = '';
+        if ($rule->pool_unit_id) {
+            $node = \App\Models\PoolUnit::find($rule->pool_unit_id);
+            while ($node) {
+                if ($node->kind === 'department') $this->poolDepartmentId = (string) $node->id;
+                if ($node->kind === 'facility')   $this->poolFacilityId   = (string) $node->id;
+                if ($node->kind === 'branch')     $this->poolBranchId     = (string) $node->id;
+                $node = $node->parent_id ? \App\Models\PoolUnit::find($node->parent_id) : null;
+            }
+        }
         $this->priority = $rule->priority;
         $this->strategy = $rule->strategy;
         $conditions = $rule->conditions ?? [];
@@ -83,7 +101,7 @@ new class extends Component
     public function addTarget(): void
     {
         $this->targets[] = [
-            'type' => $this->level === DistributionRule::LEVEL_POOL_TO_TEAM ? 'org_unit' : 'user',
+            'type' => $this->level === DistributionRule::LEVEL_POOL_TO_TEAM ? 'pool_unit' : 'user',
             'id' => '', 'weight' => '1',
         ];
     }
@@ -96,12 +114,18 @@ new class extends Component
 
     public function save(): void
     {
+        // 2026-08-03 cascade: poolUnitId = cấp thấp nhất được chọn (dept > facility > branch).
+        // Cho phép dừng ở branch (kho về "Địa điểm") hoặc facility (kho về "Cơ sở").
+        if ($this->level === DistributionRule::LEVEL_TEAM_TO_USER) {
+            $this->poolUnitId = $this->poolDepartmentId ?: ($this->poolFacilityId ?: $this->poolBranchId);
+        }
+
         $this->validate([
             'name' => 'required|string|max:100',
             'priority' => 'required|integer|min:0',
             'strategy' => 'required|in:round_robin,weighted,top_revenue,top_close_rate',
-            'orgUnitId' => $this->level === DistributionRule::LEVEL_TEAM_TO_USER ? 'required|exists:org_units,id' : 'nullable',
-        ], [], ['name' => 'tên rule', 'orgUnitId' => 'team áp dụng']);
+            'poolUnitId' => $this->level === DistributionRule::LEVEL_TEAM_TO_USER ? 'required|exists:pool_units,id' : 'nullable',
+        ], ['poolUnitId.required' => 'Chọn ít nhất tới Địa điểm cho kho áp dụng.'], ['name' => 'tên rule', 'poolUnitId' => 'kho áp dụng']);
 
         $targets = array_values(array_filter($this->targets, fn ($t) => $t['id'] !== ''));
         if ($targets === []) {
@@ -123,7 +147,8 @@ new class extends Component
         $attributes = [
             'name' => $this->name,
             'level' => $this->level,
-            'org_unit_id' => $this->level === DistributionRule::LEVEL_TEAM_TO_USER ? (int) $this->orgUnitId : null,
+            'pool_unit_id' => $this->level === DistributionRule::LEVEL_TEAM_TO_USER ? (int) $this->poolUnitId : null,
+            'org_unit_id' => null, // Phase 6.24 — legacy column, không dùng nữa
             'priority' => $this->priority,
             'strategy' => $this->strategy,
             'conditions' => $conditions ?: null,
@@ -173,12 +198,30 @@ new class extends Component
         session()->flash('sla_status', 'Đã lưu chính sách thu hồi.');
     }
 
+    // 2026-08-03: cascade reset khi đổi cấp cha.
+    public function updatedPoolBranchId(): void   { $this->poolFacilityId = ''; $this->poolDepartmentId = ''; }
+    public function updatedPoolFacilityId(): void { $this->poolDepartmentId = ''; }
+
     public function with(): array
     {
+        // 2026-08-03: cascade — chia PoolUnit theo kind cho 3 dropdown.
+        $branches    = \App\Models\PoolUnit::where('is_active', true)->where('kind', 'branch')->orderBy('sort')->orderBy('name')->get();
+        $facilities  = $this->poolBranchId
+            ? \App\Models\PoolUnit::where('is_active', true)->where('kind', 'facility')->where('parent_id', $this->poolBranchId)->orderBy('sort')->orderBy('name')->get()
+            : collect();
+        $departments = $this->poolFacilityId
+            ? \App\Models\PoolUnit::where('is_active', true)->where('kind', 'department')->where('parent_id', $this->poolFacilityId)->orderBy('sort')->orderBy('name')->get()
+            : collect();
+        $company     = \App\Models\PoolUnit::where('kind', 'company')->first();
+
         return [
             'l1Rules' => DistributionRule::where('level', 'pool_to_team')->with('targets')->orderBy('priority')->get(),
-            'l2Rules' => DistributionRule::where('level', 'team_to_user')->with('targets', 'orgUnit')->orderBy('org_unit_id')->orderBy('priority')->get(),
-            'orgUnits' => OrgUnit::where('active', true)->orderBy('path')->get(),
+            'l2Rules' => DistributionRule::where('level', 'team_to_user')->with('targets', 'poolUnit')->orderBy('pool_unit_id')->orderBy('priority')->get(),
+            'poolUnits' => \App\Models\PoolUnit::where('is_active', true)->orderBy('path')->get(),
+            'poolBranches' => $branches,
+            'poolFacilities' => $facilities,
+            'poolDepartments' => $departments,
+            'poolCompany' => $company,
             'users' => User::where('status', 'active')->orderBy('name')->get(),
         ];
     }
@@ -215,7 +258,7 @@ new class extends Component
                         <tr class="{{ $rule->active ? '' : 'opacity-50' }}">
                             <td class="px-5 py-3.5 font-mono text-ink/50">{{ $rule->priority }}</td>
                             <td class="px-5 py-3.5 font-semibold">{{ $rule->name }}</td>
-                            @if ($section['level'] === 'team_to_user')<td class="px-5 py-3.5">{{ $rule->orgUnit?->name }}</td>@endif
+                            @if ($section['level'] === 'team_to_user')<td class="px-5 py-3.5">{{ $rule->poolUnit?->name }}</td>@endif
                             <td class="px-5 py-3.5 text-xs text-ink/60">
                                 @forelse ($rule->conditions ?? [] as $field => $values)
                                     <div><strong>{{ ['region' => 'Khu vực', 'camp' => 'Camp', 'page' => 'Page'][$field] ?? $field }}:</strong> {{ implode(', ', $values) }}</div>
@@ -302,15 +345,44 @@ new class extends Component
                 </div>
 
                 @if ($level === 'team_to_user')
+                    {{-- 2026-08-03: cascade Công ty → Địa điểm → Cơ sở → Phòng ban. Được phép dừng ở Địa điểm/Cơ sở. --}}
                     <div class="mb-4">
-                        <label class="block text-xs font-semibold uppercase tracking-widest text-ink/60 mb-1.5">Team áp dụng</label>
-                        <select wire:model="orgUnitId" class="w-full border border-gold-200 rounded-md px-3 py-2 text-sm bg-white focus:outline-none focus:border-gold-500">
-                            <option value="">— chọn team —</option>
-                            @foreach ($orgUnits as $unit)
-                                <option value="{{ $unit->id }}">{{ str_repeat('— ', $unit->depth) }}{{ $unit->name }}</option>
-                            @endforeach
-                        </select>
-                        @error('orgUnitId')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
+                        <label class="block text-xs font-semibold uppercase tracking-widest text-ink/60 mb-1.5">Kho áp dụng</label>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                            <div>
+                                <label class="block text-[10px] text-ink/50 mb-1">Công ty</label>
+                                <input type="text" readonly value="{{ $poolCompany?->name ?? 'Longevity Medical' }}"
+                                       class="w-full border border-gold-200 rounded-md px-3 py-2 text-sm bg-slate-50 text-ink/70 cursor-not-allowed">
+                            </div>
+                            <div>
+                                <label class="block text-[10px] text-ink/50 mb-1">Địa điểm <span class="text-red-500">*</span></label>
+                                <select wire:model.live="poolBranchId" class="w-full border border-gold-200 rounded-md px-3 py-2 text-sm bg-white focus:outline-none focus:border-gold-500">
+                                    <option value="">— chọn địa điểm —</option>
+                                    @foreach ($poolBranches as $b)
+                                        <option value="{{ $b->id }}">{{ $b->name }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-[10px] text-ink/50 mb-1">Cơ sở <span class="text-ink/40">(tuỳ chọn — dừng ở địa điểm = kho địa điểm)</span></label>
+                                <select wire:model.live="poolFacilityId" @disabled(! $poolBranchId) class="w-full border border-gold-200 rounded-md px-3 py-2 text-sm bg-white focus:outline-none focus:border-gold-500 disabled:bg-slate-100 disabled:text-ink/40">
+                                    <option value="">{{ $poolBranchId ? '— chọn cơ sở —' : '— chọn địa điểm trước —' }}</option>
+                                    @foreach ($poolFacilities as $f)
+                                        <option value="{{ $f->id }}">{{ $f->name }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-[10px] text-ink/50 mb-1">Phòng ban <span class="text-ink/40">(tuỳ chọn)</span></label>
+                                <select wire:model="poolDepartmentId" @disabled(! $poolFacilityId) class="w-full border border-gold-200 rounded-md px-3 py-2 text-sm bg-white focus:outline-none focus:border-gold-500 disabled:bg-slate-100 disabled:text-ink/40">
+                                    <option value="">{{ $poolFacilityId ? '— chọn phòng ban —' : '— chọn cơ sở trước —' }}</option>
+                                    @foreach ($poolDepartments as $d)
+                                        <option value="{{ $d->id }}">{{ $d->name }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+                        </div>
+                        @error('poolUnitId')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
                     </div>
                 @endif
 
@@ -353,7 +425,7 @@ new class extends Component
                                 <select wire:model="targets.{{ $index }}.id" class="flex-1 border border-gold-200 rounded-md px-3 py-2 text-sm bg-white focus:outline-none focus:border-gold-500">
                                     <option value="">— chọn —</option>
                                     @if ($level === 'pool_to_team')
-                                        @foreach ($orgUnits as $unit)
+                                        @foreach ($poolUnits as $unit)
                                             <option value="{{ $unit->id }}">{{ str_repeat('— ', $unit->depth) }}{{ $unit->name }}</option>
                                         @endforeach
                                     @else

@@ -13,7 +13,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
     'raw_lead_id', 'code', 'received_date',
     'insight', 'link', 'name', 'phone', 'region', 'classification',
     'status_1', 'status_2', 'note',
-    'pool_level', 'owner_id', 'receiver_id', 'imported_by', 'org_unit_id',
+    'pool_level', 'owner_id', 'receiver_id', 'imported_by', 'org_unit_id', 'pool_unit_id',
     'past_org_unit_ids',
     'facility_id', 'doctor_id', 'consultant_1_id', 'consultant_2_id', 'consultant_3_id',
     'assigned_at', 'last_care_at',
@@ -166,10 +166,27 @@ class Lead extends Model
         return $this->owner_id === $user->id || $this->receiver_id === $user->id;
     }
 
+    /**
+     * 2026-08-03 fix bug #5: user chỉ được gán làm CV (booking_log_consultants) của lead này,
+     * KHÔNG có role quản lý (Admin/CM có `lead.distribute_sale`) và KHÔNG phải người nhập lead.
+     * CV-only chỉ được viết bình luận + phản hồi khách; mọi form khác readonly.
+     */
+    public function isCvViewerOnly(User $user): bool
+    {
+        if ($user->hasPermission('lead.distribute_sale')) return false;
+        if ($user->hasPermission('lead.distribute')) return false;
+        if ($this->imported_by === $user->id && $user->hasPermission('lead.create')) return false;
+        return \App\Models\BookingLog::where('lead_id', $this->id)
+            ->whereHas('consultants', fn ($q) => $q->where('users.id', $user->id))
+            ->exists();
+    }
+
     /** Gate: user này có được sửa info cá nhân của lead không (đúng phase + trong scope). */
     public function canEditPersonalInfo(User $user): bool
     {
         if (! $this->isVisibleTo($user)) return false;
+        // CV-only luôn readonly (dù họ có thể là owner do CV1 handoff).
+        if ($this->isCvViewerOnly($user)) return false;
         if ($user->hasPermission($this->personalInfoPermission())) return true;
         // Override 1: người nhập lead (Trực Page, Sale, Tele tự up) — luôn được sửa lead mình up,
         // dù role không có update_booking/update_sale. Fix Wave 1 #2 (2026-07-31).
@@ -453,6 +470,12 @@ class Lead extends Model
         return $this->belongsTo(OrgUnit::class);
     }
 
+    /** Phase 6.24 — cây Kho số (pool_units) thay cho org_unit ở khía cạnh "kho lead". */
+    public function poolUnit(): BelongsTo
+    {
+        return $this->belongsTo(PoolUnit::class);
+    }
+
     public function facility(): BelongsTo
     {
         return $this->belongsTo(Facility::class);
@@ -715,43 +738,44 @@ class Lead extends Model
     // Design: docs/design/customer_flow_30-07-2026.md
     // =====================================================================
 
-    public const CF_PHASE_NEW        = 1;
-    public const CF_PHASE_DISTRIBUTE = 2;
-    public const CF_PHASE_CALL       = 3;
-    public const CF_PHASE_BOOKING    = 4;
-    public const CF_PHASE_CHECKIN    = 5;
-    public const CF_PHASE_SALES      = 6; // chưa build
-    public const CF_PHASE_SERVICE    = 7; // chưa build
+    // ---------------------------------------------------------------------
+    // Customer Flow 6 phase (Phase 6.23, 2026-08-03) — GỘP "Tạo mới" + "Chia số"
+    // thành phase 1 duy nhất. Data cũ đã wipe (chỉ demo).
+    // ---------------------------------------------------------------------
+    public const CF_PHASE_NEW      = 1; // Tạo mới & Chia số (gộp)
+    public const CF_PHASE_CALL     = 2;
+    public const CF_PHASE_BOOKING  = 3;
+    public const CF_PHASE_CHECKIN  = 4;
+    public const CF_PHASE_SALES    = 5;
+    public const CF_PHASE_SERVICE  = 6;
 
     public const CF_PHASE_LABELS = [
-        1 => 'Thêm mới khách hàng',
-        2 => 'Chia số',
-        3 => 'Gọi điện',
-        4 => 'Booking thăm khám',
-        5 => 'Check-in',
-        6 => 'Bán hàng',
-        7 => 'Sử dụng dịch vụ',
+        1 => 'Tạo mới & Chia số',
+        2 => 'Gọi điện',
+        3 => 'Booking thăm khám',
+        4 => 'Check-in',
+        5 => 'Bán hàng',
+        6 => 'Sử dụng dịch vụ',
     ];
 
     public const CF_PHASE_CLOSE_PERM = [
-        1 => 'phase.close.new',
-        2 => 'phase.close.distribute',
-        3 => 'phase.close.call',
-        4 => 'phase.close.booking',
-        5 => 'phase.close.checkin',
-        // phase 6-7 chưa build
+        1 => 'phase.close.new',       // đảm nhiệm luôn phần chia số (gộp)
+        2 => 'phase.close.call',
+        3 => 'phase.close.booking',
+        4 => 'phase.close.checkin',
+        // phase 5-6 chưa build
     ];
 
     public const CF_ROLLBACK_PERM = 'phase.rollback';
 
     public const CF_START_PHASE_BY_SOURCE = [
         self::SOURCE_MKT    => 1,
-        self::SOURCE_MKT_BR => 4,
-        self::SOURCE_BA     => 3,
-        self::SOURCE_SA     => 2,
-        self::SOURCE_BDM    => 2,
-        self::SOURCE_BOD    => 2,
-        self::SOURCE_WI     => 2,
+        self::SOURCE_MKT_BR => 3, // trước là 4 (Booking)
+        self::SOURCE_BA     => 2, // trước là 3 (Call)
+        self::SOURCE_SA     => 1, // trước là 2 (Distribute) → gộp về 1
+        self::SOURCE_BDM    => 1,
+        self::SOURCE_BOD    => 1,
+        self::SOURCE_WI     => 1,
     ];
 
     // ---- Relations ----
@@ -778,11 +802,11 @@ class Lead extends Model
         return self::CF_START_PHASE_BY_SOURCE[$this->source_group] ?? 1;
     }
 
-    /** Phase thấp nhất mở thông khi bulk edit lần đầu. Khách quay lại: 3 (nếu start ≥ 3). */
+    /** Phase thấp nhất mở thông khi bulk edit lần đầu. Khách quay lại: 2 (nếu start ≥ 2). */
     public function openFrom(): int
     {
-        if (! $this->is_first_visit && $this->startPhase() >= 3) {
-            return 3;
+        if (! $this->is_first_visit && $this->startPhase() >= 2) {
+            return 2;
         }
         return 1;
     }
@@ -892,7 +916,7 @@ class Lead extends Model
             );
             $closed[] = $p;
         }
-        $this->update(['phase' => min($to + 1, 5)]);
+        $this->update(['phase' => min($to + 1, 4)]);
         return $closed;
     }
 
@@ -919,10 +943,10 @@ class Lead extends Model
         // Tính phase kế tiếp = phase nhỏ nhất trong 1..5 chưa closed; nếu đã closed hết → min(startPhase+1, 5).
         $closed = $this->phaseClosures()->pluck('phase')->all();
         $nextPhase = null;
-        for ($p = 1; $p <= 5; $p++) {
+        for ($p = 1; $p <= 4; $p++) {
             if (! in_array($p, $closed, true)) { $nextPhase = $p; break; }
         }
-        $this->update(['phase' => $nextPhase ?: min($this->startPhase() + 1, 5)]);
+        $this->update(['phase' => $nextPhase ?: min($this->startPhase() + 1, 4)]);
     }
 
     /** Lùi phase (Admin vận hành only). Xóa closure từ $idx trở đi, set phase = $idx. */
@@ -931,8 +955,8 @@ class Lead extends Model
         if (! $user->hasPermission(self::CF_ROLLBACK_PERM)) {
             throw new \RuntimeException('Chỉ Admin vận hành được lùi phase.');
         }
-        if ($idx < 1 || $idx > 5) {
-            throw new \RuntimeException('Chỉ lùi được về phase 1..5.');
+        if ($idx < 1 || $idx > 4) {
+            throw new \RuntimeException('Chỉ lùi được về phase 1..4.');
         }
         $this->phaseClosures()->where('phase', '>=', $idx)->delete();
         $this->update(['phase' => $idx]);
@@ -941,17 +965,17 @@ class Lead extends Model
     /**
      * Khách quay lại: bỏ tick is_first_visit → phase reset về $targetPhase, giữ lịch sử.
      * Phase C1.b rev8 2026-08-01: 2 luồng —
-     *   - Tele "khởi động cuộc gọi mới" → phase 3 (Gọi điện). Gate: canRestartCall.
-     *   - Sale "khởi động đặt lịch mới" → phase 4 (Booking). Gate: canRestartBooking.
+     *   - Tele "khởi động cuộc gọi mới" → phase 2 (Gọi điện). Gate: canRestartCall.
+     *   - Sale "khởi động đặt lịch mới" → phase 3 (Booking). Gate: canRestartBooking.
      */
-    public function markReturning(User $user, int $targetPhase = 3): void
+    public function markReturning(User $user, int $targetPhase = 2): void
     {
-        if (! in_array($targetPhase, [3, 4], true)) {
-            throw new \RuntimeException('Phase đích không hợp lệ (chỉ 3 hoặc 4).');
+        if (! in_array($targetPhase, [2, 3], true)) {
+            throw new \RuntimeException('Phase đích không hợp lệ (chỉ 2 hoặc 3).');
         }
-        $can = $targetPhase === 3 ? $this->canRestartCall($user) : $this->canRestartBooking($user);
+        $can = $targetPhase === 2 ? $this->canRestartCall($user) : $this->canRestartBooking($user);
         if (! $can) {
-            throw new \RuntimeException($targetPhase === 3
+            throw new \RuntimeException($targetPhase === 2
                 ? 'Không có quyền khởi động cuộc gọi mới. Chỉ Tele đã gọi khách này (hoặc Admin) mới bấm được.'
                 : 'Không có quyền khởi động đặt lịch mới. Chỉ Sale phụ trách (hoặc Admin) mới bấm được.');
         }

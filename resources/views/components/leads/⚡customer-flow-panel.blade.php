@@ -110,7 +110,7 @@ new class extends Component
         try {
             $closed = $this->lead->bulkSave(auth()->user());
             $this->lead->refresh();
-            $this->activePhase = min((int) $this->lead->phase, 5);
+            $this->activePhase = min((int) $this->lead->phase, 4);
             session()->flash('cf_ok', 'Đã chốt ' . count($closed) . ' phase (từ ' . min($closed) . ' đến ' . max($closed) . ').');
         } catch (\Throwable $e) {
             session()->flash('cf_error', $e->getMessage());
@@ -122,7 +122,7 @@ new class extends Component
         try {
             $this->lead->closePhase($idx, auth()->user());
             $this->lead->refresh();
-            $this->activePhase = min((int) $this->lead->phase, 5);
+            $this->activePhase = min((int) $this->lead->phase, 4);
             session()->flash('cf_ok', 'Đã kết thúc phase ' . $idx . '.');
         } catch (\Throwable $e) {
             session()->flash('cf_error', $e->getMessage());
@@ -203,8 +203,8 @@ new class extends Component
             </div>
         </div>
         <div class="flex items-center gap-2">
-            @if ($lead->is_first_visit && (int) $lead->phase === 5 && $closures->has(5))
-                <button wire:click="markReturning" onclick="return confirm('Khởi động lần thăm khám mới? Lead sẽ reset về phase 3 (Gọi điện), lịch sử cũ giữ nguyên.')"
+            @if ($lead->is_first_visit && (int) $lead->phase === 4 && $closures->has(4))
+                <button wire:click="markReturning" onclick="return confirm('Khởi động lần thăm khám mới? Lead sẽ reset về phase 2 (Gọi điện), lịch sử cũ giữ nguyên.')"
                         class="text-xs bg-purple-600 hover:bg-purple-700 text-white font-semibold px-3 py-1.5 rounded">
                     Khởi động lần thăm khám mới
                 </button>
@@ -268,10 +268,10 @@ new class extends Component
 
         <div class="p-4 min-h-[200px]">
 
-            {{-- ==================== PHASE 1: Thêm mới ==================== --}}
+            {{-- ==================== PHASE 1: Tạo mới & Chia số (Phase 6.23 gộp) ==================== --}}
             @if ($activePhase === 1)
-                <h3 class="font-semibold text-ink/80 mb-3">Phase 1 — Thêm mới lead</h3>
-                <div class="grid grid-cols-2 gap-4 text-sm">
+                <h3 class="font-semibold text-ink/80 mb-3">Phase 1 — Tạo mới & Chia số</h3>
+                <div class="grid grid-cols-2 gap-4 text-sm mb-4">
                     <div>
                         <label class="block text-xs text-ink/50 mb-1">Họ tên</label>
                         <input class="w-full border border-slate-300 rounded px-3 py-2 bg-slate-50" value="{{ $lead->name }}" readonly>
@@ -297,37 +297,31 @@ new class extends Component
                         </div>
                     </div>
                 </div>
-                <p class="text-xs text-ink/40 italic mt-3">Chỉnh sửa thông tin cá nhân ở màn "Cập nhật khách hàng".</p>
-            @endif
 
-            {{-- ==================== PHASE 2: Chia số ==================== --}}
-            @if ($activePhase === 2)
-                <h3 class="font-semibold text-ink/80 mb-3">Phase 2 — Chia số (Phân phối)</h3>
-                <div class="grid grid-cols-2 gap-4 text-sm">
-                    <div>
-                        <label class="block text-xs text-ink/50 mb-1">Nguồn</label>
-                        <div class="px-3 py-2 border border-slate-300 rounded bg-slate-50">{{ Lead::SOURCE_GROUPS[$lead->source_group] ?? '—' }}</div>
+                <div class="border-t border-slate-200 pt-3 mt-3">
+                    <div class="text-xs font-semibold text-ink/60 uppercase mb-2">Chia số</div>
+                    <div class="grid grid-cols-2 gap-4 text-sm">
+                        <div>
+                            <label class="block text-xs text-ink/50 mb-1">Team / Cơ sở</label>
+                            <div class="px-3 py-2 border border-slate-300 rounded bg-slate-50">{{ $lead->orgUnit->name ?? '—' }}</div>
+                        </div>
+                        <div>
+                            <label class="block text-xs text-ink/50 mb-1">Sale phụ trách (owner)</label>
+                            <div class="px-3 py-2 border border-slate-300 rounded bg-slate-50">{{ $lead->owner->name ?? '— chưa chia —' }}</div>
+                        </div>
+                        <div>
+                            <label class="block text-xs text-ink/50 mb-1">Người nhận (receiver)</label>
+                            <div class="px-3 py-2 border border-slate-300 rounded bg-slate-50">{{ $lead->receiver->name ?? '—' }}</div>
+                        </div>
                     </div>
-                    <div>
-                        <label class="block text-xs text-ink/50 mb-1">Team / Cơ sở</label>
-                        <div class="px-3 py-2 border border-slate-300 rounded bg-slate-50">{{ $lead->orgUnit->name ?? '—' }}</div>
-                    </div>
-                    <div>
-                        <label class="block text-xs text-ink/50 mb-1">Sale phụ trách (owner)</label>
-                        <div class="px-3 py-2 border border-slate-300 rounded bg-slate-50">{{ $lead->owner->name ?? '— chưa chia —' }}</div>
-                    </div>
-                    <div>
-                        <label class="block text-xs text-ink/50 mb-1">Người nhận (receiver)</label>
-                        <div class="px-3 py-2 border border-slate-300 rounded bg-slate-50">{{ $lead->receiver->name ?? '—' }}</div>
-                    </div>
+                    <p class="text-xs text-ink/40 italic mt-2">Chỉnh sửa thông tin cá nhân + chia số ở màn "Cập nhật khách hàng" / "Kho lead".</p>
                 </div>
-                <p class="text-xs text-ink/40 italic mt-3">Việc chia số thực hiện ở màn "Kho lead" hoặc "Danh sách khách hàng".</p>
             @endif
 
-            {{-- ==================== PHASE 3: Gọi điện ==================== --}}
-            @if ($activePhase === 3)
+            {{-- ==================== PHASE 2: Gọi điện ==================== --}}
+            @if ($activePhase === 2)
                 <div class="flex items-center justify-between mb-3">
-                    <h3 class="font-semibold text-ink/80">Phase 3 — Gọi điện <span class="text-xs text-ink/50 font-normal">({{ $callLogs->count() }} cuộc)</span></h3>
+                    <h3 class="font-semibold text-ink/80">Phase 2 — Gọi điện <span class="text-xs text-ink/50 font-normal">({{ $callLogs->count() }} cuộc)</span></h3>
                 </div>
 
                 @if ($callLogs->isNotEmpty())
@@ -377,10 +371,10 @@ new class extends Component
                 @endif
             @endif
 
-            {{-- ==================== PHASE 4: Booking ==================== --}}
-            @if ($activePhase === 4)
+            {{-- ==================== PHASE 3: Booking ==================== --}}
+            @if ($activePhase === 3)
                 <div class="flex items-center justify-between mb-3">
-                    <h3 class="font-semibold text-ink/80">Phase 4 — Booking thăm khám <span class="text-xs text-ink/50 font-normal">({{ $bookingLogs->count() }} record)</span></h3>
+                    <h3 class="font-semibold text-ink/80">Phase 3 — Booking thăm khám <span class="text-xs text-ink/50 font-normal">({{ $bookingLogs->count() }} record)</span></h3>
                 </div>
 
                 @if ($bookingLogs->isNotEmpty())
@@ -440,24 +434,24 @@ new class extends Component
                 @endif
             @endif
 
-            {{-- ==================== PHASE 5: Check-in ==================== --}}
-            @if ($activePhase === 5)
-                <h3 class="font-semibold text-ink/80 mb-3">Phase 5 — Check-in <span class="text-xs text-ink/50 font-normal">(tạm thời là bước cuối)</span></h3>
+            {{-- ==================== PHASE 4: Check-in ==================== --}}
+            @if ($activePhase === 4)
+                <h3 class="font-semibold text-ink/80 mb-3">Phase 4 — Check-in <span class="text-xs text-ink/50 font-normal">(bước cuối đã build)</span></h3>
                 <p class="text-sm text-ink/60 mb-2">
-                    Sau khi Lễ tân check-in cho khách, bấm nút "Kết thúc phase 5" ở dưới để hoàn tất luồng.
-                    @if ($closures->has(5))
-                        <br><span class="text-emerald-600">✓ Đã check-in: {{ $closures[5]->closed_at->format('d/m/Y H:i') }} bởi {{ $closures[5]->closer->name ?? 'system' }}</span>
+                    Sau khi Lễ tân check-in cho khách, bấm nút "Kết thúc phase 4" ở dưới để hoàn tất luồng.
+                    @if ($closures->has(4))
+                        <br><span class="text-emerald-600">✓ Đã check-in: {{ $closures[4]->closed_at->format('d/m/Y H:i') }} bởi {{ $closures[4]->closer->name ?? 'system' }}</span>
                     @endif
                 </p>
             @endif
 
-            {{-- ==================== PHASE 6 + 7 placeholder ==================== --}}
-            @if ($activePhase === 6 || $activePhase === 7)
+            {{-- ==================== PHASE 5 + 6 placeholder ==================== --}}
+            @if ($activePhase === 5 || $activePhase === 6)
                 <div class="text-center py-8">
                     <div class="inline-block px-6 py-8 border-2 border-dashed border-slate-300 rounded-lg text-slate-400">
                         <div class="text-sm font-semibold">Phase {{ $activePhase }} — chưa build</div>
                         <div class="text-xs mt-1">
-                            @if ($activePhase === 6)
+                            @if ($activePhase === 5)
                                 Sẽ tích hợp với module "Dịch vụ tiềm năng & Upsell" hiện có.
                             @else
                                 Sẽ tích hợp với module "Liệu trình" hiện có.
@@ -476,7 +470,7 @@ new class extends Component
                         class="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm px-4 py-2 rounded">
                     Lưu — chốt {{ $startPhase - $openFrom + 1 }} phase (từ {{ $openFrom }} đến {{ $startPhase }})
                 </button>
-            @elseif (! $isBulkOpen && $activePhase === (int) $lead->phase && $activePhase <= 5)
+            @elseif (! $isBulkOpen && $activePhase === (int) $lead->phase && $activePhase <= 4)
                 <button wire:click="closePhase({{ $activePhase }})"
                         class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm px-4 py-2 rounded">
                     Kết thúc phase {{ $activePhase }} — {{ $phases[$activePhase] }}
