@@ -84,14 +84,15 @@ class CustomerFlow621Test extends TestCase
     // ------------------------------------------------------------
     public function test_source_maps_to_correct_start_phase(): void
     {
+        // Phase 6.23: gộp Phase 1+2 → 1. Mapping mới:
         $cases = [
             Lead::SOURCE_MKT    => 1,
-            Lead::SOURCE_MKT_BR => 4,
-            Lead::SOURCE_BA     => 3,
-            Lead::SOURCE_SA     => 2,
-            Lead::SOURCE_BDM    => 2,
-            Lead::SOURCE_BOD    => 2,
-            Lead::SOURCE_WI     => 2,
+            Lead::SOURCE_MKT_BR => 3,
+            Lead::SOURCE_BA     => 2,
+            Lead::SOURCE_SA     => 1,
+            Lead::SOURCE_BDM    => 1,
+            Lead::SOURCE_BOD    => 1,
+            Lead::SOURCE_WI     => 1,
         ];
         foreach ($cases as $src => $expected) {
             $lead = $this->makeLead($src);
@@ -104,13 +105,14 @@ class CustomerFlow621Test extends TestCase
     // ------------------------------------------------------------
     public function test_bulk_save_closes_all_phases_from_1_to_start(): void
     {
+        // Phase 6.23: MKT_BR start_phase = 3 (Booking). Bulk save đóng phase 1,2,3.
         $lead = $this->makeLead(Lead::SOURCE_MKT_BR);
         $this->assertTrue($lead->isBulkOpen());
         $closed = $lead->bulkSave($this->adminOps);
-        $this->assertSame([1, 2, 3, 4], $closed);
+        $this->assertSame([1, 2, 3], $closed);
         $lead->refresh();
-        $this->assertSame(5, (int) $lead->phase, 'Sau bulk save, lead phải ở phase 5 (Check-in)');
-        $this->assertSame(4, $lead->phaseClosures()->count());
+        $this->assertSame(4, (int) $lead->phase, 'Sau bulk save, lead phải ở phase 4 (Check-in)');
+        $this->assertSame(3, $lead->phaseClosures()->count());
     }
 
     // ------------------------------------------------------------
@@ -173,26 +175,27 @@ class CustomerFlow621Test extends TestCase
     // ------------------------------------------------------------
     // 6. Khách quay lại reset phase về 3
     // ------------------------------------------------------------
-    public function test_returning_customer_resets_phase_to_3(): void
+    public function test_returning_customer_resets_phase_to_call(): void
     {
-        $lead = $this->makeLead(Lead::SOURCE_MKT, ['phase' => 5]);
-        // Sinh closures 1..4 giả lập
-        for ($p = 1; $p <= 4; $p++) {
+        // Phase 6.23: Call = phase 2 (không còn phase 3 nữa)
+        $lead = $this->makeLead(Lead::SOURCE_MKT, ['phase' => 4]);
+        // Sinh closures 1..3 giả lập
+        for ($p = 1; $p <= 3; $p++) {
             LeadPhaseClosure::create([
                 'lead_id' => $lead->id, 'phase' => $p,
                 'closed_by' => $this->adminOps->id, 'closed_at' => now(),
             ]);
         }
-        // Chốt phase 5 (để đủ điều kiện markReturning)
-        $lead->closePhase(5, $this->adminOps);
+        // Chốt phase 4 (để đủ điều kiện markReturning)
+        $lead->closePhase(4, $this->adminOps);
         $lead->refresh();
 
         $lead->markReturning($this->adminOps);
         $lead->refresh();
         $this->assertFalse((bool) $lead->is_first_visit);
-        $this->assertSame(3, (int) $lead->phase);
-        // Lịch sử phase 1-4 vẫn còn
-        $this->assertGreaterThanOrEqual(4, $lead->phaseClosures()->count());
+        $this->assertSame(2, (int) $lead->phase);
+        // markReturning xóa closure từ targetPhase (2) trở đi → chỉ còn closure phase 1.
+        $this->assertGreaterThanOrEqual(1, $lead->phaseClosures()->count());
     }
 
     // ------------------------------------------------------------
@@ -247,9 +250,9 @@ class CustomerFlow621Test extends TestCase
     // ------------------------------------------------------------
     public function test_bulk_save_fails_without_full_perms(): void
     {
-        $lead = $this->makeLead(Lead::SOURCE_MKT_BR); // cần 4 perm: close.new/distribute/call/booking
-        // Sale có: close.new, close.call, close.booking — THIẾU close.distribute → fail
+        // Phase 6.23: SOURCE_MKT_BR start_phase = 3. Observer không có perm phase.close.* nào → fail.
+        $lead = $this->makeLead(Lead::SOURCE_MKT_BR);
         $this->expectException(\RuntimeException::class);
-        $lead->bulkSave($this->sale);
+        $lead->bulkSave($this->observer);
     }
 }

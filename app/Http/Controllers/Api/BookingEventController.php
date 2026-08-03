@@ -25,6 +25,8 @@ use Illuminate\Support\Facades\DB;
  */
 class BookingEventController extends Controller
 {
+    private ?array $upsAssignment = null;
+
     public function __invoke(Request $request, string $code)
     {
         $data = $request->validate([
@@ -89,6 +91,32 @@ class BookingEventController extends Controller
                         BookingLateLog::where('lead_id', $lead->id)
                             ->where('sbooking_booking_id', $data['sbooking_booking_id'])
                             ->delete();
+                    }
+
+                    // Phase 6.25.C — Khách checkin (da_toi) → auto-chia sale từ Sale Tiếp Đón (A→B→C→OFF)
+                    // + mark sale busy + broadcast realtime để sbooking không phải F5.
+                    if ($newStatus === Lead::BOOKING_KHACH_DA_TOI && $lead->pool_unit_id) {
+                        $poolNode = \App\Models\PoolUnit::find($lead->pool_unit_id);
+                        $facility = $poolNode;
+                        while ($facility && $facility->kind !== 'facility') {
+                            $facility = $facility->parent;
+                        }
+                        if ($facility) {
+                            $picked = app(\App\Services\Ups\UpsDispatcher::class)->pickGreet($facility->id);
+                            if ($picked) {
+                                app(\App\Services\Ups\UpsDispatcher::class)->markBusy($picked->id);
+                                $lead->update(['owner_id' => $picked->id, 'pool_level' => Lead::POOL_PERSONAL, 'assigned_at' => now()]);
+                                LeadStatusLog::record($lead, 'note', null,
+                                    'UPS: Tự động chia cho ' . $picked->name . ' (Sale Tiếp Đón)', $actorId);
+                                event(new \App\Events\UpsSaleAssigned($lead->id, $picked->id, $picked->name, $data['sbooking_booking_id'] ?? null));
+                                $this->upsAssignment = [
+                                    'sale_user_id' => $picked->id,
+                                    'sale_name' => $picked->name,
+                                    'sale_email' => $picked->email,
+                                    'sbooking_user_id' => $picked->sbooking_user_id,
+                                ];
+                            }
+                        }
                     }
 
                     // Phase C1.b rev5 2026-08-01: khách tới (da_toi/toi_tre) → auto-close phase 4 + đưa lead lên phase 5.
@@ -255,7 +283,19 @@ class BookingEventController extends Controller
 
         $this->dispatchNotification($lead, $data, $bookingMa, $actorId);
 
-        return response()->json(['ok' => true, 'lead_code' => $lead->code]);
+        // 2026-08-04 fix delay: broadcast để lead-form Livewire auto-refresh, không cần F5.
+        event(new \App\Events\BookingStatusSynced(
+            $lead->id,
+            $data['sbooking_booking_id'] ?? null,
+            $data['type'] ?? null,
+            $lead->fresh()->booking_status,
+        ));
+
+        return response()->json([
+            'ok' => true,
+            'lead_code' => $lead->code,
+            'ups_assignment' => $this->upsAssignment,
+        ]);
     }
 
     protected function dispatchNotification(Lead $lead, array $data, ?string $bookingMa, ?int $actorId): void

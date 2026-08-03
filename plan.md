@@ -168,6 +168,64 @@
 - 41 lead hiện có sẽ được backfill `phase` mặc định = 3 (chăm sóc) trừ khi khớp rule chi tiết ở design §7. Sai mapping có thể phải chỉnh tay.
 - `pipeline_phase` + `pipeline_status` giữ nguyên cho compat — chưa deprecate ở phase này.
 
+## Phase 6.22 — Cây Kho số, Role BO (Lễ Tân) & UPS check-in (2026-08-03, chưa làm)
+
+Bổ sung nối tiếp 6.21. Không đụng phase đã done. Chốt thiết kế đã có ở chat 2026-08-03.
+
+### 6.22.a — Data & seed
+- [ ] Bảng mới `pool_units` (cây Kho số, đệ quy) — `id, parent_id, name, code, kind (company|branch|facility|department), sort, is_active`. Cột `code` unique để làm khớp với `org_units`.
+- [ ] Bảng cầu `org_pool_map(org_unit_id, pool_unit_id)` — 1 org node có thể map nhiều pool node (mặc định 1-1 theo `code` khớp).
+- [ ] Seed cây Kho số **Longevity Medical** (giữ `org_units` cũ nguyên cho phần nhân sự):
+  ```
+  Longevity Medical
+  ├─ Hà Nội
+  │  ├─ CS1: 59 Ngô Thì Nhậm ├─ Phòng Kinh Doanh 1 └─ Phòng Kinh Doanh 2
+  │  └─ CS2: 190 Hoàng Ngân   (chưa hoạt động, không có phòng KD)
+  ├─ Đà Nẵng
+  │  └─ CS: Lô 2 & 3 Trần Đăng Ninh └─ Phòng Kinh Doanh
+  └─ Hồ Chí Minh
+     ├─ CS1: 207 Nguyễn Văn Thủ └─ Phòng Kinh Doanh
+     └─ CS2: 137 Nguyễn Chí Thanh (chưa hoạt động, không có phòng KD)
+  ```
+- [ ] Bảng `daily_attendance(id, facility_pool_unit_id, user_id, work_date, checkin_at, list_bucket, is_off, override_by, override_at, unique(user_id, work_date))`.
+- [ ] Bảng `ups_daily_confirm(facility_pool_unit_id, work_date, confirmed_by, confirmed_at, unique(facility_pool_unit_id, work_date))`.
+- [ ] Bảng `ups_config(facility_pool_unit_id, cutoff_time)` — default `08:35:00`.
+
+### 6.22.b — Permission & role
+- [ ] 4 permission mới: `ups.view`, `ups.checkin`, `ups.override`, `ups.confirm_daily`.
+- [ ] Role seed `BO (Lễ Tân)` — gắn 4 perm trên + `lead.distribute_sale` scope=chi nhánh.
+- [ ] Seed **3 tài khoản BO**, 1/chi nhánh (HN/ĐN/HCM).
+
+### 6.22.c — Business logic
+- [ ] Bucket resolver khi BO check-in:
+  - `checkin_at <= cutoff` (mặc định 08:35) → `A`
+  - `checkin_at >= 08:36` → `OFF`
+  - Cột B/C/MKT: chưa có logic tier — BO điền tay override.
+  - Tier engine để dạng function stub, mở rộng sau.
+- [ ] Guard: chỉ role có `ups.override` mới sửa được `list_bucket`/`is_off` sau khi đã set.
+
+### 6.22.d — UI
+- [ ] Màn UPS mới `/ups`: mỗi cơ sở 1 bảng (theo mockup HTML 2026-08-03).
+  - 2 nhóm cột:
+    - **Sale tiếp đón**: A / B / C / OFF LIST
+    - **Sale nhận số**: MKT LIST
+  - Đồng hồ live tick giây góc phải.
+  - Nút **"Chốt UPS hôm nay"** (perm `ups.confirm_daily`).
+- [ ] Phase 1 (Thêm lead & Chia số): button **"Check UPS System"** góc trên.
+  - Chưa chốt UPS hôm nay → banner đỏ "UPS chưa được chốt, liên hệ bộ phận BO để xác nhận." + **block chia số** (disable nút chia, API trả 403 nếu bypass).
+
+### 6.22.e — Migration data
+- [ ] Không xóa `org_units`. Lead + rule chia vẫn dùng `org_unit_id` cho tới khi tao viết migrate riêng.
+- [ ] Bước 1 (phase này): tạo pool + mapping, chưa cắt đường cũ. Bước 2 (phase sau khi user duyệt mapping): switch reference sang `pool_unit_id`.
+
+### 6.22.f — Test & QA
+- [ ] Unit: bucket resolver (5 case: trước cutoff / đúng cutoff / sau cutoff / null / override).
+- [ ] Feature: BO check-in flow, override, chốt UPS, block chia khi chưa chốt.
+- [ ] Data scope: BO chi nhánh HN không thấy CS ở ĐN/HCM.
+- [ ] Regression: toàn bộ test cũ pass.
+- [ ] Manual smoke qua browser.
+- [ ] Ghi kết quả `result.md`.
+
 ## Phase 7 — Ads API + hoàn thiện
 - [ ] Màn 14 đầy đủ: kết nối Facebook Lead Form / TikTok / Google Ads, sync định kỳ
 - [ ] Seed ~200–300k lead giả, test index/pagination/aggregate ở quy mô thật, tune query

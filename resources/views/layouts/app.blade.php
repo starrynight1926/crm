@@ -7,6 +7,8 @@
             ['label' => 'Danh sách khách hàng', 'route' => $u->hasAnyPermission(['lead.view', 'lead.import']) ? 'leads.index' : null, 'match' => 'leads.index'],
             ['label' => 'Thêm khách hàng', 'route' => $u->hasPermission('lead.create') ? 'leads.create' : null, 'match' => 'leads.create'],
             ['label' => 'Chia số', 'route' => $u->hasPermission('rule.manage') ? 'distribution.rules' : ($u->hasPermission('lead.view') ? 'distribution.pools' : null), 'match' => 'distribution.*'],
+            ['label' => 'UPS hôm nay', 'route' => 'ups.today', 'match' => 'ups.today'],
+            ['label' => 'UPS check-in (BO)', 'route' => $u->hasPermission('ups.view') ? 'ups.list' : null, 'match' => 'ups.list'],
             ['label' => 'Duyệt Lead', 'route' => $u->hasPermission('lead.approve_source') ? 'leads.approvals' : null, 'match' => 'leads.approvals'],
         ], fn ($i) => $i['route']));
         $bizChildren = array_values(array_filter([
@@ -21,7 +23,7 @@
 
         $navItems = array_values(array_filter([
             ['label' => 'Dashboard', 'route' => 'dashboard', 'match' => 'dashboard'],
-            !empty($customerChildren) ? ['label' => 'Khách hàng', 'match' => 'leads.*|distribution.*', 'children' => $customerChildren] : null,
+            !empty($customerChildren) ? ['label' => 'Khách hàng', 'match' => 'leads.*|distribution.*|ups.*', 'children' => $customerChildren] : null,
             !empty($bizChildren) ? ['label' => 'Kinh doanh', 'match' => 'services.*|payments.*', 'children' => $bizChildren] : null,
             !empty($opsChildren) ? ['label' => 'Vận hành', 'match' => 'org.*|reports.*|ops.*', 'children' => $opsChildren] : null,
         ]));
@@ -85,6 +87,19 @@
                 </nav>
 
                 <div class="flex-1"></div>
+
+                @php
+                    $upsTarget = $u->hasPermission('ups.view') ? 'ups.list' : 'ups.today';
+                    $upsBlockedGlobal = app(\App\Services\Ups\UpsGate::class)->isBlockedFor($u);
+                @endphp
+                <a href="{{ route($upsTarget) }}"
+                   class="hidden md:inline-flex items-center gap-1.5 text-sm font-bold px-3 py-2 rounded-md whitespace-nowrap {{ $upsBlockedGlobal ? 'bg-red-600 hover:bg-red-700 text-white animate-pulse' : 'bg-gold-600 hover:bg-gold-700 text-white' }}"
+                   title="{{ $upsBlockedGlobal ? 'Chưa chốt UPS hôm nay — chia số đang bị khóa' : 'UPS hôm nay' }}">
+                    <span>⚡ UPS SYSTEM</span>
+                    @if ($upsBlockedGlobal)
+                        <span class="text-[10px] bg-white/20 px-1 rounded">!</span>
+                    @endif
+                </a>
 
                 <livewire:notification-bell />
 

@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lara-SCRM — Dev Road</title>
+<style>
+  :root{--bg:#fafaf7;--card:#fff;--ink:#1a1a1a;--muted:#666;--bd:#e5e0d0;--accent:#b89434;--ok:#059669;--warn:#d97706;--err:#dc2626;--codebg:#f3efe4;}
+  @media (prefers-color-scheme:dark){:root{--bg:#141210;--card:#1e1b17;--ink:#eee;--muted:#a8a8a8;--bd:#3a352c;--accent:#d4a94a;--codebg:#2a251d;}}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--ink);line-height:1.5;padding:24px}
+  .wrap{max-width:1100px;margin:0 auto}
+  h1{margin:0 0 4px;font-size:26px;letter-spacing:.3px}
+  .sub{color:var(--muted);margin-bottom:24px;font-size:14px}
+  h2{margin-top:32px;font-size:18px;border-bottom:2px solid var(--accent);padding-bottom:6px;display:inline-block}
+  .card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:16px 20px;margin-top:12px;box-shadow:0 1px 2px rgba(0,0,0,.03)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}
+  code,pre{background:var(--codebg);border-radius:4px;font-family:"Consolas","SF Mono",monospace;font-size:12.5px}
+  code{padding:1px 6px}
+  pre{padding:10px 12px;overflow-x:auto;margin:6px 0}
+  ul{margin:8px 0;padding-left:20px}
+  li{margin:4px 0}
+  .tag{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:20px;margin-right:4px;text-transform:uppercase;letter-spacing:.3px}
+  .ok{background:rgba(5,150,105,.15);color:var(--ok)}
+  .warn{background:rgba(217,119,6,.15);color:var(--warn)}
+  .err{background:rgba(220,38,38,.15);color:var(--err)}
+  .todo{background:rgba(120,120,120,.15);color:var(--muted)}
+  table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
+  th,td{border:1px solid var(--bd);padding:6px 10px;text-align:left;vertical-align:top}
+  th{background:var(--codebg);font-weight:600}
+  .step{display:flex;gap:10px;align-items:flex-start;margin:6px 0}
+  .step .n{flex:0 0 24px;height:24px;background:var(--accent);color:#fff;border-radius:50%;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center}
+  a{color:var(--accent)}
+  .row{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:4px 0}
+  .kbd{background:var(--codebg);border:1px solid var(--bd);border-radius:4px;padding:1px 6px;font-family:"Consolas",monospace;font-size:11.5px}
+  .foot{margin-top:32px;color:var(--muted);font-size:12px;text-align:center;border-top:1px solid var(--bd);padding-top:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>🛣️ Lara-SCRM Dev Road</h1>
+<div class="sub">Cập nhật 2026-08-03 · Branch <code>sixth</code> · Phase 6.22</div>
+
+<h2>Phase 6.22 — Cây Kho số, Role BO & UPS check-in <span class="tag ok">DONE</span></h2>
+<div class="card">
+  <div class="grid">
+    <div>
+      <strong>Data & seed</strong>
+      <ul>
+        <li>Bảng mới: <code>pool_units</code>, <code>org_pool_map</code></li>
+        <li>Bảng UPS: <code>ups_config</code>, <code>daily_attendance</code>, <code>ups_daily_confirm</code></li>
+        <li>Seed cây <b>Longevity Medical</b>: 3 chi nhánh · 5 cơ sở · 4 phòng KD</li>
+        <li>HN CS2 (190 Hoàng Ngân) & HCM CS2 (137 Nguyễn Chí Thanh) → <code>is_active=false</code></li>
+      </ul>
+    </div>
+    <div>
+      <strong>Role & tài khoản BO</strong>
+      <ul>
+        <li>Role <code>BO (Lễ Tân)</code> + 4 perm UPS + lead.view/view_phone/distribute_sale</li>
+        <li>3 tài khoản BO, scope theo chi nhánh</li>
+        <li>Admin auto có 4 perm UPS (source of truth)</li>
+      </ul>
+    </div>
+    <div>
+      <strong>Logic</strong>
+      <ul>
+        <li><code>UpsBucketResolver</code>: ≤ 08:35 → <b>A</b>, sau → <b>OFF</b></li>
+        <li><code>UpsGate</code>: block chia số nếu chi nhánh chưa chốt UPS hôm nay</li>
+        <li>Admin (<code>user.manage</code>) bypass</li>
+      </ul>
+    </div>
+    <div>
+      <strong>UI</strong>
+      <ul>
+        <li>Route <code>/ups</code> — Livewire, đồng hồ tick giây, 5 cột A/B/C/OFF/MKT</li>
+        <li>Menu <b>Khách hàng → UPS check-in</b></li>
+        <li>Banner đỏ + button "Check UPS System" ở <code>/distribution/pools</code> và <code>/leads/create</code></li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<h2>Tài khoản test 🔑</h2>
+<div class="card">
+  <table>
+    <thead><tr><th>Chi nhánh</th><th>Email</th><th>Password</th><th>Role</th></tr></thead>
+    <tbody>
+      <tr><td>Hà Nội</td><td><code>bo.hn@longevity.com.vn</code></td><td><code>59@ntn</code></td><td>BO (Lễ Tân)</td></tr>
+      <tr><td>Đà Nẵng</td><td><code>bo.dn@longevity.com.vn</code></td><td><code>59@ntn</code></td><td>BO (Lễ Tân)</td></tr>
+      <tr><td>Hồ Chí Minh</td><td><code>bo.hcm@longevity.com.vn</code></td><td><code>59@ntn</code></td><td>BO (Lễ Tân)</td></tr>
+    </tbody>
+  </table>
+  <div class="sub" style="margin-top:8px">Password fallback theo <code>DefaultPassword::forEmail</code> — email không match prefix hn./hcm./dn. → HN default <code>59@ntn</code>. Đổi rule nếu muốn phân theo chi nhánh.</div>
+</div>
+
+<h2>Kịch bản test tay 🧪</h2>
+<div class="card">
+  <div class="step"><div class="n">1</div><div>Login <code>bo.hn@longevity.com.vn</code> / <code>59@ntn</code> → mở <code>/ups</code>.</div></div>
+  <div class="step"><div class="n">2</div><div>Thấy 1 cơ sở "CS1: 59 Ngô Thì Nhậm" (CS2 190 Hoàng Ngân ẩn vì <code>is_active=false</code>).</div></div>
+  <div class="step"><div class="n">3</div><div>Chọn 1 sale từ dropdown → bấm <b>+ Check in</b>. Nếu bây giờ > 08:35 → sale vào cột <b>OFF LIST</b>; ngược lại → cột <b>A</b>.</div></div>
+  <div class="step"><div class="n">4</div><div>Ở ô sale vừa check-in: dùng dropdown <code>↔</code> để chuyển sang B/C/MKT; bấm <code>×</code> để xóa.</div></div>
+  <div class="step"><div class="n">5</div><div>Bấm <b>Chốt UPS hôm nay</b> → tag <b>✓ Đã chốt</b> hiện, không thể check-in thêm.</div></div>
+  <div class="step"><div class="n">6</div><div>Logout, login <code>admin@longevity.com.vn</code> hoặc CM sale HN → mở <code>/distribution/pools</code>. Chưa chốt → thấy banner đỏ, pool disable. Sau khi BO HN chốt → banner mất.</div></div>
+</div>
+
+<h2>Regression 🧷</h2>
+<div class="card">
+  <div class="row">
+    <span class="tag ok">UPS tests</span> <code>11 / 11</code> pass (5 unit + 6 feature)
+  </div>
+  <div class="row">
+    <span class="tag ok">Distribution</span> <code>30 / 31</code> pass — 1 failure pre-existing (LeadAssigned notification)
+  </div>
+  <div class="row">
+    <span class="tag warn">Full suite</span> <code>181 / 202</code> pass — 8 fail + 13 error <b>đều pre-existing</b>, không liên quan Phase 6.22 (Hcm cần MySQL, CustomerFlow621, Import, ProcessRawLead code KH-, SbookingClient msg, RolePermissionMatrix sourceGroup)
+  </div>
+  <pre>D:/laragon6/laragon/bin/php/php-8.5.9-Win32-vs17-x64/php.exe vendor/bin/phpunit --filter=Ups</pre>
+</div>
+
+<h2>Chưa làm — Backlog Phase sau <span class="tag todo">TODO</span></h2>
+<div class="card">
+  <ul>
+    <li>Cắt reference <code>org_unit_id</code> → <code>pool_unit_id</code> ở leads/rules (chờ user duyệt mapping đầy đủ)</li>
+    <li>Tier engine B/C/MKT (hiện chỉ A/OFF theo cutoff; B/C/MKT chỉ BO override tay)</li>
+    <li>UI cấu hình cutoff per cơ sở (bảng <code>ups_config</code> đã có, chưa có màn quản lý — default 08:35)</li>
+    <li>Sale list "đúng cơ sở" thay vì toàn chi nhánh (cần map sâu hơn cấp phòng KD)</li>
+    <li>Mapping org↔pool cấp sâu (hiện chỉ 1-1 ở chi nhánh)</li>
+  </ul>
+</div>
+
+<h2>DevOps notes ⚙️</h2>
+<div class="card">
+  <ul>
+    <li>Bật cho <code>php-8.5.9</code>: <code>pdo_pgsql</code>, <code>pgsql</code>, <code>pdo_sqlite</code>, <code>sqlite3</code>.</li>
+    <li><code>.claude/launch.json</code> đổi <code>runtimeExecutable</code> sang absolute path php-8.5.9 (composer đòi ≥ 8.4.1, Laragon default 8.2.31 fail platform_check).</li>
+    <li>PostgreSQL: user <code>postgres</code> / pass <code>admin</code> / DB <code>lara-datasource-raw</code> (đã fix <code>.env</code>).</li>
+    <li>Reverb WebSocket lỗi <code>ws-.pusher.com</code>: <code>.env</code> thiếu <code>REVERB_*</code>. Vẫn <b>pending</b> — chưa quyết chạy Reverb server chưa.</li>
+  </ul>
+</div>
+
+<h2>Files đã sửa / tạo 📁</h2>
+<div class="card">
+  <table>
+    <thead><tr><th>Loại</th><th>File</th></tr></thead>
+    <tbody>
+      <tr><td>+ Migration</td><td><code>database/migrations/2026_08_03_100000_create_pool_units_and_map.php</code></td></tr>
+      <tr><td>+ Migration</td><td><code>database/migrations/2026_08_03_100100_create_ups_tables.php</code></td></tr>
+      <tr><td>+ Model</td><td><code>app/Models/PoolUnit.php</code>, <code>DailyAttendance.php</code>, <code>UpsConfig.php</code>, <code>UpsDailyConfirm.php</code></td></tr>
+      <tr><td>+ Service</td><td><code>app/Services/Ups/UpsBucketResolver.php</code>, <code>UpsGate.php</code></td></tr>
+      <tr><td>+ Seeder</td><td><code>database/seeders/PoolUnitSeeder.php</code>, <code>BoRoleSeeder.php</code></td></tr>
+      <tr><td>+ View</td><td><code>resources/views/ups/index.blade.php</code>, <code>resources/views/components/ups/⚡ups-board.blade.php</code></td></tr>
+      <tr><td>+ Test</td><td><code>tests/Unit/UpsBucketResolverTest.php</code>, <code>tests/Feature/UpsFlowTest.php</code></td></tr>
+      <tr><td>~ Seeder</td><td><code>PermissionSeeder</code> (+ nhóm ups) · <code>RolePermissionSyncSeeder</code> (+ Admin ups perms, + BO role) · <code>DatabaseSeeder</code> (chèn 2 seeder mới)</td></tr>
+      <tr><td>~ View</td><td><code>layouts/app.blade.php</code> (menu) · <code>distribution/pools.blade.php</code> (banner + block) · <code>leads/create.blade.php</code> (banner) · <code>components/distribution/⚡lead-pools.blade.php</code> (upsGuard trong 5 mutation)</td></tr>
+      <tr><td>~ Route</td><td><code>routes/web.php</code> (+ <code>/ups</code>)</td></tr>
+      <tr><td>~ Docs</td><td><code>plan.md</code> (+ Phase 6.22) · <code>result.md</code> (nhật ký)</td></tr>
+      <tr><td>~ Config</td><td><code>.env</code> (pgsql user/pass) · <code>.claude/launch.json</code> (php path) · <code>php.ini</code> 8.2.31 & 8.5.9 (bật ext)</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="foot">Generated 2026-08-03 — muốn cập nhật thì nói tao update lại file này.</div>
+
+</div>
+</body>
+</html>

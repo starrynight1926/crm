@@ -1,58 +1,132 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Lara-SCRM (Data Source)
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+CRM cho hệ thống Longevity Medical — quản lý lead từ nhiều nguồn (Marketing/BDM/BOD/SA/BA/Walk-in), phân phối theo UPS List, đồng bộ 2 chiều với `lara-sbooking`.
 
-## About Laravel
+Xem chi tiết thiết kế: [`scope.md`](scope.md) · ERD: [`ERD.md`](ERD.md) · Kế hoạch phase: [`plan.md`](plan.md) · Nhật ký: [`result.md`](result.md) · Danh sách trường: [`fields-spec.md`](fields-spec.md) / [`fields-spec.xlsx`](fields-spec.xlsx)
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+## Stack
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+- Laravel 12 + Sanctum (API token)
+- Blade + Livewire 3 + Alpine.js (không npm — Livewire bundle sẵn Alpine, không load CDN riêng)
+- Laravel Reverb (WebSocket real-time)
+- 2 DB: `mysql` (clean, default) + `pgsql` (raw ingest / import batch)
+- Queue: database (dev cần `php artisan queue:work`)
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
-
-## Learning Laravel
-
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
-
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
-
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
-
-## Agentic Development
-
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
+## Cài đặt lần đầu (dev)
 
 ```bash
-composer require laravel/boost --dev
-
-php artisan boost:install
+composer install
+cp .env.example .env
+php artisan key:generate
 ```
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+Sửa `.env`:
 
-## Contributing
+```env
+DB_DATABASE=lara_datasource
+PG_DATABASE=lara_datasource_raw
+BOOKING_API_URL=http://lara-sbooking.test:81/api
+BOOKING_API_TOKEN=<shared secret giữa 2 hệ>
+SCRM_API_TOKEN=<cùng chuỗi trên — dùng cho callback 2 chiều>
+REVERB_APP_KEY=... REVERB_APP_SECRET=... REVERB_APP_ID=...
+```
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+```bash
+php artisan migrate:fresh --seed   # tạo DB + seed role/permission/PoolUnit/StaffMember/CustomField
+php artisan sb:sync-services       # kéo services từ sbooking
+php artisan sb:sync-rooms
+php artisan sb:sync-bac-si
+php artisan sb:sync-users          # kéo users sbooking + auto-map users.sbooking_user_id
+```
 
-## Code of Conduct
+## Chạy dev
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+```bash
+php artisan serve --port=81        # hoặc dùng Laragon virtual host lara-datasource.test:81
+php artisan queue:work             # xử lý raw → clean pipeline
+php artisan reverb:start           # WebSocket cho real-time toast + refresh Livewire
+```
 
-## Security Vulnerabilities
+## Đăng nhập nhanh
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+Password mặc định theo prefix email (xem `App\Support\DefaultPassword`):
 
-## License
+| Email prefix | Mật khẩu | Cơ sở |
+|---|---|---|
+| `admin@...` | `59ntn` | Superadmin |
+| `hn.*` / `admin.hn` | `59@ntn` | HN (59 Ngô Thì Nhậm) |
+| `hcm.*` / `admin.hcm` | `207@nvt` | HCM (207 Nguyễn Văn Thủ) |
+| `dn.*` / `admin.dn` | `23@tdn` | ĐN (Lô 2+3 Trần Đăng Ninh) |
+| `vh.*` | `59ntn` | Vận hành |
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+## Sync 2 chiều với sbooking
+
+### scrm → sbooking (push)
+
+- Tạo booking mới ở scrm → auto `POST /api/bookings` sang sbooking (gồm `sale_id`, `tiep_don_user_id`, `khung_gio_id`, `dich_vu_id`, `phong_id`, `bac_si_id`).
+- Sửa booking → `PUT /api/bookings/{id}`.
+- Comment → `POST /api/bookings/{id}/comments`.
+
+Xem [`app/Services/SbookingClient.php`](app/Services/SbookingClient.php).
+
+### sbooking → scrm (callback)
+
+Sbooking gọi `POST /api/leads/{code}/booking-event` với `type = status | comment | edit | delete`. Auth Bearer = `SCRM_API_TOKEN` (env).
+
+Sự kiện quan trọng:
+- Khách check-in (`da_toi`) → auto `pickGreet` sale từ Sale Tiếp Đón (A→B→C→OFF) + `markBusy`.
+- Sale bấm "Đang tiếp đón" bên sbooking → `POST /api/ups/busy` → `markBusy`.
+- Sale bấm "Hoàn tất" → `POST /api/ups/complete` → `markFree`.
+
+Xem [`app/Http/Controllers/Api/BookingEventController.php`](app/Http/Controllers/Api/BookingEventController.php), [`app/Http/Controllers/Api/UpsAttendanceController.php`](app/Http/Controllers/Api/UpsAttendanceController.php).
+
+### Reconcile drift
+
+Backfill dữ liệu cũ bị lệch:
+
+```bash
+php artisan sb:reconcile-bookings --dry-run   # xem trước
+php artisan sb:reconcile-bookings              # apply
+php artisan sb:reconcile-bookings --since=2026-08-01
+```
+
+## UPS System (Ưu tiên phân số)
+
+- **Config**: mỗi cơ sở 1 `UpsConfig.cutoff_time` (VD 08:36). Sale check-in sau mốc → auto vào `OFF`.
+- **Chốt UPS ngày**: BO/CM bấm "Chốt UPS hôm nay" → mở khoá Phase 1 chia số. Trước khi chốt, mọi thao tác chia lead nguồn MKT bị chặn.
+- **Bucket**: `A` / `B` / `C` / `OFF` (Offlist — không nhận số hôm nay, ≠ nghỉ làm) / `MKT` (TM Team).
+- **Auto-chia**:
+   - Phase 1 (MKT): trực page up lead nguồn MKT → `UpsDispatcher::pickMkt` → auto assign sale từ MKT List.
+   - Phase 4 (Sale Tiếp Đón): callback `da_toi` từ sbooking → `pickGreet` chọn từ A→B→C→OFF.
+
+## Cấu trúc phase (Customer Flow)
+
+1. Tạo mới & Chia số · 2. Gọi điện · 3. Booking · 4. Check-in · 5. Sales · 6. Sau bán/Chăm sóc
+
+## Commands có sẵn
+
+```bash
+php artisan sb:sync-services
+php artisan sb:sync-rooms
+php artisan sb:sync-bac-si
+php artisan sb:sync-users               # kèm auto-map sbooking_user_id
+php artisan sb:reconcile-bookings       # backfill drift
+```
+
+## Quy ước code
+
+- **Không nạp Alpine.js qua CDN riêng** — Livewire đã bundle sẵn Alpine; nạp 2 instance làm `wire:click` chập chờn (fix Phase 3, xem `layouts/base.blade.php`).
+- Component Livewire dùng syntax mới `#[On('event')]` (Livewire 3).
+- Broadcast event: implement `ShouldBroadcast`; client listen qua `window.EchoClient.channel('...').listen('.App\\Events\\...')`.
+- Không tự cài `phpspreadsheet` / `laravel-excel` — dùng script Python (openpyxl) qua skill khi cần xuất Excel offline.
+
+## Tài liệu tham chiếu
+
+- [scope.md](scope.md) — thiết kế tổng quan
+- [ERD.md](ERD.md) — 2 DB chi tiết
+- [plan.md](plan.md) — 8 phase, làm theo thứ tự
+- [result.md](result.md) — nhật ký từng phase
+- [fields-spec.md](fields-spec.md) / [fields-spec.xlsx](fields-spec.xlsx) — bảng trường dữ liệu (trình quản lý duyệt)
+- [QA_CHECKLIST.md](QA_CHECKLIST.md) — checklist test tay trước release
+- [plan-integration-sbooking.md](plan-integration-sbooking.md) — thiết kế 2 hệ scrm ↔ sbooking
+- [CLAUDE.md](CLAUDE.md) — hướng dẫn AI collaboration

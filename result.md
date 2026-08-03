@@ -2,6 +2,60 @@
 
 > Làm xong phase nào ghi vào đây: ngày hoàn thành, việc đã làm, việc dời lại/chưa xong, ghi chú & quyết định phát sinh. Mẫu bên dưới.
 
+## 2026-08-03 — Phase 6.22: Cây Kho số, Role BO & UPS check-in ✅
+
+### Đã làm
+
+**Data & seed:**
+- Migration `2026_08_03_100000_create_pool_units_and_map.php` — bảng `pool_units` (cây kho số đệ quy, kind: company/branch/facility/department) + `org_pool_map` (bảng cầu org↔pool).
+- Migration `2026_08_03_100100_create_ups_tables.php` — `ups_config`, `daily_attendance`, `ups_daily_confirm`.
+- `PoolUnitSeeder`: cây **Longevity Medical** — 1 company / 3 chi nhánh HN·ĐN·HCM / 5 cơ sở / 4 phòng KD. HN CS2 (190 Hoàng Ngân) và HCM CS2 (137 Nguyễn Chí Thanh) seed với `is_active=false` (chưa hoạt động).
+- Map `org_pool_map`: `branch-hn/dn/hcm` → pool tương ứng (1-1).
+
+**Role & tài khoản:**
+- 4 permission mới: `ups.view`, `ups.checkin`, `ups.override`, `ups.confirm_daily`.
+- Role seed `BO (Lễ Tân)` — 4 perm UPS + `lead.view` + `lead.view_phone` + `lead.distribute_sale`.
+- 3 tài khoản BO (`BoRoleSeeder`), scope theo chi nhánh:
+  - `bo.hn@longevity.com.vn` (branch-hn) · pass `59@ntn`
+  - `bo.dn@longevity.com.vn` (branch-dn) · pass `59@ntn` (fallback rule, xem `DefaultPassword`)
+  - `bo.hcm@longevity.com.vn` (branch-hcm) · pass `59@ntn` (fallback rule)
+- Admin thêm 4 perm UPS vào `RolePermissionSyncSeeder` (source of truth).
+
+**Business logic:**
+- `App\Services\Ups\UpsBucketResolver` — 2 API: `resolve(checkin_at, facility_id)` (đọc DB cutoff) và `resolveWithCutoff(checkin_at, cutoff)` (thuần logic, dùng test).
+- Rule tạm (Phase 6.22): ≤ cutoff → `A`; > cutoff → `OFF`; null → null. Cutoff mặc định `08:35:00`.
+- `App\Services\Ups\UpsGate` — chặn chia số nếu chi nhánh của user chưa có cơ sở nào chốt UPS hôm nay. Admin (`user.manage`) bypass. Walk ancestors qua materialized path để tìm branch org.
+
+**UI:**
+- Route `/ups` (`permission:ups.view`) + nav item "UPS check-in" dưới "Khách hàng".
+- Livewire component `⚡ups-board.blade.php`: mỗi chi nhánh 1 section, mỗi cơ sở active 1 card. 5 cột A/B/C/OFF/MKT nhóm "Sale tiếp đón" (4) + "Sale nhận số" (1). Đồng hồ Alpine tick giây góc phải. Nút "Chốt UPS hôm nay" (perm `ups.confirm_daily`).
+- Check-in: BO chọn sale từ dropdown → click "+ Check in" → resolver quyết định bucket (A/OFF) theo now vs cutoff. Override: dropdown "↔" trong ô để chuyển bucket, "×" để xóa.
+- Guard chia số ở `⚡lead-pools.blade.php`: gọi `upsGuard()` đầu 5 mutation (autoDistribute, confirmAssign, confirmPool, pullLead, bulkAssign, bulkPool) — chưa chốt UPS → 423.
+- Banner + button "Check UPS System" trên `distribution/pools.blade.php` và `leads/create.blade.php`. Khi block: pool bị `pointer-events-none opacity-50`.
+
+**Test:**
+- `tests/Unit/UpsBucketResolverTest.php` — 5 case: null / trước cutoff / đúng cutoff (=A) / sau cutoff 1s / 8h36 (=OFF).
+- `tests/Feature/UpsFlowTest.php` — 6 case: check-in trước cutoff → A; 8h36 → OFF; CM bị gate block khi chưa chốt; sau khi BO chốt daily → gate mở; Admin bypass; route `/ups` đòi `ups.view`.
+- **12/12 test UPS pass.**
+
+**Smoke test qua browser** (BO HN):
+- `/ups`: chi nhánh HN, 1 cơ sở active, 5 cột, đồng hồ tick, dropdown 17 sale HN, banner cutoff 08:35.
+- `/distribution/pools`: banner đỏ "UPS chưa được chốt", button "Check UPS System" phải, kho lead disabled.
+
+### Rủi ro / đã lưu ý
+- **Full regression**: 181/202 test pass. 8 failure + 13 error đều **pre-existing** (Hcm tests cần MySQL thật, CustomerFlow621 phase logic, ImportComponent, ProcessRawLead KH- code format, SbookingClient http msg, RolePermissionMatrix sourceGroup, DistributionEngine notification). Không có failure nào ở test đụng file UPS đã sửa (Distribution/Ups/LeadListActions filter → 30/31 pass, cùng 1 failure pre-existing).
+- **Mapping org↔pool**: hiện chỉ map ở cấp chi nhánh (branch-hn ↔ pool-branch-hn ...). Mapping sâu (team → phòng KD cụ thể) hoãn đến khi user duyệt riêng.
+- **Lead/rule chưa migrate sang pool_unit_id**: giữ nguyên `org_unit_id` cho tương thích. Phase sau (khi user OK mapping) mới cắt đường cũ.
+- **Sale list ở màn UPS**: hiện lấy tất cả user có role tên chứa "sale" (LIKE '%ale%'), thuộc subtree org chi nhánh. Nếu user muốn strict theo cơ sở, cần map cấp sâu hơn.
+- **DevOps note**: bật `pdo_pgsql` + `pgsql` + `pdo_sqlite` + `sqlite3` cho php-8.5.9 (Laragon); sửa `.claude/launch.json` dùng absolute php path (composer đòi ≥ 8.4.1, Laragon default 8.2.31 fail).
+
+### Chưa làm (dời phase sau)
+- Cắt reference `org_unit_id` → `pool_unit_id` ở leads/rules (chờ user duyệt mapping đầy đủ).
+- Tier engine B/C/MKT (hiện chỉ A/OFF theo cutoff, cột B/C/MKT chỉ BO override tay).
+- Config cutoff per cơ sở qua UI (đã có bảng `ups_config`, nhưng chưa có màn quản lý — dùng default 08:35).
+- Danh sách sale "đúng cơ sở" (hiện đang list toàn chi nhánh).
+
+
 ## 2026-08-01 — Phase C1.b rev3: Sync khung giờ từ sbooking ✅
 
 User feedback: hardcode giờ 8:30-12/13:30-18 không dùng được. Logic BS capacity phức tạp (1 BS = 1 tư vấn + 6 khám lâm sàng/giờ, mỗi BS `nhan_tu_van`/`nhan_kham_ls` khác nhau) → không thể replicate scrm-side, phải hỏi sbooking. Chọn hướng B: đọc khung giờ động từ sbooking.
