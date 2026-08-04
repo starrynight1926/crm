@@ -17,8 +17,6 @@ class SyncCrmAccountsSeeder extends Seeder
         // còn lại lấy prefix email).
         $usernameByEmail = [
             'admin@longevity.com.vn'    => 'admin',
-            'nvkd@longevity.com.vn'     => 'nvkd',
-            'nvmkt@longevity.com.vn'    => 'nvmkt',
             'huyently@longevity.com.vn' => 'huyently',
             'hangktt@longevity.com.vn'  => 'hangktt',
             'lyktdt@longevity.com.vn'   => 'lyktdt',

@@ -336,7 +336,7 @@ new class extends Component
                                     <select x-model="user" class="w-full border border-gold-200 rounded px-3 py-2 text-sm bg-white">
                                         <option value="">1. Chọn nhân viên…</option>
                                         @foreach ($fb['availableSales'] as $u)
-                                            <option value="{{ $u->id }}">{{ $u->name }}</option>
+                                            <option value="{{ $u->id }}">{{ $u->name }}{{ $u->job_title ? ' ('.$u->job_title.')' : '' }}</option>
                                         @endforeach
                                     </select>
 

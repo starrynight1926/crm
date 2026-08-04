@@ -201,8 +201,8 @@ class OrgStaffSeeder extends Seeder
         return [
             // Hệ thống / demo
             ['email' => 'admin@longevity.com.vn',  'name' => 'Quản trị viên',       'job_title' => null],
-            ['email' => 'nvkd@longevity.com.vn',   'name' => 'NV Kinh Doanh',        'job_title' => null],
-            ['email' => 'nvmkt@longevity.com.vn',  'name' => 'NV Marketing',         'job_title' => null],
+            // 2026-08-05: BỎ nvkd + nvmkt — Marketing chỉ dùng "Tài khoản Trực Page" up lead,
+            // Kinh doanh dùng các tài khoản CM/Sale/CM sale thật (Giang/Hợi/Ashley/CM sale…).
 
             // Observer (BOD / trợ lý / kế toán)
             ['email' => 'huyently@longevity.com.vn', 'name' => 'Huyền', 'job_title' => 'Trợ lý kinh doanh'],
@@ -326,8 +326,6 @@ class OrgStaffSeeder extends Seeder
             ['tumod@longevity.com.vn', 'Admin', 'ops-run', Assignment::SCOPE_CUSTOM, ['company']],
 
             // Sale demo
-            ['nvkd@longevity.com.vn',  'Sale', 'team-giang-sale', Assignment::SCOPE_SELF, []],
-            ['nvmkt@longevity.com.vn', 'Sale', 'team-hoi-sale',   Assignment::SCOPE_SELF, []],
 
             // CM / TL / DM thật
             ['ttg@longevity.com.vn',  'CM sale',     'team-giang',    Assignment::SCOPE_TEAM,   []],

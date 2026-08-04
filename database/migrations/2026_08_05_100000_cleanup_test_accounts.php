@@ -22,12 +22,17 @@ return new class extends Migration
             'cmsale@longevity.com.vn',
             'cmsale_giang@longevity.com.vn',
             'cmbooking_ashley@longevity.com.vn',
+            // 2026-08-05: bỏ NV Marketing + NV Kinh Doanh — Marketing chỉ dùng Trực Page, KD dùng tài khoản CM/Sale thật.
+            'nvkd@longevity.com.vn',
+            'nvmkt@longevity.com.vn',
         ];
         $namesToDelete = [
             'CM Booking Team Giang',
             'CM Sale',
             'CM Sale Team Giang',
             'CM Booking Team Ashley',
+            'NV Kinh Doanh',
+            'NV Marketing',
         ];
 
         $userIds = DB::table('users')
