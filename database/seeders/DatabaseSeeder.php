@@ -23,8 +23,7 @@ class DatabaseSeeder extends Seeder
             // DemoDataSeeder::class,        // BỎ (2026-08-03) — không seed khách hàng ảo nữa. Muốn demo → chạy riêng.
             TeamHoiCustomFieldSeeder::class, // Custom fields cho Team Hợi
             SyncCrmAccountsSeeder::class,    // Đồng bộ username + password với Booking (admin=59ntn, user=59@ntn)
-            HnDnTestFlowSeeder::class,       // 1 CM sale cho team-giang-sale (team này chưa có CM real)
-            HcmTestFlowSeeder::class,        // 1 CM booking cho team-ashley-booking (team này chưa có CM real)
+            // 2026-08-05: BỎ HnDnTestFlowSeeder + HcmTestFlowSeeder — tài khoản test kiểu "CM Sale Team Giang" bị dẹp theo yêu cầu.
             RenameUsersToPositionFormatSeeder::class, // Đổi username+email sang <cơ_sở>.<chức_vụ>NN
             PoolUnitSeeder::class,                    // Cây Kho số Longevity Medical (Phase 6.22)
             BoRoleSeeder::class,                      // Role BO (Lễ Tân) + 3 tk BO HN/DN/HCM (Phase 6.22)

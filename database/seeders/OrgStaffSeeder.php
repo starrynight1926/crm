@@ -263,10 +263,10 @@ class OrgStaffSeeder extends Seeder
             ['email' => 'hn.trucpage@longevity.com.vn',  'name' => 'Tài khoản Nhập Lead cơ sở HN',  'job_title' => null],
             ['email' => 'hcm.trucpage@longevity.com.vn', 'name' => 'Tài khoản Nhập Lead cơ sở HCM', 'job_title' => null],
             ['email' => 'dn.trucpage@longevity.com.vn',  'name' => 'Tài khoản Nhập Lead cơ sở ĐN',  'job_title' => null],
-            ['email' => 'cmbktg@longevity.com.vn',   'name' => 'CM Booking Team Giang',        'job_title' => null],
-            ['email' => 'book1@longevity.com.vn',  'name' => 'Nguyễn Booking 1',  'job_title' => null],
-            ['email' => 'book2@longevity.com.vn',  'name' => 'Trần Booking 2',    'job_title' => null],
-            ['email' => 'cmsale@longevity.com.vn', 'name' => 'CM Sale',           'job_title' => null],
+            // 2026-08-05: tài khoản test đặt tên "Tài khoản + chức năng" cho rõ.
+            // Bỏ cmbktg (CM Booking Team Giang) + cmsale (CM Sale) — không cần trong luồng test cơ bản.
+            ['email' => 'book1@longevity.com.vn',  'name' => 'Tài khoản Booking',       'job_title' => null],
+            ['email' => 'book2@longevity.com.vn',  'name' => 'Tài khoản Sale Booking',  'job_title' => null],
         ];
     }
 
@@ -380,10 +380,8 @@ class OrgStaffSeeder extends Seeder
             ['hn.trucpage@longevity.com.vn',  'Trực Page', 'team-nhap-lead',     Assignment::SCOPE_SELF, []],
             ['hcm.trucpage@longevity.com.vn', 'Trực Page', 'team-nhap-lead-hcm', Assignment::SCOPE_SELF, []],
             ['dn.trucpage@longevity.com.vn',  'Trực Page', 'team-nhap-lead-dn',  Assignment::SCOPE_SELF, []],
-            ['cmbktg@longevity.com.vn',   'CM booking',     'team-giang-booking', Assignment::SCOPE_TEAM, []],
             ['book1@longevity.com.vn',  'Team Tele',   'team-giang-booking', Assignment::SCOPE_SELF, []],
             ['book2@longevity.com.vn',  'Team Tele',   'team-hoi-booking',   Assignment::SCOPE_SELF, []],
-            ['cmsale@longevity.com.vn', 'CM sale',        'team-hoi-sale',      Assignment::SCOPE_TEAM, []],
         ];
 
         // Cleanup: nhân sự Đà Nẵng lần trước từng được gán role Team sale/Team booking @ marketing-dn.
