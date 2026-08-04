@@ -3,29 +3,54 @@
 @section('body')
     @php
         $u = auth()->user();
+        // 2026-08-04 (T6.2): Nav tái tổ chức 3 khu.
+        //   KHU 1 (vận hành hằng ngày) — nav flat cho user thường: Dashboard | Khách hàng | Chia số | Dịch vụ | Báo cáo
+        //   KHU 2 (quản trị) — dropdown "Quản trị" cho ops.manage / rule.manage / connection.manage
+        //   KHU 3 (setup) — dropdown "Thiết lập" chỉ user.manage, dẫn về /settings tab-hóa
+
+        // KHU 1 — Khách hàng: gộp danh sách + thêm + duyệt (bỏ Chia số/UPS ra menu riêng)
         $customerChildren = array_values(array_filter([
             ['label' => 'Danh sách khách hàng', 'route' => $u->hasAnyPermission(['lead.view', 'lead.import']) ? 'leads.index' : null, 'match' => 'leads.index'],
             ['label' => 'Thêm khách hàng', 'route' => $u->hasPermission('lead.create') ? 'leads.create' : null, 'match' => 'leads.create'],
-            ['label' => 'Chia số', 'route' => $u->hasPermission('rule.manage') ? 'distribution.rules' : ($u->hasPermission('lead.view') ? 'distribution.pools' : null), 'match' => 'distribution.*'],
-            ['label' => 'UPS hôm nay', 'route' => 'ups.today', 'match' => 'ups.today'],
-            ['label' => 'UPS check-in (BO)', 'route' => $u->hasPermission('ups.view') ? 'ups.list' : null, 'match' => 'ups.list'],
             ['label' => 'Duyệt Lead', 'route' => $u->hasPermission('lead.approve_source') ? 'leads.approvals' : null, 'match' => 'leads.approvals'],
         ], fn ($i) => $i['route']));
+
+        // KHU 1 — Chia số & UPS (tách khỏi Khách hàng, khái niệm độc lập)
+        $distChildren = array_values(array_filter([
+            ['label' => 'UPS hôm nay',   'route' => 'ups.today', 'match' => 'ups.today'],
+            ['label' => 'Kho lead',      'route' => $u->hasPermission('lead.view') ? 'distribution.pools' : null, 'match' => 'distribution.pools'],
+            ['label' => 'UPS check-in (BO)', 'route' => $u->hasPermission('ups.view') ? 'ups.list' : null, 'match' => 'ups.list'],
+        ], fn ($i) => $i['route']));
+
+        // KHU 1 — Kinh doanh
         $bizChildren = array_values(array_filter([
             ['label' => 'Dịch vụ', 'route' => $u->hasPermission('service.manage') ? 'services.catalog' : null, 'match' => 'services.*'],
             ['label' => 'Thu tiền', 'route' => $u->hasPermission('payment.record') ? 'payments.index' : null, 'match' => 'payments.*'],
         ], fn ($i) => $i['route']));
-        $opsChildren = array_values(array_filter([
-            ['label' => 'Tổ chức', 'route' => $u->hasPermission('user.manage') ? 'org.users' : null, 'match' => 'org.*'],
-            ['label' => 'Báo cáo', 'route' => $u->hasAnyPermission(['report.view', 'report.view_all']) ? 'reports.index' : null, 'match' => 'reports.*'],
+
+        // KHU 2 — Quản trị vận hành (chỉ cấp có quyền cấu hình mới thấy)
+        $mgmtChildren = array_values(array_filter([
             ['label' => 'Quy tắc vận hành', 'route' => $u->hasPermission('ops.manage') ? 'ops.rules' : null, 'match' => 'ops.*'],
+            ['label' => 'Rule chia số', 'route' => $u->hasPermission('rule.manage') ? 'distribution.rules' : null, 'match' => 'distribution.rules'],
+            ['label' => 'Kết nối Booking', 'route' => $u->hasPermission('connection.manage') ? 'settings.booking-connection' : null, 'match' => 'settings.booking-connection'],
+            ['label' => 'Kết nối nguồn Ads', 'route' => $u->hasPermission('connection.manage') ? 'sources.index' : null, 'match' => 'sources.*'],
+        ], fn ($i) => $i['route']));
+
+        // KHU 3 — Thiết lập (Admin) — link vào /settings tab-hóa
+        $setupChildren = array_values(array_filter([
+            ['label' => 'Trang thiết lập', 'route' => 'settings.index', 'match' => 'settings.index'],
+            ['label' => 'Tổ chức & User', 'route' => $u->hasPermission('user.manage') ? 'org.users' : null, 'match' => 'org.*'],
+            ['label' => 'Danh mục hệ thống', 'route' => $u->hasPermission('user.manage') ? 'admin.catalog' : null, 'match' => 'admin.catalog*'],
         ], fn ($i) => $i['route']));
 
         $navItems = array_values(array_filter([
             ['label' => 'Dashboard', 'route' => 'dashboard', 'match' => 'dashboard'],
-            !empty($customerChildren) ? ['label' => 'Khách hàng', 'match' => 'leads.*|distribution.*|ups.*', 'children' => $customerChildren] : null,
+            !empty($customerChildren) ? ['label' => 'Khách hàng', 'match' => 'leads.*', 'children' => $customerChildren] : null,
+            !empty($distChildren) ? ['label' => 'Chia số', 'match' => 'distribution.pools|ups.*', 'children' => $distChildren] : null,
             !empty($bizChildren) ? ['label' => 'Kinh doanh', 'match' => 'services.*|payments.*', 'children' => $bizChildren] : null,
-            !empty($opsChildren) ? ['label' => 'Vận hành', 'match' => 'org.*|reports.*|ops.*', 'children' => $opsChildren] : null,
+            $u->hasAnyPermission(['report.view', 'report.view_all']) ? ['label' => 'Báo cáo', 'route' => 'reports.index', 'match' => 'reports.*'] : null,
+            !empty($mgmtChildren) ? ['label' => 'Quản trị', 'match' => 'ops.*|distribution.rules|settings.booking-connection|sources.*', 'children' => $mgmtChildren] : null,
+            !empty($setupChildren) ? ['label' => 'Thiết lập', 'match' => 'settings.*|org.*|admin.catalog*', 'children' => $setupChildren] : null,
         ]));
 
         $isActive = function ($match) {

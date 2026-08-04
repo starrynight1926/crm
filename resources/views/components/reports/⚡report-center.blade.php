@@ -41,6 +41,10 @@ new class extends Component
     /** Filter phase cho tab funnel/performance. Rỗng = tất cả. Giá trị: '' | 'booking' | 'sale'. */
     public string $fPhase = '';
 
+    /** 2026-08-04 (T4): Filter tab "Chi tiết lead" theo cơ sở + kho số. Null = tất cả. */
+    public ?int $fFacilityId = null;
+    public ?int $fPoolId = null;
+
     /** Kiểu hiển thị mã KH ở tab Chi tiết lead. */
     public string $codeMode = 'full'; // full | required | simple
 
@@ -104,7 +108,33 @@ new class extends Component
     /** Query lead cho báo cáo: toàn hệ thống nếu có report.view_all, ngược lại theo phạm vi. */
     private function reportLeadQuery()
     {
-        return $this->seesAllReports() ? Lead::query() : Lead::visibleTo(auth()->user());
+        $q = $this->seesAllReports() ? Lead::query() : Lead::visibleTo(auth()->user());
+
+        // 2026-08-04 (T4): filter cơ sở + kho số — chỉ apply ở tab Chi tiết lead
+        // để không lệch số ở funnel/marketing/performance (giữ nguyên semantic report cũ).
+        if ($this->tab === 'leads') {
+            if ($this->fFacilityId) {
+                $q->where('facility_id', $this->fFacilityId);
+            }
+            if ($this->fPoolId) {
+                $pool = \App\Models\PoolUnit::find($this->fPoolId);
+                if ($pool) {
+                    $poolIds = $pool->subtreeIds();
+                    $orgIds = \DB::table('org_pool_map')->whereIn('pool_unit_id', $poolIds)
+                        ->pluck('org_unit_id')->all();
+                    if ($orgIds) {
+                        $subtreeIds = \App\Models\OrgUnit::whereIn('id', $orgIds)->get()
+                            ->flatMap(fn ($o) => \App\Models\OrgUnit::where('path', 'like', $o->path.'%')->pluck('id'))
+                            ->unique()->all();
+                        $q->whereIn('org_unit_id', $subtreeIds);
+                    } else {
+                        $q->whereRaw('1=0'); // pool chưa map với org nào → 0 lead
+                    }
+                }
+            }
+        }
+
+        return $q;
     }
 
     private function leadDetailData()
@@ -929,6 +959,23 @@ new class extends Component
                 <option value="">Tất cả</option>
                 <option value="{{ \App\Models\Lead::PHASE_BOOKING }}">Booking (Tele)</option>
                 <option value="{{ \App\Models\Lead::PHASE_SALE }}">Sale</option>
+            </select>
+        @endif
+        {{-- 2026-08-04 (T4): Filter tab Chi tiết lead theo cơ sở + kho số. --}}
+        @if ($section === 'overall' && $tab === 'leads')
+            <label class="text-xs font-semibold text-ink/50 ml-2">Cơ sở</label>
+            <select wire:model.live="fFacilityId" class="border border-gold-200 rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:border-gold-500">
+                <option value="">Tất cả</option>
+                @foreach (\App\Models\Facility::orderBy('name')->get() as $f)
+                    <option value="{{ $f->id }}">{{ ($f->parent?->name ? $f->parent->name.' › ' : '').$f->name }}</option>
+                @endforeach
+            </select>
+            <label class="text-xs font-semibold text-ink/50 ml-2">Kho số</label>
+            <select wire:model.live="fPoolId" class="border border-gold-200 rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:border-gold-500">
+                <option value="">Tất cả</option>
+                @foreach (\App\Models\PoolUnit::where('is_active', true)->orderBy('path')->get() as $p)
+                    <option value="{{ $p->id }}">{{ str_repeat('— ', $p->depth) }}{{ $p->name }}</option>
+                @endforeach
             </select>
         @endif
         <div class="flex-1"></div>

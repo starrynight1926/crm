@@ -155,6 +155,9 @@ new class extends Component
     /** @var array<int, int|null> Phase 4 rework 2026-08-01: multi-CV per booking. Mặc định 1 ô. */
     public array $newBookingConsultantIds = [null];
 
+    // 2026-08-04 (Task 2): filter trong "Lịch sử booking". '' = tất cả.
+    public string $bookingHistoryFilter = '';
+
     // State form Check-in (Phase 5)
     public string $checkinTime = '';
     public ?int $checkinReceptionistId = null;
@@ -2395,12 +2398,48 @@ new class extends Component
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5"/></svg>
                     Lịch sử booking <span class="text-sm text-ink/50 font-normal">(mỗi lần đặt/đổi/hủy = 1 record — Chờ duyệt lên đầu)</span>
                 </h2>
-                @if ($lead?->exists && $lead->bookingLogs->isNotEmpty())
+                {{-- 2026-08-04 (Task 2): dropdown filter status. Sale không có lead.book_action chỉ thấy booking mình là CV. --}}
+                <div class="mb-3 flex items-center gap-2">
+                    <label class="text-xs text-ink/60">Trạng thái:</label>
+                    <select wire:model.live="bookingHistoryFilter" class="text-xs border border-slate-300 rounded px-2 py-1">
+                        <option value="">Tất cả</option>
+                        <option value="cho_xac_nhan">Chưa duyệt</option>
+                        <option value="da_xac_nhan">Đã duyệt</option>
+                        <option value="khach_da_toi">Khách đã tới</option>
+                        <option value="khach_toi_tre">Khách tới trễ</option>
+                        <option value="khach_huy">Khách hủy</option>
+                        <option value="da_xong">Đã xong</option>
+                    </select>
+                    @if (! auth()->user()?->hasPermission('lead.book_action'))
+                        <span class="text-xs text-ink/40 italic ml-auto">📌 Chỉ hiện booking mà bạn phụ trách (là CV)</span>
+                    @endif
+                </div>
+                @php
+                    $__uid = auth()->id();
+                    $__canBookAction = auth()->user()?->hasPermission('lead.book_action');
+                    $__filterQ = $lead?->exists ? $lead->bookingLogs()
+                        ->with(['user', 'facility.parent', 'doctor', 'service', 'consultants'])
+                        ->when(! $__canBookAction, fn ($q) => $q->whereHas('consultants', fn ($cq) => $cq->where('users.id', $__uid)))
+                        ->when($this->bookingHistoryFilter !== '', function ($q) {
+                            $f = $this->bookingHistoryFilter;
+                            // Filter đọc từ 2 nguồn: booking_logs.status (chưa duyệt / đã duyệt / huy_doi_lich)
+                            // + sync_status (checkedin/canceled/done từ callback sbooking).
+                            $q->where(function ($sub) use ($f) {
+                                $sub->where('status', $f);
+                                match ($f) {
+                                    'khach_da_toi', 'khach_toi_tre' => $sub->orWhere('sync_status', 'checkedin'),
+                                    'khach_huy' => $sub->orWhere('sync_status', 'canceled'),
+                                    'da_xong' => $sub->orWhere('sync_status', 'done'),
+                                    default => null,
+                                };
+                            });
+                        })
+                        ->get() : collect();
+                @endphp
+                @if ($__filterQ->isNotEmpty())
                     @php
                         $blOrder = [\App\Models\BookingLog::STATUS_CHO_XAC_NHAN => 0, \App\Models\BookingLog::STATUS_DA_XAC_NHAN => 1, \App\Models\BookingLog::STATUS_HUY_DOI_LICH => 2];
-                        $bookingList = $lead->bookingLogs()
-                            ->with(['user', 'facility.parent', 'doctor', 'service', 'consultants'])
-                            ->get()
+                        $bookingList = $__filterQ
                             ->sort(function ($a, $b) use ($blOrder) {
                                 $sa = $blOrder[$a->status] ?? 9;
                                 $sb = $blOrder[$b->status] ?? 9;
@@ -2526,7 +2565,14 @@ new class extends Component
                         @endforeach
                     </div>
                 @else
-                    <p class="text-xs text-ink/40 italic">Chưa có booking nào. Dùng khung "Tạo booking" bên dưới để tạo record mới.</p>
+                    <p class="text-xs text-ink/40 italic">
+                        @if ($lead?->exists && $lead->bookingLogs->isNotEmpty())
+                            Không có booking khớp bộ lọc hiện tại.
+                        @else
+                            Chưa có booking nào.
+                            @if (auth()->user()?->hasPermission('lead.book_action')) Dùng khung "Tạo booking" bên dưới để tạo record mới. @endif
+                        @endif
+                    </p>
                 @endif
             </div>
 
@@ -3059,6 +3105,8 @@ new class extends Component
             </div>
 
             {{-- ============= Phase 4 rework 2026-08-01 — GHI NHẬN BOOKING (log nội bộ) ============= --}}
+            {{-- 2026-08-04 (Task 2): chỉ Admin + Admin cơ sở (perm lead.book_action) mới thấy khung tạo booking. --}}
+            @if (auth()->user()?->hasPermission('lead.book_action'))
             <div x-show="phase === 3" x-cloak class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
                 <h2 class="font-bold text-gold-700 mb-2 flex items-center gap-2">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
@@ -3300,6 +3348,7 @@ new class extends Component
                     <p class="text-xs text-ink/40 italic">Bấm "Lưu thông tin khách hàng" để tạo lead trước.</p>
                 @endif
             </div>
+            @endif
 
             {{-- ============= Phase 6.21 — Section CHECK-IN (Phase 5) đúng field mockup ============= --}}
             <div x-show="phase === 4" x-cloak class="bg-white border border-gold-200 rounded-xl shadow-card p-6">

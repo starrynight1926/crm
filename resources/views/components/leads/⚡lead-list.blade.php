@@ -85,6 +85,23 @@ new class extends Component
         } else {
             $this->visibleCols = $valid;
         }
+
+        // 2026-08-04 (T9): auto-set filter từ URL query (widget dashboard click sang).
+        // Chấp nhận ?phase=1..6 + ?source=mkt|mkt_br|... + ?received=today.
+        $req = request();
+        if ($req->filled('phase')) {
+            $p = (int) $req->query('phase');
+            if ($p >= 1 && $p <= 6) $this->fPhase = (string) $p;
+        }
+        if ($req->filled('source')) {
+            $s = (string) $req->query('source');
+            if (array_key_exists($s, \App\Models\Lead::SOURCE_GROUPS)) $this->fNguon = $s;
+        }
+        if ($req->query('received') === 'today') {
+            $today = now()->toDateString();
+            $this->fDateFrom = $today;
+            $this->fDateTo = $today;
+        }
     }
 
     public function updated($property): void

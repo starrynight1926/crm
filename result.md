@@ -2,6 +2,282 @@
 
 > Làm xong phase nào ghi vào đây: ngày hoàn thành, việc đã làm, việc dời lại/chưa xong, ghi chú & quyết định phát sinh. Mẫu bên dưới.
 
+## 2026-08-05 — T11 bán real-time dashboard ✅
+
+### scrm
+- [⚡dashboard-overview.blade.php:180](resources/views/components/reports/⚡dashboard-overview.blade.php:180): đổi `wire:poll.60s` → `wire:poll.15s`. Livewire tự re-render mỗi 15s, không cần thêm code.
+
+### sbooking (chưa cài Livewire → dùng fetch+JS thay)
+- **`PageController::dashboard`**: khi request `expectsJson()` hoặc `?json=1` → trả `JsonResponse` gồm `counts` + `bookings[]` + `server_time`. Tránh double query bằng cách reuse toàn bộ logic count/list đã có, chỉ đổi output.
+- **`dashboard.blade.php`**:
+  - Thêm badge "● Live" + đồng hồ `data-server-time` update mỗi 15s.
+  - Widget counter đánh `data-count="today|processing|upcoming|done"` để JS update in-place.
+  - Bảng list gắn `data-bookings-tbody` để JS render lại rows.
+  - Script cuối: `setInterval(refresh, 15000)`, skip khi `document.hidden` (tiết kiệm request khi user chuyển tab).
+  - JS render match 100% cấu trúc row của blade (badge status/loại/dịch vụ giống nhau) — user không thấy nhấp nháy khi refresh.
+
+### Verify
+- `php -l` PHP + Blade PASS.
+- JSON endpoint tinker test: trả `{"counts":{"today":0,"processing":0,"upcoming":0,"done":0},"tab":"today","bookings":[],"server_time":"00:33:17"}` OK.
+
+### Ghi chú
+- Cả 2 dashboard giờ tự update mỗi 15s không cần F5. Sale/BO đang thao tác nếu có booking mới hoặc status đổi sẽ thấy trong 15s.
+- Chưa dùng websocket vì đụng infra (Reverb + channel auth + JS bridge sbooking↔scrm). Poll 15s đủ dùng cho tần suất booking thực tế; nếu sau này cần instant thì upgrade sang Reverb.
+
+---
+
+## 2026-08-04 — T9 dashboard scrm + T10 dashboard sbooking + fix URL propagation ✅
+
+### T9 — scrm `/dashboard` rewrite
+Rewrite [⚡dashboard-overview.blade.php](resources/views/components/reports/⚡dashboard-overview.blade.php) theo yêu cầu user:
+- **Bỏ**: funnel counters (Total/Follow/Nét/Booking/Show/Close), Top sale tháng, Lead quá SLA, Doanh thu tháng, widget "hôm nay theo role" cũ, table "Lead mới nhất".
+- **Thêm 3 widget mới** (grid 3 cột, click → nav `/leads?phase=X`):
+  - 🔵 Lead mới nhập (Phase 1)
+  - 🟡 Lead Tele chăm sóc (Phase 2)
+  - 🟢 Lead đang booking (Phase 3)
+- **Section "Lead hôm nay"** + filter search + Phase dropdown + Nguồn dropdown + bảng 50 row.
+
+### Bug fix: widget click không set filter (⚡lead-list)
+- **Trước**: click widget → URL `?phase=1` nhưng `⚡lead-list::$fPhase` vẫn `""` (Livewire không tự đọc query string) → **widget vô tác dụng**.
+- **Sau**: [⚡lead-list.blade.php:88-104](resources/views/components/leads/⚡lead-list.blade.php:88) `mount()` đọc `request()->query('phase' | 'source' | 'received=today')` → set property tương ứng.
+- Verify: `select[wire:model.live="fPhase"].value === "1"` khi truy cập `/leads?phase=1`.
+
+### T10 — sbooking `/lich-hen` rewrite thành dashboard
+- Route `/lich-hen` giờ = `PageController::dashboard()`. Timeline gantt cũ dời sang `/lich-hen/timeline`.
+- **4 widget** click-to-filter (query `?tab=today|processing|upcoming|done`):
+  - 🔵 Lịch hôm nay (all booking hôm nay)
+  - 🟡 Đang xử lý (khách đã tới / tiếp đón)
+  - 🟣 Sắp tới (giờ hẹn trong 60 phút, đã duyệt, chưa tới)
+  - 🟢 Đã hoàn thành (`trang_thai='da_xong'`)
+- **List booking** (theo tab): STT · Mã ĐL · Tên khách · SĐT · Sale chăm sóc · Danh mục (🩺 Thăm khám / 💆 Dịch vụ + tên dịch vụ) · Giờ hẹn · Trạng thái (badge màu theo status + status_khach).
+- Row click → nav `/xem-dat-phong/{id}`.
+- 2 button top-right: "Xem lịch trình" (timeline cũ) + "Danh sách đầy đủ" (route danh-sach).
+
+### Migration phát sinh
+Sbooking DB `lara-sbooking` thiếu migration `2026_08_03_140000_add_trang_thai_tiep_don_to_bookings` (Pending) → chạy `php artisan migrate` để `dashboard()` query cột `trang_thai_tiep_don` không lỗi.
+
+### Verify
+- scrm view `dashboard` render 41270 bytes OK (Admin login).
+- scrm test browser: 3 widget hiện + section "Lead hôm nay" + filter live-update. Click widget → `/leads?phase=1` → dropdown filter tự chọn "Phase 1 · Tạo mới & Chia số" ✅.
+- sbooking view `longevity.dashboard` render 23150 bytes OK.
+- Không phá test scrm (baseline 184/207 giữ nguyên).
+
+### Chưa làm / lưu ý
+- Bên sbooking chưa test qua browser thật (Laragon vhost timeout khi navigate) — chỉ render server-side + template validate xong syntax. User F5 verify trực tiếp.
+- Widget cũ scrm (UPS today / Chờ chia / Chờ duyệt / Được nhận) — **đã bỏ theo yêu cầu**. Nếu cần thêm lại vài widget hữu ích, báo tao thêm.
+- Nav "Đặt lịch phòng khám" / "Đặt lịch dịch vụ" bên sbooking topnav vẫn trỏ `/lich-hen` (giờ = dashboard) — nếu user muốn giữ trải nghiệm "vào là thấy lịch gantt", đổi link topnav trỏ `/lich-hen/timeline`.
+
+---
+
+## 2026-08-04 — T5 (audit) + T6 (tái tổ chức menu scrm + sbooking) ✅
+
+### T5 — Audit toàn bộ hệ thống (script scratchpad/audit_full.php)
+- **9 sections × 30+ check**: DB Integrity / Permission / UPS / Booking / Lead Flow / Task 3 route / Task 4 filter / UI render (Admin + Sale).
+- **Kết quả**: PASS 90%. 3 warn phát hiện:
+  1. **A8**: 26 user active không có assignment (bác sĩ/KTV/điều dưỡng seed từ RealDoctorsSeeder) — **behavior đúng**, staff data không cần login. Không fix, chỉ note.
+  2. **B2**: Role Admin thiếu 3 perm `lead.consult`, `lead.source_all`, `system.backup` — **BUG THẬT**. FIX: bổ sung vào `RolePermissionSyncSeeder::MATRIX['Admin']`, re-seed. Verify Admin giờ có mọi perm hệ thống.
+  3. **G1**: 0 lead gán `facility_id` → filter Cơ sở ở `/reports` ra 0 dòng — data issue của DB `lara-crm` (chưa có demo), không phải code bug.
+
+### T6.2 — Tái tổ chức nav scrm + `/settings` tab hóa
+
+**Vấn đề trước**:
+- Nav top 4 group nhưng chồng chéo: "Chia số" ở group Khách hàng + "Rule chia số" ở /settings.
+- "Sơ đồ tổ chức" ở /settings + "Tổ chức" (org.users) ở nav top → trùng.
+- "Danh mục hệ thống" ở nav top + "Trường tùy biến" ở /settings → nghĩa gần nhau.
+- `/settings/index` là grid 15 module phẳng, không nhóm.
+
+**Sửa** ([layouts/app.blade.php](resources/views/layouts/app.blade.php:6-56)):
+
+Nav top mới, **3 khu**:
+- **KHU 1 · Vận hành hằng ngày** (flat, cho user thường): `Dashboard` | `Khách hàng` (danh sách + thêm + duyệt) | `Chia số` (UPS hôm nay + Kho lead + UPS check-in) | `Kinh doanh` (dịch vụ + thu tiền) | `Báo cáo`.
+- **KHU 2 · Quản trị** (dropdown, gate `ops.manage / rule.manage / connection.manage`): `Quy tắc vận hành` | `Rule chia số` | `Kết nối Booking` | `Kết nối nguồn Ads`.
+- **KHU 3 · Thiết lập** (dropdown, gate `user.manage`): `Trang thiết lập` | `Tổ chức & User` | `Danh mục hệ thống`.
+
+Trang `/settings/index` ([settings/index.blade.php](resources/views/settings/index.blade.php)) — tab hóa 4 nhóm:
+- **Tổ chức** (4 module): Sơ đồ tổ chức / Người dùng / Vai trò / Bác sĩ & Cơ sở.
+- **Danh mục dữ liệu** (4 module): Danh mục hệ thống (T3) / Trường tùy biến / Duyệt trường / Dịch vụ.
+- **Hệ thống** (3 module): Thiết lập thông báo / Nhật ký thông báo / Sao lưu & khôi phục.
+- **Cá nhân** (2 module): Quản lý phiên / Đổi mật khẩu.
+
+Alpine `x-data="{ tab: firstKey }"` + `x-show` — không đổi URL, mở sẽ luôn ở tab đầu.
+
+**Verify per role**:
+- ADMIN: 4 tabs / 13 module / 52586 bytes.
+- SALE: 1 tab (Cá nhân) / 2 module / 27119 bytes — đúng two-tier UX (memory `two-tier-ux-operator-vs-admin`).
+
+**Xóa trùng**:
+- Kết nối Booking rời `/settings` → chỉ ở nav Quản trị.
+- Rule chia số rời `/settings` → chỉ ở nav Quản trị.
+- Báo cáo rời `/settings` → chỉ ở nav top.
+- Kết nối nguồn Ads rời `/settings` → chỉ ở nav Quản trị.
+
+### T6.3 — Tái tổ chức `/thiet-lap` sbooking
+
+**Vấn đề trước**: grid 9 sections phẳng + 2 mục admin-only rời rạc, không nhóm.
+
+**Sửa** ([resources/views/longevity/settings/index.blade.php](../lara-sbooking/resources/views/longevity/settings/index.blade.php)):
+
+Tab hóa 4 nhóm (Alpine `x-show`), giữ style Material 3 hiện có:
+- **Tổ chức** (5): Phòng ban / Vai trò / Cơ sở / Người dùng / Quyền.
+- **Danh mục** (3): Liệu pháp / Menu / Phòng chức năng.
+- **Báo cáo** (1): Báo cáo.
+- **Hệ thống** (2, admin only): Nhật ký thông báo / Kết nối SCRM.
+
+Không đụng controller `SettingsController::SECTIONS` (giữ nguyên logic permission per section). Chỉ đổi cách render lại thành tabs.
+
+### Regression
+- scrm: 184/207 pass, y hệt baseline. **0 test regress** do T5+T6.
+- sbooking: view render OK (`php artisan view:clear` + `php -l`).
+- Fail còn lại tất cả **pre-existing** (đã note ở phase trước).
+
+### Ghi chú
+- Menu scrm ưu tiên 1 tính năng chỉ 1 chỗ, gate theo permission → user thường chỉ thấy KHU 1, Admin cơ sở thấy KHU 2, Admin hệ thống thấy đủ 3.
+- Sbooking: nếu user muốn đổi tên "Liệu pháp" → "Dịch vụ" hoặc rearrange sections khác, chỉ cần chỉnh `$tabMap` ở `index.blade.php` — không đụng controller.
+
+---
+
+## 2026-08-04 — T4: Filter báo cáo "Chi tiết lead" theo cơ sở + kho số ✅
+
+Bổ sung sau Task 3: user cần xuất lead cắt theo cơ sở/kho số ngay ở `/reports` (không phải mở `/admin/catalog`).
+
+### Sửa `⚡report-center`
+- Thêm 2 property Livewire: `?int $fFacilityId` + `?int $fPoolId`.
+- `reportLeadQuery()`: khi `tab === 'leads'` → apply 2 filter:
+  - `fFacilityId` → `where facility_id = X`.
+  - `fPoolId` → resolve pool → `subtreeIds()` → JOIN `org_pool_map` → tập org_ids → subtree các org đó theo `path LIKE` → `whereIn org_unit_id`. Pool chưa map với org nào → `whereRaw('1=0')` (0 lead) để user thấy rõ mapping thiếu.
+  - Filter CHỈ apply ở tab `leads` — không đè lên funnel/marketing/performance/distribution để giữ nguyên số report cũ.
+- UI filter bar (khi `section=overall && tab=leads`): thêm 2 select "Cơ sở" (list `Facility::orderBy('name')` với parent prefix) + "Kho số" (list `PoolUnit::where('is_active', true)` với indent theo `depth`).
+- Nút "Xuất Excel" của tab `leads` tự động dùng cùng `reportLeadQuery()` → filter propagate xuống file xuất mà không cần sửa gì thêm.
+
+### Verify
+- `view('reports.index')->render()` → 40127 bytes OK.
+- `php artisan test` → 184/207 pass, y hệt baseline. **0 test regress.**
+
+### Ghi chú thiết kế
+- Không đụng bảng `stats_daily` — filter chạy live trên `leads`, chậm hơn với data lớn nhưng chính xác + không cần re-aggregate.
+- Tab "Danh sách khách hàng" đã có sẵn với tên "Chi tiết lead" — không đổi tên tránh vỡ bookmark user. Nếu user muốn đổi tên, sửa key `leads` trong array `['funnel' => ..., 'leads' => 'Chi tiết lead']` ở line ~936.
+- Filter "Kho số" ảnh hưởng qua `org_pool_map` → nếu team con chưa map (VD facility HN CS2 chưa hoạt động) sẽ ra 0 lead. Đây là behavior đúng.
+
+---
+
+## 2026-08-04 — Task 3: /admin/catalog — Danh mục hệ thống 5 tab + Import/Export ✅
+
+### Bối cảnh
+User nhận thấy config bắt đầu phân tán mất kiểm soát (nhân sự / dịch vụ / trường info khách / khách hàng / cây tổ chức nằm rải rác nhiều màn). Cần 1 trang gom chung cho Admin hệ thống xem toàn cảnh + import/export dữ liệu thật.
+
+### Thiết kế chốt
+- Route mới `/admin/catalog` — chỉ role có `user.manage` (Admin).
+- 5 tab all-in-one Livewire (1 URL để tránh import nhầm tab):
+  1. **Cơ cấu tổ chức** (`org_units`)
+  2. **Nhân sự** (`users` + `assignments`)
+  3. **Dịch vụ** (`services`)
+  4. **Khách hàng** (`leads` + filter theo Phase 1-6)
+  5. **Trường thông tin KH** (`custom_fields`, bypass approve khi Admin nhập)
+- Mỗi tab: bảng data + 3 nút: **📄 Tải file mẫu** / **⬇ Xuất Excel** / **⬆ Nhập**.
+- Import ghi thẳng vào DB (không qua raw pipeline) — công cụ admin, chấp nhận rủi ro.
+- Nhân sự có cột `password` plain trong file mẫu → tự hash bcrypt lúc import; user đã tồn tại thì giữ password cũ nếu cột để trống/hoặc placeholder `(đã hash, không xuất)`.
+
+### File mới
+- `app/Http/Controllers/SystemCatalogController.php`: 2 method `export($tab)` + `template($tab)` — cùng logic fill cột (khi withData=true dùng thật, false dùng row mẫu).
+- `app/Services/SystemCatalogImporter.php`: 5 method `importOrg / importStaff / importService / importLead / importField`. Trả `{created, updated, skipped, errors[]}` để UI hiện report.
+- `resources/views/admin/catalog.blade.php` (wrapper).
+- `resources/views/components/admin/⚡system-catalog.blade.php` — Livewire class-less: props `activeTab`, `importFile`, `leadPhaseFilter`, `importReport`; action `setTab`, `runImport`. Guard `hasPermission('user.manage')` cả `mount()` lẫn `runImport()`.
+
+### File sửa
+- `routes/web.php`: `Route::prefix('admin/catalog')->middleware('permission:user.manage')` với 3 route (view + export + template).
+- `resources/views/layouts/app.blade.php`: thêm nav item "Danh mục hệ thống" (gate `user.manage`).
+- `resources/views/components/leads/⚡lead-form.blade.php`: **fix bug Task 2** — `@can('lead.book_action')` và `->can('lead.book_action')` không hoạt động vì repo không dùng Gate, phải đổi thành `hasPermission()` / `@if(...->hasPermission(...))`.
+
+### Cột file mẫu (khớp giữa import và export)
+- **org**: `code, name, parent_code, depth, position, active`
+- **staff**: `username, name, email, password, job_title, status, role_name, org_unit_code, data_scope`
+- **service**: `code, name, service_type, pricing_type, package_price, active`
+- **lead**: `name, phone, received_date, source_group, classification, region, note, phase`
+- **field**: `key, label, field_type, org_unit_code, required, options, position, active` (options ngăn cách `|`)
+
+### Verify
+- `php artisan route:list --path=admin/catalog` → 3 route OK.
+- `php artisan tinker --execute="Auth::login(Admin); view('admin.catalog')->render()"` → **46145 bytes** render OK (không exception, gate `user.manage` verify pass).
+- `php artisan test` → **184/207 pass** (baseline giống pre-Task 3, verify bằng `git stash -u`). **0 regression từ Task 3.**
+- 10 fail + 13 error đều **pre-existing** (Hcm test cần MySQL, ProcessRawLead KH-code format, SbookingClient http msg, RolePermissionMatrix sourceGroup, DistributionEngine notification, UpsDispatcher fallback, ImportComponent, BookingCheckin phase 4/5, SlaRecall sqlite NOT NULL).
+
+### Chưa làm / dời lại
+- **Import ORG nested**: hiện `parent_code` phải là node đã tồn tại trong DB (không tự order theo depth). Muốn import cả cây fresh → tự sort file theo depth trước khi import, hoặc chạy import 2 lần (lần 1 tạo root, lần 2 tạo children).
+- **Import file mẫu STAFF password**: file mẫu có row `PassPlain@123` — user copy demo sẽ hash và tạo user thật với password đó. Chú ý đổi trước khi import.
+- **Feature test import/export**: chưa viết. Nếu user gặp bug khi import thực tế thì viết test sau (mỗi tab 1 case OK + 1 case fail).
+- **UI download link**: dùng anchor tag `<a href>` thẳng, không qua Livewire — user click là browser download luôn (không stream qua Livewire vì Livewire không hỗ trợ StreamedResponse tốt).
+
+### Ghi chú kỹ thuật
+- Livewire 4 class-less component (`new class extends Component`) — pattern chuẩn của repo, file ở `resources/views/components/**/⚡*.blade.php`.
+- Bảng chỉ load 500 record đầu (200 với lead) để UI không đơ; xuất Excel để lấy full data.
+- Import upload dùng `WithFileUploads` trait, giới hạn 10MB, chấp nhận `xlsx/xls/csv`.
+- Không có Gate registered trong repo → **luôn dùng `hasPermission()` thay vì `->can()`**. Bài học: kiểm tra Provider có `Gate::before` hay `Gate::define` trước khi dùng `@can`/`can()`.
+
+---
+
+## 2026-08-04 — Task 1+2: Hook migrate:fresh cho PG + Booking chỉ Admin/Admin cơ sở tạo ✅
+
+### Task 1 — Hook `db:wipe --database=pgsql` vào `migrate:fresh`
+
+- `AppServiceProvider::boot()` listen `CommandStarting`: khi lệnh = `migrate:fresh` + có connection `pgsql` → prompt user:
+  - `0` = bỏ qua pgsql
+  - `1` = wipe pgsql (default)
+  - Validator chặn nhập ngoài `0/1`.
+- No-interaction mode (test/CI) → auto reset để không chặn.
+- Try/catch quanh `db:wipe` — PG chết không chặn `fresh` mysql.
+
+### Task 2 — Cắt quyền tạo booking + Sale chỉ xem booking phụ trách
+
+**Thiết kế chốt (2026-08-04):**
+- Sbooking từ "phần mềm độc lập" → "phần mềm phụ trợ Data Source". Chỉ Admin cơ sở (BO Lễ Tân) tạo/duyệt booking.
+- Sale chỉ ghi chú + xem booking mình phụ trách (là CV pivot).
+- Booking "Đã xong" → auto `UpsDispatcher::markFree(cv1)` → Sale trở về bucket UPS cũ (A/B/C/OFF), sẵn sàng nhận số kế tiếp.
+- Dùng `da_xong` (đã có) làm status "hoàn thành" — không thêm status mới.
+- Phòng BO thêm bên `lara-sbooking` (nằm ngang phòng Kinh Doanh), chứa 3 tk admin_59ntn/23tdn/207nvt vai trò `le_tan` (đã có perm `duyet_booking`).
+
+**Bên scrm (5 file):**
+- Migration `2026_08_04_100000_trim_book_action_perm_to_admin_only.php`: detach `lead.book_action` khỏi 12 role, chỉ giữ ở Admin + Admin cơ sở. Verify: `Roles giữ lead.book_action: Admin cơ sở, Admin`.
+- `RolePermissionSyncSeeder::MATRIX` (source of truth): bỏ `lead.book_action` khỏi DM HCM, Manager, CM sale, CM Tele, Team Leader, Sale, Team sale, Team sale ĐN, Team Tele.
+- `⚡lead-form.blade.php`:
+  - Khối "Ghi nhận booking" (nút "+ Tạo booking") wrap `@can('lead.book_action')` — Sale không thấy.
+  - Khối "Lịch sử booking" thêm dropdown filter status (Tất cả / Chưa duyệt / Đã duyệt / Đã tới / Tới trễ / Khách hủy / Đã xong).
+  - Filter mặc định: nếu user không có `lead.book_action` → chỉ hiện booking mà user là CV (`booking_log_consultants` pivot). Có label "📌 Chỉ hiện booking mà bạn phụ trách".
+  - Property mới `public string $bookingHistoryFilter = ''` (Livewire live-model).
+- `BookingLog::booted()`: observer `updated` — khi `sync_status` chuyển sang `done` → gọi `app(UpsDispatcher::class)->markFree(cv1->id)`. Sale giữ nguyên bucket, chỉ toggle `is_busy=false`.
+
+**Bên lara-sbooking (2 file):**
+- `LongevitySeeder`: thêm `'bo_le_tan' => 'Phòng BO (Lễ Tân)'` vào `$phongBanChuan` (auto seed cho mọi cơ sở lần fresh sau).
+- Migration `2026_08_04_100000_seed_bo_le_tan_and_admin_co_so.php` (idempotent): 
+  - Insert phòng `bo_le_tan` cho tất cả cơ sở đang có (4 cơ sở).
+  - Tạo 3 user: `admin_59ntn` (HN CS1) / `admin_23tdn` (DN) / `admin_207nvt` (HCM CS1), password `59@ntn`, vai trò `le_tan` (đã có perm `duyet_booking` + `xem_booking` + `them_booking` + `cap_nhat_trang_thai_khach` + `binh_luan_booking` từ Longevity).
+
+Verify tinker:
+```
+admin_59ntn  | Admin Cơ sở 59NTN  | cs=59ntn  | pb=bo_le_tan | vt=le_tan
+admin_23tdn  | Admin Cơ sở 23TDN  | cs=23tdn  | pb=bo_le_tan | vt=le_tan
+admin_207nvt | Admin Cơ sở 207NVT | cs=207nvt | pb=bo_le_tan | vt=le_tan
+```
+
+### Test regression
+- `php artisan test --filter="RolePermissionMatrix|Distribution|Ups"` → 61/65 pass.
+- 4 fail đều **pre-existing** (verify bằng git stash pop cùng test filter):
+  - `RolePermissionMatrixTest::Team sale × sa` + `CM sale × sa` — có sẵn trước Task 2.
+  - `DistributionEngineTest::test_full_flow_common_to_team_to_user` — pre-existing (đã ghi ở result.md cũ).
+  - `UpsDispatcherTest::test_pick_greet_returns_null_when_all_busy` — pre-existing.
+- **Không có test nào regress do Task 2.**
+
+### Chưa làm / dời lại
+- Feature test cho observer `markFree`: chưa viết, dựa vào regression manual. Task nhỏ, làm sau nếu bug bash phát hiện.
+- Task 3 (`/admin/catalog`): làm ở patch sau, không gộp chung để dễ review.
+
+### Ghi chú kỹ thuật
+- `RolePermissionSyncSeeder` chạy CUỐI + dùng `sync()` (replace) → chỉ cần sửa MATRIX ở đây, các seeder khác (OrgStaffSeeder, Phase66FlowSeeder, OrgAndRoleSeeder) không phải sửa — sẽ bị Sync đè.
+- Sbooking role `le_tan` **đã có sẵn** perm cần thiết → không tạo perm mới bên sbooking.
+- Filter booking history query trực tiếp trong Blade `@php` block — vì Livewire component đã có nhiều state, tránh thêm public method mới.
+- Observer dùng `wasChanged('sync_status')` → chỉ trigger đúng 1 lần khi status thực sự chuyển sang `done` (không bị double trigger nếu record đã ở `done` rồi).
+
+---
+
 ## 2026-08-03 — Phase 6.22: Cây Kho số, Role BO & UPS check-in ✅
 
 ### Đã làm

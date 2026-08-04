@@ -77,6 +77,13 @@ Route::middleware('auth')->group(function () {
     // Phase 6.6 — Quy tắc vận hành (chỉ admin hệ thống)
     Route::view('/ops/rules', 'ops.rules')->middleware('permission:ops.manage')->name('ops.rules');
 
+    // 2026-08-04 (Task 3) — Danh mục hệ thống: xem + nhập + xuất core catalog (chỉ Admin hệ thống)
+    Route::prefix('admin/catalog')->middleware('permission:user.manage')->group(function () {
+        Route::view('/', 'admin.catalog')->name('admin.catalog');
+        Route::get('/export/{tab}', [\App\Http\Controllers\SystemCatalogController::class, 'export'])->name('admin.catalog.export');
+        Route::get('/template/{tab}', [\App\Http\Controllers\SystemCatalogController::class, 'template'])->name('admin.catalog.template');
+    });
+
     // Sao lưu & khôi phục cấu hình / dữ liệu hệ thống
     Route::view('/settings/backup', 'settings.backup')
         ->middleware('permission:system.backup')->name('settings.backup');

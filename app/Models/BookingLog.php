@@ -78,6 +78,24 @@ class BookingLog extends Model
     }
 
     /**
+     * 2026-08-04 (Task 2): booking chuyển sync_status='done' (Admin cơ sở đóng buổi khám)
+     * → free CV1 khỏi `daily_attendance.is_busy`. Sale giữ nguyên bucket (A/B/C/OFF/MKT)
+     * và có thể nhận số mới ở lượt round-robin kế tiếp.
+     */
+    protected static function booted(): void
+    {
+        static::updated(function (self $log) {
+            if (! $log->wasChanged('sync_status')) return;
+            if ($log->sync_status !== 'done') return;
+
+            $cv1 = $log->consultants()->wherePivot('position', 1)->first();
+            if (! $cv1) return;
+
+            app(\App\Services\Ups\UpsDispatcher::class)->markFree($cv1->id);
+        });
+    }
+
+    /**
      * Sync 1 chiều: booking_log status → leads.booking_status (compat với code cũ).
      * Gọi sau khi save log.
      */
