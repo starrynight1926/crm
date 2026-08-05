@@ -1510,9 +1510,13 @@ new class extends Component
         session()->flash('status', 'Đã tạo lead mới.');
 
         // 2026-08-05 fix: mọi user tạo lead xong đều mở edit lead vừa tạo (không lùi về /create).
+        // Session flag go_to_booking_after_save chỉ nhảy phase 3 nếu user CÓ quyền đặt booking
+        // (Sale/Admin). Trực page (chỉ up lead) → giữ phase mặc định (1), không đá vào Booking tab.
         $params = ['lead' => $lead];
         if (session('go_to_booking_after_save')) {
-            $params['phase'] = 3;
+            if ($user->hasPermission('lead.book_action')) {
+                $params['phase'] = 3;
+            }
             session()->forget('go_to_booking_after_save');
         }
         if ($lead->canOpenEditForm($user)) {
