@@ -84,6 +84,8 @@ Route::middleware('auth')->group(function () {
     Route::prefix('admin/catalog')->middleware('permission:user.manage')->group(function () {
         Route::view('/', 'admin.catalog')->name('admin.catalog');
         Route::get('/export/{tab}', [\App\Http\Controllers\SystemCatalogController::class, 'export'])->name('admin.catalog.export');
+        // 2026-08-05: Export tất cả — 1 xlsx multi-sheet đầy đủ danh mục hệ thống + mirror sbooking.
+        Route::get('/export-all', fn () => app(\App\Services\CatalogExporter::class)->stream())->name('admin.catalog.export-all');
         Route::get('/template/{tab}', [\App\Http\Controllers\SystemCatalogController::class, 'template'])->name('admin.catalog.template');
     });
 

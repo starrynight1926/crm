@@ -164,6 +164,16 @@ new class extends Component
                 'org' => $f->orgUnit?->name ?? '(công ty)',
                 'required' => $f->required,
                 'active' => $f->active,
+                // 2026-08-05: list options + label riêng nếu có (chỉ áp cho type select/code kind=select).
+                'options' => (function () use ($f) {
+                    if (empty($f->options)) return '—';
+                    $lines = [];
+                    foreach ($f->options as $opt) {
+                        $lbl = $f->optionLabel($opt);
+                        $lines[] = ($lbl !== '' && $lbl !== $opt) ? "$opt = $lbl" : $opt;
+                    }
+                    return implode(' | ', $lines);
+                })(),
             ])->all();
     }
 
@@ -212,7 +222,13 @@ new class extends Component
         {{-- Xuất --}}
         <a href="{{ route('admin.catalog.export', ['tab' => $activeTab]) }}"
            class="text-xs bg-white border border-slate-300 hover:border-emerald-400 text-emerald-700 hover:bg-emerald-50 px-3 py-1.5 rounded">
-            ⬇ Xuất Excel (data hiện tại)
+            ⬇ Xuất Excel (tab hiện tại)
+        </a>
+
+        {{-- 2026-08-05: export tất cả — 1 xlsx multi-sheet đầy đủ danh mục (tổ chức, nhân sự, vai trò, cơ sở, BS/KTV/phòng/DV sbooking, custom fields, kho lead). --}}
+        <a href="{{ route('admin.catalog.export-all') }}"
+           class="text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-3 py-1.5 rounded">
+            📦 Export tất cả (xlsx đầy đủ)
         </a>
 
         <div class="ml-auto flex items-center gap-2" wire:key="upload-{{ $activeTab }}">
@@ -353,6 +369,7 @@ new class extends Component
                         <th class="px-3 py-2 text-left">Key</th>
                         <th class="px-3 py-2 text-left">Label</th>
                         <th class="px-3 py-2 text-left">Loại</th>
+                        <th class="px-3 py-2 text-left">Options</th>
                         <th class="px-3 py-2 text-left">Phòng ban</th>
                         <th class="px-3 py-2 text-center">Bắt buộc</th>
                         <th class="px-3 py-2 text-center">Active</th>
@@ -393,6 +410,7 @@ new class extends Component
                             <td class="px-3 py-1.5 font-mono text-xs">{{ $r['key'] }}</td>
                             <td class="px-3 py-1.5">{{ $r['label'] }}</td>
                             <td class="px-3 py-1.5 text-xs">{{ $r['field_type'] }}</td>
+                            <td class="px-3 py-1.5 text-[11px] text-ink/60 whitespace-normal break-words max-w-md">{{ $r['options'] }}</td>
                             <td class="px-3 py-1.5 text-xs">{{ $r['org'] }}</td>
                             <td class="px-3 py-1.5 text-center">{!! $r['required'] ? '⚠' : '' !!}</td>
                             <td class="px-3 py-1.5 text-center">{!! $r['active'] ? '✅' : '⛔' !!}</td>
