@@ -31,28 +31,31 @@ class OrgStaffSeeder extends Seeder
     // ---------------------------------------------------------------------
     private function seedOrgTree(): void
     {
+        // 2026-08-05 restructure: Marketing (chỉ Team Nhập Lead) tách khỏi Kinh Doanh (PKD1/PKD2).
+        // ĐN đồng dạng cấu trúc (đặc biệt về vai trò sale xuyên suốt).
         $tree = [
             ['code' => 'company', 'name' => 'Công ty', 'children' => [
                 ['code' => 'branch-hn', 'name' => 'Cơ sở Hà Nội: 59 Ngô Thì Nhậm', 'children' => [
                     ['code' => 'marketing-hn', 'name' => 'Marketing', 'children' => [
-                        // Team Nhập Lead dùng chung cho Marketing HN — chia số xuống các team sale.
                         ['code' => 'team-nhap-lead', 'name' => 'Team Nhập Lead'],
-                        ['code' => 'team-giang', 'name' => 'Team Trần Thị Thu Giang', 'children' => [
+                    ]],
+                    ['code' => 'kinh-doanh-hn', 'name' => 'Kinh Doanh', 'children' => [
+                        ['code' => 'team-giang', 'name' => 'Phòng Kinh Doanh 1', 'children' => [
                             ['code' => 'team-giang-booking', 'name' => 'Team Booking'],
                             ['code' => 'team-giang-sale', 'name' => 'Team Sale'],
                         ]],
-                        ['code' => 'team-hoi-hn', 'name' => 'Team Tạ Văn Hợi', 'children' => [
+                        ['code' => 'team-hoi-hn', 'name' => 'Phòng Kinh Doanh 2', 'children' => [
                             ['code' => 'team-hoi-booking', 'name' => 'Team Booking'],
                             ['code' => 'team-hoi-sale', 'name' => 'Team Sale'],
                         ]],
                     ]],
-                    // 2026-08-05: BỎ phòng BDM (không dùng — không có nhân sự, không có lead).
                 ]],
                 ['code' => 'branch-hcm', 'name' => 'Cơ sở HCM: 207 Nguyễn Văn Thụ', 'children' => [
                     ['code' => 'marketing-hcm', 'name' => 'Marketing', 'children' => [
-                        // Team Nhập Lead dùng chung cho Marketing HCM — chia số xuống team sale.
                         ['code' => 'team-nhap-lead-hcm', 'name' => 'Team Nhập Lead'],
-                        ['code' => 'team-ashley', 'name' => 'Team Ms. Ashley', 'children' => [
+                    ]],
+                    ['code' => 'kinh-doanh-hcm', 'name' => 'Kinh Doanh', 'children' => [
+                        ['code' => 'team-ashley', 'name' => 'Phòng Kinh Doanh 1', 'children' => [
                             ['code' => 'team-ashley-booking', 'name' => 'Team Booking'],
                             ['code' => 'team-ashley-sale', 'name' => 'Team Sale'],
                         ]],
@@ -60,10 +63,13 @@ class OrgStaffSeeder extends Seeder
                 ]],
                 ['code' => 'branch-dn', 'name' => 'Cơ sở Đà Nẵng', 'children' => [
                     ['code' => 'marketing-dn', 'name' => 'Marketing', 'children' => [
-                        // Team Nhập Lead dùng chung cho Marketing ĐN.
                         ['code' => 'team-nhap-lead-dn', 'name' => 'Team Nhập Lead'],
-                        ['code' => 'team-dn-booking', 'name' => 'Team Booking'],
-                        ['code' => 'team-dn-sale', 'name' => 'Team Sale'],
+                    ]],
+                    ['code' => 'kinh-doanh-dn', 'name' => 'Kinh Doanh', 'children' => [
+                        ['code' => 'team-dn', 'name' => 'Phòng Kinh Doanh 1', 'children' => [
+                            ['code' => 'team-dn-booking', 'name' => 'Team Booking'],
+                            ['code' => 'team-dn-sale', 'name' => 'Team Sale'],
+                        ]],
                     ]],
                 ]],
                 ['code' => 'ops-monitor', 'name' => 'Vận hành & Giám sát', 'children' => [
