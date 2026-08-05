@@ -13,7 +13,17 @@ new class extends Component
 {
     use WithPagination;
 
-    public string $tab = Lead::POOL_COMMON; // common / team / personal
+    // 2026-08-05: 5 tab thay 3 — tách kho team theo cấp PoolUnit.
+    // company | branch | facility | department | personal
+    public string $tab = 'company';
+
+    public const TAB_KINDS = [
+        'company'    => ['label' => 'Kho công ty',   'pool_level' => Lead::POOL_COMMON,   'pool_kind' => null],
+        'branch'     => ['label' => 'Kho Chi nhánh', 'pool_level' => Lead::POOL_TEAM,     'pool_kind' => 'branch'],
+        'facility'   => ['label' => 'Kho địa điểm',  'pool_level' => Lead::POOL_TEAM,     'pool_kind' => 'facility'],
+        'department' => ['label' => 'Kho cơ sở',     'pool_level' => Lead::POOL_TEAM,     'pool_kind' => 'department'],
+        'personal'   => ['label' => 'Kho cá nhân',   'pool_level' => Lead::POOL_PERSONAL, 'pool_kind' => null],
+    ];
 
     public string $fOrgUnit = '';
 
@@ -51,15 +61,33 @@ new class extends Component
     // Popup chi tiết
     public ?int $detailLeadId = null;
 
+    public function mount(): void
+    {
+        // Sale cá nhân → default tab 'personal' (họ không có perm distribute).
+        if (! auth()->user()->hasAnyPermission(['lead.distribute', 'lead.distribute_to_team', 'lead.distribute_to_sale'])) {
+            $this->tab = 'personal';
+        }
+    }
+
     public function switchTab(string $tab): void
     {
-        abort_unless(in_array($tab, [Lead::POOL_COMMON, Lead::POOL_TEAM, Lead::POOL_PERSONAL]), 422);
+        abort_unless(array_key_exists($tab, self::TAB_KINDS), 422);
         $this->tab = $tab;
         $this->assigningLeadId = null;
         $this->poolingLeadId = null;
         $this->bulkMode = '';
         $this->selected = [];
         $this->resetPage();
+    }
+
+    /** 2026-08-05: tab hợp lệ cho user hiện tại (Sale cá nhân chỉ thấy 'personal'). */
+    public function visibleTabs(): array
+    {
+        $user = auth()->user();
+        $canDistribute = $user->hasAnyPermission(['lead.distribute', 'lead.distribute_to_team', 'lead.distribute_to_sale']);
+        if ($canDistribute) return self::TAB_KINDS;
+        // Sale cá nhân → chỉ Kho cá nhân.
+        return ['personal' => self::TAB_KINDS['personal']];
     }
 
     public function updatedPerPage(): void
@@ -81,12 +109,15 @@ new class extends Component
     private function filtered()
     {
         $user = auth()->user();
+        $spec = self::TAB_KINDS[$this->tab] ?? self::TAB_KINDS['company'];
 
         return Lead::query()
-            ->where('pool_level', $this->tab)
+            ->where('pool_level', $spec['pool_level'])
             ->with(['owner', 'poolUnit'])
-            ->when($this->tab !== Lead::POOL_COMMON, fn ($q) => $q->visibleTo($user))
-            ->when($this->tab === Lead::POOL_TEAM && $this->fOrgUnit, fn ($q) => $q->where('pool_unit_id', $this->fOrgUnit))
+            ->when($this->tab !== 'company', fn ($q) => $q->visibleTo($user))
+            // Lọc theo kind của PoolUnit cho các tab team (branch/facility/department).
+            ->when($spec['pool_kind'], fn ($q) => $q->whereHas('poolUnit', fn ($pq) => $pq->where('kind', $spec['pool_kind'])))
+            ->when($this->tab === 'department' && $this->fOrgUnit, fn ($q) => $q->where('pool_unit_id', $this->fOrgUnit))
             ->orderByDesc('id');
     }
 
@@ -322,11 +353,13 @@ new class extends Component
         return [
             'leads' => $leads,
             'allPageSelected' => $pageIds !== [] && count(array_intersect($pageIds, $this->selected)) === count($pageIds),
-            'counts' => [
-                Lead::POOL_COMMON => Lead::where('pool_level', Lead::POOL_COMMON)->count(),
-                Lead::POOL_TEAM => Lead::where('pool_level', Lead::POOL_TEAM)->visibleTo($user)->count(),
-                Lead::POOL_PERSONAL => Lead::where('pool_level', Lead::POOL_PERSONAL)->visibleTo($user)->count(),
-            ],
+            'counts' => collect(self::TAB_KINDS)->map(function ($spec, $key) use ($user) {
+                $q = Lead::where('pool_level', $spec['pool_level']);
+                if ($key !== 'company') $q->visibleTo($user);
+                if ($spec['pool_kind']) $q->whereHas('poolUnit', fn ($pq) => $pq->where('kind', $spec['pool_kind']));
+                return $q->count();
+            })->all(),
+            'visibleTabs' => $this->visibleTabs(),
             'teamOptions' => \App\Models\PoolUnit::where('is_active', true)->where('depth', '>', 0)->orderBy('path')->get(),
             'poolOrgs' => $this->poolOrgs(),
             'assignableUsers' => User::where('status', 'active')
@@ -350,7 +383,7 @@ new class extends Component
 <div>
     <div class="mb-6">
         <h1 class="text-3xl font-bold mb-1">Quản lý Kho Lead tập trung</h1>
-        <p class="text-sm text-ink/60">3 cấp kho: chung → team → cá nhân. Lead về là chia ngay theo rule; kho là nơi xử lý phần chưa chia được.</p>
+        <p class="text-sm text-ink/60">5 cấp kho: Công ty → Chi nhánh → Địa điểm → Cơ sở → Cá nhân. Sale cá nhân chỉ thấy kho của mình.</p>
     </div>
 
     @if (session('status'))
@@ -360,33 +393,33 @@ new class extends Component
         <p class="mb-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-4 py-2">{{ session('error') }}</p>
     @endif
 
-    {{-- Tabs 3 kho --}}
-    <div class="border-b border-gold-200 mb-5 flex gap-1 text-sm font-semibold uppercase tracking-wide">
-        @foreach ([Lead::POOL_COMMON => 'Kho chung', Lead::POOL_TEAM => 'Kho team', Lead::POOL_PERSONAL => 'Kho cá nhân'] as $key => $label)
+    {{-- 2026-08-05: 5 tab kho (Công ty / Chi nhánh / Địa điểm / Cơ sở / Cá nhân). Sale cá nhân chỉ thấy tab Cá nhân. --}}
+    <div class="border-b border-gold-200 mb-5 flex gap-1 text-sm font-semibold uppercase tracking-wide flex-wrap">
+        @foreach ($visibleTabs as $key => $spec)
             <button wire:click="switchTab('{{ $key }}')"
                     class="px-4 py-3 border-b-2 -mb-px {{ $tab === $key ? 'border-gold-600 text-gold-700' : 'border-transparent text-ink/50 hover:text-gold-700' }}">
-                {{ $label }}
-                <span class="ml-1 text-xs bg-gold-100 text-gold-800 px-2 py-0.5 rounded-full">{{ $counts[$key] }}</span>
+                {{ $spec['label'] }}
+                <span class="ml-1 text-xs bg-gold-100 text-gold-800 px-2 py-0.5 rounded-full">{{ $counts[$key] ?? 0 }}</span>
             </button>
         @endforeach
         <div class="flex-1"></div>
-        @if ($tab === Lead::POOL_TEAM)
-            {{-- 2026-08-03 cascade filter: Địa điểm → Cơ sở → Phòng ban. --}}
+        {{-- Filter phòng ban (kho Cơ sở = department) — chỉ khi tab='department'. --}}
+        @if ($tab === 'department')
             <div class="flex flex-wrap items-center gap-2 mb-2">
                 <select wire:model.live="fBranchId" class="border border-gold-200 rounded-md px-2.5 py-1.5 text-sm bg-white">
-                    <option value="">Tất cả địa điểm</option>
+                    <option value="">Tất cả Chi nhánh</option>
                     @foreach (\App\Models\PoolUnit::where('is_active',true)->where('kind','branch')->orderBy('sort')->orderBy('name')->get() as $b)
                         <option value="{{ $b->id }}">{{ $b->name }}</option>
                     @endforeach
                 </select>
                 <select wire:model.live="fFacilityId" @disabled(! $fBranchId) class="border border-gold-200 rounded-md px-2.5 py-1.5 text-sm bg-white disabled:bg-slate-100">
-                    <option value="">{{ $fBranchId ? 'Tất cả cơ sở' : '—' }}</option>
+                    <option value="">{{ $fBranchId ? 'Tất cả Địa điểm' : '—' }}</option>
                     @foreach (($fBranchId ? \App\Models\PoolUnit::where('is_active',true)->where('kind','facility')->where('parent_id',$fBranchId)->orderBy('sort')->orderBy('name')->get() : []) as $f)
                         <option value="{{ $f->id }}">{{ $f->name }}</option>
                     @endforeach
                 </select>
                 <select wire:model.live="fDepartmentId" @disabled(! $fFacilityId) class="border border-gold-200 rounded-md px-2.5 py-1.5 text-sm bg-white disabled:bg-slate-100">
-                    <option value="">{{ $fFacilityId ? 'Tất cả phòng ban' : '—' }}</option>
+                    <option value="">{{ $fFacilityId ? 'Tất cả Cơ sở' : '—' }}</option>
                     @foreach (($fFacilityId ? \App\Models\PoolUnit::where('is_active',true)->where('kind','department')->where('parent_id',$fFacilityId)->orderBy('sort')->orderBy('name')->get() : []) as $d)
                         <option value="{{ $d->id }}">{{ $d->name }}</option>
                     @endforeach
@@ -417,7 +450,7 @@ new class extends Component
                         <optgroup label="📍 {{ $__b->name }}">
                             <option value="{{ $__b->id }}">Kho địa điểm: {{ $__b->name }}</option>
                             @foreach ($poolOrgs->where('parent_id', $__b->id) as $__f)
-                                <option value="{{ $__f->id }}">&nbsp;&nbsp;🏢 Cơ sở: {{ $__f->name }}</option>
+                                <option value="{{ $__f->id }}">&nbsp;&nbsp;📍 Địa điểm: {{ $__f->name }}</option>
                                 @foreach ($poolOrgs->where('parent_id', $__f->id) as $__d)
                                     <option value="{{ $__d->id }}">&nbsp;&nbsp;&nbsp;&nbsp;👥 {{ $__d->name }}</option>
                                 @endforeach
@@ -506,7 +539,7 @@ new class extends Component
                         <optgroup label="📍 {{ $__b->name }}">
                             <option value="{{ $__b->id }}">Kho địa điểm: {{ $__b->name }}</option>
                             @foreach ($poolOrgs->where('parent_id', $__b->id) as $__f)
-                                <option value="{{ $__f->id }}">&nbsp;&nbsp;🏢 Cơ sở: {{ $__f->name }}</option>
+                                <option value="{{ $__f->id }}">&nbsp;&nbsp;📍 Địa điểm: {{ $__f->name }}</option>
                                 @foreach ($poolOrgs->where('parent_id', $__f->id) as $__d)
                                     <option value="{{ $__d->id }}">&nbsp;&nbsp;&nbsp;&nbsp;👥 {{ $__d->name }}</option>
                                 @endforeach

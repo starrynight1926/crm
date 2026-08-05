@@ -68,8 +68,11 @@ Route::middleware('auth')->group(function () {
         Route::get('/{lead}', fn (\App\Models\Lead $lead) => view('leads.show', ['lead' => $lead]))->name('leads.show');
         Route::get('/{lead}/booking-callback', \App\Http\Controllers\BookingCallbackController::class)->name('leads.booking-callback');
         Route::get('/{lead}/edit', function (\App\Models\Lead $lead) {
-            abort_unless($lead->canEditPersonalInfo(auth()->user()), 403,
-                'Bạn không có quyền sửa thông tin khách hàng ở phase ' . ($lead->pipeline_phase ?? 'sale') . '.');
+            // 2026-08-05: đổi gate canEditPersonalInfo → canOpenEditForm (owner Sale/Tele mở
+            // được form để ghi call/booking log, dù không có perm sửa info personal).
+            // Form tự readonly các field ngoài quyền.
+            abort_unless($lead->canOpenEditForm(auth()->user()), 403,
+                'Bạn không có quyền truy cập lead này ở phase ' . ($lead->pipeline_phase ?? 'sale') . '.');
             return view('leads.edit', ['lead' => $lead]);
         })->name('leads.edit');
     });

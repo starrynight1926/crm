@@ -161,13 +161,14 @@ new class extends Component
                         <th class="px-4 py-2.5 font-semibold">Nguồn</th>
                         <th class="px-4 py-2.5 font-semibold text-center">Phase</th>
                         <th class="px-4 py-2.5 font-semibold">Chia cho</th>
+                        <th class="px-4 py-2.5 font-semibold">Trạng thái booking</th>
                         <th class="px-4 py-2.5 font-semibold">Trạng thái</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-gold-50">
-                    @php $isSale = auth()->user()->hasPermission('lead.consult'); @endphp
                     @forelse ($todayLeads as $lead)
-                        @php $rowHref = $isSale ? route('leads.show', $lead) : route('leads.edit', $lead); @endphp
+                        {{-- 2026-08-05: mọi user click → /edit (form 7 phase). Route gate canOpenEditForm sẽ tự chặn nếu không có quyền. --}}
+                        @php $rowHref = route('leads.edit', $lead); @endphp
                         <tr class="hover:bg-gold-50/40 cursor-pointer" onclick="window.location='{{ $rowHref }}'">
                             <td class="px-4 py-2 font-mono text-xs text-gold-700">{{ $lead->code ?? '—' }}</td>
                             <td class="px-4 py-2 font-semibold">{{ $lead->name }}</td>
@@ -178,12 +179,18 @@ new class extends Component
                             </td>
                             <td class="px-4 py-2 text-ink/70">{{ $lead->owner?->name ?: '—' }}</td>
                             <td class="px-4 py-2">
+                                @php $bs = $lead->booking_status; @endphp
+                                <span class="text-xs px-2 py-0.5 rounded-full border {{ \App\Models\Lead::BOOKING_STATUS_COLORS[$bs] ?? 'bg-slate-50 border-slate-200 text-slate-700' }}">
+                                    {{ (\App\Models\Lead::BOOKING_STATUS_ICONS[$bs] ?? '') }} {{ \App\Models\Lead::BOOKING_STATUSES[$bs] ?? '—' }}
+                                </span>
+                            </td>
+                            <td class="px-4 py-2">
                                 <span class="text-xs bg-gold-50 border border-gold-200 text-gold-700 px-2 py-0.5 rounded-full">{{ $lead->classificationLabel() }}</span>
                             </td>
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="7" class="px-4 py-10 text-center text-ink/40 italic">
+                            <td colspan="8" class="px-4 py-10 text-center text-ink/40 italic">
                                 @if ($fSearch || $fPhase || $fSource)
                                     Không có lead nào khớp bộ lọc.
                                 @else

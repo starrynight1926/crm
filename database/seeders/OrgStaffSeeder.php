@@ -46,7 +46,7 @@ class OrgStaffSeeder extends Seeder
                             ['code' => 'team-hoi-sale', 'name' => 'Team Sale'],
                         ]],
                     ]],
-                    ['code' => 'bdm', 'name' => 'BDM'],
+                    // 2026-08-05: BỎ phòng BDM (không dùng — không có nhân sự, không có lead).
                 ]],
                 ['code' => 'branch-hcm', 'name' => 'Cơ sở HCM: 207 Nguyễn Văn Thụ', 'children' => [
                     ['code' => 'marketing-hcm', 'name' => 'Marketing', 'children' => [
@@ -265,8 +265,8 @@ class OrgStaffSeeder extends Seeder
             ['email' => 'dn.trucpage@longevity.com.vn',  'name' => 'Tài khoản Nhập Lead cơ sở ĐN',  'job_title' => null],
             // 2026-08-05: tài khoản test đặt tên "Tài khoản + chức năng" cho rõ.
             // Bỏ cmbktg (CM Booking Team Giang) + cmsale (CM Sale) — không cần trong luồng test cơ bản.
-            ['email' => 'book1@longevity.com.vn',  'name' => 'Tài khoản Booking',       'job_title' => null],
-            ['email' => 'book2@longevity.com.vn',  'name' => 'Tài khoản Sale Booking',  'job_title' => null],
+            ['email' => 'book1@longevity.com.vn',  'name' => 'Tài khoản Booking 1',  'job_title' => null],
+            ['email' => 'book2@longevity.com.vn',  'name' => 'Tài khoản Booking 2',  'job_title' => null],
         ];
     }
 

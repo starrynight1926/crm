@@ -39,13 +39,29 @@ new class extends Component
         if ($user->hasPermission('user.manage')) {
             return PoolUnit::where('kind', 'branch')->orderBy('sort')->get()->all();
         }
-        $orgIds = $user->assignments()->pluck('org_unit_id')->all();
-        if (! $orgIds) {
-            return [];
+        // 2026-08-05 fix: trước chỉ check direct assignment.org_unit_id → user assignment ở team-nhap-lead
+        // (không map trực tiếp tới branch) bị miss. Giờ gom TOÀN BỘ ANCESTORS của assignment → tra org_pool_map.
+        $ancestorOrgIds = [];
+        foreach ($user->effectiveAssignments() as $assignment) {
+            foreach (array_filter(explode('/', trim((string) $assignment->orgUnit->path, '/'))) as $seg) {
+                $ancestorOrgIds[(int) $seg] = true;
+            }
         }
-        $poolIds = DB::table('org_pool_map')->whereIn('org_unit_id', $orgIds)->pluck('pool_unit_id')->all();
+        if (! $ancestorOrgIds) return [];
 
-        return PoolUnit::whereIn('id', $poolIds)->where('kind', 'branch')->orderBy('sort')->get()->all();
+        $mappedPoolIds = DB::table('org_pool_map')->whereIn('org_unit_id', array_keys($ancestorOrgIds))->pluck('pool_unit_id')->all();
+        if (! $mappedPoolIds) return [];
+
+        // Từ pool đã map, đi lên tới kind=branch (nếu map là facility/department → lấy cha branch).
+        $branchIds = [];
+        foreach (PoolUnit::whereIn('id', $mappedPoolIds)->get() as $p) {
+            $n = $p;
+            while ($n && $n->kind !== 'branch') $n = $n->parent;
+            if ($n) $branchIds[$n->id] = true;
+        }
+        if (! $branchIds) return [];
+
+        return PoolUnit::whereIn('id', array_keys($branchIds))->orderBy('sort')->get()->all();
     }
 
     /** Sale user thuộc riêng 1 cơ sở (facility pool) — dựa org_pool_map cấp facility. */

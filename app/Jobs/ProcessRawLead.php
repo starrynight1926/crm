@@ -214,6 +214,44 @@ class ProcessRawLead implements ShouldQueue
             'processed_at' => now(),
         ]);
 
+        // 2026-08-05: cột "Phương thức chia" (import xlsx trực page) — auto UPS hoặc thả kho theo perm.
+        //   Payload key '_distribution_target' đã được parse ở LeadImport (auto | pool:<id>).
+        //   Strict gate: pool ngoài phạm vi quyền user → HỦY BỎ upload (xóa lead vừa tạo + fail raw).
+        if (! empty($payload['_distribution_target']) && $sourceGroup === Lead::SOURCE_MKT) {
+            $target = $payload['_distribution_target'];
+            $uploader = $importedBy ? \App\Models\User::find($importedBy) : null;
+
+            if ($target === 'auto') {
+                $facility = $uploader ? $this->resolveTrucPageFacility($uploader) : null;
+                if ($facility) {
+                    $picked = app(\App\Services\Ups\UpsDispatcher::class)->pickMkt($facility->id);
+                    if ($picked) {
+                        $this->assignToOwner($lead, $picked);
+                        \App\Models\LeadStatusLog::record($lead, 'note', null, "Import: auto chia UPS → {$picked->name}", null);
+                    } else {
+                        \App\Models\LeadStatusLog::record($lead, 'note', null, 'Import: UPS list rỗng ở '.$facility->name.' — giữ ở kho chung.', null);
+                    }
+                }
+            } elseif (str_starts_with($target, 'pool:') && $uploader) {
+                $poolId = (int) substr($target, 5);
+                $allowed = $this->allowedPoolIds($uploader);
+                $pool = \App\Models\PoolUnit::find($poolId);
+                if (! $pool || ! in_array($poolId, $allowed, true)) {
+                    // Hủy upload row này.
+                    $lead->forceDelete();
+                    $this->fail_($raw, 'Kho "'.($pool?->name ?? '?').'" NGOÀI phạm vi quyền — cần lead.distribute_branch (toàn Chi nhánh) hoặc lead.distribute_company (toàn Công ty).');
+                    return;
+                }
+                $lead->update(['pool_unit_id' => $poolId, 'pool_level' => Lead::POOL_TEAM]);
+                \App\Models\LeadStatusLog::record($lead, 'note', null, "Import: thả vào kho {$pool->name}", null);
+            }
+        } elseif (! empty($payload['_distribution_error'])) {
+            // Không nhận diện được tên kho — hủy upload row.
+            $lead->forceDelete();
+            $this->fail_($raw, $payload['_distribution_error']);
+            return;
+        }
+
         // Có cột CHIA CHO khớp được người → gán thẳng cho sale đó + team của họ.
         if ($targetOwner) {
             $this->assignToOwner($lead, $targetOwner);
@@ -267,6 +305,55 @@ class ProcessRawLead implements ShouldQueue
         }
 
         return null;
+    }
+
+    /**
+     * 2026-08-05 — Danh sách pool_unit_id user được phép thả lead vào khi import.
+     * Rule (khớp UI /leads/create):
+     *   - lead.distribute_company → toàn bộ PoolUnit (mọi cấp).
+     *   - lead.distribute_branch  → subtree Chi nhánh của user (Chi nhánh + Địa điểm con + PKD con).
+     *   - mặc định                → chỉ Địa điểm của user (facility) + PKD con.
+     */
+    private function allowedPoolIds(User $user): array
+    {
+        if ($user->hasPermission('lead.distribute_company')) {
+            return \App\Models\PoolUnit::pluck('id')->all();
+        }
+        $facility = $this->resolveTrucPageFacility($user);
+        if (! $facility) return [];
+
+        // subtree Địa điểm (facility + department con)
+        $facilitySubtree = \App\Models\PoolUnit::where('path', 'like', $facility->path.'%')->pluck('id')->all();
+
+        if ($user->hasPermission('lead.distribute_branch')) {
+            $branch = $facility;
+            while ($branch && $branch->kind !== 'branch') $branch = $branch->parent;
+            if ($branch) {
+                return \App\Models\PoolUnit::where('path', 'like', $branch->path.'%')->pluck('id')->all();
+            }
+        }
+        return $facilitySubtree;
+    }
+
+    /**
+     * 2026-08-05 — resolveTrucPageFacility: cơ sở PoolUnit của user (assignment → org_pool_map).
+     * Mirror của LeadForm::trucPageFacility() — dùng cho import job (auto UPS chia).
+     */
+    private function resolveTrucPageFacility(User $user): ?\App\Models\PoolUnit
+    {
+        $ancestorOrgIds = [];
+        foreach ($user->effectiveAssignments() as $assignment) {
+            foreach (array_filter(explode('/', trim((string) $assignment->orgUnit->path, '/'))) as $seg) {
+                $ancestorOrgIds[(int) $seg] = true;
+            }
+        }
+        if ($ancestorOrgIds === []) return null;
+
+        $facilities = \App\Models\PoolUnit::where('kind', 'facility')->where('is_active', true)
+            ->whereIn('id', function ($q) use ($ancestorOrgIds) {
+                $q->select('pool_unit_id')->from('org_pool_map')->whereIn('org_unit_id', array_keys($ancestorOrgIds));
+            })->get();
+        return $facilities->count() === 1 ? $facilities->first() : null;
     }
 
     /** Gán lead cho owner + team của owner (kho cá nhân), bỏ qua engine chia số. */

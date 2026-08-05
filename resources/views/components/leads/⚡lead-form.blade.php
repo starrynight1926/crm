@@ -79,6 +79,13 @@ new class extends Component
     public string $poolFacilityId = '';
     public string $poolDepartmentId = '';
 
+    /**
+     * 2026-08-05: MKT distribution mode cho trực page.
+     *   'auto' = chia ngay từ UPS list (round-robin, theo cơ sở trực page).
+     *   'pool' = thả lead vào kho theo cấp quyền cao nhất (Cơ sở / Chi nhánh / Công ty).
+     */
+    public string $mktMode = 'auto';
+
     /** Chia trực tiếp cho cá nhân (ưu tiên hơn kho nếu có). */
     public ?int $personId = null;
 
@@ -255,6 +262,25 @@ new class extends Component
             session()->flash('cf_error', 'Cơ sở "' . ($facilityForCheck?->name ?? '?') . '" (hoặc cơ sở cha) chưa được kết nối sbooking. Vào Thiết lập → Kết nối Booking để map sbooking_co_so_id trước khi ghi booking.');
             return;
         }
+        // 2026-08-05: CV auto lấy từ UPS Sale list (pickGreet round-robin bucket A→B→C→OFF).
+        // Số CV = số slot user thêm. UPS list rỗng → block; wrap-around khi all busy đã có trong pickGreet.
+        $poolFac = $this->trucPageFacility();
+        if (! $poolFac) {
+            session()->flash('cf_error', 'Không xác định được cơ sở UPS của bạn — liên hệ Admin kiểm tra phân quyền (org_pool_map).');
+            return;
+        }
+        $slotCount = max(1, count($this->newBookingConsultantIds));
+        $ups = app(\App\Services\Ups\UpsDispatcher::class);
+        $pickedCvIds = [];
+        for ($i = 0; $i < $slotCount; $i++) {
+            $picked = $ups->pickGreet($poolFac->id);
+            if (! $picked) {
+                session()->flash('cf_error', 'Chưa có UPS list Sale hôm nay ở cơ sở "'.$poolFac->name.'" — không tạo được booking. Liên hệ Admin BO chốt UPS list trước.');
+                return;
+            }
+            $pickedCvIds[] = $picked->id;
+        }
+        $this->newBookingConsultantIds = $pickedCvIds;
         // Combine date + time thành scheduled_at + parse end time + khung_gio_id.
         // 2026-08-03 fix bug #2: newBookingTime từ dropdown mã hoá "kg_id|start|end" (start/end HH:mm).
         // Legacy fallback: "HH:mm" hoặc "HH:mm-HH:mm" (không có kg_id).
@@ -822,6 +848,11 @@ new class extends Component
             } else {
                 $this->activePhase = $lead->isBulkOpen() ? $lead->openFrom() : (int) $lead->phase;
                 if ($this->activePhase < 1 || $this->activePhase > 6) $this->activePhase = 1;
+                // 2026-08-05: owner (Sale/Tele) mở lead → default tab Call (2) để ghi cuộc gọi ngay.
+                // Chỉ khi phase hiện tại còn thấp (chưa qua Call) và owner có canLogCall.
+                if ($lead->owner_id === auth()->id() && $this->activePhase < 2 && $lead->canLogCall(auth()->user())) {
+                    $this->activePhase = 2;
+                }
             }
             $this->isFirstVisit = (bool) $lead->is_first_visit;
         } else {
@@ -1004,6 +1035,122 @@ new class extends Component
         }
 
         return $this->lead?->org_unit_id ? $this->lead->orgUnit : null;
+    }
+
+    /**
+     * 2026-08-05 — PoolUnit cơ sở của trực page (từ org_pool_map).
+     * Trực page mỗi cơ sở = 1 tài khoản → thường đúng 1 cơ sở. Trả về null nếu 0 hoặc >1
+     * (phân quyền lỗi — báo Admin).
+     */
+    private function trucPageFacility(): ?\App\Models\PoolUnit
+    {
+        $ancestorOrgIds = [];
+        foreach (auth()->user()->effectiveAssignments() as $assignment) {
+            foreach (array_filter(explode('/', trim((string) $assignment->orgUnit->path, '/'))) as $seg) {
+                $ancestorOrgIds[(int) $seg] = true;
+            }
+        }
+        if ($ancestorOrgIds === []) return null;
+
+        $facilities = \App\Models\PoolUnit::where('kind', 'facility')->where('is_active', true)
+            ->whereIn('id', function ($q) use ($ancestorOrgIds) {
+                $q->select('pool_unit_id')->from('org_pool_map')->whereIn('org_unit_id', array_keys($ancestorOrgIds));
+            })->get();
+
+        return $facilities->count() === 1 ? $facilities->first() : null;
+    }
+
+    /**
+     * 2026-08-05 — Preview N sale kế tiếp trong UPS Sale list (bucket A→B→C→OFF) cho auto-CV booking.
+     * KHÔNG update state ups_rr_state — chỉ dùng show trong UI.
+     * Nếu tất cả bucket bận → wrap-around (bỏ qua is_busy, đúng logic pickGreet fallback).
+     * Trả về [User1, User2, ...] tối đa $n phần tử; empty nếu UPS list rỗng.
+     *
+     * @return array<int, \App\Models\User>
+     */
+    private function previewNextGreets(int $facilityPoolUnitId, int $n = 3): array
+    {
+        $workDate = now()->toDateString();
+        $sales = collect();
+        foreach (\App\Services\Ups\UpsDispatcher::BUCKET_ORDER_GREET as $bucket) {
+            $bucketSales = \App\Models\DailyAttendance::with('user')
+                ->where('facility_pool_unit_id', $facilityPoolUnitId)
+                ->whereDate('work_date', $workDate)
+                ->where('list_bucket', $bucket)
+                ->orderBy('checkin_at')
+                ->get()->pluck('user')->filter();
+            $sales = $sales->concat($bucketSales);
+        }
+        $sales = $sales->values();
+        if ($sales->isEmpty()) return [];
+
+        // Tách active (không busy) và busy — active trước, busy sau (wrap-around fallback).
+        $active = $sales->filter(fn ($u) => ! \App\Models\DailyAttendance::where('user_id', $u->id)
+            ->whereDate('work_date', $workDate)->value('is_busy'))->values();
+        $ordered = $active->isEmpty() ? $sales : $active;
+
+        $result = [];
+        for ($i = 0; $i < $n; $i++) {
+            $result[] = $ordered[$i % $ordered->count()];
+        }
+        return $result;
+    }
+
+    /**
+     * 2026-08-05 — Preview sale kế trong MKT List (KHÔNG update state ups_rr_state).
+     * Dùng cho banner "Tự động" để user biết ai sẽ nhận trước khi bấm Lưu.
+     */
+    private function previewMktNextSale(int $facilityPoolUnitId): ?\App\Models\User
+    {
+        $workDate = now()->toDateString();
+        $sales = \App\Models\DailyAttendance::with('user')
+            ->where('facility_pool_unit_id', $facilityPoolUnitId)
+            ->whereDate('work_date', $workDate)
+            ->where('list_bucket', 'MKT')
+            ->where('is_busy', false)
+            ->orderBy('checkin_at')
+            ->get()->pluck('user')->filter()->values();
+        if ($sales->isEmpty()) return null;
+
+        $state = \Illuminate\Support\Facades\DB::table('ups_rr_state')
+            ->where('facility_pool_unit_id', $facilityPoolUnitId)
+            ->where('work_date', $workDate)
+            ->where('bucket', 'MKT')
+            ->first();
+        $lastIdx = -1;
+        if ($state?->last_user_id) {
+            foreach ($sales as $i => $s) {
+                if ($s->id === $state->last_user_id) { $lastIdx = $i; break; }
+            }
+        }
+        return $sales[($lastIdx + 1) % $sales->count()];
+    }
+
+    /**
+     * 2026-08-05 — PoolUnit đích khi trực page chọn "Chia về kho".
+     * Cấp kho do quyền quyết định (không cho tự chọn):
+     *   - lead.distribute_company → kho Công ty (cao nhất).
+     *   - lead.distribute_branch  → kho Chi nhánh của trực page.
+     *   - mặc định                → kho Cơ sở của trực page (nhỏ nhất).
+     */
+    private function mktPoolTarget(): ?\App\Models\PoolUnit
+    {
+        $user = auth()->user();
+
+        if ($user->hasPermission('lead.distribute_company')) {
+            return \App\Models\PoolUnit::where('kind', 'company')->first();
+        }
+
+        $facility = $this->trucPageFacility();
+        if (! $facility) return null;
+
+        if ($user->hasPermission('lead.distribute_branch')) {
+            $node = $facility;
+            while ($node && $node->kind !== 'branch') $node = $node->parent;
+            return $node;
+        }
+
+        return $facility;
     }
 
     /** Validate + trả về [field_id => value] chỉ gồm các trường áp dụng. Trả null nếu có lỗi. */
@@ -1215,24 +1362,42 @@ new class extends Component
         // 2026-08-05 fix: Trực page mỗi cơ sở là 1 tài khoản riêng (VD Trực page 59NTN HN, Trực page 207NVT HCM).
         // Không bắt user chọn kho cấp Cơ sở nữa — resolve cơ sở từ scope assignment của họ.
         // Ưu tiên poolTarget nếu user có chọn org cụ thể, fallback về assignment.
+        // 2026-08-05 — Nguồn MKT (trực page): 2 mode.
+        //   auto → chia ngay từ MKT List UPS (round-robin theo cơ sở trực page).
+        //   pool → thả kho, cấp kho theo quyền (distribute_company > distribute_branch > mặc định cơ sở).
         $mktAutoAssigned = false;
         if (! $this->lead?->exists && $this->sourceGroup === Lead::SOURCE_MKT && ! $this->personId) {
-            $facility = $this->resolveMktFacility();
+            $facility = $this->trucPageFacility();
             if (! $facility) {
-                $this->addError('poolTarget', 'Nguồn Marketing: không xác định được cơ sở duy nhất từ scope của bạn (tài khoản trực page phải thuộc 1 cơ sở). Liên hệ Admin kiểm tra phân quyền.');
+                $this->addError('mktMode', 'Tài khoản trực page không map được cơ sở duy nhất — liên hệ Admin kiểm tra org_pool_map.');
                 return;
             }
-            $picked = app(\App\Services\Ups\UpsDispatcher::class)->pickMkt($facility->id);
-            if (! $picked) {
-                $this->addError('poolTarget', 'Chưa có Sale nào trong MKT List UPS hôm nay ở cơ sở "'.$facility->name.'". Liên hệ BO chốt UPS trước khi up lead.');
-                return;
+
+            if ($this->mktMode === 'auto') {
+                $picked = app(\App\Services\Ups\UpsDispatcher::class)->pickMkt($facility->id);
+                if (! $picked) {
+                    $this->addError('mktMode', 'Chưa có Sale nào trong MKT List UPS hôm nay ở cơ sở "'.$facility->name.'". Chuyển "Chia về kho" hoặc liên hệ BO chốt UPS.');
+                    return;
+                }
+                $this->personId = $picked->id;
+                $mktAutoAssigned = true;
+                session()->flash('status', "MKT List: Đã chia lead cho {$picked->name} (round-robin).");
+            } else { // pool
+                $target = $this->mktPoolTarget();
+                if (! $target) {
+                    $this->addError('mktMode', 'Không xác định được kho đích theo phân quyền — liên hệ Admin.');
+                    return;
+                }
+                $this->poolTarget = 'org:' . $target->id;
+                session()->flash('status', "Đã chia lead vào kho {$target->name}. Chờ CM chia tiếp.");
             }
-            $this->personId = $picked->id;
-            $mktAutoAssigned = true;
-            session()->flash('status', "MKT List: Đã chia lead cho {$picked->name} (round-robin).");
         }
 
-        if (! $mktAutoAssigned && $this->personId && ! $this->assignableUserIds()->contains($this->personId)) {
+        // 2026-08-05: skip validate nếu personId = owner đang giữ (owner sửa lead của chính họ,
+        // không phải thao tác chia). Trước đó Sale nhận lead từ UPS + save = "Không thể chia cho nhân sự này"
+        // vì assignableUsers lọc theo role Team Tele cho phase booking, không có Team sale.
+        $keepOwner = $this->lead?->exists && $this->lead->owner_id === $this->personId;
+        if (! $mktAutoAssigned && ! $keepOwner && $this->personId && ! $this->assignableUserIds()->contains($this->personId)) {
             $this->addError('personId', 'Không thể chia cho nhân sự này.');
             return;
         }
@@ -1332,18 +1497,22 @@ new class extends Component
             ['lead_id' => $lead->id, 'phase' => Lead::CF_PHASE_NEW],
             ['closed_by' => $user->id, 'closed_at' => now(), 'note' => 'Auto-close khi tạo lead']
         );
-        $lead->update(['phase' => min(Lead::CF_PHASE_NEW + 1, 4)]);
+        // 2026-08-05: giữ phase = 1 cho trực page (không có distribute) — để Sale tự mở phase 2 ghi call.
+        //   CM/Admin có distribute → auto next tab.
+        $canDistribute = $user->hasPermission('lead.distribute');
+        if ($canDistribute) {
+            $lead->update(['phase' => min(Lead::CF_PHASE_NEW + 1, 4)]);
+        }
 
         LeadStatusLog::record($lead, 'created', null, 'Nhập tay bởi ' . $user->name, $user->id);
         AuditLog::record('create', $lead);
 
         session()->flash('status', 'Đã tạo lead mới.');
-        // Phase 6.21g — sau tạo mới, đưa thẳng vào form Edit (giao diện 7 phase)
-        // thay vì trang chi tiết (bất tiện, phải bấm sang edit).
-        // Phase 6.23: sau khi gộp 7→6 phase, Booking chuyển từ phase 4 → phase 3.
+
+        // 2026-08-05 fix: mọi user tạo lead xong đều mở edit lead vừa tạo (không lùi về /create).
         $params = ['lead' => $lead];
         if (session('go_to_booking_after_save')) {
-            $params['phase'] = 3; // Booking (was 4 pre-6.23)
+            $params['phase'] = 3;
             session()->forget('go_to_booking_after_save');
         }
         if ($lead->canOpenEditForm($user)) {
@@ -1535,11 +1704,15 @@ new class extends Component
         //   Booking → whitelist role name "Team Tele"
         //   Sale    → whitelist role name "Sale" | "Team sale" | "Team sale ĐN"
         //     (mở rộng khi có role sale mới — bổ sung vào mảng $allowRoles).
-        $allowRoles = null;
+        // 2026-08-05 fix: cả tạo mới lẫn update — chia số chỉ cho sale/tele.
+        // Không được chia cho Admin / CM / TL (họ quản lý chia, không nhận lead).
+        $saleRoles = ['Sale', 'Team sale', 'Team sale ĐN', 'Team Tele'];
         if ($this->lead?->exists) {
             $allowRoles = $this->lead->pipeline_phase === Lead::PHASE_BOOKING
                 ? ['Team Tele']
                 : ['Sale', 'Team sale', 'Team sale ĐN'];
+        } else {
+            $allowRoles = $saleRoles;
         }
 
         return User::where('status', User::STATUS_ACTIVE)
@@ -1675,6 +1848,32 @@ new class extends Component
                 ? CustomField::where('active', true)->where('status', CustomField::STATUS_ACTIVE)->orderBy('org_unit_id')->orderBy('position')->orderBy('id')->get()
                 : CustomField::applicableTo($this->targetOrgUnit()),
             'facilities' => $facilities,
+            // 2026-08-05: label kho đích cho radio "Chia về kho" (khi trực page up MKT).
+            'mktPoolTargetLabel' => (! $this->lead?->exists && $this->sourceGroup === Lead::SOURCE_MKT)
+                ? ($this->mktPoolTarget()?->name)
+                : null,
+            'mktFacilityName' => (! $this->lead?->exists && $this->sourceGroup === Lead::SOURCE_MKT)
+                ? ($this->trucPageFacility()?->name)
+                : null,
+            // 2026-08-05: preview sale kế trong MKT List — hiện trong banner "Tự động" để user theo dõi trước khi Lưu.
+            'mktNextSale' => (! $this->lead?->exists && $this->sourceGroup === Lead::SOURCE_MKT && $this->mktMode === 'auto' && ($__f = $this->trucPageFacility()))
+                ? $this->previewMktNextSale($__f->id)
+                : null,
+            'mktListToday' => (! $this->lead?->exists && $this->sourceGroup === Lead::SOURCE_MKT && ($__f2 = $this->trucPageFacility()))
+                ? \App\Models\DailyAttendance::with('user')
+                    ->where('facility_pool_unit_id', $__f2->id)
+                    ->whereDate('work_date', now()->toDateString())
+                    ->where('list_bucket', 'MKT')
+                    ->orderBy('checkin_at')->get()
+                : collect(),
+            // 2026-08-05: preview N sale kế tiếp trong UPS Sale list.
+            //   Chọn cơ sở UPS = cơ sở của user thao tác (assignment → org_pool_map → PoolUnit facility).
+            //   Sale ở HN → dùng cơ sở HN. Note: hiện chưa map scrm.facilities.id → pool_units.id
+            //   (khác cây, cần bảng map riêng). Nếu sau này 1 sale thao tác nhiều cơ sở, add dropdown chọn.
+            'cvPreview' => ($__cvPool = $this->trucPageFacility())
+                ? $this->previewNextGreets($__cvPool->id, count($this->newBookingConsultantIds))
+                : [],
+            'cvPoolFacilityName' => $__cvPool?->name,
             'staffTree' => $staffTree,
             'allStaff' => $allStaff,
             'serviceTree' => $serviceTree = Service::whereNull('parent_id')->where('active', true)
@@ -1710,7 +1909,11 @@ new class extends Component
     $canWrite = $lead
         ? $lead->canEditPersonalInfo(auth()->user())
         : auth()->user()->hasPermission('lead.create');
-    $isReadonly = ! $canWrite;
+    // 2026-08-05: owner có canLogCall/canLogBooking → không phải "readonly" (họ ghi log được ở tab tương ứng).
+    // Chỉ đúng nghĩa readonly khi cả 3 đều không.
+    $ownerCanLog = $lead && ($lead->canLogCall(auth()->user()) || $lead->canLogBooking(auth()->user()));
+    $isReadonly = ! $canWrite && ! $ownerCanLog;
+    $isInfoReadonly = ! $canWrite; // info personal readonly nhưng vẫn ghi log được — dùng cho banner mới.
     $canBookAction = $lead && $lead->canBookAction(auth()->user());
     // Nút Đặt booking chỉ dùng khi phase Booking + có perm; tính URL sang lara-sbooking.
     $bookingClinicUrl = null;
@@ -1778,7 +1981,8 @@ new class extends Component
                     Đặt booking
                 </button>
             @endif
-            @if (! $isReadonly)
+            {{-- 2026-08-05: dùng $canWrite trực tiếp (canEditPersonalInfo) — không dùng $isReadonly (đã nới cho owner). Sale owner không sửa info → không show button (khỏi bấm ăn 403). --}}
+            @if ($canWrite)
                 <button wire:click="saveAndGoToBooking" class="bg-gold-600 hover:bg-gold-700 text-white font-semibold text-sm px-6 py-2.5 rounded-md">Lưu thông tin</button>
             @endif
         </div>
@@ -1788,6 +1992,14 @@ new class extends Component
         <div class="mb-5 bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 text-sm text-blue-700 flex items-center gap-2">
             <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"/></svg>
             <span>Bạn đang xem ở chế độ chỉ đọc — không có quyền chỉnh sửa thông tin ở phase này. @if ($canBookAction)Có thể bấm nút <strong>Đặt booking</strong> để chuyển sang hệ thống đặt lịch.@endif</span>
+        </div>
+    @elseif ($isInfoReadonly && $ownerCanLog)
+        {{-- 2026-08-05: banner cho owner (Sale/Tele) — info thì readonly (do phase closure), nhưng ghi log call/booking ở tab tương ứng OK. --}}
+        <div class="mb-5 bg-emerald-50 border border-emerald-300 rounded-lg px-4 py-3 text-sm text-emerald-900 flex items-start gap-2">
+            <span class="text-lg">✅</span>
+            <span>
+                <b>Bạn là người phụ trách lead này.</b> Thông tin cá nhân (Tên/SĐT/Nguồn…) đã khoá do Phase 1 chốt, nhưng bạn <b>vẫn ghi được cuộc gọi ở tab "Gọi điện"</b>@if ($canBookAction) và <b>booking ở tab "Booking thăm khám"</b>@endif. Chuyển tab để thao tác.
+            </span>
         </div>
     @endif
 
@@ -2193,6 +2405,7 @@ new class extends Component
                                     <span><b class="uppercase tracking-wide text-xs">Bước tiếp theo:</b> {{ $nextStep }}</span>
                                 </div>
                             @endif
+                            {{-- 2026-08-05: radio "Cách chia" moved xuống panel "Chia lead vào kho / cho sale" dưới. --}}
                         </div>
                     </div>
                     {{-- PAGE + Camp + Nguồn QC giờ là custom field phòng Marketing (Trường bổ sung); Link move sang tab Insight --}}
@@ -2870,6 +3083,30 @@ new class extends Component
                     </div>
                 </div>
 
+                {{-- 2026-08-05: nguồn MKT — radio Cách chia (hiện cho MỌI user, kể cả trực page không có perm distribute). --}}
+                @if ($sourceGroup === \App\Models\Lead::SOURCE_MKT && ! $lead?->exists)
+                    <div class="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-md">
+                        <label class="block text-sm font-bold text-amber-900 mb-2">🎯 Cách chia lead (nguồn Marketing) <span class="text-red-500">*</span></label>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <label class="flex items-start gap-2 border rounded-md px-3 py-2.5 text-sm cursor-pointer bg-white hover:bg-amber-50 {{ $mktMode === 'auto' ? 'border-amber-500 ring-2 ring-amber-300' : 'border-gold-200' }}">
+                                <input type="radio" wire:model.live="mktMode" value="auto" class="mt-0.5">
+                                <span>
+                                    <b>⚡ Tự động</b>
+                                    <span class="block text-[11px] text-ink/60">Chia ngay từ UPS list @if ($mktFacilityName)của <b>{{ $mktFacilityName }}</b> @endif(round-robin).</span>
+                                </span>
+                            </label>
+                            <label class="flex items-start gap-2 border rounded-md px-3 py-2.5 text-sm cursor-pointer bg-white hover:bg-amber-50 {{ $mktMode === 'pool' ? 'border-amber-500 ring-2 ring-amber-300' : 'border-gold-200' }}">
+                                <input type="radio" wire:model.live="mktMode" value="pool" class="mt-0.5">
+                                <span>
+                                    <b>📥 Chia về kho</b>
+                                    <span class="block text-[11px] text-ink/60">Thả vào kho <b>{{ $mktPoolTargetLabel ?? '—' }}</b> (theo phân quyền). Chờ CM chia tiếp.</span>
+                                </span>
+                            </label>
+                        </div>
+                        @error('mktMode')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
+                    </div>
+                @endif
+
                 {{-- Form Phân phối — chỉ hiện khi user có perm chia --}}
                 @if ($canDistribute)
                     <div class="border-t border-gold-200 pt-5">
@@ -2932,7 +3169,40 @@ new class extends Component
                                 <strong>UPS chưa được chốt hôm nay</strong> — chia số sẽ bị khóa. Bấm nút bên trên để xem/chốt.
                             </div>
                         @endif
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {{-- 2026-08-05: nguồn MKT + mode=auto → ẩn cascade + nhân viên (dùng UPS list auto). --}}
+                        @php $__hideCascade = ($sourceGroup === \App\Models\Lead::SOURCE_MKT && ! $lead?->exists && $mktMode === 'auto'); @endphp
+                        @if ($__hideCascade)
+                            <div class="bg-emerald-50 border border-emerald-300 rounded-md px-3 py-3 text-sm text-emerald-900">
+                                <div class="font-bold mb-2">⚡ Chia tự động — dự kiến:</div>
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div class="bg-white/70 rounded px-3 py-2">
+                                        <div class="text-[11px] uppercase tracking-wide text-emerald-700">Cơ sở tiếp nhận</div>
+                                        <div class="font-semibold">{{ $mktFacilityName ?? '⚠️ Chưa xác định' }}</div>
+                                    </div>
+                                    <div class="bg-white/70 rounded px-3 py-2">
+                                        <div class="text-[11px] uppercase tracking-wide text-emerald-700">Sale sẽ nhận (round-robin)</div>
+                                        <div class="font-semibold">
+                                            @if ($mktNextSale)
+                                                {{ $mktNextSale->name }}
+                                                <span class="text-[11px] font-normal text-ink/50">({{ $mktNextSale->email }})</span>
+                                            @else
+                                                <span class="text-red-700">⚠️ Chưa có sale trong MKT List UPS hôm nay — bấm Lưu sẽ báo lỗi. Liên hệ BO chốt UPS.</span>
+                                            @endif
+                                        </div>
+                                    </div>
+                                </div>
+                                @if ($mktListToday->count())
+                                    <div class="mt-2 text-[11px] text-emerald-800">
+                                        <b>MKT List hôm nay ({{ $mktListToday->count() }}):</b>
+                                        @foreach ($mktListToday as $__mk)
+                                            <span class="inline-block ml-1 px-1.5 py-0.5 rounded {{ $mktNextSale && $__mk->user_id === $mktNextSale->id ? 'bg-emerald-600 text-white font-semibold' : ($__mk->is_busy ? 'bg-amber-100 text-amber-800 line-through' : 'bg-white border border-emerald-300') }}">{{ $__mk->user?->name ?? '?' }}@if ($__mk->is_busy) 🔴@endif</span>
+                                        @endforeach
+                                    </div>
+                                @endif
+                                <div class="mt-2 text-[11px] text-emerald-700 italic">💡 Bấm <b>Lưu</b> ở footer để chia thật. Sale được đánh dấu <b>xanh đậm</b> là người sẽ nhận lead này.</div>
+                            </div>
+                        @endif
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 @if ($__hideCascade) hidden @endif">
                             @if ($lead?->code)
                             <div class="md:col-span-2">
                                 <label class="block text-sm font-medium mb-1.5">Mã khách hàng</label>
@@ -3123,14 +3393,60 @@ new class extends Component
                 </div>
 
                 @if ($lead?->exists)
+                    {{-- 2026-08-05: bỏ nút "Đồng bộ từ bên booking" (dùng Reverb push tự sync), thay bằng "Check UPS"
+                         cho user xem list sale hôm nay trước khi bấm Thêm booking. Popup Alpine, không nhảy trang. --}}
                     <div class="flex items-center justify-between mb-2">
-                        <span></span>
-                        <button type="button" wire:click="syncBookingsFromExternal"
-                                class="text-xs bg-blue-600 hover:bg-blue-700 text-white font-semibold px-3 py-1.5 rounded flex items-center gap-1.5">
-                            🔄 Đồng bộ từ bên booking
-                        </button>
+                        <span class="text-[11px] text-ink/50">💡 Preview CV auto-refresh mỗi 5s — sale kế tiếp trong UPS list sẽ cập nhật khi có người chiếm/thả.</span>
+                        <div x-data="{ show: false }" class="relative">
+                            <button type="button" @click="show = !show"
+                                    class="text-xs font-bold px-3 py-1.5 rounded whitespace-nowrap inline-flex items-center gap-1.5 bg-white border border-gold-300 text-gold-700 hover:bg-gold-50">
+                                ⚡ Check UPS List
+                            </button>
+                            <div x-show="show" @click.outside="show = false" x-transition x-cloak
+                                 class="absolute right-0 mt-2 w-[calc(100vw-2rem)] sm:w-96 max-w-md bg-white border border-gold-200 rounded-lg shadow-xl z-30 max-h-[500px] overflow-auto">
+                                @php
+                                    $__upsAtts = $cvPoolFacilityName ? \App\Models\DailyAttendance::with('user')
+                                        ->where('facility_pool_unit_id', ($this->trucPageFacility()?->id ?? 0))
+                                        ->whereDate('work_date', now()->toDateString())
+                                        ->whereIn('list_bucket', \App\Services\Ups\UpsDispatcher::BUCKET_ORDER_GREET)
+                                        ->orderByRaw("FIELD(list_bucket, 'A','B','C','OFF')")
+                                        ->orderBy('checkin_at')->get() : collect();
+                                @endphp
+                                <div class="px-3 py-2 border-b border-gold-100 bg-gold-50 sticky top-0">
+                                    <div class="text-xs font-bold text-gold-800">UPS Sale hôm nay · {{ $cvPoolFacilityName ?? '—' }}</div>
+                                    <div class="text-[10px] text-gold-700">{{ $__upsAtts->count() }} sale · Auto-refresh 5s</div>
+                                </div>
+                                @if ($__upsAtts->isEmpty())
+                                    <div class="px-3 py-6 text-center text-xs text-red-600">⚠️ Chưa có UPS list Sale — không tạo được booking. Liên hệ Admin BO.</div>
+                                @else
+                                    <ul class="divide-y divide-gold-50">
+                                        @foreach ($__upsAtts as $__a)
+                                            @php
+                                                $__busy = (bool) $__a->is_busy;
+                                                $__off  = (bool) $__a->is_off;
+                                                $__label = $__off ? 'Offlist' : ($__busy ? '🔴 Đang tiếp đón' : '🟢 Sẵn sàng');
+                                                $__cls   = $__off ? 'bg-rose-100 text-rose-700' : ($__busy ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700');
+                                                $__bkc   = match ($__a->list_bucket) { 'A'=>'bg-blue-100 text-blue-800', 'B'=>'bg-teal-100 text-teal-800', 'C'=>'bg-slate-200 text-slate-800', 'OFF'=>'bg-rose-100 text-rose-800', default=>'bg-gold-100 text-gold-800' };
+                                                $__isNext = ! empty($cvPreview) && $cvPreview[0]?->id === $__a->user_id;
+                                            @endphp
+                                            <li class="px-3 py-2 flex items-center gap-2 hover:bg-gold-50/40 {{ $__isNext ? 'bg-emerald-50 ring-1 ring-emerald-400' : '' }}">
+                                                <span class="text-[10px] font-bold px-1.5 py-0.5 rounded {{ $__bkc }}">{{ $__a->list_bucket }}</span>
+                                                <div class="flex-1 min-w-0">
+                                                    <div class="text-sm font-semibold text-ink truncate">
+                                                        @if ($__isNext) <span class="text-emerald-700">➤</span> @endif
+                                                        {{ $__a->user?->name ?? 'Sale #'.$__a->user_id }}
+                                                    </div>
+                                                    <div class="text-[11px] text-ink/50">Check-in {{ optional($__a->checkin_at)?->setTimezone('Asia/Ho_Chi_Minh')->format('H:i') }}</div>
+                                                </div>
+                                                <span class="text-[11px] font-semibold px-2 py-0.5 rounded {{ $__cls }} whitespace-nowrap">{{ $__label }}</span>
+                                            </li>
+                                        @endforeach
+                                    </ul>
+                                @endif
+                            </div>
+                        </div>
                     </div>
-                    <div class="border border-dashed border-slate-300 bg-slate-50 rounded p-3 space-y-2">
+                    <div wire:poll.5s class="border border-dashed border-slate-300 bg-slate-50 rounded p-3 space-y-2">
                         <div class="text-xs font-semibold text-ink/60">Thêm booking mới <span class="font-normal text-ink/40">— mặc định "Chờ xác nhận", bên booking cập nhật sẽ tự sync về đây</span></div>
                         {{-- Hàng 1: Loại | Trạng thái (lock) | Datetime --}}
                         <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
@@ -3280,24 +3596,35 @@ new class extends Component
                             </div>
                             <div></div>
                         </div>
-                        {{-- Hàng 4: Chuyên viên tư vấn (multi) --}}
+                        {{-- 2026-08-05: CV auto lấy từ UPS Sale list (bucket A→B→C→OFF) của cơ sở booking.
+                             Không chọn tay. + Thêm CV → tăng slot, tự pick sale kế tiếp. --}}
                         <div class="space-y-1.5">
-                            <div class="text-xs font-semibold text-ink/60">Chuyên viên tư vấn <span class="font-normal text-ink/40">(có thể chọn nhiều — người đầu tiên = Sale phụ trách nếu booking được duyệt)</span></div>
-                            @foreach ($newBookingConsultantIds as $cvIdx => $cvVal)
-                                <div class="flex items-center gap-2" wire:key="new-cv-{{ $cvIdx }}">
-                                    <span class="text-xs text-ink/50 w-6 text-right">#{{ $cvIdx + 1 }}</span>
-                                    <select wire:model.live="newBookingConsultantIds.{{ $cvIdx }}" class="flex-1 border border-slate-300 rounded px-2 py-1.5 text-sm">
-                                        <option value="">— Chọn CV —</option>
-                                        @foreach ($consultantUsers ?? [] as $cu)
-                                            <option value="{{ $cu['id'] }}">{{ $cu['name'] }}</option>
-                                        @endforeach
-                                    </select>
-                                    @if (count($newBookingConsultantIds) > 1)
-                                        <button type="button" wire:click="removeBookingConsultantSlot({{ $cvIdx }})" class="text-xs text-red-600 hover:text-red-800 px-2">✕</button>
-                                    @endif
+                            <div class="text-xs font-semibold text-ink/60">
+                                Chuyên viên tư vấn (⚡ auto UPS)
+                                <span class="font-normal text-ink/40">— người đầu tiên = Sale phụ trách nếu booking được duyệt.</span>
+                                @if ($cvPoolFacilityName)
+                                    <span class="text-[10px] text-emerald-700 font-normal">· Cơ sở: <b>{{ $cvPoolFacilityName }}</b></span>
+                                @endif
+                            </div>
+                            @if (empty($cvPreview))
+                                <div class="text-xs bg-red-50 border border-red-300 text-red-800 rounded px-3 py-2">
+                                    ⚠️ Chưa có UPS list Sale hôm nay cho cơ sở này — <b>không tạo được booking</b>. Liên hệ <b>Admin BO</b> để chốt UPS list trước.
                                 </div>
-                            @endforeach
-                            <button type="button" wire:click="addBookingConsultantSlot" class="text-xs font-semibold text-gold-700 hover:text-gold-800">+ Thêm CV</button>
+                            @else
+                                @foreach ($newBookingConsultantIds as $cvIdx => $cvVal)
+                                    <div class="flex items-center gap-2" wire:key="new-cv-{{ $cvIdx }}">
+                                        <span class="text-xs text-ink/50 w-6 text-right">#{{ $cvIdx + 1 }}</span>
+                                        <div class="flex-1 border border-emerald-300 bg-emerald-50 rounded px-3 py-1.5 text-sm text-emerald-900">
+                                            ⚡ {{ $cvPreview[$cvIdx]?->name ?? '—' }}
+                                            <span class="text-[10px] text-emerald-700">(auto UPS)</span>
+                                        </div>
+                                        @if (count($newBookingConsultantIds) > 1)
+                                            <button type="button" wire:click="removeBookingConsultantSlot({{ $cvIdx }})" class="text-xs text-red-600 hover:text-red-800 px-2">✕</button>
+                                        @endif
+                                    </div>
+                                @endforeach
+                                <button type="button" wire:click="addBookingConsultantSlot" class="text-xs font-semibold text-gold-700 hover:text-gold-800">+ Thêm CV (sale kế tiếp trong UPS)</button>
+                            @endif
                         </div>
                         {{-- Phase C1.b rev9 2026-08-02: 4 field bổ sung đồng bộ với sbooking. --}}
                         <div class="grid grid-cols-2 md:grid-cols-4 gap-2 pt-2 border-t border-slate-200">
@@ -3350,6 +3677,61 @@ new class extends Component
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z"/></svg>
                     Check-in <span class="text-sm text-ink/50 font-normal">(tạm thời là bước cuối)</span>
                 </h2>
+                {{-- 2026-08-05: Info booking từ BookingLog mới nhất — hiện ở đầu Check-in để lễ tân/admin thấy khách tới lịch nào. --}}
+                @if ($lead?->exists)
+                    @php
+                        $__latestBl = $lead->bookingLogs()->with(['facility', 'consultants'])
+                            ->whereIn('status', [\App\Models\BookingLog::STATUS_DA_XAC_NHAN, \App\Models\BookingLog::STATUS_CHO_XAC_NHAN])
+                            ->orderByDesc('scheduled_at')->first();
+                    @endphp
+                    @if ($__latestBl)
+                        @php
+                            $__sbRoom = $__latestBl->sb_phong_id ? \App\Models\SbRoom::where('sbooking_id', $__latestBl->sb_phong_id)->first() : null;
+                            $__sbBs = $__latestBl->sb_bac_si_id ? \App\Models\SbBacSi::where('sbooking_id', $__latestBl->sb_bac_si_id)->first() : null;
+                            $__sbSvc = $__latestBl->sb_dich_vu_id ? \App\Models\SbService::where('sbooking_id', $__latestBl->sb_dich_vu_id)->first() : null;
+                            $__loaiCls = $__latestBl->type === 'tham_kham' ? 'bg-sky-100 text-sky-700' : 'bg-fuchsia-100 text-fuchsia-700';
+                            $__loaiLbl = $__latestBl->type === 'tham_kham' ? '🩺 Thăm khám' : '💆 Dịch vụ';
+                        @endphp
+                        <div class="mb-4 bg-white border border-blue-200 rounded-lg p-4">
+                            <div class="flex items-center gap-2 mb-3 flex-wrap">
+                                <b class="text-blue-900">📋 Thông tin booking đến lịch</b>
+                                <span class="text-xs px-2 py-0.5 rounded {{ $__loaiCls }}">{{ $__loaiLbl }}</span>
+                                @if ($__latestBl->sbooking_booking_ma)
+                                    <code class="text-xs bg-slate-100 px-1.5 py-0.5 rounded text-slate-700">{{ $__latestBl->sbooking_booking_ma }}</code>
+                                @endif
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                                <div><span class="text-ink/50 text-xs">Ngày giờ hẹn:</span> <b>{{ $__latestBl->scheduled_at?->format('d/m/Y H:i') ?? '—' }}</b>@if ($__latestBl->scheduled_end_at) - {{ $__latestBl->scheduled_end_at?->format('H:i') }}@endif</div>
+                                <div><span class="text-ink/50 text-xs">Cơ sở:</span> <b>{{ $__latestBl->facility?->name ?? '—' }}</b></div>
+                                <div><span class="text-ink/50 text-xs">Phòng:</span> <b>{{ $__sbRoom?->ten ?? '—' }}</b></div>
+                                <div><span class="text-ink/50 text-xs">Bác sĩ:</span> <b>{{ $__sbBs?->displayName() ?? '—' }}</b></div>
+                                <div class="md:col-span-2"><span class="text-ink/50 text-xs">Dịch vụ:</span> <b>{{ $__sbSvc?->ten ?? '—' }}</b></div>
+                                @if ($__latestBl->consultants->isNotEmpty())
+                                    <div class="md:col-span-2">
+                                        <span class="text-ink/50 text-xs">Chuyên viên tư vấn:</span>
+                                        @foreach ($__latestBl->consultants as $__cv)
+                                            <span class="text-xs bg-emerald-50 border border-emerald-200 text-emerald-800 px-2 py-0.5 rounded ml-1">#{{ $__cv->pivot->position }} {{ $__cv->name }}</span>
+                                        @endforeach
+                                    </div>
+                                @endif
+                                @if ($__latestBl->so_lieu_trinh || $__latestBl->so_luong_lo || $__latestBl->dung_tich_lo)
+                                    <div><span class="text-ink/50 text-xs">Liệu trình:</span> <b>{{ $__latestBl->so_lieu_trinh ?: '—' }}</b></div>
+                                    <div><span class="text-ink/50 text-xs">Lọ:</span> <b>{{ $__latestBl->so_luong_lo ?: '—' }} @if ($__latestBl->dung_tich_lo) · {{ $__latestBl->dung_tich_lo }} @endif</b></div>
+                                @endif
+                                @if ($__latestBl->co_tu_van || $__latestBl->co_kham_cls || $__latestBl->ket_hop_medical)
+                                    <div class="md:col-span-2 text-xs">
+                                        @if ($__latestBl->co_tu_van)<span class="mr-2">✅ Có tư vấn</span>@endif
+                                        @if ($__latestBl->co_kham_cls)<span class="mr-2">✅ Khám lâm sàng</span>@endif
+                                        @if ($__latestBl->ket_hop_medical)<span class="mr-2">✅ Kết hợp medical</span>@endif
+                                    </div>
+                                @endif
+                                @if ($__latestBl->note)
+                                    <div class="md:col-span-2 text-xs bg-slate-50 border border-slate-200 rounded px-2 py-1"><span class="text-ink/50">Ghi chú:</span> {{ $__latestBl->note }}</div>
+                                @endif
+                            </div>
+                        </div>
+                    @endif
+                @endif
                 {{-- Phase C1.b rev5 2026-08-01: log tới trễ (nếu có), luôn hiện ở đầu section. --}}
                 @if ($lead?->exists)
                     @php $lateLogs = \App\Models\BookingLateLog::where('lead_id', $lead->id)->orderByDesc('created_at')->get(); @endphp
@@ -3421,32 +3803,10 @@ new class extends Component
     </div>
     </fieldset>
 
-    {{-- Phase 6.21 MARK RETURNING — Phase C1.b rev8 2026-08-01: 2 luồng riêng cho Tele/Sale, ngoài fieldset phase-lock. --}}
-    @if ($lead?->exists && (int) $lead->phase === 5 && $lead->is_first_visit && $lead->phaseClosures->firstWhere('phase', 5))
-        @php
-            $canCall = $lead->canRestartCall(auth()->user());
-            $canBook = $lead->canRestartBooking(auth()->user());
-        @endphp
-        @if ($canCall || $canBook)
-            <div class="mt-4 bg-purple-50 border border-purple-200 rounded-xl p-4" x-show="phase === 4">
-                <div class="text-sm text-purple-800 mb-2 font-semibold">Khách quay lại?</div>
-                <div class="text-xs text-purple-700 mb-3">Chọn luồng phù hợp — Tele: gọi lại từ đầu; Sale: đặt lịch mới (nếu đã có thông tin/booking cũ).</div>
-                <div class="flex flex-wrap gap-2">
-                    @if ($canCall)
-                        <button type="button" wire:click="markReturning(3)" onclick="return confirm('Khởi động CUỘC GỌI MỚI: reset lead về phase 3 (Gọi điện). Lịch sử cũ vẫn giữ. Tiếp tục?')"
-                                class="text-sm bg-purple-600 hover:bg-purple-700 text-white font-semibold px-4 py-1.5 rounded">
-                            📞 Khởi động cuộc gọi mới
-                        </button>
-                    @endif
-                    @if ($canBook)
-                        <button type="button" wire:click="markReturning(4)" onclick="return confirm('Khởi động ĐẶT LỊCH MỚI: reset lead về phase 4 (Booking). Lịch sử cũ vẫn giữ. Tiếp tục?')"
-                                class="text-sm bg-blue-600 hover:bg-blue-700 text-white font-semibold px-4 py-1.5 rounded">
-                            📅 Khởi động đặt lịch mới
-                        </button>
-                    @endif
-                </div>
-            </div>
-        @endif
+    {{-- 2026-08-05: BỎ nút "Khởi động cuộc gọi/đặt lịch mới" (markReturning) — is_first_visit giờ auto:
+         chưa có booking hoàn thành = "Đến lần đầu"; có booking da_xong (sbooking push) = "Khách quay lại".
+         User không cần thao tác. Xem BookingEventController::status branch. --}}
+    @if (false)
     @endif
 
     {{-- Footer: nhóm "Kết thúc phase / Lùi phase" bên trái để tách khỏi "Lưu thông tin" bên phải, tránh bấm nhầm. --}}
@@ -3462,18 +3822,27 @@ new class extends Component
                     $cfCanRollback = auth()->user()->hasPermission(\App\Models\Lead::CF_ROLLBACK_PERM);
                     $cfClosuresMap = $lead->phaseClosures->keyBy('phase');
                 @endphp
+                {{-- 2026-08-05: phase 4 (Check-in) chỉ cho Admin/Lễ tân có phase.close.checkin (hoặc rollback) đóng.
+                     Trực page + Sale không thao tác — sbooking tự auto-close khi khách tới (da_toi/toi_tre callback). --}}
+                @php
+                    $cfCanCloseCurrent = ! ($activePhase === 4)
+                        || auth()->user()->hasPermission('phase.close.checkin')
+                        || $cfCanRollback;
+                @endphp
                 @if ($cfIsBulk && $activePhase >= $cfOpen && $activePhase <= $cfStart)
                     @unless ($cfClosuresMap->has($activePhase))
-                        <button type="button" wire:click="closePhaseNow({{ $activePhase }})"
-                                class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm px-5 py-2.5 rounded-md">
-                            Kết thúc phase {{ $activePhase }} (riêng)
-                        </button>
+                        @if ($cfCanCloseCurrent)
+                            <button type="button" wire:click="closePhaseNow({{ $activePhase }})"
+                                    class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm px-5 py-2.5 rounded-md">
+                                Kết thúc phase {{ $activePhase }} (riêng)
+                            </button>
+                        @endif
                     @endunless
                     <button type="button" wire:click="bulkSavePhases"
                             class="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm px-5 py-2.5 rounded-md">
                         Lưu chốt {{ $cfStart - $cfOpen + 1 }} phase ({{ $cfOpen }}→{{ $cfStart }})
                     </button>
-                @elseif (! $cfIsBulk && $activePhase === $cfCurPhase && $activePhase <= 4)
+                @elseif (! $cfIsBulk && $activePhase === $cfCurPhase && $activePhase <= 4 && $cfCanCloseCurrent)
                     <button type="button" wire:click="closePhaseNow({{ $activePhase }})"
                             class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm px-5 py-2.5 rounded-md">
                         Kết thúc phase {{ $activePhase }}
@@ -3492,7 +3861,8 @@ new class extends Component
         {{-- RIGHT group: Hủy + Lưu (đẩy sang phải bằng ml-auto) --}}
         <div class="flex flex-wrap gap-3 ml-auto">
             <a href="{{ $lead ? route('leads.show', $lead) : (auth()->user()->hasPermission('lead.view') ? route('leads.index') : route('dashboard')) }}" class="text-sm font-semibold text-ink/60 border border-gold-200 px-5 py-2.5 rounded-md hover:bg-gold-50">Hủy</a>
-            @if (! $isReadonly)
+            {{-- 2026-08-05: dùng $canWrite thay $isReadonly — Sale owner không có perm sửa info → ẩn nút (khỏi bấm ăn 403). --}}
+            @if ($canWrite)
                 <button wire:click="saveAndGoToBooking" class="bg-gold-600 hover:bg-gold-700 text-white font-semibold text-sm px-6 py-2.5 rounded-md">Lưu thông tin khách hàng</button>
             @endif
         </div>

@@ -66,70 +66,27 @@ class SyncCrmAccountsSeeder extends Seeder
             if ($affected > 0) $backfilled++;
         }
 
-        // ---------- Phần 2: Thêm 26 user booking-only vào CRM ----------
-        // Password giữ nguyên như booking:
-        //   - 59ntn (KTV/ĐD/team hỗ trợ) + adminvh -> '59@ntn'
-        //   - 207nvt (KTV/ĐD)                       -> '207nvt'
-        // 2026-07-27: đồng bộ mật khẩu — admin dùng '59ntn', mọi user thường dùng '59@ntn'.
-        $pw59  = Hash::make('59@ntn');
-        $pw207 = Hash::make('59@ntn');
-        $pwBs  = Hash::make('59@ntn');
-
-        $bookingOnly = [
-            ['username' => 'adminvh',    'name' => 'Admin Vận hành',            'password' => $pw59],
-            ['username' => 'ktv_viet',   'name' => 'Đỗ Ngọc Việt',              'password' => $pw59],
-            ['username' => 'ktv_tu',     'name' => 'Nguyễn Thị Tú',             'password' => $pw59],
-            ['username' => 'ktv_hoa',    'name' => 'Nguyễn Văn Hoà',            'password' => $pw59],
-            ['username' => 'ktv_dong',   'name' => 'Đỗ Đức Đông',               'password' => $pw59],
-            ['username' => 'ddt_trang',  'name' => 'Nguyễn Mạnh Tráng',         'password' => $pw59],
-            ['username' => 'dd_thao',    'name' => 'Quản Thị Thảo',             'password' => $pw59],
-            ['username' => 'dd_quynh',   'name' => 'Nguyễn Thị Diễm Quỳnh',     'password' => $pw59],
-            ['username' => 'ddt_nhan',   'name' => 'Phạm Thị Thanh Nhàn',       'password' => $pw59],
-            ['username' => 'dd_mi',      'name' => 'Trần Trà Mi',               'password' => $pw59],
-            ['username' => 'ktv_tthao',  'name' => 'Trịnh Thị Thảo',            'password' => $pw59],
-            ['username' => 'ktv_huong',  'name' => 'Đỗ Thu Hương',              'password' => $pw59],
-            ['username' => 'ktv_phuong', 'name' => 'Nguyễn Thị Minh Phương',    'password' => $pw59],
-            ['username' => 'ktv_bach',   'name' => 'Nguyễn Chí Bách',           'password' => $pw59],
-            ['username' => 'ktv_vi',     'name' => 'Nguyễn Thị Lan Vi',         'password' => $pw59],
-            ['username' => 'bsi59ntn',   'name' => 'Bác sĩ 59ntn',              'password' => $pwBs],
-            ['username' => 'bsi207nvt',  'name' => 'Bác sĩ 207nvt',             'password' => $pwBs],
-            ['username' => 'ktv_kieu',   'name' => 'Đàm Thúy Kiều',             'password' => $pw207],
-            ['username' => 'ktv_gam',    'name' => 'Nguyễn Thị Hồng Gấm',       'password' => $pw207],
-            ['username' => 'ktv_huyen',  'name' => 'Trần Thị Tú Huyên',         'password' => $pw207],
-            ['username' => 'ktv_thuan',  'name' => 'Hoàng Hải Thuận',           'password' => $pw207],
-            ['username' => 'ddt_loan',   'name' => 'Nguyễn Thị Thu Loan',       'password' => $pw207],
-            ['username' => 'dd_tuan',    'name' => 'Hoàng Tam Tuấn',            'password' => $pw207],
-            ['username' => 'dd_tien',    'name' => 'Nguyễn Thủy Tiên',          'password' => $pw207],
-            ['username' => 'ktv_tan',    'name' => 'Nguyễn Thành Tân',          'password' => $pw207],
-            ['username' => 'dd_thanh',   'name' => 'Khưu Thị Phương Thanh',     'password' => $pw207],
-        ];
-
-        $added = 0; $updatedPw = 0;
-        foreach ($bookingOnly as $u) {
-            $email = $u['username'] . '@longevity.com.vn';
-            $existing = DB::table('users')->where('username', $u['username'])->first();
-
-            if ($existing) {
-                // Đã có (chạy lại seeder) -> chỉ đảm bảo password đúng.
-                DB::table('users')->where('id', $existing->id)
-                    ->update(['password' => $u['password'], 'updated_at' => $now]);
-                $updatedPw++;
-                continue;
-            }
-
-            DB::table('users')->insert([
-                'username'   => $u['username'],
-                'name'       => $u['name'],
-                'email'      => $email,
-                'password'   => $u['password'],
-                'status'     => 'active',
-                'created_at' => $now,
-                'updated_at' => $now,
-            ]);
-            $added++;
+        // ---------- Phần 2: DỌN user booking-only ----------
+        // 2026-08-05: Bỏ khối "bookingOnly" (29 user: ktv_*/dd_*/ddt_*/bsi*/adminvh).
+        // Chúng là mirror data từ sbooking (KTV/ĐD/BS phòng khám) — scrm KHÔNG dùng
+        // (không có assignment, không lead, không role). Chỉ làm rác trong /admin/catalog.
+        // Nếu cần đồng bộ nhân sự phòng khám → dùng sb_bac_si (mirror sync) thay vì
+        // clone vào users.
+        $legacyPrefixes = ['ktv\_', 'dd\_', 'ddt\_', 'bsi', 'adminvh'];
+        $legacyIds = DB::table('users')
+            ->where(function ($q) use ($legacyPrefixes) {
+                foreach ($legacyPrefixes as $p) {
+                    $q->orWhere('username', 'like', $p . '%');
+                }
+            })
+            ->pluck('id');
+        $deleted = 0;
+        if ($legacyIds->isNotEmpty()) {
+            DB::table('assignments')->whereIn('user_id', $legacyIds)->delete();
+            $deleted = DB::table('users')->whereIn('id', $legacyIds)->delete();
         }
 
         $this->command->info("Backfilled username: {$backfilled}/" . count($usernameByEmail));
-        $this->command->info("Thêm mới: {$added} — cập nhật lại password: {$updatedPw}");
+        $this->command->info("Đã xoá {$deleted} user legacy (ktv_/dd_/ddt_/bsi/adminvh).");
     }
 }

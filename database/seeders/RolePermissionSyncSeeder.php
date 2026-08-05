@@ -89,12 +89,17 @@ class RolePermissionSyncSeeder extends Seeder
         ],
         'Sale' => [
             'lead.consult', 'lead.create', 'lead.update',
-            'lead.update_sale', 'lead.view', 'payment.record', 'phase.close.booking',
+            // 2026-08-05: thêm update_booking + read_booking + book_action — Sale nhận lead MKT qua UPS bucket
+            // (owner = sale, pipeline_phase=booking) phải sửa info + đặt booking được, không chỉ Team Tele.
+            'lead.update_sale', 'lead.update_booking', 'lead.read_booking', 'lead.book_action',
+            'lead.view', 'payment.record', 'phase.close.booking',
             'phase.close.call', 'phase.close.new', 'report.view', 'source.up.sa',
             'source.up.sale',
         ],
         'Team sale' => [
             'lead.consult', 'lead.update', 'lead.update_sale',
+            // 2026-08-05: cùng lý do như Sale — Team sale được UPS chia lead MKT (owner + phase booking).
+            'lead.update_booking', 'lead.read_booking', 'lead.book_action',
             'lead.view', 'lead.view_phone', 'payment.record', 'phase.close.booking',
             'phase.close.call', 'phase.close.new',
             'report.view', 'source.up.sa', 'source.up.sale',

@@ -36,6 +36,8 @@ class PermissionSeeder extends Seeder
             'lead.recall' => 'Thu hồi lead + đặt mốc thu hồi khi chia',
             'lead.approve_source' => 'Duyệt lead từ luồng Walk-in (WI)',
             'lead.pull_pool' => 'Kéo lead từ kho (legacy — chỉ hiện khi role tick tay)',
+            'lead.distribute_branch' => 'Chia toàn Chi nhánh — Trực Page up lead MKT được chọn cơ sở bất kỳ trong chi nhánh của mình (không tick = chỉ cấp cơ sở của họ)',
+            'lead.distribute_company' => 'Chia toàn Công ty — Trực Page up lead MKT được chọn cơ sở bất kỳ trong cả 3 chi nhánh (cao hơn Chia toàn Chi nhánh)',
             'rule.manage' => 'Cấu hình rule chia số',
             'ops.manage' => 'Cấu hình Quy tắc vận hành (thời gian recall/escalate)',
         ],

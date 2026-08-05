@@ -5,7 +5,7 @@ use App\Models\CustomField;
 use App\Models\Lead;
 use App\Models\OrgUnit;
 use App\Models\PoolUnit;
-use App\Models\Service;
+use App\Models\SbService;
 use App\Models\User;
 use App\Services\SystemCatalogImporter;
 use Illuminate\Support\Facades\Storage;
@@ -114,17 +114,26 @@ new class extends Component
             })->all();
     }
 
+    /**
+     * 2026-08-05: Đọc từ sb_services (mirror sbooking — nguồn thật, dropdown Phase 4 dùng).
+     * sb_services lặp N record cho N cơ sở → distinct theo tên để catalog gọn (1 dòng/mục).
+     * Cột "cơ sở" liệt kê danh sách cơ sở có mục này (qua sbooking_co_so_id).
+     */
     private function serviceRows(): array
     {
-        return Service::orderBy('name')->limit(500)->get()
-            ->map(fn ($s) => [
-                'code' => $s->code,
-                'name' => $s->name,
-                'service_type' => $s->service_type,
-                'pricing_type' => $s->pricing_type,
-                'package_price' => number_format((float) $s->package_price, 0, ',', '.'),
-                'active' => $s->active,
-            ])->all();
+        return SbService::orderBy('la_dich_vu')->orderBy('ten')->limit(1000)->get()
+            ->groupBy('ten')
+            ->map(function ($group) {
+                $first = $group->first();
+                return [
+                    'ten' => $first->ten,
+                    'loai' => $first->la_dich_vu ? '💆 Dịch vụ' : '🩺 Thăm khám',
+                    'co_so_ids' => $group->pluck('sbooking_co_so_id')->unique()->sort()->values()->implode(', '),
+                    'thoi_gian_phut' => $first->thoi_gian_phut,
+                    'gia' => number_format((float) ($first->gia ?? 0), 0, ',', '.'),
+                    'active' => $first->active,
+                ];
+            })->values()->all();
     }
 
     private function leadRows(): array
@@ -163,7 +172,7 @@ new class extends Component
         return [
             'org' => OrgUnit::count(),
             'staff' => User::count(),
-            'service' => Service::count(),
+            'service' => SbService::distinct('ten')->count('ten'),
             'lead' => Lead::count(),
             'field' => CustomField::count(),
         ];
@@ -236,6 +245,63 @@ new class extends Component
         </div>
     @endif
 
+    {{-- 2026-08-05: tab "Trường thông tin KH" — list core fields của form Lead 6 phase từ config/lead_form_fields.php --}}
+    @if ($activeTab === 'field')
+        @php $phases = config('lead_form_fields', []); @endphp
+        <div class="mb-6 bg-amber-50 border border-amber-200 rounded p-4">
+            <div class="flex items-start justify-between gap-3 mb-3">
+                <div>
+                    <div class="font-bold text-amber-900">📋 Trường form Lead theo phase (core system fields)</div>
+                    <div class="text-xs text-amber-700 mt-0.5">Snapshot từ <code>config/lead_form_fields.php</code>. Sửa form → update file này.</div>
+                </div>
+                <div class="text-xs text-amber-800 whitespace-nowrap">Tổng {{ collect($phases)->sum(fn ($p) => collect($p['groups'])->sum(fn ($g) => count($g))) }} trường / {{ count($phases) }} phase</div>
+            </div>
+            @foreach ($phases as $pIdx => $phase)
+                <details class="mb-2 bg-white border border-amber-200 rounded" {{ $pIdx === 1 ? 'open' : '' }}>
+                    <summary class="cursor-pointer px-3 py-2 font-semibold text-sm text-amber-900 hover:bg-amber-50">
+                        {{ $phase['title'] }}
+                        <span class="text-xs text-ink/50 font-normal ml-2">— {{ collect($phase['groups'])->sum(fn ($g) => count($g)) }} trường</span>
+                    </summary>
+                    <div class="p-3 space-y-3">
+                        @foreach ($phase['groups'] as $groupName => $fields)
+                            <div>
+                                <div class="text-xs font-bold text-ink/70 mb-1.5">▸ {{ $groupName }}</div>
+                                <table class="w-full text-xs border-collapse">
+                                    <thead>
+                                        <tr class="bg-slate-100 text-ink/60">
+                                            <th class="text-left px-2 py-1 border border-slate-200 w-56">Field</th>
+                                            <th class="text-left px-2 py-1 border border-slate-200">Nhãn</th>
+                                            <th class="text-left px-2 py-1 border border-slate-200 w-20">Type</th>
+                                            <th class="text-center px-2 py-1 border border-slate-200 w-16">Bắt buộc</th>
+                                            <th class="text-left px-2 py-1 border border-slate-200">Options / Ghi chú</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach ($fields as $f)
+                                            <tr class="hover:bg-slate-50">
+                                                <td class="px-2 py-1 border border-slate-200 font-mono text-[11px] text-secondary">{{ $f['field'] }}</td>
+                                                <td class="px-2 py-1 border border-slate-200">{{ $f['label'] }}</td>
+                                                <td class="px-2 py-1 border border-slate-200 text-ink/60">{{ $f['type'] }}</td>
+                                                <td class="px-2 py-1 border border-slate-200 text-center">{!! $f['required'] === true ? '<span class="text-red-600 font-bold">*</span>' : ($f['required'] === false ? '' : '<span class="text-[10px] text-ink/50">'.$f['required'].'</span>') !!}</td>
+                                                <td class="px-2 py-1 border border-slate-200 text-ink/60">
+                                                    @if (! empty($f['options']))<span class="font-mono text-[11px]">{{ $f['options'] }}</span>@endif
+                                                    @if (! empty($f['options']) && ! empty($f['note']))<br>@endif
+                                                    @if (! empty($f['note']))<span class="text-[11px] italic">{{ $f['note'] }}</span>@endif
+                                                </td>
+                                            </tr>
+                                        @endforeach
+                                    </tbody>
+                                </table>
+                            </div>
+                        @endforeach
+                    </div>
+                </details>
+            @endforeach
+        </div>
+
+        <div class="text-xs font-bold text-ink/70 mb-2">📝 Trường tùy biến (CustomField — dynamic, cấu hình per phòng ban)</div>
+    @endif
+
     {{-- Filter Phase (chỉ tab Khách hàng) --}}
     @if ($activeTab === 'lead')
         <div class="mb-3 flex items-center gap-2">
@@ -269,10 +335,10 @@ new class extends Component
                         <th class="px-3 py-2 text-left">Status</th>
                         <th class="px-3 py-2 text-left">Assignments</th>
                     @elseif ($activeTab === 'service')
-                        <th class="px-3 py-2 text-left">Code</th>
                         <th class="px-3 py-2 text-left">Tên</th>
                         <th class="px-3 py-2 text-left">Loại</th>
-                        <th class="px-3 py-2 text-left">Pricing</th>
+                        <th class="px-3 py-2 text-left">Cơ sở áp dụng</th>
+                        <th class="px-3 py-2 text-right">Thời gian (phút)</th>
                         <th class="px-3 py-2 text-right">Giá</th>
                         <th class="px-3 py-2 text-center">Active</th>
                     @elseif ($activeTab === 'lead')
@@ -309,11 +375,11 @@ new class extends Component
                             <td class="px-3 py-1.5 text-xs">{{ $r['status'] }}</td>
                             <td class="px-3 py-1.5 text-xs text-ink/60">{{ $r['assignments'] }}</td>
                         @elseif ($activeTab === 'service')
-                            <td class="px-3 py-1.5 font-mono text-xs">{{ $r['code'] }}</td>
-                            <td class="px-3 py-1.5">{{ $r['name'] }}</td>
-                            <td class="px-3 py-1.5 text-xs">{{ $r['service_type'] }}</td>
-                            <td class="px-3 py-1.5 text-xs">{{ $r['pricing_type'] }}</td>
-                            <td class="px-3 py-1.5 text-xs text-right">{{ $r['package_price'] }}</td>
+                            <td class="px-3 py-1.5">{{ $r['ten'] }}</td>
+                            <td class="px-3 py-1.5 text-xs whitespace-nowrap">{{ $r['loai'] }}</td>
+                            <td class="px-3 py-1.5 font-mono text-xs">{{ $r['co_so_ids'] }}</td>
+                            <td class="px-3 py-1.5 text-xs text-right">{{ $r['thoi_gian_phut'] }}</td>
+                            <td class="px-3 py-1.5 text-xs text-right">{{ $r['gia'] }}</td>
                             <td class="px-3 py-1.5 text-center">{!! $r['active'] ? '✅' : '⛔' !!}</td>
                         @elseif ($activeTab === 'lead')
                             <td class="px-3 py-1.5 font-mono text-xs">{{ $r['code'] }}</td>

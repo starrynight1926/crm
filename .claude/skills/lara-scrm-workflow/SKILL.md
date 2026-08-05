@@ -9,6 +9,7 @@ description: Quy tắc & kỹ năng làm việc trong dự án Lara-SCRM. Kích 
 
 ## Các bước (theo thứ tự thực hiện)
 
+0. **Fetch trước khi chạy** — mỗi lần bắt đầu task phải `git fetch --all --prune` trước. So `git status -sb` + `git branch -r` xem remote có nhánh mới / commit mới hơn nhánh đang đứng không. **Nếu có** → dừng, báo user (nhánh local hiện tại vs nhánh/commit mới trên remote) và hỏi có checkout/pull sang không **trước khi** làm. Tránh cảnh đang ở nhánh 7 mà repo đã lên nhánh 9 vẫn cắm đầu code trên nhánh 7.
 1. **Đọc bối cảnh** — mở `scope.md` / `plan.md` / `ERD.md` / `result.md` phần liên quan trước khi trả lời. Đừng đoán scope theo trí nhớ.
 2. **Phân loại task** — nhỏ (edit 1 file, fix UI vặt) thì làm luôn; lớn (đụng migration, đổi permission, đổi luồng nghiệp vụ, sửa `Lead`/`User` core) thì **dừng lại trình thiết kế**.
 3. **Trình thiết kế** — với việc lớn: đề xuất 1 hướng chính + 2-3 câu hỏi mở cần user chốt (dạng "a/b/c" có recommendation ở đầu). Không code cho tới khi user chốt.
@@ -25,6 +26,7 @@ description: Quy tắc & kỹ năng làm việc trong dự án Lara-SCRM. Kích 
 
 ## Luôn luôn
 
+- **Fetch trước, làm sau.** Đầu mỗi task `git fetch --all --prune`; remote có nhánh/commit mới hơn nhánh local đang đứng → báo user + hỏi checkout trước khi code. Không làm mù trên nhánh cũ.
 - **Hỏi trước khi đoán.** Điểm mơ hồ hoặc mâu thuẫn giữa `scope.md`/`ERD.md`/`plan.md` → dừng, hỏi user, kèm recommendation. Đây là điểm user coi trọng.
 - **Đưa recommendation rõ ràng.** Khi có 2-3 phương án, luôn nêu cái tao chọn + lý do 1 câu.
 - **Dọn rác khi đổi cơ chế.** Thay cơ chế cũ → grep hết chỗ dùng, xóa hoàn toàn. Không giữ code chết, permission dead, cột "phòng khi".

@@ -203,6 +203,10 @@ class Lead extends Model
     {
         if (! $this->isVisibleTo($user)) return false;
         if ($this->canEditPersonalInfo($user)) return true;
+        // 2026-08-05: owner đang giữ lead luôn mở được form (ghi call log ở phase 2,
+        // booking log ở phase 4). Trước đó chỉ Team booking có read_booking mới mở được
+        // → Sale bị đá về /leads/{id} show không ghi được cuộc gọi.
+        if ($this->owner_id !== null && $this->owner_id === $user->id) return true;
         return $this->pipeline_phase === self::PHASE_BOOKING && $user->hasPermission('lead.read_booking');
     }
 

@@ -28,6 +28,7 @@ class BookingLog extends Model
 
     protected $casts = [
         'scheduled_at' => 'datetime',
+        'scheduled_end_at' => 'datetime',
         'synced_at' => 'datetime',
         'sbooking_booking_id' => 'integer',
         'ket_hop_medical' => 'boolean',

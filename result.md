@@ -1868,3 +1868,94 @@ Vào `/leads/create` tạo mới với các nguồn khác nhau. Vào `/leads/{id
 - Tạo `plan-schema-unification.md` với 4 phase con (C1→C4), effort tổng ~25-40h, spread nhiều session. Mỗi phase = 1 branch riêng, test kỹ mới sang phase tiếp.
 - **Không code hôm nay** — chờ user duyệt plan + chốt design cho C1 (services) rồi mới bắt đầu session tiếp.
 - Cross-ref: đánh dấu [~] Phase C trong `plan-integration-sbooking.md` → chuyển sang `plan-schema-unification.md`.
+
+### Fix 2026-08-05 — Trực page up lead nguồn MKT báo "phải chọn cơ sở" (nhánh sixth)
+- **Bug**: commit `sixth` thêm lời gọi `$this->resolveMktFacility()` trong `save()` (⚡lead-form) để trực page khỏi phải chọn kho cấp Cơ sở, NHƯNG quên viết body method → nguồn MKT + không chọn sale tay = vỡ (trước đó bắt chọn kho "phải chọn cơ sở").
+- **Fix**: viết `resolveMktFacility(): ?PoolUnit` ngay sau `targetOrgUnit()`:
+  1. User có chọn kho (`poolTarget='org:<poolId>'`, VD BO/CM chia tay) → đi lên PoolUnit tới `kind='facility'` (giữ flow cũ).
+  2. Ngược lại (trực page scope=self) → gom org của user + mọi cấp cha (tách từ `orgUnit->path`), tra `org_pool_map` lấy PoolUnit `kind='facility'` active. Đúng 1 cơ sở → auto-resolve; 0 hoặc >1 → null → báo lỗi rõ (Admin kiểm tra phân quyền).
+- **Verify** (tinker): `hn.page01`→CS1 59NTN, `hcm.page01`→CS1 207NVT, `dn.page01`→Lô 2&3 TĐN — mỗi account ra đúng 1 cơ sở.
+- **Test**: UpsDispatcher + Phase66Flows 9/10 pass. 1 fail (`pick_greet_returns_null_when_all_busy`) pre-existing (verify qua stash), không liên quan.
+- **Chưa QA tay browser** — cần login `hn.page01` up 1 lead MKT thật để chắc (nhớ chốt UPS/MKT List hôm nay, không thì kẹt ở gate "Chưa có Sale trong MKT List").
+
+### Fix 2026-08-05 (b) — Quyền trực page: Chia toàn Chi nhánh / toàn Công ty (nhánh sixth)
+- **Yêu cầu user**: trong `/org/roles` nhóm "Chia số & Kho lead" thêm 2 ô tick; không tick cả 2 → trực page mặc định chỉ chia cấp cơ sở của mình. Chỉ admin hệ thống tick. Giữ cây Pool (đã tới cấp cơ sở), không thêm cấp Org.
+- **Patch**:
+  - `PermissionSeeder` nhóm `distribution`: thêm `lead.distribute_branch` + `lead.distribute_company` (hiện tự động ở role-manager vì render data-driven theo group).
+  - `⚡lead-form`: property `mktFacilityId`; method `mktAllowedFacilities()` (company perm → mọi cơ sở; branch perm → cơ sở trong chi nhánh của user qua pool branch path; mặc định → cơ sở map trực tiếp từ `org_pool_map`); `resolveMktFacility($allowed)` chốt 1 cơ sở (1→auto, >1→ưu tiên `mktFacilityId`, fallback cascade `poolTarget`, validate ∈ allowed).
+  - `save()` block MKT: allowed rỗng → lỗi "liên hệ Admin"; >1 chưa chọn → lỗi "chọn Cơ sở tiếp nhận".
+  - `with()` expose `mktFacilities`; UI thêm dropdown "Cơ sở tiếp nhận" ở khối Nhóm nguồn, chỉ hiện khi nguồn MKT + allowed>1 + chưa chọn person.
+- **Verify** (tinker, `hn.page01`): DEFAULT=1 (59NTN), BRANCH=1 (HN chỉ 1 cơ sở active — 190HN đang tắt), COMPANY=3 (59NTN, Lô2+3 TĐN, 207NVT). Bật cơ sở HN thứ 2 → BRANCH thành 2.
+- **Test**: Phase66Flows + CustomerFlow621 = 15/15 pass. Blade `view:cache` OK.
+- **CHƯA QA tay browser** (site cần per-action approval, tool bị chặn). Cần: login admin cấp `lead.distribute_company` cho role Trực Page → login `hn.page01` vào `/leads/create` nguồn MKT thấy dropdown 3 cơ sở; không cấp → không thấy dropdown, auto về cơ sở của họ.
+
+## 2026-08-05 — Session lớn: 5-tab kho, UPS auto-CV, import xlsx, đồng bộ user 2 hệ (nhánh sixth)
+
+### Scrm (lara-datasource)
+**Trực page + Sale flow**
+- Fix `resolveMktFacility()` (thiếu body ở commit sixth) — trực page nguồn MKT auto-resolve cơ sở qua `org_pool_map` (ancestors).
+- Thêm 2 perm `lead.distribute_branch` / `lead.distribute_company` (nhóm distribution) → nới scope trực page.
+- Radio "Cách chia" (Tự động / Chia về kho) ở panel "Chia số (Phân phối)" — hiện cho MKT + không lead exists, cả trực page + CM đều thấy. Auto = pickMkt UPS. Pool = cấp kho theo perm (default cơ sở, branch = Chi nhánh, company = Kho công ty).
+- Trực page up MKT → giữ phase=1 (không auto-next). Redirect tất cả user tạo lead xong → /edit lead vừa tạo.
+- Sale role: thêm perm `lead.update_booking` + `lead.read_booking` + `lead.book_action` (Sale nhận lead MKT qua UPS bucket cần sửa info + đặt booking).
+- Route `/leads/{lead}/edit` gate `canOpenEditForm` (thay `canEditPersonalInfo`) — owner mở form được dù không có perm sửa info.
+- `canOpenEditForm` mở rộng: owner luôn qua (dù không có `read_booking`).
+- `Lead::mount()` default tab = 2 (Call) cho owner nếu phase<2.
+- Banner "readonly" mới cho owner: "Info khoá do Phase 1 chốt, ghi call/booking ở tab tương ứng" (xanh lá, thay banner xanh dương cũ).
+- Nút "Lưu thông tin khách hàng" (footer + header): đổi gate `!$isReadonly` → `$canWrite` (chặt hơn) — Sale owner không thấy nút → không bấm ăn 403.
+- `save()` skip validate "Không thể chia" nếu `personId === owner_id` (owner giữ lead của họ, không phải chia số).
+- Fix ô "Lần đầu/Trở lại": auto set `is_first_visit=false` khi sbooking push booking `trang_thai=da_xong` (BookingEventController). Bỏ 2 button `markReturning` UI.
+
+**UPS + auto CV**
+- `branchesForUser()` UPS board: gom TOÀN BỘ ancestors từ assignment path → tra `org_pool_map` → đi lên tới `kind=branch`. Trước chỉ check direct assignment.org_unit_id → trực page (assign team-nhap-lead) bị miss.
+- Auto CV Phase 4 booking: bỏ dropdown chọn tay `newBookingConsultantIds[]` → hiện readonly "⚡ Sale từ UPS list" (round-robin A→B→C→OFF). `pickGreet` chạy N lần trong `addBookingLog()`. UPS rỗng → block tạo booking.
+- `previewNextGreets()` không update state → hiện preview trong UI.
+- Bỏ nút "🔄 Đồng bộ từ bên booking" (Reverb đã push tự động), thay bằng nút "⚡ Check UPS List" (popup Alpine, poll wire:poll.5s).
+
+**Kho Lead — 5 tab**
+- `/leads/pools` (`⚡lead-pools`): tabs `company/branch/facility/department/personal` thay 3 tab cũ. `TAB_KINDS` const map pool_level + pool_kind. Filter cascade Chi nhánh → Địa điểm → Cơ sở khi tab='department'.
+- Rename label toàn UI theo 5-cấp mới: branch="Chi nhánh", facility="Địa điểm", department="Cơ sở". Sale cá nhân (không có perm distribute) chỉ thấy tab "Kho cá nhân".
+
+**Import xlsx**
+- Cột mới "Phương thức chia" (TARGETS + GUESS). Sheet 2 "Danh mục kho" tự gen (cây liền mạch: Auto, Kho công ty, Kho Chi nhánh HN, Kho địa điểm 59NTN, Kho cơ sở PKD 1...). Data validation dropdown Excel bắt chọn từ sheet 2.
+- `LeadImport::distributionOptions()` map tên → target (auto | pool:<id>).
+- `ProcessRawLead` áp `_distribution_target` khi nguồn MKT: auto → pickMkt UPS cơ sở uploader; pool:<id> → set pool_unit_id.
+- Strict gate: kho ngoài phạm vi quyền uploader → **HỦY UPLOAD** row (forceDelete lead + fail_ raw). Không note pass. Rule: distribute_company → mọi kho; distribute_branch → subtree Chi nhánh; default → subtree Địa điểm user.
+
+**Catalog**
+- `/admin/catalog` tab Dịch vụ: đọc `sb_services` (mirror sbooking) thay bảng `services` legacy. Distinct theo tên, hiện Loại (🩺/💆), Cơ sở áp dụng, Thời gian, Giá.
+- `/admin/catalog` tab Trường thông tin KH: thêm section "📋 Trường form Lead theo phase" (đọc `config/lead_form_fields.php` — snapshot cứng của form 6 phase).
+- Fix 44 mục sb_services phân loại `la_dich_vu` (9 Thăm khám + 41 Dịch vụ, khớp 2 ảnh user gửi).
+
+**Phase 4 Check-in**
+- Thêm block "📋 Thông tin booking đến lịch" đầu Phase 4: hiện Loại/Ngày giờ/Cơ sở/Phòng/BS/DV/CV[]/Liệu trình từ BookingLog mới nhất.
+- Chặn nút "Kết thúc phase 4" — chỉ Admin/Lễ tân (phase.close.checkin) hoặc phase.rollback thấy. Sale/trực page không thao tác.
+
+**Perm + rename**
+- Bỏ phòng BDM khỏi org tree (0 assignment, 0 lead — an toàn).
+- Rename `book1/book2` → "Tài khoản Booking 1/2" (đồng nhất).
+- `SyncCrmAccountsSeeder`: dọn 26 user booking-only (ktv_*/dd_*/ddt_*/bsi/adminvh) — không dùng ở scrm.
+- Cast `BookingLog.scheduled_end_at = datetime` (fix format() on string ở view Phase 4).
+- Dashboard `/dashboard` bảng lead: thêm cột "Trạng thái booking" + click row → luôn /edit.
+
+**Đồng bộ user 2 hệ (root cause CV mapping lệch)**
+- Root cause: `RenameUsersToPositionFormatSeeder` (scrm) auto-number theo user.id, KHÔNG khớp mapping cứng bên sbooking (`SyncUsernamesFromCrmSeeder`) → cùng người ở 2 hệ có username khác.
+- Fix: copy mapping cứng NAME → USERNAME (25 nhân sự) vào scrm seeder. PASS 1 apply mapping cứng, PASS 2 auto-number cho user không có trong mapping (fallback test data).
+- Sbooking mapping: rename "Nguyễn/Trần Booking 1/2" → "Tài khoản Booking 1/2" (đồng bộ scrm).
+- Sync hiện tại (data cũ): remap tay 25 user theo NAME. Booking 10 re-push: sale_id=34 (Nguyễn Mai Anh) — đúng CV#1.
+
+### Sbooking (lara-sbooking)
+- Xóa migration duplicate `2026_07_02_000003_add_trang_thai_khach_and_phan_hoi_notes` (conflict với 07_05 `add_trang_thai_khach_and_binh_luan`). Xóa `BookingPhanHoi.php`, view `_phan_hoi_section.blade.php`, method `themPhanHoi/xoaPhanHoi`, route them-phan-hoi/xoa-phan-hoi.
+- Swap 2 include `_phan_hoi_section` → `partials/trang-thai-lich-hen` (đã dùng `binhLuans`).
+- Fix `SearchController::showBooking`: load `binhLuans.nguoiDung` (không phải `user` — relation name lệch), truyền canTrangThai/canBinhLuan/isAdmin cho partial.
+- Admin bypass mọi hasPerm trong SearchController.
+- `SettingsController` thêm ô nhập "URL SCRM" (`scrm_url` AppSetting). `CrmPushService::crmUrl()` + `callbackToken()` đọc AppSetting trước (fallback env) — trước sbooking dùng default `127.0.0.1:1999` sai host → push callback đi vào void.
+- Fix `pushBookingUpdate` format `gio_ket_thuc?->format('H:i:s')` (Carbon serialize sang ISO string → sbooking TIME reject).
+- Dashboard `/lich-hen`: thêm widget "Lịch chờ duyệt" (5-widget grid), filter tab='approval'.
+- Card "Kết nối SCRM" trở lại `/thiet-lap` (khi tab-hóa bị mất).
+- Chạy migration `2026_07_03_000004_create_bac_si_and_ktv_tables` → table `ktv` có (fix `/thiet-lap/nguoi-dung` 500).
+
+### Verify
+- Tests: Phase66FlowsTest + CustomerFlow621Test = 15/15 pass qua các patch.
+- Tinker verify: 25 user remap OK, `hn.page01` UPS thấy Chi nhánh HN, MKT auto resolve 1 cơ sở, distributionOptions gen cây liền mạch.
+- Chưa QA tay browser (site cần per-action approval).

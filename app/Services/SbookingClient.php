@@ -82,7 +82,7 @@ class SbookingClient
             'co_so_id'      => $sbookingCoSoId,
             'ngay_dat'      => $log->scheduled_at?->format('Y-m-d') ?? now()->format('Y-m-d'),
             'gio_thuc_hien' => $log->scheduled_at?->format('H:i:s'),
-            'gio_ket_thuc'  => $log->scheduled_end_at, // Phase 6.25.C fix
+            'gio_ket_thuc'  => $log->scheduled_end_at?->format('H:i:s'),
             'dich_vu_id'    => $sbookingDichVuId,
             // Phase C1.d 2026-08-02: gửi thêm phòng + BS đã chọn ở form scrm.
             'phong_id'      => $log->sb_phong_id,
@@ -187,7 +187,7 @@ class SbookingClient
             'bac_si_id'       => $log->sb_bac_si_id,
             'phong_id'        => $log->sb_phong_id,
             'khung_gio_id'    => $log->sb_khung_gio_id,
-            'gio_ket_thuc'    => $log->scheduled_end_at,
+            'gio_ket_thuc'    => $log->scheduled_end_at?->format('H:i:s'),
             'so_lieu_trinh'   => $log->so_lieu_trinh,
             'so_luong_lo'     => $log->so_luong_lo,
             'dung_tich_lo'    => $log->dung_tich_lo,

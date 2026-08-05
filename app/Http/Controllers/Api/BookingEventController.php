@@ -70,11 +70,17 @@ class BookingEventController extends Controller
                         default                                            => Lead::BOOKING_BOOKED,
                     };
                     $before = $lead->booking_status;
-                    $lead->update([
+                    $update = [
                         'booking_status' => $newStatus,
                         'booking_ma'     => $bookingMa ?: $lead->booking_ma,
                         'last_care_at'   => now(),
-                    ]);
+                    ];
+                    // 2026-08-05: booking đã hoàn thành (da_xong) → auto set is_first_visit=false ("Khách quay lại"),
+                    //   không cho user tick tay. Không set true trở lại (rollback booking rất hiếm).
+                    if ($newStatus === Lead::BOOKING_DA_XONG && $lead->is_first_visit) {
+                        $update['is_first_visit'] = false;
+                    }
+                    $lead->update($update);
                     LeadStatusLog::record($lead, 'booking_status', $before, $newStatus, $actorId);
                     LeadStatusLog::record($lead, 'note', null,
                         'Booking ' . ($bookingMa ?: '?') . ' — ' . (Lead::BOOKING_STATUSES[$newStatus] ?? $newStatus),

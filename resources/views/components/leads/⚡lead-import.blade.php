@@ -127,6 +127,8 @@ new class extends Component
         'phone'            => 'SĐT',
         'received_date'    => 'Ngày nhập',
         'source_group'     => 'Nhóm nguồn',
+        // 2026-08-05: cột "Phương thức chia" cho trực page. Giá trị = "Tự động" hoặc tên kho ở sheet 2.
+        'distribution'     => 'Phương thức chia',
         'insight'          => 'Ghi chú insight khách',
         'link'             => 'Link',
         'birthday'         => 'Ngày sinh',
@@ -142,6 +144,7 @@ new class extends Component
         'phone'            => ['sđt', 'sdt', 'phone', 'điện thoại', 'so dien thoai'],
         'received_date'    => ['ngày nhập', 'ngày', 'ngay', 'date'],
         'source_group'     => ['nhóm nguồn', 'nguồn', 'nguon', 'source', 'source_group'],
+        'distribution'     => ['phương thức chia', 'phuong thuc chia', 'chia', 'distribution'],
         'insight'          => ['insight', 'ghi chú insight', 'ghi chu insight'],
         'link'             => ['link', 'url'],
         'birthday'         => ['ngày sinh', 'ngay sinh', 'birthday', 'dob'],
@@ -413,18 +416,112 @@ new class extends Component
         $sheet->setCellValue('B2', '0999000001');
         $sheet->setCellValue('C2', now()->format('Y-m-d'));
         $sheet->setCellValue('D2', 'MKT');
-        $sheet->getStyle('A2:D2')->getFont()->getColor()->setARGB('FF888888');
+        $sheet->setCellValue('E2', 'Tự động'); // cột "Phương thức chia"
+        $sheet->getStyle('A2:E2')->getFont()->getColor()->setARGB('FF888888');
         $sheet->freezePane('A2');
         $sheet->setTitle('Import');
 
         $this->appendGuideSheet($spreadsheet);
         $this->appendSourceLegendSheet($spreadsheet);
+        // 2026-08-05: sheet "Danh mục kho" + data validation cho cột "Phương thức chia".
+        $poolLastRow = $this->appendPoolListSheet($spreadsheet);
         $this->appendBookingListSheet($spreadsheet);
         $this->appendSaleListSheet($spreadsheet);
+
+        // Áp data validation dropdown cho cột "Phương thức chia" (nếu có trong headers).
+        $distIdx = array_search('distribution', array_keys($coreHeaders), true);
+        if ($distIdx !== false) {
+            $col = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($distIdx + 1);
+            for ($r = 2; $r <= 200; $r++) {
+                $v = $sheet->getCell($col . $r)->getDataValidation();
+                $v->setType(\PhpOffice\PhpSpreadsheet\Cell\DataValidation::TYPE_LIST);
+                $v->setErrorStyle(\PhpOffice\PhpSpreadsheet\Cell\DataValidation::STYLE_STOP);
+                $v->setAllowBlank(true);
+                $v->setShowDropDown(true);
+                $v->setShowErrorMessage(true);
+                $v->setErrorTitle('Không hợp lệ');
+                $v->setError('Chọn từ danh mục ở sheet "Danh mục kho".');
+                $v->setFormula1("'Danh mục kho'!\$A\$2:\$A\$" . $poolLastRow);
+            }
+        }
 
         return response()->streamDownload(function () use ($spreadsheet) {
             (new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet))->save('php://output');
         }, "mau-import-{$slug}.xlsx");
+    }
+
+    /**
+     * 2026-08-05 — Danh sách "Phương thức chia" cho import (dùng ở sheet 2 + parser + data validation).
+     * Trả về array [tên nhập → target] để match nhanh khi parse.
+     *   'Tự động' → 'auto'
+     *   'Kho công ty' → 'company'
+     *   'Kho Chi nhánh HN' → 'pool:<id>'  (PoolUnit kind=branch)
+     *   'Kho địa điểm 59NTN' → 'pool:<id>' (kind=facility)
+     *   'Kho cơ sở PKD 1 (Team Giang)' → 'pool:<id>' (kind=department)
+     */
+    public static function distributionOptions(): array
+    {
+        $opts = ['Tự động' => 'auto'];
+        $company = \App\Models\PoolUnit::where('kind', 'company')->first();
+        if ($company) $opts['Kho công ty'] = 'pool:' . $company->id;
+
+        // Sắp theo cây liền mạch: branch → facility con → department con.
+        $branches = \App\Models\PoolUnit::where('kind', 'branch')->where('is_active', true)
+            ->orderBy('sort')->orderBy('name')->get();
+        foreach ($branches as $branch) {
+            $opts['Kho Chi nhánh ' . self::shortName($branch->name)] = 'pool:' . $branch->id;
+
+            $facilities = \App\Models\PoolUnit::where('kind', 'facility')->where('is_active', true)
+                ->where('parent_id', $branch->id)->orderBy('sort')->orderBy('name')->get();
+            foreach ($facilities as $fac) {
+                $opts['Kho địa điểm ' . self::shortName($fac->name)] = 'pool:' . $fac->id;
+
+                $depts = \App\Models\PoolUnit::where('kind', 'department')->where('is_active', true)
+                    ->where('parent_id', $fac->id)->orderBy('sort')->orderBy('name')->get();
+                foreach ($depts as $dept) {
+                    $opts['Kho cơ sở ' . self::shortName($dept->name)] = 'pool:' . $dept->id;
+                }
+            }
+        }
+        return $opts;
+    }
+
+    /** Rút tên PoolUnit gọn hơn cho hiển thị. VD "CS1: 59 Ngô Thì Nhậm" → "59NTN"? Không, giữ nguyên. */
+    private static function shortName(string $name): string
+    {
+        // Bỏ "CS1: " / "CS: " prefix nếu có.
+        return preg_replace('/^CS\d*:\s*/u', '', $name);
+    }
+
+    /** Sheet "Danh mục kho" — cây liền mạch dùng cho data validation cột "Phương thức chia". */
+    private function appendPoolListSheet(\PhpOffice\PhpSpreadsheet\Spreadsheet $spreadsheet): int
+    {
+        $sheet = $spreadsheet->createSheet();
+        $sheet->setTitle('Danh mục kho');
+        $sheet->setCellValue('A1', 'Tên (copy sang cột "Phương thức chia")');
+        $sheet->setCellValue('B1', 'Mô tả');
+        $sheet->getStyle('A1:B1')->getFont()->setBold(true);
+        $sheet->getStyle('A1:B1')->getFill()->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)->getStartColor()->setARGB('FFEEE9D6');
+
+        $row = 2;
+        $opts = self::distributionOptions();
+        foreach ($opts as $label => $target) {
+            $desc = match (true) {
+                $target === 'auto' => 'Chia ngay từ UPS list ngày hôm nay (round-robin)',
+                str_starts_with($target, 'pool:') => (function () use ($target) {
+                    $p = \App\Models\PoolUnit::find((int) substr($target, 5));
+                    return $p ? ($p->kind . ' · ' . $p->name) : '?';
+                })(),
+                default => '',
+            };
+            $sheet->setCellValue('A' . $row, $label);
+            $sheet->setCellValue('B' . $row, $desc);
+            // Indent bằng padding style theo cấp (giả indent bằng font size).
+            $row++;
+        }
+        $sheet->getColumnDimension('A')->setWidth(50);
+        $sheet->getColumnDimension('B')->setWidth(60);
+        return $row - 1; // Số dòng data cuối (dùng cho data validation range).
     }
 
     /** Sheet "7 nguồn" — bảng tham chiếu mã nguồn ↔ mô tả ↔ ai up. */
@@ -790,6 +887,18 @@ new class extends Component
                 }
                 if ($val !== '') {
                     $payload[$target] = $val;
+                }
+            }
+
+            // 2026-08-05: parse cột "Phương thức chia" → thêm vào payload (auto | pool:<id>).
+            //   ProcessRawLead sẽ đọc field này để chia (UPS auto hoặc thả kho).
+            //   Match theo tên đúng từ sheet 2. Không match → giữ raw + báo trong import log (không block).
+            if (! empty($payload['distribution'])) {
+                $opts = self::distributionOptions();
+                $target = $opts[trim($payload['distribution'])] ?? null;
+                $payload['_distribution_target'] = $target ?: null;
+                if (! $target) {
+                    $payload['_distribution_error'] = 'Không nhận diện được "'.$payload['distribution'].'" — kiểm tra sheet "Danh mục kho".';
                 }
             }
 
