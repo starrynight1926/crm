@@ -1212,25 +1212,19 @@ new class extends Component
         }
 
         // Phase 6.25 — Auto-assign MKT từ MKT List UPS: chỉ chạy khi tạo mới, nguồn MKT, chưa chọn sale tay.
+        // 2026-08-05 fix: Trực page mỗi cơ sở là 1 tài khoản riêng (VD Trực page 59NTN HN, Trực page 207NVT HCM).
+        // Không bắt user chọn kho cấp Cơ sở nữa — resolve cơ sở từ scope assignment của họ.
+        // Ưu tiên poolTarget nếu user có chọn org cụ thể, fallback về assignment.
         $mktAutoAssigned = false;
         if (! $this->lead?->exists && $this->sourceGroup === Lead::SOURCE_MKT && ! $this->personId) {
-            if (! str_starts_with($this->poolTarget, 'org:')) {
-                $this->addError('poolTarget', 'Nguồn Marketing: bắt buộc chọn kho ở cấp Cơ sở hoặc Phòng KD (không dùng Công ty/Chi nhánh) để hệ thống chia từ MKT List.');
-                return;
-            }
-            $poolId = (int) substr($this->poolTarget, 4);
-            $pool = \App\Models\PoolUnit::find($poolId);
-            $facility = $pool;
-            while ($facility && $facility->kind !== 'facility') {
-                $facility = $facility->parent;
-            }
+            $facility = $this->resolveMktFacility();
             if (! $facility) {
-                $this->addError('poolTarget', 'Không xác định được cơ sở từ kho đã chọn — chọn Cơ sở hoặc Phòng KD.');
+                $this->addError('poolTarget', 'Nguồn Marketing: không xác định được cơ sở duy nhất từ scope của bạn (tài khoản trực page phải thuộc 1 cơ sở). Liên hệ Admin kiểm tra phân quyền.');
                 return;
             }
             $picked = app(\App\Services\Ups\UpsDispatcher::class)->pickMkt($facility->id);
             if (! $picked) {
-                $this->addError('poolTarget', 'Chưa có Sale nào được phân xử lý nguồn Marketing trong UPS hôm nay ở cơ sở "'.$facility->name.'". Liên hệ BO chốt UPS trước khi up lead.');
+                $this->addError('poolTarget', 'Chưa có Sale nào trong MKT List UPS hôm nay ở cơ sở "'.$facility->name.'". Liên hệ BO chốt UPS trước khi up lead.');
                 return;
             }
             $this->personId = $picked->id;
