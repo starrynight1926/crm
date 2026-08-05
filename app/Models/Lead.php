@@ -339,7 +339,7 @@ class Lead extends Model
         self::BOOKING_KHACH_DA_TOI  => 'Khách đã tới',
         self::BOOKING_KHACH_TOI_TRE => 'Khách tới trễ',
         self::BOOKING_KHACH_HUY     => 'Khách hủy',
-        self::BOOKING_DA_XONG       => 'Đã xong',
+        self::BOOKING_DA_XONG       => 'Đã hoàn thành',
     ];
 
     /** Emoji cho từng trạng thái booking (hiển thị badge — không cần font ngoài). */

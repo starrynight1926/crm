@@ -127,6 +127,34 @@ class BookingEventController extends Controller
                         }
                     }
 
+                    // 2026-08-05: da_xong (khách hoàn thành dịch vụ) → auto-close phase 5 (Bán hàng) + advance phase.
+                    //   Bỏ da_xong (rollback) → xóa closure phase 5 + hạ phase về 4 (Check-in).
+                    if ($newStatus === Lead::BOOKING_DA_XONG) {
+                        // Đảm bảo phase 4 (Check-in) đã close (khách đã tới trước khi hoàn thành).
+                        LeadPhaseClosure::updateOrCreate(
+                            ['lead_id' => $lead->id, 'phase' => Lead::CF_PHASE_CHECKIN],
+                            ['closed_by' => $actorId ?: 1, 'closed_at' => now(), 'note' => 'Auto: sbooking mark khách đã tới (tiền đề đã xong)']
+                        );
+                        LeadPhaseClosure::updateOrCreate(
+                            ['lead_id' => $lead->id, 'phase' => Lead::CF_PHASE_SALES],
+                            ['closed_by' => $actorId ?: 1, 'closed_at' => now(), 'note' => 'Auto: sbooking mark Đã hoàn thành']
+                        );
+                        if ((int) $lead->phase < Lead::CF_PHASE_SALES) {
+                            $lead->update(['phase' => Lead::CF_PHASE_SALES]);
+                        }
+                    } else {
+                        // Nếu trạng thái mới không phải da_xong nhưng đã từng close phase 5 → rollback.
+                        //   Chỉ rollback nếu closure trước đó là "Auto: sbooking mark Đã hoàn thành"
+                        //   (không đá closure manual của user).
+                        $sale = LeadPhaseClosure::where('lead_id', $lead->id)->where('phase', Lead::CF_PHASE_SALES)->first();
+                        if ($sale && str_starts_with((string) $sale->note, 'Auto: sbooking mark Đã hoàn thành')) {
+                            $sale->delete();
+                            if ((int) $lead->phase >= Lead::CF_PHASE_SALES) {
+                                $lead->update(['phase' => Lead::CF_PHASE_CHECKIN]);
+                            }
+                        }
+                    }
+
                     // Phase C1.b rev5 2026-08-01: khách tới (da_toi/toi_tre) → auto-close phase 4 + đưa lead lên phase 5.
                     if (in_array($newStatus, [Lead::BOOKING_KHACH_DA_TOI, Lead::BOOKING_KHACH_TOI_TRE], true)) {
                         // Đóng phase 4 (Booking) nếu chưa.
