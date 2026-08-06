@@ -18,7 +18,8 @@ class RolePermissionSyncSeeder extends Seeder
     public const MATRIX = [
         'Admin' => [
             'connection.manage', 'contribution.set', 'field.approve', 'field.manage',
-            'lead.approve_source', 'lead.book_action', 'lead.consult', 'lead.create', 'lead.delete',
+            'lead.approve_source', 'lead.assign_direct',
+            'lead.book_action', 'lead.consult', 'lead.create', 'lead.delete',
             'lead.distribute', 'lead.distribute_sale', 'lead.distribute_tele',
             'lead.distribute_to_sale', 'lead.distribute_to_team', 'lead.export',
             'lead.import', 'lead.pull_pool', 'lead.read_booking', 'lead.recall',
@@ -36,6 +37,7 @@ class RolePermissionSyncSeeder extends Seeder
         ],
         'DM HCM' => [
             'contribution.set', 'field.approve', 'field.manage', 'lead.approve_source',
+            'lead.assign_direct',
             'lead.create', 'lead.delete', 'lead.distribute',
             'lead.distribute_sale', 'lead.distribute_tele', 'lead.distribute_to_sale',
             'lead.distribute_to_team', 'lead.export', 'lead.import', 'lead.read_booking',
@@ -47,7 +49,8 @@ class RolePermissionSyncSeeder extends Seeder
             'source.up.sale', 'source.up.tele', 'source.up.trucpage', 'user.manage',
         ],
         'Manager' => [
-            'lead.approve_source', 'lead.create', 'lead.distribute',
+            'lead.approve_source', 'lead.assign_direct',
+            'lead.create', 'lead.distribute',
             'lead.distribute_sale', 'lead.distribute_tele', 'lead.distribute_to_sale',
             'lead.distribute_to_team', 'lead.read_booking', 'lead.recall', 'lead.update',
             'lead.update_booking', 'lead.update_sale', 'lead.view', 'lead.view_phone',
@@ -65,6 +68,7 @@ class RolePermissionSyncSeeder extends Seeder
             'ups.view',
         ],
         'CM sale' => [
+            'lead.assign_direct',
             'lead.consult', 'lead.create', 'lead.distribute',
             'lead.distribute_sale', 'lead.distribute_to_sale', 'lead.recall',
             'lead.update', 'lead.update_sale', 'lead.view', 'lead.view_phone',
@@ -73,6 +77,7 @@ class RolePermissionSyncSeeder extends Seeder
             'source.up.admin', 'source.up.sa', 'source.up.sale',
         ],
         'CM Tele' => [
+            'lead.assign_direct',
             'lead.create', 'lead.distribute', 'lead.distribute_tele',
             'lead.distribute_to_sale', 'lead.read_booking', 'lead.recall', 'lead.update',
             'lead.update_booking', 'lead.view', 'lead.view_phone', 'lead.view_pool',

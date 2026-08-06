@@ -52,6 +52,17 @@ trait HasAccessControl
         return in_array($key, $this->permissionKeysCache, true);
     }
 
+    /**
+     * 2026-08-05 — Check user có 1 role theo tên (không tính assignment inactive).
+     * Dùng khi cần khóa/mở UI theo role cụ thể (VD "Trực Page" chỉ điền custom fields phase 2).
+     */
+    public function hasRole(string $roleName): bool
+    {
+        return $this->effectiveAssignments()
+            ->pluck('role.name')
+            ->contains($roleName);
+    }
+
     /** Có ít nhất một trong các quyền. */
     public function hasAnyPermission(array $keys): bool
     {

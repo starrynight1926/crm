@@ -2,6 +2,223 @@
 
 > Làm xong phase nào ghi vào đây: ngày hoàn thành, việc đã làm, việc dời lại/chưa xong, ghi chú & quyết định phát sinh. Mẫu bên dưới.
 
+## 2026-08-06 — T16 Widget "Kho số" trên dashboard scrm ✅
+
+Thêm khối "Kho số — chờ chia" vào [⚡dashboard-overview.blade.php](resources/views/components/reports/⚡dashboard-overview.blade.php) để CM chia số tay nhanh, không phải mở `/distribution/pools`.
+
+### Gate & scope
+- **`lead.view_pool`** (đã có): thấy khối. Query lead `owner_id IS NULL` + `pool_level IN (common, team)`:
+  - Kho công ty (`pool_level=common`) → mọi user có view_pool thấy.
+  - Kho team (`pool_level=team`) → chỉ user có org_unit thuộc `memberOrgUnitIds()` thấy (auto scope theo cấp user — Admin/DM thấy company, CM cơ sở thấy branch, CM team thấy team).
+- **`lead.pull_pool`** (đã có, đổi label): thấy thêm cột "Chia thẳng" — dropdown Sale trong scope + button "Chia".
+
+### Perm label update
+[PermissionSeeder.php:38](database/seeders/PermissionSeeder.php:38): `lead.pull_pool` label đổi từ "Kéo lead từ kho (legacy)" → **"Phân bổ từ kho số — chia thẳng lead trong kho cho 1 Sale/Tele (dashboard widget Kho số)"**. Reseed.
+
+### UI table (10 row mới nhất)
+Columns: Mã KH · Họ tên · Ngày sinh · SĐT · Phase · Tele care · Sale care · Người tạo · Ngày tạo · [Chia thẳng] (nếu có perm).
+
+Row click Mã KH → `route('leads.edit', ...)`. Dropdown filter Sale theo pattern `whereHas('assignments.role.name', 'like', '%ale%')` trong `memberOrgUnitIds()` (reuse pattern UPS board).
+
+### Action `assignFromPool($leadId)`
+- Check `canPullPool()` + user chọn nhân sự → validate target có assignment trong scope người chia.
+- Set `owner_id`, `assigned_at=now()`, `pool_level=personal`, `pipeline_status=in_care`, `phase = max(current, CF_PHASE_CALL)`.
+- Log 2 record LeadStatusLog: `owner_id` change + note "Kho số: chia thẳng cho X (làm Tele care)".
+- Session flash `pool_ok` / `pool_error` hiển thị inline banner trên khối.
+
+### Verify
+- `php artisan view:clear` + `php -l`: no syntax error.
+- Tinker render dashboard 4 role:
+  - Admin: 44991 bytes (đủ widget + cột chia).
+  - CM sale: 32139 bytes.
+  - Sale: 32130 bytes (không có pull_pool → widget hiện readonly).
+  - Trực Page: 29438 bytes (không có view_pool → widget ẨN — đúng ý).
+- `wire:poll.15s` giữ nguyên → widget tự cập nhật mỗi 15s cùng dashboard.
+
+### Chưa làm
+- **Feature test action assignFromPool** — chưa viết. QA tay: login CM sale, mở /dashboard, chọn 1 lead trong kho, chia thẳng cho 1 Sale HCM, F5 kiểm tra `owner_id` + `phase` update.
+- **Bulk assign** (tick nhiều lead + chia hàng loạt) — chưa làm. Nếu cần task nhỏ, làm sau.
+- **Filter theo cấp kho** (tab Cơ sở/Chi nhánh/Công ty) — hiện auto theo scope user. Nếu Admin muốn filter drilldown, add sau.
+
+---
+
+## 2026-08-05 — T15 fix 2 bug schema drift sbooking (Bug #1 + #2) ✅
+
+Fix 2 bug tìm được ở T14 audit.
+
+### Bug #1 — Rollback code `bac_si_user_id` → `bac_si_id`
+Sau khi grep FK: `booking.bac_si_id` FK trỏ `bac_si.id` (bảng danh mục, KHÔNG phải users). Code `bac_si_user_id` là drift merge sai — schema mới đúng ngữ nghĩa (khác `ktv_user_id`/`sale_id` trỏ `users.id` vì họ login).
+
+**Sed replace 8 file** (không đụng migration backfill `2026_07_02_000005` vì nó check `Schema::hasColumn('booking', 'bac_si_user_id')` — cột không tồn tại nên guard skip):
+- [Booking.php:20](../lara-sbooking/app/Models/Booking.php:20) + xoá comment merge sai
+- [BookingFields.php](../lara-sbooking/app/Support/BookingFields.php), [PageController.php](../lara-sbooking/app/Http/Controllers/PageController.php), [SettingsController.php](../lara-sbooking/app/Http/Controllers/SettingsController.php)
+- [BookingController.php:761,963](../lara-sbooking/app/Http/Controllers/BookingController.php:761): đổi thêm `Rule::exists('users', 'id')` → `Rule::exists('bac_si', 'id')` (FK trỏ đúng bảng)
+- [AuthorizesByPhanQuyen.php](../lara-sbooking/app/Http/Controllers/Concerns/AuthorizesByPhanQuyen.php), [bookings.blade.php](../lara-sbooking/resources/views/longevity/bookings.blade.php), [create.blade.php](../lara-sbooking/resources/views/longevity/create.blade.php)
+
+### Bug #2 — Thêm relation `caKhams` HasMany vào `BacSi`
+[BacSi.php](../lara-sbooking/app/Models/BacSi.php): thêm `caKhams(): HasMany` với FK `bac_si_id`. Confirm `ca_kham.bac_si_id` FK trỏ `bac_si.id` — schema đã đúng, chỉ thiếu relation.
+
+BacSi và BacSiTuVan là 2 model song song cho ngữ nghĩa khác nhau (BacSi = danh mục fixed, BacSiTuVan = ca thay đổi). Giữ nguyên.
+
+### Verify
+- Rerun `scratchpad/audit_sbooking.php` (dispatch 40+ URL × 4 role): **0 exception** (trước fix có 25 URL 500).
+- Log `storage/logs/laravel.log` sạch.
+- Grep `bac_si_user_id` trong app/resources: 0 occurrence.
+
+### Chưa làm
+- **Feature test tự động** cho các URL đã fix — dựa vào audit script + manual QA browser.
+- **KTV role không login web** → không có audit coverage. Nếu sau này KTV có UI login riêng → chạy lại audit script sau khi thêm role.
+- **Bug UI-only** (JS console error, layout vỡ, button không click được) — audit script chỉ catch server-side 500. Cần user QA browser thật.
+
+---
+
+## 2026-08-05 — T14 Task A: audit dead links + undefined key all roles (sbooking) 📋
+
+### Cách audit
+- Script `scratchpad/audit_sbooking.php`: dispatch qua Laravel HTTP kernel 40+ GET URL × 4 role (Admin hệ thống, Lễ tân, Sale/TVV, Bác sĩ). KTV không login web → bỏ.
+- Report code HTTP 500/404/405 + parse exception thật từ `storage/logs/laravel.log`.
+
+### Bug thật tìm được — 2 nhóm chính
+
+**Bug #1 — Column drift `bac_si_user_id` (code) vs `bac_si_id` (DB)** — 🔴 CHẶN NHIỀU URL
+
+DB `booking` table có column `bac_si_id`. Code query `bac_si_user_id` ở **25+ chỗ**:
+- Controllers: [PageController.php:41,65,83,92,359,593](../lara-sbooking/app/Http/Controllers/PageController.php:41), [BookingController.php:761,963](../lara-sbooking/app/Http/Controllers/BookingController.php:761), [SettingsController.php:292,307](../lara-sbooking/app/Http/Controllers/SettingsController.php:292)
+- Concerns: [AuthorizesByPhanQuyen.php:139,149,169](../lara-sbooking/app/Http/Controllers/Concerns/AuthorizesByPhanQuyen.php:139)
+- Model: [Booking.php:20,83](../lara-sbooking/app/Models/Booking.php:20)
+- Views: [bookings.blade.php:208](../lara-sbooking/resources/views/longevity/bookings.blade.php:208), [create.blade.php:376,819](../lara-sbooking/resources/views/longevity/create.blade.php:376), [BookingFields.php:42,84](../lara-sbooking/app/Support/BookingFields.php:42)
+
+Comment tại [Booking.php:18](../lara-sbooking/app/Models/Booking.php:18): "2026-08-05 merge: remote đổi bac_si_id → bac_si_user_id (create_bac_si_and_ktv_tables)." → migration đổi tên **không có thật** (đã grep xem tất cả migration, không có ai rename column).
+
+URL 500 (mọi role):
+- `/59ntn/bac-si` (doctors page)
+- `/59ntn/dat-kham` (tạo lịch tư vấn)
+- `/59ntn/lich-tu-van` (manage lịch)
+- `/59ntn/danh-sach` (khi filter scope theo user)
+- `/59ntn/tim-kiem?q=a` (search)
+- `/59ntn/lich-hen/timeline` (khi BS đăng nhập → scope user)
+- `/59ntn/dat-kham/ca-kham?bac_si_id=1&ngay=...` (chọn ca khám)
+
+**Bug #2 — Relation `caKhams` missing on `BacSi` model** — 🔴
+
+- [BacSi.php](../lara-sbooking/app/Models/BacSi.php) có `belongsTo(coSo)` + attribute `ten_day_du` — **không có** `caKhams`.
+- [BacSiTuVan.php:22](../lara-sbooking/app/Models/BacSiTuVan.php:22) **có** `caKhams()` HasMany.
+- [LichHenController.php:63,89,374](../lara-sbooking/app/Http/Controllers/LichHenController.php:63) query `BacSi::with('caKhams')` → crash "Call to undefined relationship".
+- Đây là 2 model song song cho "bác sĩ", drift kiến trúc — chưa rõ ý định gộp hay tách.
+
+### Fix scope — cần user quyết trước khi làm
+
+**Bug #1**, chọn 1 trong 2:
+| Hướng | Ưu | Nhược |
+|---|---|---|
+| **(a rec)** Migration `RENAME COLUMN bac_si_id TO bac_si_user_id` + backfill. Giữ code hiện tại. | Code đã sẵn sàng, chỉ 1 migration | Đụng data prod, phải test kỹ; foreign key có ràng buộc |
+| (b) Grep-replace mọi `bac_si_user_id` → `bac_si_id`. Rollback code về schema. | Không đụng DB | 25+ ref, cao rủi ro miss, quên form field trong Blade |
+
+**Bug #2**, chọn 1 trong 2:
+| Hướng | Ưu | Nhược |
+|---|---|---|
+| **(a rec)** Thêm `caKhams` HasMany vào `BacSi` (nếu bảng `ca_kham` có FK `bac_si_id`). | Ít file đụng, đúng ngữ nghĩa "bs tư vấn cũng cần ca khám" | Cần check FK column tên gì (bac_si_id hay bac_si_tu_van_id) |
+| (b) Đổi `LichHenController` query từ `BacSi` → `BacSiTuVan`. | Không đụng model | LichHen filter theo `nhan_tu_van=true` (thuộc BacSi) → phải re-check logic |
+
+### Các bug NHỎ / no-op
+- Không có 404 hardcoded link giả (tao test sai section names ban đầu, đã fix trong script).
+- Không có undefined array key nào khác ngoài `dung_gio` đã fix.
+- Route `/thong-bao` OK mọi role.
+- Route settings tabs (dich-vu, menu, phong, quyen, bac-si, ktv, bao-cao, nguoi-dung, vai-tro, co-so, phong-ban) tất cả OK.
+
+### Chưa làm
+- **Fix Bug #1 + Bug #2**: chờ user chốt hướng (a/b) cho mỗi bug.
+- **Duyệt tay 4 role qua browser thật**: script chỉ catch server-side 500. UI-only bug (button không hoạt động, JS console error, layout vỡ) chưa cover — user QA thấy bug nào báo tao fix.
+- **KTV role**: không login web nên bỏ khỏi audit. Nếu sau này có role KTV login → bổ sung.
+
+---
+
+## 2026-08-05 — T13 sbooking: fix bug `dung_gio` + refactor filter bar UI (Task B) ✅
+
+### Bug bao-cao
+- [bao-cao.blade.php:145-150](../lara-sbooking/resources/views/longevity/settings/bao-cao.blade.php:145): block "Khách:" trùng lặp dùng key `$c['booking']['dung_gio']`/`tre`/`huy` **không tồn tại** — controller [SettingsController.php:321](../lara-sbooking/app/Http/Controllers/SettingsController.php:321) trả về `kh_dung_gio`/`kh_muon`/`kh_huy` đã render ở block trên (line 141-143). Xoá block trùng → hết crash `/thiet-lap/bao-cao`.
+
+### Refactor filter bar (Task B - UI vỡ tan nát)
+- **File mới**: [components/longevity/filter-bar.blade.php](../lara-sbooking/resources/views/components/longevity/filter-bar.blade.php) + [filter-field.blade.php](../lara-sbooking/resources/views/components/longevity/filter-field.blade.php) — Blade anonymous components chuẩn Material 3.
+  - Form GET wrapper, grid responsive 1/2/4 cột (`cols` prop cho 2..6).
+  - 3 slot: default (fields), `toolbar` (preset chip Ngày/Tuần/Tháng), `actions` (button row cuối form).
+  - Field height cố định `h-10` (40px), border-outline-variant, bg-surface — đồng nhất mọi input.
+- **Refactor**:
+  - [bookings.blade.php:253-367 cũ](../lara-sbooking/resources/views/longevity/bookings.blade.php) (dùng cho `/danh-sach` + `/duyet-lich`): 115 dòng filter bar rối → 65 dòng gọn. Preset chip tách hàng riêng (không nhét ngang label). Action row (Lọc/Đặt lại/Xuất Excel/Chọn file) căn phân tách rõ ràng.
+  - [settings/bao-cao.blade.php:17-72 cũ](../lara-sbooking/resources/views/longevity/settings/bao-cao.blade.php): 56 dòng → 55 dòng, đồng bộ style với bookings.
+- **Move permission compute** ($canExportBooking, $canDuyet, $canCheckIn, $canEditBookingRow) ra @php block đầu file (bookings.blade.php line ~193) — trước đây bị nhét bên trong `<form>` filter, kéo theo $canEditBookingRow chỉ scoped trong form.
+
+### Verify
+- Tinker render 3 view: `bookings` 40748 bytes, `duyet-lich` 39197 bytes, `bao-cao` 31108 bytes → OK.
+- `php -l` blade 4 file mới/sửa: no syntax error.
+- Bug đã bắt: HTML comment `<!-- ... <x-longevity.filter-bar> ... -->` bị Blade parse như directive → gây 28 endif missing. Fix bằng đổi sang Blade comment `{{-- --}}`. Ghi note: mọi comment quanh `<x-*` tag phải dùng Blade comment.
+
+### Chưa làm
+- **Task A (audit dead link + undefined key all roles)**: dời sang turn kế. Đề xuất approach:
+  1. Grep tự động `$var['key']` trong mọi blade sbooking, extract unique keys.
+  2. Test render mọi controller method qua tinker với 5 role (admin, admin cơ sở, sale, bác sĩ, KTV) → bắt undefined key/null-method crash.
+  3. Duyệt tay 5 role qua browser → bug bash link 404, wording xấu, feature dở.
+  4. Ra bảng bug → user duyệt trước khi fix.
+- **Áp dụng filter-bar cho các trang khác** (`/thiet-lap/nguoi-dung`, `/thiet-lap/lieu-phap`, ...): task nhỏ, làm cùng lúc với Task A khi duyệt qua.
+
+---
+
+## 2026-08-05 — T12 gom 6 fix: Trực Page + chia thẳng + preview Auto + bỏ check-in form + fix callback token ✅
+
+Gộp 6 task user yêu cầu (buổi chiều 05/08) thành 1 patch.
+
+### 1. Khóa lead-form cho Trực Page
+- [HasAccessControl.php](app/Models/Concerns/HasAccessControl.php): thêm `hasRole(string $roleName)` helper — reuse `effectiveAssignments` cache, check theo tên role.
+- [⚡lead-form.blade.php:1922](resources/views/components/leads/⚡lead-form.blade.php:1922): thêm biến `$isTrucPage = auth()->user()->hasRole('Trực Page')`.
+- [⚡lead-form.blade.php:2545](resources/views/components/leads/⚡lead-form.blade.php:2545): fieldset lồng phase 2 order-1/2/3 + phase 3/4/5 → `:disabled="!!cfLocked[phase] || @js($isTrucPage)"`. Kèm banner amber "Tài khoản Trực Page — chỉ điền Trường bổ sung".
+- Custom fields phase 2 (block line 2481) nằm NGOÀI fieldset → Trực Page vẫn điền được. Phase 1 (info khách) cũng ngoài fieldset → Trực Page vẫn nhập lead mới.
+
+### 2 + 6. Preview sale khi bấm "Tự động" + notice xoay vòng + Check UPS button cho Trực Page
+- [⚡lead-form.blade.php:1103](resources/views/components/leads/⚡lead-form.blade.php:1103): `previewMktNextSale()` refactor return array `['sale' => User, 'rotated' => bool]`. Nếu `is_busy=false` cạn → dùng wrap-around (tất cả sale) và mark `rotated=true`.
+- [⚡lead-form.blade.php:3111](resources/views/components/leads/⚡lead-form.blade.php:3111): mở `@if ($canDistribute)` thành `@if ($canDistribute || (MKT && !$lead?->exists))` để Trực Page cũng thấy Check UPS button + banner preview. Cascade + person section vẫn wrap `@if ($canDistribute)` bên trong (Trực Page ẩn).
+- Banner "Chia tự động — dự kiến" đổi màu: xanh khi còn sale rảnh, **vàng + dòng "⚠ List sale đón tiếp đang full, xoay vòng trở lại — {tên sale đầu tiên}"** khi rotated.
+- Live update qua `wire:model.live="mktMode"` — user bấm radio Auto là banner + Check UPS hiện ngay, không cần Lưu.
+
+### 3. Bỏ 4 field check-in ở scrm — data đồng bộ từ sbooking
+- Xóa 4 property `checkinTime`, `checkinReceptionistId`, `checkinDoctorId`, `checkinNote` ([⚡lead-form.blade.php:169](resources/views/components/leads/⚡lead-form.blade.php:169)).
+- `closePhaseNow($idx)` bỏ khối gộp 4 field vào note của closure phase 5 (line 633-643 cũ).
+- View phase 5: block form input 4 field → thay bằng banner sky "🔄 Check-in đồng bộ tự động từ Sbooking".
+- Khi Admin BO bấm "Đã tới / Tới trễ" bên sbooking → `BookingEventController::status` đã tự close phase 5 + hiện box "✓ Đã check-in lúc ... bởi Admin vận hành (sbooking)" (logic có sẵn).
+
+### 4. Fix bug booking "Đã xong" không sync về scrm — token mismatch
+- **Root cause**: sbooking `.env` set `SCRM_API_TOKEN=demodemodemo123` để callback. Scrm `AuthByApiToken` middleware kiểm tra `config('services.booking.api_token')` — cấu hình đọc từ env `BOOKING_API_TOKEN`. Scrm `.env` **chưa có** biến này → config đọc từ `AppSetting::get('booking_api_token')` (AppServiceProvider override). Nhưng `AppSetting` giá trị đã bị set **nhầm** thành URL `http://127.0.0.1:1995/` (không phải token).
+- Callback token "demodemodemo123" → không match `AppSetting` (URL) + không match user `api_token` nào → **401 reject** → mọi callback `da_xong` / `da_toi` / `tu_choi` từ sbooking silent fail → scrm không sync.
+- **Fix**:
+  - Thêm `BOOKING_API_TOKEN=demodemodemo123` vào scrm [.env](.env) (khớp `SCRM_API_TOKEN` sbooking).
+  - `AppSetting::set('booking_api_token', 'demodemodemo123')` — reset giá trị đúng.
+- Verify: middleware simulate với `Bearer demodemodemo123` → `status=200, actor=1 (Admin)`.
+
+### 5. Perm `lead.assign_direct` + option "Thủ công - Chọn nhân sự"
+- Migration [2026_08_05_160000_add_lead_assign_direct_perm.php](database/migrations/2026_08_05_160000_add_lead_assign_direct_perm.php): thêm perm `lead.assign_direct` + attach 5 role (Admin, DM HCM, Manager, CM sale, CM Tele). **Không** tick Admin cơ sở theo yêu cầu.
+- [PermissionSeeder.php:41](database/seeders/PermissionSeeder.php:41) + [RolePermissionSyncSeeder.php](database/seeders/RolePermissionSyncSeeder.php): thêm key vào MATRIX source-of-truth.
+- [⚡lead-form.blade.php:88](resources/views/components/leads/⚡lead-form.blade.php:88): property `$manualAssignUserId`; mở rộng enum `$mktMode` = `auto | pool | manual`.
+- `handleMktDistribution()` case `'manual'`: check perm + check user tồn tại + check target org nằm trong `visibleOrgUnitIds()` của user hiện tại (DM HCM chỉ chia trong HCM) → set `personId = target->id`. **Không set `is_busy=true`** — chia thẳng bỏ qua UPS.
+- UI: khi user có perm assign_direct → radio group đổi từ 2 cột thành 3 cột, thêm option "👤 Thủ công - Chọn nhân sự". Chọn Manual → dropdown user list (filter theo `assignments.org_unit_id ∈ visibleOrgUnitIds`).
+
+### Verify
+- `php artisan test --filter="RolePermissionMatrix|Distribution|Ups|BookingCallback"` → **61/65 pass**. 4 fail đều **pre-existing** (đã note ở 2026-08-04 T2 + 2026-08-03 Phase 6.22).
+- Tinker: 5 role có perm `lead.assign_direct` ✓, Admin cơ sở + Trực Page ✗ (đúng ý).
+- `php -l` blade + Blade compile view → no syntax error.
+- Middleware test: `AuthByApiToken` với `Bearer demodemodemo123` → 200 OK actor=Admin.
+
+### Chưa làm / dời lại
+- **Feature test radio Manual + preview rotated banner**: chưa viết test tự động. Nếu bug sau khi user QA thì viết sau.
+- **Option Manual ở màn khác** (VD [⚡lead-pools.blade.php](resources/views/components/leads/⚡lead-pools.blade.php) — CM chia lead từ kho): chưa áp dụng. Task 5 user nói "lúc chia số" — hiện tại chỉ áp dụng radio MKT khi Trực Page tạo lead mới. Nếu user muốn CM cũng có option "Thủ công" khi chia lead từ kho → task riêng.
+- **Prod env sync**: `BOOKING_API_TOKEN=demodemodemo123` là token dev/demo. Deploy prod cần đổi token thật + sync sang sbooking `.env`.
+- **Config UI cho token**: user hiện phải chỉnh `.env` hoặc `AppSetting` tay. Chưa có màn UI để đổi token qua giao diện (đã có `/settings/booking-connection` nhưng chưa test verify).
+
+### Ghi chú kỹ thuật
+- Radio "Thủ công" chỉ hiện khi cả 2 điều kiện: `hasPermission('lead.assign_direct')` **và** đang tạo lead MKT mới (`!$lead?->exists && sourceGroup === MKT`). CM update lead đã tồn tại không thấy — dùng UI cascade + person section như cũ.
+- `hasRole()` helper mới dùng `effectiveAssignments` cache → không thêm N+1 query khi check nhiều lần trong 1 request.
+- Banner xoay vòng dùng cùng logic `wrap-around` với `UpsDispatcher::pickGreet` (fallback khi tất cả busy) — giữ nhất quán UX.
+
+---
+
 ## 2026-08-05 — T11 bán real-time dashboard ✅
 
 ### scrm

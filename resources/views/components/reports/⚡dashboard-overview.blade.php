@@ -1,6 +1,8 @@
 <?php
 
 use App\Models\Lead;
+use App\Models\LeadStatusLog;
+use App\Models\User;
 use Livewire\Component;
 
 new class extends Component
@@ -10,6 +12,9 @@ new class extends Component
     public string $fSource = '';
     public string $fSearch = '';
 
+    // 2026-08-06 (T16): dropdown per-row cho widget Kho số (lead_id => user_id).
+    public array $poolAssignments = [];
+
     private function seesAllReports(): bool
     {
         return auth()->user()->hasPermission('report.view_all');
@@ -18,6 +23,114 @@ new class extends Component
     private function reportLeadQuery()
     {
         return $this->seesAllReports() ? Lead::query() : Lead::visibleTo(auth()->user());
+    }
+
+    /* ========== 2026-08-06 (T16) Widget "Kho số" ========== */
+
+    public function canViewPool(): bool
+    {
+        return auth()->user()->hasPermission('lead.view_pool');
+    }
+
+    public function canPullPool(): bool
+    {
+        return auth()->user()->hasPermission('lead.pull_pool');
+    }
+
+    /**
+     * Lead trong kho theo scope user:
+     *   - Kho công ty (pool_level=common, org_unit_id=null) → mọi user có view_pool thấy.
+     *   - Kho team (pool_level=team) → chỉ user có org_unit trong memberOrgUnitIds() thấy.
+     * Owner_id null (còn trong kho, chưa gán cá nhân).
+     */
+    private function poolLeads()
+    {
+        if (! $this->canViewPool()) return collect();
+        $user = auth()->user();
+        $orgIds = $user->memberOrgUnitIds();
+
+        return Lead::query()
+            ->whereNull('owner_id')
+            ->where('pool_level', '!=', Lead::POOL_PERSONAL)
+            ->where(function ($q) use ($orgIds) {
+                $q->where('pool_level', Lead::POOL_COMMON);
+                if ($orgIds) $q->orWhere(fn ($qq) => $qq->where('pool_level', Lead::POOL_TEAM)->whereIn('org_unit_id', $orgIds));
+            })
+            ->with(['owner', 'receiver', 'importer'])
+            ->orderByDesc('id')
+            ->limit(10)
+            ->get();
+    }
+
+    private function poolLeadsCount(): int
+    {
+        if (! $this->canViewPool()) return 0;
+        $orgIds = auth()->user()->memberOrgUnitIds();
+        return Lead::query()->whereNull('owner_id')
+            ->where('pool_level', '!=', Lead::POOL_PERSONAL)
+            ->where(function ($q) use ($orgIds) {
+                $q->where('pool_level', Lead::POOL_COMMON);
+                if ($orgIds) $q->orWhere(fn ($qq) => $qq->where('pool_level', Lead::POOL_TEAM)->whereIn('org_unit_id', $orgIds));
+            })->count();
+    }
+
+    /** Danh sách Sale trong scope của người chia (để dropdown chia thẳng). */
+    private function poolSaleUsers()
+    {
+        if (! $this->canPullPool()) return collect();
+        $subtreeIds = auth()->user()->memberOrgUnitIds();
+        if (! $subtreeIds) return collect();
+        return User::query()
+            ->where('status', User::STATUS_ACTIVE)
+            ->whereHas('assignments', function ($q) use ($subtreeIds) {
+                $q->whereIn('org_unit_id', $subtreeIds)
+                    ->whereHas('role', fn ($r) => $r->where('name', 'like', '%ale%'));
+            })
+            ->orderBy('name')->get(['id', 'name', 'email']);
+    }
+
+    /** Chia thẳng 1 lead trong kho cho user đã chọn ở dropdown. Set owner + advance phase=CALL. */
+    public function assignFromPool(int $leadId): void
+    {
+        if (! $this->canPullPool()) {
+            session()->flash('pool_error', 'Không có quyền phân bổ từ kho số.');
+            return;
+        }
+        $userId = (int) ($this->poolAssignments[$leadId] ?? 0);
+        if (! $userId) {
+            session()->flash('pool_error', 'Chọn nhân sự trước khi bấm Chia.');
+            return;
+        }
+        $lead = Lead::find($leadId);
+        if (! $lead || ! $lead->isVisibleTo(auth()->user())) {
+            session()->flash('pool_error', 'Lead không tồn tại hoặc ngoài phạm vi.');
+            return;
+        }
+        $target = User::find($userId);
+        if (! $target) {
+            session()->flash('pool_error', 'Nhân sự không tồn tại.');
+            return;
+        }
+        $ok = $target->assignments()
+            ->whereIn('org_unit_id', auth()->user()->memberOrgUnitIds() ?: [0])
+            ->exists();
+        if (! $ok) {
+            session()->flash('pool_error', 'Nhân sự ngoài phạm vi của bạn.');
+            return;
+        }
+
+        $before = $lead->owner_id;
+        $lead->update([
+            'owner_id'        => $target->id,
+            'assigned_at'     => now(),
+            'pool_level'      => Lead::POOL_PERSONAL,
+            'pipeline_status' => Lead::PSTATUS_IN_CARE,
+            'phase'           => max((int) $lead->phase, Lead::CF_PHASE_CALL),
+        ]);
+        LeadStatusLog::record($lead, 'owner_id', $before, $target->id, auth()->id());
+        LeadStatusLog::record($lead, 'note', null, 'Kho số: chia thẳng cho ' . $target->name . ' (làm Tele care)', auth()->id());
+        unset($this->poolAssignments[$leadId]);
+        session()->flash('pool_ok', "Đã chia lead {$lead->code} cho {$target->name}.");
     }
 
     /**
@@ -81,6 +194,9 @@ new class extends Component
             'widgets' => $this->mainWidgets(),
             'todayLeads' => $this->todayLeads(),
             'todayCount' => $this->reportLeadQuery()->whereDate('received_date', today())->count(),
+            'poolLeads' => $this->poolLeads(),
+            'poolLeadsCount' => $this->poolLeadsCount(),
+            'poolSaleUsers' => $this->poolSaleUsers(),
         ];
     }
 };
@@ -126,6 +242,92 @@ new class extends Component
             </a>
         @endforeach
     </div>
+
+    {{-- 2026-08-06 (T16): Widget "Kho số" — gate lead.view_pool. Chia thẳng cho Sale trong scope cần lead.pull_pool. --}}
+    @if ($this->canViewPool())
+        <div class="bg-white border border-purple-200 rounded-xl shadow-card mb-6">
+            <div class="px-5 py-4 border-b border-purple-100 bg-purple-50/50 flex flex-wrap items-center gap-3 justify-between">
+                <h2 class="font-bold text-lg flex items-center gap-2 text-purple-800">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.6" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z"/></svg>
+                    Kho số — chờ chia
+                    <span class="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">{{ number_format($poolLeadsCount) }}</span>
+                    @if ($poolLeadsCount > 10)<span class="text-xs text-ink/50 italic">· hiện 10 mới nhất</span>@endif
+                </h2>
+                <div class="flex items-center gap-2">
+                    @if ($this->canPullPool())
+                        <span class="text-[11px] px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 font-semibold">✓ Bạn được phân bổ</span>
+                    @else
+                        <span class="text-[11px] px-2 py-0.5 rounded bg-slate-100 text-slate-600">Chỉ xem</span>
+                    @endif
+                    <a href="{{ route('distribution.pools') }}" class="text-xs font-semibold text-purple-700 border border-purple-300 hover:bg-purple-100 px-3 py-1.5 rounded">Xem tất cả →</a>
+                </div>
+            </div>
+            @if (session('pool_ok'))
+                <div class="px-5 py-2 bg-emerald-50 text-emerald-800 text-sm border-b border-emerald-200">✓ {{ session('pool_ok') }}</div>
+            @endif
+            @if (session('pool_error'))
+                <div class="px-5 py-2 bg-red-50 text-red-800 text-sm border-b border-red-200">⚠ {{ session('pool_error') }}</div>
+            @endif
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead class="text-xs uppercase tracking-wider text-ink/50 bg-purple-50/40">
+                        <tr class="text-left">
+                            <th class="px-4 py-2.5 font-semibold">Mã KH</th>
+                            <th class="px-4 py-2.5 font-semibold">Họ tên</th>
+                            <th class="px-4 py-2.5 font-semibold">Ngày sinh</th>
+                            <th class="px-4 py-2.5 font-semibold">SĐT</th>
+                            <th class="px-4 py-2.5 font-semibold text-center">Phase</th>
+                            <th class="px-4 py-2.5 font-semibold">Tele care</th>
+                            <th class="px-4 py-2.5 font-semibold">Sale care</th>
+                            <th class="px-4 py-2.5 font-semibold">Người tạo</th>
+                            <th class="px-4 py-2.5 font-semibold">Ngày tạo</th>
+                            @if ($this->canPullPool())
+                                <th class="px-4 py-2.5 font-semibold text-right">Chia thẳng</th>
+                            @endif
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-purple-50">
+                        @forelse ($poolLeads as $pl)
+                            @php
+                                $teleCare = $pl->pipeline_phase === Lead::PHASE_BOOKING ? $pl->owner?->name : ($pl->receiver?->name);
+                                $saleCare = $pl->pipeline_phase === Lead::PHASE_SALE ? $pl->owner?->name : null;
+                            @endphp
+                            <tr class="hover:bg-purple-50/30">
+                                <td class="px-4 py-2 font-mono text-xs text-purple-700"><a href="{{ route('leads.edit', $pl) }}" class="hover:underline">{{ $pl->code ?? '—' }}</a></td>
+                                <td class="px-4 py-2 font-semibold">{{ $pl->name }}</td>
+                                <td class="px-4 py-2 text-ink/70">{{ $pl->birthday?->format('d/m/Y') ?? '—' }}</td>
+                                <td class="px-4 py-2 font-mono">{{ $pl->phoneFor(auth()->user()) }}</td>
+                                <td class="px-4 py-2 text-center"><span class="text-xs font-bold bg-blue-50 text-blue-700 px-2 py-0.5 rounded">P{{ $pl->phase }}</span></td>
+                                <td class="px-4 py-2 text-ink/70">{{ $teleCare ?: '—' }}</td>
+                                <td class="px-4 py-2 text-ink/70">{{ $saleCare ?: '—' }}</td>
+                                <td class="px-4 py-2 text-ink/70">{{ $pl->importer?->name ?? '—' }}</td>
+                                <td class="px-4 py-2 text-xs text-ink/60">{{ $pl->created_at?->format('d/m H:i') ?? '—' }}</td>
+                                @if ($this->canPullPool())
+                                    <td class="px-4 py-2">
+                                        <div class="flex items-center gap-1.5 justify-end">
+                                            <select wire:model="poolAssignments.{{ $pl->id }}" class="text-xs border border-purple-300 rounded px-2 py-1 bg-white max-w-[160px]">
+                                                <option value="">— chọn Sale —</option>
+                                                @foreach ($poolSaleUsers as $su)
+                                                    <option value="{{ $su->id }}">{{ $su->name }}</option>
+                                                @endforeach
+                                            </select>
+                                            <button type="button" wire:click="assignFromPool({{ $pl->id }})" class="text-xs font-semibold bg-purple-600 hover:bg-purple-700 text-white px-3 py-1 rounded whitespace-nowrap">Chia</button>
+                                        </div>
+                                    </td>
+                                @endif
+                            </tr>
+                        @empty
+                            <tr>
+                                <td colspan="{{ $this->canPullPool() ? 10 : 9 }}" class="px-4 py-10 text-center text-ink/40 italic">
+                                    Kho trống — không có lead nào chờ chia trong phạm vi của bạn.
+                                </td>
+                            </tr>
+                        @endforelse
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    @endif
 
     {{-- 2026-08-04 (T9): Lead hôm nay — filter + list --}}
     <div class="bg-white border border-gold-200 rounded-xl shadow-card">
