@@ -2176,3 +2176,75 @@ Vào `/leads/create` tạo mới với các nguồn khác nhau. Vào `/leads/{id
 - Tests: Phase66FlowsTest + CustomerFlow621Test = 15/15 pass qua các patch.
 - Tinker verify: 25 user remap OK, `hn.page01` UPS thấy Chi nhánh HN, MKT auto resolve 1 cơ sở, distributionOptions gen cây liền mạch.
 - Chưa QA tay browser (site cần per-action approval).
+
+## 2026-08-07 — Recall rules v2 + fix Trực Page + form 3-card
+
+### Bối cảnh
+User đọc kỹ "Quy tắc PKD Update.docx" và chỉ ra job `RecallByColumnUpdates` map sai:
+- Cột 1,2,3 trong doc = **Ngày gọi + Ghi nhận tình trạng + Bước tiếp theo** (hành động sale).
+- Cột 4,5 = **Phân loại + Kết quả**.
+- Job cũ hiểu nhầm là MKT tracking (page/camp/phan_loai) → thu hồi sai đối tượng.
+
+### Fix
+1. **Migration `2026_08_07_100000_recall_rules_v2`**:
+   - Đưa 3 CustomField `phan_loai`, `ket_qua`, `sic` từ org=8 (1 team) về `org_unit_id=NULL` (Công ty toàn bộ). Trước đây gần như không ai thấy.
+   - Rename `leads.recall_by_columns` → `leads.skip_recall`. Flip semantic: mặc định false = ÁP thu hồi cho mọi lead. Tick ô = exempt.
+2. **Job `RecallByColumnUpdates` viết lại**:
+   - Day 1 (≥24h): thiếu call_log có note ≠ '' → thu hồi.
+   - Day 3 (≥72h): thiếu bất kỳ 1 trong 4 đk: có call_log với note, CustomField `phan_loai` filled, CustomField `ket_qua` filled, PhaseClosure phase=2 đã đóng.
+   - Filter `where skip_recall = false`. Bỏ reset flag (không cần loop-guard vì recall xong `pool_level` chuyển POOL_TEAM, tự loại khỏi query).
+3. **Form `⚡lead-form.blade.php`**:
+   - Đổi property `recallByColumns` → `skipRecall`, checkbox text "Không áp dụng luật thu hồi" (mặc định = áp).
+   - Mô tả rõ 2 mốc thời gian + điều kiện.
+4. **Dọn**: cập nhật `Lead.php` fillable, `config/lead_form_fields.php`, `routes/console.php` comment, `qa-checklist.blade.php`.
+
+### Fix song song (task rời trong cùng session)
+- **Radio "Chia thủ công"**: perm `lead.assign_direct` đã có sẵn nhưng migration pending → chạy `migrate` + `RolePermissionSyncSeeder` sync cho 5 role (Admin, DM HCM, Manager, CM sale, CM Tele).
+- **Form 3-card**: đổi `$__hideCascade` để chỉ hiện cascade khi mode=pool. Thêm placeholder "Vui lòng chọn nguồn khách" khi sourceGroup rỗng.
+- **Trực Page không click được "Chia về kho"**: fieldset `:disabled="isTrucPage"` bao luôn phase 1 → fix để chỉ khóa phase 2+ (`phase !== 1`).
+- **Bug pool scope check**: `poolTarget` mang pool_unit_id nhưng check bằng `visibleOrgUnitIds()` (org_unit_id) → luôn miss. Skip check khi `mktPoolTarget()` đã set (đã tôn trọng perm).
+
+### Sbooking
+- **Xóa/cập nhật token SCRM không được**: form clear-token bị nested trong form update (HTML invalid) → tách form ra ngoài, dùng attribute `form=` HTML5.
+
+### Verify
+- `php artisan leads:recall-by-columns --dry-run` → Day1=0, Day3=0 (không lỗi).
+- Test Trực Page pool: hn.page01 → CS1: 59 Ngô Thì Nhậm, `mktPoolTarget` OK.
+- Chưa QA browser đầy đủ.
+
+## 2026-08-07 (chiều) — Reorg Ghi nhận booking + Sbooking 3-col create form
+
+### SCRM (lara-scrm)
+- **⚡lead-form.blade.php**: Move panel "Ghi nhận booking" (Phase 3, `lead.book_action`) LÊN TRÊN panel "Lịch sử booking" (theo yêu cầu — thao tác chính lên trên, tracking xuống dưới).
+- Ghi chú kỹ thuật: dùng Python script để move block (~300 lines) vì awk streaming không capture kịp thứ tự. Đã verify order mới: Phân bổ CV → Ghi nhận booking → Lịch sử booking.
+
+### Sbooking (lara-sbooking)
+- **Migration `2026_08_07_120000_simplify_booking_quantity_columns`** trên table `booking` (singular, NOT `bookings`):
+  - Drop columns `so_luong_lo`, `dung_tich_lo`.
+  - Rename `so_lieu_trinh` (varchar) → `so_luong` (unsigned int nullable, ≥ 1). Data cũ = 0 records, không cần backfill.
+- **create.blade.php** — 3-col layout theo yêu cầu PKD:
+  - Col 1 (order-2): Phòng + KTV + Bác sĩ (Bác sĩ dùng cùng order-2 để CSS grid stack cùng cột).
+  - Col 2 (order-3): Dịch vụ + Số lượng (input number min=1).
+  - Col 3 (order-4): Ngày + Khung giờ + Giờ TH/KT.
+  - Customer info full-width (order-1, col-span-3) ở trên; Quy tắc đặt lịch collapsible details.
+  - **Địa điểm dropdown** ở top System Info: đổi cơ sở → JS redirect sang `/{slug}/tao-moi` (chống nhầm cơ sở khi tele HN book cho ĐN). Disabled khi edit.
+  - **Ẩn Section "Khách tặng"**: hidden input `khach_tang=khong` default.
+  - **Ẩn Section "Hành chính"** (Sale/Menu/Nguồn/Ghi chú): sale_id nullable → controller fallback `auth()->id()`. Menu_ids + ghi_chu preserved qua hidden inputs khi edit.
+  - **Bỏ toggle "Kết hợp Medical"** khỏi UI, giữ hidden input để không mất data.
+- **BookingController**:
+  - `sale_id` validation → `nullable` (bỏ required).
+  - Store/update: `'sale_id' => $data['sale_id'] ?? auth()->id()`.
+  - `so_luong` validation `nullable|integer|min:1` + Vietnamese message.
+  - `formData()` trả về thêm `allCoSos` cho Địa điểm dropdown.
+- **Dọn refs**: `Booking.php` fillable, `BookingFields.php` (label + suaSubFields), `BookingExport.php` + `BaoCaoExport.php` (headers + map), `BookingImport.php` (fallback so_lieu_trinh → so_luong), `Api\BookingApiController.php` (2 validate + insert), `CrmPushService.php` (payload), `LichThang6Seeder.php`, `tests/BookingTestSetup.php`.
+- **View list + show**: bảng `bookings.blade.php` ẩn 3 cột "Số liệu trình / Số lượng lọ / Dung tích lọ" thành 1 cột "Số lượng"; `show.blade.php` đổi label + field.
+
+### Fix rời trong ngày
+- **Xóa/cập nhật token SCRM không được** (lara-sbooking `scrm-connection.blade.php`): nested form (HTML invalid) → tách form clear-token ra ngoài, dùng attribute `form=` HTML5.
+
+### Verify
+- Tinker render `create` + `createDichVu` OK, all expected fields present, removed fields absent.
+- Tinker store `phong_kham` + `dich_vu`: booking lưu đúng, `so_luong=3`, `sale_id` fallback auth id.
+- Edit render OK, giá trị `so_luong` preserved.
+- SCRM tests: RecallPolicyResolverTest 8/8 + Phase66FlowsTest 10/10 pass.
+- Sbooking suite: 108 test fail vì `BacSi::phongs()` undefined — issue **pre-existing** (không phải do patch này, không có model BacSi::phongs() relation trong code). Chưa fix.

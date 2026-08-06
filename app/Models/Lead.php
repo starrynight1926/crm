@@ -22,7 +22,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
     'potential_service',
     // Phase 6.6
     'source_group', 'approval_status', 'approval_by', 'approved_at',
-    'overdue_marked_at', 'recall_at', 'is_permanent_assignment', 'recall_by_columns',
+    'overdue_marked_at', 'recall_at', 'is_permanent_assignment', 'skip_recall',
     'booking_status', 'booking_ma', 'booked_at',
     // Phase 6.8
     'pipeline_phase', 'pipeline_status',

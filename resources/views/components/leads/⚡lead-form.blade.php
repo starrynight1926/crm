@@ -93,8 +93,8 @@ new class extends Component
     /** Chia trực tiếp cho cá nhân (ưu tiên hơn kho nếu có). */
     public ?int $personId = null;
 
-    /** 2026-08-04 — CM tick khi chia để bật luật thu hồi tự động theo cột (Quy tắc PKD): col 1-3 sau 1 ngày, col 4-5 sau 3 ngày. */
-    public bool $recallByColumns = false;
+    /** 2026-08-07 — Mặc định false = ÁP luật thu hồi. Tick = exempt lead khỏi luật (VD lead đặc biệt CM giữ tay). */
+    public bool $skipRecall = false;
 
     /** Ô search tên khi chia cá nhân. */
     public string $personSearch = '';
@@ -870,7 +870,7 @@ new class extends Component
             $this->poolTarget = 'company';
         }
         $this->syncPoolCascadeFromTarget();
-        $this->recallByColumns = (bool) ($lead->recall_by_columns ?? false);
+        $this->skipRecall = (bool) ($lead->skip_recall ?? false);
         $this->status_1 = $lead->status_1 ?? '';
         $this->status_2 = $lead->status_2 ?? '';
         $this->note = $lead->note ?? '';
@@ -1414,6 +1414,7 @@ new class extends Component
                     return;
                 }
                 $this->poolTarget = 'org:' . $target->id;
+                $mktPoolAssigned = true; // 2026-08-07: skip validate scope bên dưới — mktPoolTarget() đã tôn trọng phân quyền.
                 session()->flash('status', "Đã chia lead vào kho {$target->name}. Chờ CM chia tiếp.");
             }
         }
@@ -1426,7 +1427,10 @@ new class extends Component
             $this->addError('personId', 'Không thể chia cho nhân sự này.');
             return;
         }
-        if (! $this->personId && str_starts_with($this->poolTarget, 'org:')
+        // 2026-08-07: skip check pool scope khi trực page dùng mode=pool (mktPoolTarget đã lock theo perm).
+        //   Lý do: poolTarget bây giờ mang pool_unit_id (cây Kho số) còn visibleOrgUnitIds() trả org_unit_id
+        //   (cây tổ chức) — ID 2 bảng khác nhau, so sánh trực tiếp luôn miss → Trực Page bấm Lưu bị silent fail.
+        if (! ($mktPoolAssigned ?? false) && ! $this->personId && str_starts_with($this->poolTarget, 'org:')
             && ! in_array((int) substr($this->poolTarget, 4), auth()->user()->visibleOrgUnitIds(), true)) {
             $this->addError('poolTarget', 'Phòng/team không nằm trong phạm vi của bạn.');
             return;
@@ -1639,8 +1643,8 @@ new class extends Component
                 'pool_level' => Lead::POOL_PERSONAL,
                 'assigned_at' => ($existing && $existing->owner_id === $this->personId) ? $existing->assigned_at : now(),
                 'pipeline_status' => Lead::PSTATUS_IN_CARE,
-                // 2026-08-04: bật luật thu hồi theo cột nếu CM tick.
-                'recall_by_columns' => $this->recallByColumns,
+                // 2026-08-07: mặc định áp thu hồi; tick "Không thu hồi" = exempt.
+                'skip_recall' => $this->skipRecall,
             ];
         }
         if (str_starts_with($this->poolTarget, 'org:')) {
@@ -2578,13 +2582,14 @@ new class extends Component
                 <span>Phase <span x-text="phase"></span> đã chốt — chỉ đọc. Chỉ Admin vận hành (perm <code>phase.rollback</code>) mới sửa được.</span>
             </div>
         </template>
-        {{-- 2026-08-05: Trực Page — disable toàn bộ fieldset (Phase 2 order 1/2/3 + Phase 3/4/5).
+        {{-- 2026-08-05: Trực Page — disable fieldset từ Phase 2 trở đi (call/booking/consult/upsell).
+             2026-08-07: MỞ Phase 1 (Chia số) — Trực Page cần chọn Tự động / Chia về kho khi up lead MKT.
              Custom fields phase 2 nằm NGOÀI fieldset này (line ~2481) nên vẫn mở. --}}
-        <fieldset :disabled="!!cfLocked[phase] || @js($isTrucPage)" x-bind:class="cfLocked[phase] || @js($isTrucPage) ? 'opacity-70 flex flex-col space-y-4 border-0 p-0 m-0' : 'flex flex-col space-y-4 border-0 p-0 m-0'">
+        <fieldset :disabled="!!cfLocked[phase] || (@js($isTrucPage) && phase !== 1)" x-bind:class="cfLocked[phase] || (@js($isTrucPage) && phase !== 1) ? 'opacity-70 flex flex-col space-y-4 border-0 p-0 m-0' : 'flex flex-col space-y-4 border-0 p-0 m-0'">
             @if ($isTrucPage)
-                <div class="px-4 py-2.5 bg-amber-50 border border-amber-300 rounded-lg text-sm text-amber-900 flex items-center gap-2">
+                <div x-show="phase !== 1" class="px-4 py-2.5 bg-amber-50 border border-amber-300 rounded-lg text-sm text-amber-900 flex items-center gap-2">
                     <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/></svg>
-                    <span>Tài khoản <b>Trực Page</b> — chỉ được điền "Trường bổ sung" ở tab Gọi điện. Lịch sử cuộc gọi, chia số, phân bổ CV, booking, check-in đều <b>chỉ đọc</b>.</span>
+                    <span>Tài khoản <b>Trực Page</b> — chỉ được điền "Trường bổ sung" ở tab Gọi điện. Lịch sử cuộc gọi, phân bổ CV, booking, check-in đều <b>chỉ đọc</b>.</span>
                 </div>
             @endif
 
@@ -2645,6 +2650,309 @@ new class extends Component
                     Chuyên viên tư vấn giờ chọn theo <b>từng lần booking</b> ở Phase 4. CV1 của booking được duyệt sẽ tự thành Sale phụ trách lead.
                 </div>
             </div>
+
+            {{-- ============= Phase 4 rework 2026-08-01 — GHI NHẬN BOOKING (log nội bộ) ============= --}}
+            {{-- 2026-08-04 (Task 2): chỉ Admin + Admin cơ sở (perm lead.book_action) mới thấy khung tạo booking. --}}
+            @if (auth()->user()?->hasPermission('lead.book_action'))
+            <div x-show="phase === 3" x-cloak class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
+                <h2 class="font-bold text-gold-700 mb-2 flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
+                    Ghi nhận booking <span class="text-sm text-ink/50 font-normal">(log nội bộ — tracking bên CRM)</span>
+                </h2>
+                <div class="mb-4 p-2.5 bg-blue-50 border border-blue-200 rounded text-xs text-blue-900 leading-relaxed">
+                    ℹ️ Bấm <b>Thêm booking</b> → tạo record bên lara-sbooking ở trạng thái <b>Chờ duyệt</b>. Admin sbooking duyệt xong → tự cập nhật trạng thái <b>Đã duyệt</b> về đây.
+                    <b>Chưa map cơ sở sang sbooking</b> (Thiết lập → Kết nối Booking) → <b>không cho ghi</b>.
+                </div>
+
+                {{-- TRẠNG THÁI ĐẶT LỊCH (tổng thể) — readonly, tự sync từ booking_logs mới nhất --}}
+                <div class="mb-4 pb-4 border-b border-slate-200">
+                    <label class="block text-sm font-medium mb-1.5">TRẠNG THÁI ĐẶT LỊCH (tổng thể)</label>
+                    <div class="inline-flex items-center gap-2 px-3 py-2 border border-gold-200 rounded-md bg-slate-50 text-sm min-w-[240px]">
+                        <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                        <span class="font-semibold text-ink/80">{{ \App\Models\Lead::BOOKING_STATUSES[$bookingStatus] ?? $bookingStatus ?: 'Chưa đặt' }}</span>
+                        <span class="text-xs text-ink/40 ml-auto">🔒 tự sync</span>
+                    </div>
+                    <p class="text-xs text-ink/50 mt-1">Tự cập nhật khi thêm booking mới hoặc bên hệ thống booking sync về — không chỉnh tay.</p>
+                </div>
+
+                @if ($lead?->exists)
+                    {{-- 2026-08-05: bỏ nút "Đồng bộ từ bên booking" (dùng Reverb push tự sync), thay bằng "Check UPS"
+                         cho user xem list sale hôm nay trước khi bấm Thêm booking. Popup Alpine, không nhảy trang. --}}
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-[11px] text-ink/50">💡 Preview CV auto-refresh mỗi 5s — sale kế tiếp trong UPS list sẽ cập nhật khi có người chiếm/thả.</span>
+                        <div x-data="{ show: false }" class="relative">
+                            <button type="button" @click="show = !show"
+                                    class="text-xs font-bold px-3 py-1.5 rounded whitespace-nowrap inline-flex items-center gap-1.5 bg-white border border-gold-300 text-gold-700 hover:bg-gold-50">
+                                ⚡ Check UPS List
+                            </button>
+                            <div x-show="show" @click.outside="show = false" x-transition x-cloak
+                                 class="absolute right-0 mt-2 w-[calc(100vw-2rem)] sm:w-96 max-w-md bg-white border border-gold-200 rounded-lg shadow-xl z-30 max-h-[500px] overflow-auto">
+                                @php
+                                    $__upsAtts = $cvPoolFacilityName ? \App\Models\DailyAttendance::with('user')
+                                        ->where('facility_pool_unit_id', ($this->trucPageFacility()?->id ?? 0))
+                                        ->whereDate('work_date', now()->toDateString())
+                                        ->whereIn('list_bucket', \App\Services\Ups\UpsDispatcher::BUCKET_ORDER_GREET)
+                                        ->orderByRaw("FIELD(list_bucket, 'A','B','C','OFF')")
+                                        ->orderBy('checkin_at')->get() : collect();
+                                @endphp
+                                <div class="px-3 py-2 border-b border-gold-100 bg-gold-50 sticky top-0">
+                                    <div class="text-xs font-bold text-gold-800">UPS Sale hôm nay · {{ $cvPoolFacilityName ?? '—' }}</div>
+                                    <div class="text-[10px] text-gold-700">{{ $__upsAtts->count() }} sale · Auto-refresh 5s</div>
+                                </div>
+                                @if ($__upsAtts->isEmpty())
+                                    <div class="px-3 py-6 text-center text-xs text-red-600">⚠️ Chưa có UPS list Sale — không tạo được booking. Liên hệ Admin BO.</div>
+                                @else
+                                    <ul class="divide-y divide-gold-50">
+                                        @foreach ($__upsAtts as $__a)
+                                            @php
+                                                $__busy = (bool) $__a->is_busy;
+                                                $__off  = (bool) $__a->is_off;
+                                                $__label = $__off ? 'Offlist' : ($__busy ? '🔴 Đang tiếp đón' : '🟢 Sẵn sàng');
+                                                $__cls   = $__off ? 'bg-rose-100 text-rose-700' : ($__busy ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700');
+                                                $__bkc   = match ($__a->list_bucket) { 'A'=>'bg-blue-100 text-blue-800', 'B'=>'bg-teal-100 text-teal-800', 'C'=>'bg-slate-200 text-slate-800', 'OFF'=>'bg-rose-100 text-rose-800', default=>'bg-gold-100 text-gold-800' };
+                                                $__isNext = ! empty($cvPreview) && $cvPreview[0]?->id === $__a->user_id;
+                                            @endphp
+                                            <li class="px-3 py-2 flex items-center gap-2 hover:bg-gold-50/40 {{ $__isNext ? 'bg-emerald-50 ring-1 ring-emerald-400' : '' }}">
+                                                <span class="text-[10px] font-bold px-1.5 py-0.5 rounded {{ $__bkc }}">{{ $__a->list_bucket }}</span>
+                                                <div class="flex-1 min-w-0">
+                                                    <div class="text-sm font-semibold text-ink truncate">
+                                                        @if ($__isNext) <span class="text-emerald-700">➤</span> @endif
+                                                        {{ $__a->user?->name ?? 'Sale #'.$__a->user_id }}
+                                                    </div>
+                                                    <div class="text-[11px] text-ink/50">Check-in {{ optional($__a->checkin_at)?->setTimezone('Asia/Ho_Chi_Minh')->format('H:i') }}</div>
+                                                </div>
+                                                <span class="text-[11px] font-semibold px-2 py-0.5 rounded {{ $__cls }} whitespace-nowrap">{{ $__label }}</span>
+                                            </li>
+                                        @endforeach
+                                    </ul>
+                                @endif
+                            </div>
+                        </div>
+                    </div>
+                    <div wire:poll.5s class="border border-dashed border-slate-300 bg-slate-50 rounded p-3 space-y-2">
+                        <div class="text-xs font-semibold text-ink/60">Thêm booking mới <span class="font-normal text-ink/40">— mặc định "Chờ xác nhận", bên booking cập nhật sẽ tự sync về đây</span></div>
+                        {{-- Hàng 1: Loại | Trạng thái (lock) | Datetime --}}
+                        <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
+                            <select wire:model.live="newBookingType" class="border border-slate-300 rounded px-2 py-1.5 text-sm">
+                                <option value="">— Loại * —</option>
+                                <option value="tham_kham">🩺 Thăm khám</option>
+                                <option value="dich_vu">💆 Dịch vụ</option>
+                            </select>
+                            <div class="inline-flex items-center gap-1.5 border border-slate-300 rounded px-2 py-1.5 text-sm bg-slate-100 text-ink/60">
+                                <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+                                Chờ xác nhận
+                                <span class="ml-auto text-[10px]">🔒</span>
+                            </div>
+                            {{-- Phase C1.d rev2: Row 1 giữ Ngày (date only). Giờ chuyển xuống Row 3 sau khi có (phòng + dịch vụ). --}}
+                            <input type="date" wire:model.live="newBookingDate"
+                                   class="border border-slate-300 rounded px-2 py-1.5 text-sm"
+                                   title="Chọn ngày">
+                        </div>
+                        {{-- Hàng 2 (Phase C1.d): Cơ sở | Phòng (+ trạng thái) | Bác sĩ --}}
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
+                            <select wire:model.live="newBookingFacilityId" class="border border-slate-300 rounded px-2 py-1.5 text-sm">
+                                <option value="">— Cơ sở —</option>
+                                @foreach ($facilities as $fac)
+                                    <optgroup label="{{ $fac->name }}">
+                                        @foreach ($fac->children as $dept)
+                                            <option value="{{ $dept->id }}">{{ $fac->name }} › {{ $dept->name }}</option>
+                                        @endforeach
+                                    </optgroup>
+                                @endforeach
+                            </select>
+                            {{-- Dropdown Phòng — load từ sb_rooms sau khi chọn cơ sở --}}
+                            <div>
+                                <select wire:model.live="newBookingRoomId"
+                                        @if(empty($availableRooms)) disabled @endif
+                                        class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm {{ empty($availableRooms) ? 'bg-slate-100 text-ink/40' : '' }}">
+                                    <option value="">
+                                        {{ empty($availableRooms) ? '— Chọn cơ sở trước —' : '— Phòng * —' }}
+                                    </option>
+                                    @foreach ($availableRooms as $room)
+                                        <option value="{{ $room['id'] }}">{{ $room['ten'] }} ({{ $room['kieu_phong'] === 'phong_dich_vu' ? 'DV' : 'Khám' }} · max {{ $room['so_slot_toi_da'] }})</option>
+                                    @endforeach
+                                </select>
+                                @if ($roomStatus)
+                                    <div class="mt-1 text-[11px] {{ $roomStatus['full'] ? 'text-red-700 font-semibold' : ($roomStatus['booked'] > 0 ? 'text-amber-700' : 'text-emerald-700') }}">
+                                        @if ($roomStatus['full'])
+                                            ⚠ Phòng đã đầy ({{ $roomStatus['booked'] }}/{{ $roomStatus['capacity'] }}) tại giờ đã chọn — sbooking sẽ chặn khi duyệt.
+                                        @else
+                                            Phòng còn {{ $roomStatus['capacity'] - $roomStatus['booked'] }}/{{ $roomStatus['capacity'] }} chỗ tại giờ đã chọn.
+                                        @endif
+                                    </div>
+                                @endif
+                            </div>
+                            {{-- Phase C1.d 2026-08-02: dropdown BS đọc từ sb_bac_si (mirror sbooking). Filter theo sbooking_co_so_id của facility đã chọn. --}}
+                            @php
+                                $sbCoSoForBs = null;
+                                if ($newBookingFacilityId) {
+                                    $__f = \App\Models\Facility::find($newBookingFacilityId);
+                                    while ($__f) {
+                                        if ($__f->sbooking_co_so_id) { $sbCoSoForBs = (int) $__f->sbooking_co_so_id; break; }
+                                        $__f = $__f->parent_id ? \App\Models\Facility::find($__f->parent_id) : null;
+                                    }
+                                }
+                                $bsList = $sbCoSoForBs
+                                    ? \App\Models\SbBacSi::where(function ($q) use ($sbCoSoForBs) {
+                                            $q->where('sbooking_co_so_id', $sbCoSoForBs)->orWhere('xuat_hien_moi_co_so', true);
+                                        })->where('active', true)->orderBy('ten')->get()
+                                    : collect();
+                                // 2026-08-03 fix: filter BS theo capability của dịch vụ đã chọn (tránh sbooking chặn duyệt).
+                                //   dv.thuoc_nhom='tu_van' → BS phải nhan_tu_van; 'kham_ls' → nhan_kham_ls.
+                                $__svcNhom = null;
+                                if ($newBookingServiceId) {
+                                    $__svcNhom = \App\Models\SbService::where('sbooking_id', $newBookingServiceId)->value('thuoc_nhom');
+                                }
+                                if ($__svcNhom === 'tu_van')  $bsList = $bsList->where('nhan_tu_van', true)->values();
+                                if ($__svcNhom === 'kham_ls') $bsList = $bsList->where('nhan_kham_ls', true)->values();
+                            @endphp
+                            <select wire:model.live="newBookingSbBacSiId"
+                                    @if($bsList->isEmpty()) disabled @endif
+                                    class="border border-slate-300 rounded px-2 py-1.5 text-sm {{ $bsList->isEmpty() ? 'bg-slate-100 text-ink/40' : '' }}">
+                                <option value="">
+                                    {{ $bsList->isEmpty() ? '— Chọn cơ sở trước —' : '— Bác sĩ —' }}
+                                </option>
+                                @foreach ($bsList as $bs)
+                                    <option value="{{ $bs->sbooking_id }}">{{ $bs->displayName() }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        {{-- Hàng 3 (Phase C1.d rev2): Dịch vụ | Giờ (subdivided theo dịch vụ) | (empty) --}}
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
+                            {{-- 2026-08-03: đọc từ sb_services (mirror sbooking). tham_kham = la_dich_vu=false. dich_vu = la_dich_vu=true. --}}
+                            <select wire:model.live="newBookingServiceId" @disabled(! $newBookingType) class="border border-slate-300 rounded px-2 py-1.5 text-sm">
+                                <option value="">
+                                    {{ $newBookingType ? '— ' . ($newBookingType === 'tham_kham' ? 'Chọn thăm khám' : 'Chọn dịch vụ') . ' —' : '— Chọn loại trước —' }}
+                                </option>
+                                @if ($newBookingType)
+                                    @php
+                                        $__isDv = $newBookingType === 'dich_vu';
+                                        // 2026-08-03 fix: filter theo cơ sở đã chọn (sb_services x4 vì sync mọi cơ sở → lặp x3-x4 lần).
+                                        //   Ưu tiên: match sbooking_co_so_id (đúng cơ sở). Nếu vẫn empty → fallback all.
+                                        //   Sau đó dedupe theo tên để tránh trường hợp cùng cơ sở vẫn có duplicate.
+                                        $__svcQuery = \App\Models\SbService::where('active', true)->where('la_dich_vu', $__isDv);
+                                        if ($sbCoSoForBs) $__svcQuery->where(function ($q) use ($sbCoSoForBs) {
+                                            $q->where('sbooking_co_so_id', $sbCoSoForBs)->orWhereNull('sbooking_co_so_id');
+                                        });
+                                        $__svcAll = $__svcQuery->orderBy('ten')->get();
+                                        // Dedupe: ưu tiên record có sbooking_co_so_id khớp cơ sở đã chọn.
+                                        $__svcOptions = $__svcAll->sortByDesc(fn ($s) => $s->sbooking_co_so_id === $sbCoSoForBs ? 1 : 0)
+                                            ->unique('ten')->sortBy('ten')->values();
+                                        // Fallback: nếu sb_services trống → đọc scrm.services như cũ để không đứng hình.
+                                        if ($__svcOptions->isEmpty()) {
+                                            $__legacy = \App\Models\Service::where('active', true)->where('service_type', $newBookingType)->orderBy('name')->get();
+                                            foreach ($__legacy as $l) $__svcOptions->push((object)['id' => $l->id, 'sbooking_id' => null, 'ten' => $l->name, 'thoi_gian_phut' => null]);
+                                        }
+                                    @endphp
+                                    @foreach ($__svcOptions as $s)
+                                        <option value="{{ $s->sbooking_id ?? $s->id }}" data-src="{{ $s->sbooking_id ? 'sb' : 'legacy' }}">
+                                            {{ $s->ten }}@if($s->thoi_gian_phut) ({{ $s->thoi_gian_phut }}') @endif
+                                        </option>
+                                    @endforeach
+                                    @if ($__svcOptions->isEmpty())
+                                        <option value="" disabled>(chưa có {{ $newBookingType === 'tham_kham' ? 'thăm khám' : 'dịch vụ' }} — sync bên sbooking trước)</option>
+                                    @endif
+                                @endif
+                            </select>
+                            @php
+                                $hasSlots = ! empty($availableSlots);
+                                $timeReady = $newBookingRoomId && $newBookingServiceId && $newBookingDate;
+                                $slotHint = ! $newBookingRoomId ? 'Chọn phòng trước'
+                                    : (! $newBookingServiceId ? 'Chọn dịch vụ để load giờ'
+                                        : (! $newBookingDate ? 'Chọn ngày trước'
+                                            : ($hasSlots ? count($availableSlots) . ' khung giờ trong ngày để chọn' : 'Không có khung giờ phù hợp cho lựa chọn này')));
+                            @endphp
+                            <div>
+                                <select wire:model.live="newBookingTime"
+                                        @if(! $hasSlots) disabled @endif
+                                        class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm {{ $hasSlots ? '' : 'bg-slate-100 text-ink/40' }}"
+                                        title="{{ $slotHint }}">
+                                    <option value="">— Giờ —</option>
+                                    @foreach ($availableSlots as $slot)
+                                        {{-- Value encode: khung_gio_id|start|end (start dạng H:i, end dạng H:i). --}}
+                                        <option value="{{ ($slot['id'] ?? '') . '|' . ($slot['gio_bat_dau'] ?? '') . '|' . ($slot['gio_ket_thuc'] ?? '') }}" @if(($slot['full'] ?? false)) disabled @endif>
+                                            {{ $slot['label'] ?? ($slot['gio_bat_dau'] ?? '') }}{{ ($slot['full'] ?? false) ? ' (đầy)' : '' }}
+                                        </option>
+                                    @endforeach
+                                </select>
+                                <div class="mt-1 text-[11px] text-ink/50">{{ $slotHint }}</div>
+                            </div>
+                            <div></div>
+                        </div>
+                        {{-- 2026-08-05: CV auto lấy từ UPS Sale list (bucket A→B→C→OFF) của cơ sở booking.
+                             Không chọn tay. + Thêm CV → tăng slot, tự pick sale kế tiếp. --}}
+                        <div class="space-y-1.5">
+                            <div class="text-xs font-semibold text-ink/60">
+                                Chuyên viên tư vấn (⚡ auto UPS)
+                                <span class="font-normal text-ink/40">— người đầu tiên = Sale phụ trách nếu booking được duyệt.</span>
+                                @if ($cvPoolFacilityName)
+                                    <span class="text-[10px] text-emerald-700 font-normal">· Cơ sở: <b>{{ $cvPoolFacilityName }}</b></span>
+                                @endif
+                            </div>
+                            @if (empty($cvPreview))
+                                <div class="text-xs bg-red-50 border border-red-300 text-red-800 rounded px-3 py-2">
+                                    ⚠️ Chưa có UPS list Sale hôm nay cho cơ sở này — <b>không tạo được booking</b>. Liên hệ <b>Admin BO</b> để chốt UPS list trước.
+                                </div>
+                            @else
+                                @foreach ($newBookingConsultantIds as $cvIdx => $cvVal)
+                                    <div class="flex items-center gap-2" wire:key="new-cv-{{ $cvIdx }}">
+                                        <span class="text-xs text-ink/50 w-6 text-right">#{{ $cvIdx + 1 }}</span>
+                                        <div class="flex-1 border border-emerald-300 bg-emerald-50 rounded px-3 py-1.5 text-sm text-emerald-900">
+                                            ⚡ {{ $cvPreview[$cvIdx]?->name ?? '—' }}
+                                            <span class="text-[10px] text-emerald-700">(auto UPS)</span>
+                                        </div>
+                                        @if (count($newBookingConsultantIds) > 1)
+                                            <button type="button" wire:click="removeBookingConsultantSlot({{ $cvIdx }})" class="text-xs text-red-600 hover:text-red-800 px-2">✕</button>
+                                        @endif
+                                    </div>
+                                @endforeach
+                                <button type="button" wire:click="addBookingConsultantSlot" class="text-xs font-semibold text-gold-700 hover:text-gold-800">+ Thêm CV (sale kế tiếp trong UPS)</button>
+                            @endif
+                        </div>
+                        {{-- Phase C1.b rev9 2026-08-02: 4 field bổ sung đồng bộ với sbooking. --}}
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-2 pt-2 border-t border-slate-200">
+                            <div>
+                                <label class="block text-[11px] text-ink/50 mb-0.5">Số liệu trình</label>
+                                <input wire:model="newBookingSoLieuTrinh" placeholder="VD: 1/10" class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-[11px] text-ink/50 mb-0.5">Số lượng lọ</label>
+                                <input wire:model="newBookingSoLuongLo" placeholder="VD: 3" class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-[11px] text-ink/50 mb-0.5">Dung tích lọ</label>
+                                <select wire:model="newBookingDungTichLo" class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm">
+                                    <option value="">— Chọn —</option>
+                                    @foreach (['8M','10M','16M','20M','450M','1 LT','2 LT'] as $dt)
+                                        <option value="{{ $dt }}">{{ $dt }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+                            <div class="flex flex-col justify-end gap-1">
+                                <label class="inline-flex items-center gap-2 text-sm cursor-pointer select-none">
+                                    <input type="checkbox" wire:model="newBookingCoTuVan" class="rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+                                    <span>Có tư vấn</span>
+                                </label>
+                                <label class="inline-flex items-center gap-2 text-sm cursor-pointer select-none">
+                                    <input type="checkbox" wire:model="newBookingCoKhamCls" class="rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+                                    <span>Có thăm khám lâm sàng</span>
+                                </label>
+                                <label class="inline-flex items-center gap-2 text-sm cursor-pointer select-none">
+                                    <input type="checkbox" wire:model="newBookingKetHopMedical" class="rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+                                    <span>Kết hợp medical</span>
+                                </label>
+                            </div>
+                        </div>
+                        <input wire:model="newBookingNote" placeholder="Ghi chú" class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm">
+                        <div class="flex justify-end">
+                            <button type="button" wire:click="addBookingLog" class="text-sm bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-4 py-1.5 rounded">+ Tạo booking</button>
+                        </div>
+                    </div>
+                @else
+                    <p class="text-xs text-ink/40 italic">Bấm "Lưu thông tin khách hàng" để tạo lead trước.</p>
+                @endif
+            </div>
+            @endif
 
             {{-- ============= Phase 4 rework 2026-08-01 — LỊCH SỬ BOOKING (list record) ============= --}}
             {{-- Mỗi booking = 1 record chứa cơ sở/bác sĩ/dịch vụ/CV[]. Chờ duyệt lên đầu. --}}
@@ -3246,9 +3554,11 @@ new class extends Component
                                 <strong>UPS chưa được chốt hôm nay</strong> — chia số sẽ bị khóa. Bấm nút bên trên để xem/chốt.
                             </div>
                         @endif
-                        {{-- 2026-08-05: nguồn MKT + mode=auto → ẩn cascade + nhân viên (dùng UPS list auto). --}}
+                        {{-- 2026-08-05: nguồn MKT create → chỉ hiện cascade+nhân viên khi mode=pool.
+                             Auto dùng UPS list, manual dùng dropdown ở card. --}}
                         @php
-                            $__hideCascade = ($sourceGroup === \App\Models\Lead::SOURCE_MKT && ! $lead?->exists && $mktMode === 'auto');
+                            $__isMktCreate = ($sourceGroup === \App\Models\Lead::SOURCE_MKT && ! $lead?->exists);
+                            $__hideCascade = $__isMktCreate && $mktMode !== 'pool';
                             $__nextSaleObj = $mktNextSale['sale'] ?? null;
                             $__rotated = $mktNextSale['rotated'] ?? false;
                             $__boxCls = $__rotated
@@ -3256,7 +3566,7 @@ new class extends Component
                                 : 'bg-emerald-50 border-emerald-300 text-emerald-900';
                             $__subCls = $__rotated ? 'text-amber-700' : 'text-emerald-700';
                         @endphp
-                        @if ($__hideCascade)
+                        @if ($__hideCascade && $mktMode === 'auto')
                             <div class="{{ $__boxCls }} border rounded-md px-3 py-3 text-sm">
                                 <div class="font-bold mb-2">⚡ Chia tự động — dự kiến:</div>
                                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -3290,8 +3600,14 @@ new class extends Component
                                 <div class="mt-2 text-[11px] text-emerald-700 italic">💡 Bấm <b>Lưu</b> ở footer để chia thật. Sale được đánh dấu <b>xanh đậm</b> là người sẽ nhận lead này.</div>
                             </div>
                         @endif
-                        {{-- 2026-08-05: cascade + person section — chỉ user có perm distribute thấy. Trực Page ẩn. --}}
-                        @if ($canDistribute)
+                        {{-- 2026-08-05: cascade + person section — chỉ user có perm distribute thấy. Trực Page ẩn.
+                             Nếu chưa chọn nguồn khách → hiện placeholder "Vui lòng chọn nguồn khách". --}}
+                        @if ($canDistribute && ! $sourceGroup && ! $lead?->exists)
+                            <div class="border border-dashed border-gold-300 rounded-md px-4 py-6 text-center text-sm text-ink/50 italic">
+                                Vui lòng chọn nguồn khách ở trên để hiện form chia số.
+                            </div>
+                        @endif
+                        @if ($canDistribute && ($sourceGroup || $lead?->exists))
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 @if ($__hideCascade) hidden @endif">
                             @if ($lead?->code)
                             <div class="md:col-span-2">
@@ -3349,13 +3665,13 @@ new class extends Component
                                 </p>
                                 @error('poolTarget')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
 
-                                {{-- 2026-08-04: tick "Áp dụng luật thu hồi" theo Quy tắc PKD Update.docx. --}}
+                                {{-- 2026-08-07: Flip mặc định — mọi lead đều áp thu hồi. Tick ô này = exempt (VD lead đặc biệt CM giữ tay). --}}
                                 <label class="mt-3 flex items-start gap-2 text-sm bg-amber-50 border border-amber-200 rounded-md px-3 py-2 cursor-pointer">
-                                    <input type="checkbox" wire:model="recallByColumns" class="rounded border-amber-300 mt-0.5">
+                                    <input type="checkbox" wire:model="skipRecall" class="rounded border-amber-300 mt-0.5">
                                     <span>
-                                        <span class="font-semibold text-amber-900">Áp dụng luật thu hồi tự động</span>
+                                        <span class="font-semibold text-amber-900">Không áp dụng luật thu hồi</span>
                                         <span class="block text-xs text-amber-700 mt-0.5">
-                                            Sale phải cập nhật <b>col 1,2,3</b> (page/camp/phan_loai) trong <b>1 ngày</b> và đủ <b>5 cột</b> (thêm ket_qua/sic) trong <b>3 ngày</b>. Không đủ → hệ thống tự thu hồi về kho team.
+                                            Mặc định: sau <b>1 ngày</b> không có ghi nhận cuộc gọi → thu hồi. Sau <b>3 ngày</b> chưa đủ <b>Phân loại + Kết quả + đóng phase 2</b> → thu hồi về kho team. Tick ô này để <b>bỏ qua</b> luật cho lead đặc biệt.
                                         </span>
                                     </span>
                                 </label>
@@ -3459,308 +3775,6 @@ new class extends Component
                 @endif
             </div>
 
-            {{-- ============= Phase 4 rework 2026-08-01 — GHI NHẬN BOOKING (log nội bộ) ============= --}}
-            {{-- 2026-08-04 (Task 2): chỉ Admin + Admin cơ sở (perm lead.book_action) mới thấy khung tạo booking. --}}
-            @if (auth()->user()?->hasPermission('lead.book_action'))
-            <div x-show="phase === 3" x-cloak class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
-                <h2 class="font-bold text-gold-700 mb-2 flex items-center gap-2">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
-                    Ghi nhận booking <span class="text-sm text-ink/50 font-normal">(log nội bộ — tracking bên CRM)</span>
-                </h2>
-                <div class="mb-4 p-2.5 bg-blue-50 border border-blue-200 rounded text-xs text-blue-900 leading-relaxed">
-                    ℹ️ Bấm <b>Thêm booking</b> → tạo record bên lara-sbooking ở trạng thái <b>Chờ duyệt</b>. Admin sbooking duyệt xong → tự cập nhật trạng thái <b>Đã duyệt</b> về đây.
-                    <b>Chưa map cơ sở sang sbooking</b> (Thiết lập → Kết nối Booking) → <b>không cho ghi</b>.
-                </div>
-
-                {{-- TRẠNG THÁI ĐẶT LỊCH (tổng thể) — readonly, tự sync từ booking_logs mới nhất --}}
-                <div class="mb-4 pb-4 border-b border-slate-200">
-                    <label class="block text-sm font-medium mb-1.5">TRẠNG THÁI ĐẶT LỊCH (tổng thể)</label>
-                    <div class="inline-flex items-center gap-2 px-3 py-2 border border-gold-200 rounded-md bg-slate-50 text-sm min-w-[240px]">
-                        <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
-                        <span class="font-semibold text-ink/80">{{ \App\Models\Lead::BOOKING_STATUSES[$bookingStatus] ?? $bookingStatus ?: 'Chưa đặt' }}</span>
-                        <span class="text-xs text-ink/40 ml-auto">🔒 tự sync</span>
-                    </div>
-                    <p class="text-xs text-ink/50 mt-1">Tự cập nhật khi thêm booking mới hoặc bên hệ thống booking sync về — không chỉnh tay.</p>
-                </div>
-
-                @if ($lead?->exists)
-                    {{-- 2026-08-05: bỏ nút "Đồng bộ từ bên booking" (dùng Reverb push tự sync), thay bằng "Check UPS"
-                         cho user xem list sale hôm nay trước khi bấm Thêm booking. Popup Alpine, không nhảy trang. --}}
-                    <div class="flex items-center justify-between mb-2">
-                        <span class="text-[11px] text-ink/50">💡 Preview CV auto-refresh mỗi 5s — sale kế tiếp trong UPS list sẽ cập nhật khi có người chiếm/thả.</span>
-                        <div x-data="{ show: false }" class="relative">
-                            <button type="button" @click="show = !show"
-                                    class="text-xs font-bold px-3 py-1.5 rounded whitespace-nowrap inline-flex items-center gap-1.5 bg-white border border-gold-300 text-gold-700 hover:bg-gold-50">
-                                ⚡ Check UPS List
-                            </button>
-                            <div x-show="show" @click.outside="show = false" x-transition x-cloak
-                                 class="absolute right-0 mt-2 w-[calc(100vw-2rem)] sm:w-96 max-w-md bg-white border border-gold-200 rounded-lg shadow-xl z-30 max-h-[500px] overflow-auto">
-                                @php
-                                    $__upsAtts = $cvPoolFacilityName ? \App\Models\DailyAttendance::with('user')
-                                        ->where('facility_pool_unit_id', ($this->trucPageFacility()?->id ?? 0))
-                                        ->whereDate('work_date', now()->toDateString())
-                                        ->whereIn('list_bucket', \App\Services\Ups\UpsDispatcher::BUCKET_ORDER_GREET)
-                                        ->orderByRaw("FIELD(list_bucket, 'A','B','C','OFF')")
-                                        ->orderBy('checkin_at')->get() : collect();
-                                @endphp
-                                <div class="px-3 py-2 border-b border-gold-100 bg-gold-50 sticky top-0">
-                                    <div class="text-xs font-bold text-gold-800">UPS Sale hôm nay · {{ $cvPoolFacilityName ?? '—' }}</div>
-                                    <div class="text-[10px] text-gold-700">{{ $__upsAtts->count() }} sale · Auto-refresh 5s</div>
-                                </div>
-                                @if ($__upsAtts->isEmpty())
-                                    <div class="px-3 py-6 text-center text-xs text-red-600">⚠️ Chưa có UPS list Sale — không tạo được booking. Liên hệ Admin BO.</div>
-                                @else
-                                    <ul class="divide-y divide-gold-50">
-                                        @foreach ($__upsAtts as $__a)
-                                            @php
-                                                $__busy = (bool) $__a->is_busy;
-                                                $__off  = (bool) $__a->is_off;
-                                                $__label = $__off ? 'Offlist' : ($__busy ? '🔴 Đang tiếp đón' : '🟢 Sẵn sàng');
-                                                $__cls   = $__off ? 'bg-rose-100 text-rose-700' : ($__busy ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700');
-                                                $__bkc   = match ($__a->list_bucket) { 'A'=>'bg-blue-100 text-blue-800', 'B'=>'bg-teal-100 text-teal-800', 'C'=>'bg-slate-200 text-slate-800', 'OFF'=>'bg-rose-100 text-rose-800', default=>'bg-gold-100 text-gold-800' };
-                                                $__isNext = ! empty($cvPreview) && $cvPreview[0]?->id === $__a->user_id;
-                                            @endphp
-                                            <li class="px-3 py-2 flex items-center gap-2 hover:bg-gold-50/40 {{ $__isNext ? 'bg-emerald-50 ring-1 ring-emerald-400' : '' }}">
-                                                <span class="text-[10px] font-bold px-1.5 py-0.5 rounded {{ $__bkc }}">{{ $__a->list_bucket }}</span>
-                                                <div class="flex-1 min-w-0">
-                                                    <div class="text-sm font-semibold text-ink truncate">
-                                                        @if ($__isNext) <span class="text-emerald-700">➤</span> @endif
-                                                        {{ $__a->user?->name ?? 'Sale #'.$__a->user_id }}
-                                                    </div>
-                                                    <div class="text-[11px] text-ink/50">Check-in {{ optional($__a->checkin_at)?->setTimezone('Asia/Ho_Chi_Minh')->format('H:i') }}</div>
-                                                </div>
-                                                <span class="text-[11px] font-semibold px-2 py-0.5 rounded {{ $__cls }} whitespace-nowrap">{{ $__label }}</span>
-                                            </li>
-                                        @endforeach
-                                    </ul>
-                                @endif
-                            </div>
-                        </div>
-                    </div>
-                    <div wire:poll.5s class="border border-dashed border-slate-300 bg-slate-50 rounded p-3 space-y-2">
-                        <div class="text-xs font-semibold text-ink/60">Thêm booking mới <span class="font-normal text-ink/40">— mặc định "Chờ xác nhận", bên booking cập nhật sẽ tự sync về đây</span></div>
-                        {{-- Hàng 1: Loại | Trạng thái (lock) | Datetime --}}
-                        <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
-                            <select wire:model.live="newBookingType" class="border border-slate-300 rounded px-2 py-1.5 text-sm">
-                                <option value="">— Loại * —</option>
-                                <option value="tham_kham">🩺 Thăm khám</option>
-                                <option value="dich_vu">💆 Dịch vụ</option>
-                            </select>
-                            <div class="inline-flex items-center gap-1.5 border border-slate-300 rounded px-2 py-1.5 text-sm bg-slate-100 text-ink/60">
-                                <span class="w-2 h-2 rounded-full bg-amber-400"></span>
-                                Chờ xác nhận
-                                <span class="ml-auto text-[10px]">🔒</span>
-                            </div>
-                            {{-- Phase C1.d rev2: Row 1 giữ Ngày (date only). Giờ chuyển xuống Row 3 sau khi có (phòng + dịch vụ). --}}
-                            <input type="date" wire:model.live="newBookingDate"
-                                   class="border border-slate-300 rounded px-2 py-1.5 text-sm"
-                                   title="Chọn ngày">
-                        </div>
-                        {{-- Hàng 2 (Phase C1.d): Cơ sở | Phòng (+ trạng thái) | Bác sĩ --}}
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
-                            <select wire:model.live="newBookingFacilityId" class="border border-slate-300 rounded px-2 py-1.5 text-sm">
-                                <option value="">— Cơ sở —</option>
-                                @foreach ($facilities as $fac)
-                                    <optgroup label="{{ $fac->name }}">
-                                        @foreach ($fac->children as $dept)
-                                            <option value="{{ $dept->id }}">{{ $fac->name }} › {{ $dept->name }}</option>
-                                        @endforeach
-                                    </optgroup>
-                                @endforeach
-                            </select>
-                            {{-- Dropdown Phòng — load từ sb_rooms sau khi chọn cơ sở --}}
-                            <div>
-                                <select wire:model.live="newBookingRoomId"
-                                        @if(empty($availableRooms)) disabled @endif
-                                        class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm {{ empty($availableRooms) ? 'bg-slate-100 text-ink/40' : '' }}">
-                                    <option value="">
-                                        {{ empty($availableRooms) ? '— Chọn cơ sở trước —' : '— Phòng * —' }}
-                                    </option>
-                                    @foreach ($availableRooms as $room)
-                                        <option value="{{ $room['id'] }}">{{ $room['ten'] }} ({{ $room['kieu_phong'] === 'phong_dich_vu' ? 'DV' : 'Khám' }} · max {{ $room['so_slot_toi_da'] }})</option>
-                                    @endforeach
-                                </select>
-                                @if ($roomStatus)
-                                    <div class="mt-1 text-[11px] {{ $roomStatus['full'] ? 'text-red-700 font-semibold' : ($roomStatus['booked'] > 0 ? 'text-amber-700' : 'text-emerald-700') }}">
-                                        @if ($roomStatus['full'])
-                                            ⚠ Phòng đã đầy ({{ $roomStatus['booked'] }}/{{ $roomStatus['capacity'] }}) tại giờ đã chọn — sbooking sẽ chặn khi duyệt.
-                                        @else
-                                            Phòng còn {{ $roomStatus['capacity'] - $roomStatus['booked'] }}/{{ $roomStatus['capacity'] }} chỗ tại giờ đã chọn.
-                                        @endif
-                                    </div>
-                                @endif
-                            </div>
-                            {{-- Phase C1.d 2026-08-02: dropdown BS đọc từ sb_bac_si (mirror sbooking). Filter theo sbooking_co_so_id của facility đã chọn. --}}
-                            @php
-                                $sbCoSoForBs = null;
-                                if ($newBookingFacilityId) {
-                                    $__f = \App\Models\Facility::find($newBookingFacilityId);
-                                    while ($__f) {
-                                        if ($__f->sbooking_co_so_id) { $sbCoSoForBs = (int) $__f->sbooking_co_so_id; break; }
-                                        $__f = $__f->parent_id ? \App\Models\Facility::find($__f->parent_id) : null;
-                                    }
-                                }
-                                $bsList = $sbCoSoForBs
-                                    ? \App\Models\SbBacSi::where(function ($q) use ($sbCoSoForBs) {
-                                            $q->where('sbooking_co_so_id', $sbCoSoForBs)->orWhere('xuat_hien_moi_co_so', true);
-                                        })->where('active', true)->orderBy('ten')->get()
-                                    : collect();
-                                // 2026-08-03 fix: filter BS theo capability của dịch vụ đã chọn (tránh sbooking chặn duyệt).
-                                //   dv.thuoc_nhom='tu_van' → BS phải nhan_tu_van; 'kham_ls' → nhan_kham_ls.
-                                $__svcNhom = null;
-                                if ($newBookingServiceId) {
-                                    $__svcNhom = \App\Models\SbService::where('sbooking_id', $newBookingServiceId)->value('thuoc_nhom');
-                                }
-                                if ($__svcNhom === 'tu_van')  $bsList = $bsList->where('nhan_tu_van', true)->values();
-                                if ($__svcNhom === 'kham_ls') $bsList = $bsList->where('nhan_kham_ls', true)->values();
-                            @endphp
-                            <select wire:model.live="newBookingSbBacSiId"
-                                    @if($bsList->isEmpty()) disabled @endif
-                                    class="border border-slate-300 rounded px-2 py-1.5 text-sm {{ $bsList->isEmpty() ? 'bg-slate-100 text-ink/40' : '' }}">
-                                <option value="">
-                                    {{ $bsList->isEmpty() ? '— Chọn cơ sở trước —' : '— Bác sĩ —' }}
-                                </option>
-                                @foreach ($bsList as $bs)
-                                    <option value="{{ $bs->sbooking_id }}">{{ $bs->displayName() }}</option>
-                                @endforeach
-                            </select>
-                        </div>
-                        {{-- Hàng 3 (Phase C1.d rev2): Dịch vụ | Giờ (subdivided theo dịch vụ) | (empty) --}}
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
-                            {{-- 2026-08-03: đọc từ sb_services (mirror sbooking). tham_kham = la_dich_vu=false. dich_vu = la_dich_vu=true. --}}
-                            <select wire:model.live="newBookingServiceId" @disabled(! $newBookingType) class="border border-slate-300 rounded px-2 py-1.5 text-sm">
-                                <option value="">
-                                    {{ $newBookingType ? '— ' . ($newBookingType === 'tham_kham' ? 'Chọn thăm khám' : 'Chọn dịch vụ') . ' —' : '— Chọn loại trước —' }}
-                                </option>
-                                @if ($newBookingType)
-                                    @php
-                                        $__isDv = $newBookingType === 'dich_vu';
-                                        // 2026-08-03 fix: filter theo cơ sở đã chọn (sb_services x4 vì sync mọi cơ sở → lặp x3-x4 lần).
-                                        //   Ưu tiên: match sbooking_co_so_id (đúng cơ sở). Nếu vẫn empty → fallback all.
-                                        //   Sau đó dedupe theo tên để tránh trường hợp cùng cơ sở vẫn có duplicate.
-                                        $__svcQuery = \App\Models\SbService::where('active', true)->where('la_dich_vu', $__isDv);
-                                        if ($sbCoSoForBs) $__svcQuery->where(function ($q) use ($sbCoSoForBs) {
-                                            $q->where('sbooking_co_so_id', $sbCoSoForBs)->orWhereNull('sbooking_co_so_id');
-                                        });
-                                        $__svcAll = $__svcQuery->orderBy('ten')->get();
-                                        // Dedupe: ưu tiên record có sbooking_co_so_id khớp cơ sở đã chọn.
-                                        $__svcOptions = $__svcAll->sortByDesc(fn ($s) => $s->sbooking_co_so_id === $sbCoSoForBs ? 1 : 0)
-                                            ->unique('ten')->sortBy('ten')->values();
-                                        // Fallback: nếu sb_services trống → đọc scrm.services như cũ để không đứng hình.
-                                        if ($__svcOptions->isEmpty()) {
-                                            $__legacy = \App\Models\Service::where('active', true)->where('service_type', $newBookingType)->orderBy('name')->get();
-                                            foreach ($__legacy as $l) $__svcOptions->push((object)['id' => $l->id, 'sbooking_id' => null, 'ten' => $l->name, 'thoi_gian_phut' => null]);
-                                        }
-                                    @endphp
-                                    @foreach ($__svcOptions as $s)
-                                        <option value="{{ $s->sbooking_id ?? $s->id }}" data-src="{{ $s->sbooking_id ? 'sb' : 'legacy' }}">
-                                            {{ $s->ten }}@if($s->thoi_gian_phut) ({{ $s->thoi_gian_phut }}') @endif
-                                        </option>
-                                    @endforeach
-                                    @if ($__svcOptions->isEmpty())
-                                        <option value="" disabled>(chưa có {{ $newBookingType === 'tham_kham' ? 'thăm khám' : 'dịch vụ' }} — sync bên sbooking trước)</option>
-                                    @endif
-                                @endif
-                            </select>
-                            @php
-                                $hasSlots = ! empty($availableSlots);
-                                $timeReady = $newBookingRoomId && $newBookingServiceId && $newBookingDate;
-                                $slotHint = ! $newBookingRoomId ? 'Chọn phòng trước'
-                                    : (! $newBookingServiceId ? 'Chọn dịch vụ để load giờ'
-                                        : (! $newBookingDate ? 'Chọn ngày trước'
-                                            : ($hasSlots ? count($availableSlots) . ' khung giờ trong ngày để chọn' : 'Không có khung giờ phù hợp cho lựa chọn này')));
-                            @endphp
-                            <div>
-                                <select wire:model.live="newBookingTime"
-                                        @if(! $hasSlots) disabled @endif
-                                        class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm {{ $hasSlots ? '' : 'bg-slate-100 text-ink/40' }}"
-                                        title="{{ $slotHint }}">
-                                    <option value="">— Giờ —</option>
-                                    @foreach ($availableSlots as $slot)
-                                        {{-- Value encode: khung_gio_id|start|end (start dạng H:i, end dạng H:i). --}}
-                                        <option value="{{ ($slot['id'] ?? '') . '|' . ($slot['gio_bat_dau'] ?? '') . '|' . ($slot['gio_ket_thuc'] ?? '') }}" @if(($slot['full'] ?? false)) disabled @endif>
-                                            {{ $slot['label'] ?? ($slot['gio_bat_dau'] ?? '') }}{{ ($slot['full'] ?? false) ? ' (đầy)' : '' }}
-                                        </option>
-                                    @endforeach
-                                </select>
-                                <div class="mt-1 text-[11px] text-ink/50">{{ $slotHint }}</div>
-                            </div>
-                            <div></div>
-                        </div>
-                        {{-- 2026-08-05: CV auto lấy từ UPS Sale list (bucket A→B→C→OFF) của cơ sở booking.
-                             Không chọn tay. + Thêm CV → tăng slot, tự pick sale kế tiếp. --}}
-                        <div class="space-y-1.5">
-                            <div class="text-xs font-semibold text-ink/60">
-                                Chuyên viên tư vấn (⚡ auto UPS)
-                                <span class="font-normal text-ink/40">— người đầu tiên = Sale phụ trách nếu booking được duyệt.</span>
-                                @if ($cvPoolFacilityName)
-                                    <span class="text-[10px] text-emerald-700 font-normal">· Cơ sở: <b>{{ $cvPoolFacilityName }}</b></span>
-                                @endif
-                            </div>
-                            @if (empty($cvPreview))
-                                <div class="text-xs bg-red-50 border border-red-300 text-red-800 rounded px-3 py-2">
-                                    ⚠️ Chưa có UPS list Sale hôm nay cho cơ sở này — <b>không tạo được booking</b>. Liên hệ <b>Admin BO</b> để chốt UPS list trước.
-                                </div>
-                            @else
-                                @foreach ($newBookingConsultantIds as $cvIdx => $cvVal)
-                                    <div class="flex items-center gap-2" wire:key="new-cv-{{ $cvIdx }}">
-                                        <span class="text-xs text-ink/50 w-6 text-right">#{{ $cvIdx + 1 }}</span>
-                                        <div class="flex-1 border border-emerald-300 bg-emerald-50 rounded px-3 py-1.5 text-sm text-emerald-900">
-                                            ⚡ {{ $cvPreview[$cvIdx]?->name ?? '—' }}
-                                            <span class="text-[10px] text-emerald-700">(auto UPS)</span>
-                                        </div>
-                                        @if (count($newBookingConsultantIds) > 1)
-                                            <button type="button" wire:click="removeBookingConsultantSlot({{ $cvIdx }})" class="text-xs text-red-600 hover:text-red-800 px-2">✕</button>
-                                        @endif
-                                    </div>
-                                @endforeach
-                                <button type="button" wire:click="addBookingConsultantSlot" class="text-xs font-semibold text-gold-700 hover:text-gold-800">+ Thêm CV (sale kế tiếp trong UPS)</button>
-                            @endif
-                        </div>
-                        {{-- Phase C1.b rev9 2026-08-02: 4 field bổ sung đồng bộ với sbooking. --}}
-                        <div class="grid grid-cols-2 md:grid-cols-4 gap-2 pt-2 border-t border-slate-200">
-                            <div>
-                                <label class="block text-[11px] text-ink/50 mb-0.5">Số liệu trình</label>
-                                <input wire:model="newBookingSoLieuTrinh" placeholder="VD: 1/10" class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm">
-                            </div>
-                            <div>
-                                <label class="block text-[11px] text-ink/50 mb-0.5">Số lượng lọ</label>
-                                <input wire:model="newBookingSoLuongLo" placeholder="VD: 3" class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm">
-                            </div>
-                            <div>
-                                <label class="block text-[11px] text-ink/50 mb-0.5">Dung tích lọ</label>
-                                <select wire:model="newBookingDungTichLo" class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm">
-                                    <option value="">— Chọn —</option>
-                                    @foreach (['8M','10M','16M','20M','450M','1 LT','2 LT'] as $dt)
-                                        <option value="{{ $dt }}">{{ $dt }}</option>
-                                    @endforeach
-                                </select>
-                            </div>
-                            <div class="flex flex-col justify-end gap-1">
-                                <label class="inline-flex items-center gap-2 text-sm cursor-pointer select-none">
-                                    <input type="checkbox" wire:model="newBookingCoTuVan" class="rounded border-slate-300 text-blue-600 focus:ring-blue-500">
-                                    <span>Có tư vấn</span>
-                                </label>
-                                <label class="inline-flex items-center gap-2 text-sm cursor-pointer select-none">
-                                    <input type="checkbox" wire:model="newBookingCoKhamCls" class="rounded border-slate-300 text-blue-600 focus:ring-blue-500">
-                                    <span>Có thăm khám lâm sàng</span>
-                                </label>
-                                <label class="inline-flex items-center gap-2 text-sm cursor-pointer select-none">
-                                    <input type="checkbox" wire:model="newBookingKetHopMedical" class="rounded border-slate-300 text-blue-600 focus:ring-blue-500">
-                                    <span>Kết hợp medical</span>
-                                </label>
-                            </div>
-                        </div>
-                        <input wire:model="newBookingNote" placeholder="Ghi chú" class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm">
-                        <div class="flex justify-end">
-                            <button type="button" wire:click="addBookingLog" class="text-sm bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-4 py-1.5 rounded">+ Tạo booking</button>
-                        </div>
-                    </div>
-                @else
-                    <p class="text-xs text-ink/40 italic">Bấm "Lưu thông tin khách hàng" để tạo lead trước.</p>
-                @endif
-            </div>
-            @endif
 
             {{-- ============= Phase 6.21 — Section CHECK-IN (Phase 5) đúng field mockup ============= --}}
             <div x-show="phase === 4" x-cloak class="bg-white border border-gold-200 rounded-xl shadow-card p-6">

@@ -20,7 +20,7 @@ Schedule::command('leads:mark-overdue-booking')->dailyAt('02:15');
 Schedule::command('leads:recall-idle-booking-hcm')->dailyAt('02:30');
 
 // 2026-08-04 — Thu hồi theo quy tắc PKD (col 1-3 sau 1 ngày, col 4-5 sau 3 ngày).
-// Chỉ tác động lead có recall_by_columns=true (CM tick khi chia).
+// 2026-08-07: mặc định áp mọi lead cá nhân; chỉ skip nếu skip_recall=true (CM tick "Không thu hồi").
 Schedule::command('leads:recall-by-columns')->hourly();
 
 // Aggregate hôm nay mỗi 2 phút (độ tươi dashboard 1–3 phút); chốt cứng hôm qua sau nửa đêm

@@ -84,7 +84,7 @@
             'Chia lead cho sale + tick "Áp dụng luật thu hồi tự động"',
             'Backdate <code>leads.assigned_at</code> về 2 ngày trước, không điền page/camp/phan_loai',
             'Chạy <code>php artisan leads:recall-by-columns --dry-run</code> → thấy <code>[DRY] KH-XXX: quá 1 ngày chưa cập nhật đủ 3 cột đầu</code>',
-            'Bỏ <code>--dry-run</code> → lead recall về kho team, flag <code>recall_by_columns</code> reset về false',
+            'Bỏ <code>--dry-run</code> → lead recall về kho team (pool_level chuyển POOL_TEAM, sẽ tự loại khỏi query lần sau)',
             'Schedule hourly ở <code>routes/console.php</code> đang chạy',
         ],
         '8. Audit UPS Distribution (fix 4 bug)' => [

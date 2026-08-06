@@ -28,7 +28,7 @@ return [
                 ['field' => 'poolFacilityId',  'label' => 'Địa điểm',          'type' => 'select',  'required' => false, 'options' => 'PoolUnit kind=facility (con của Chi nhánh)'],
                 ['field' => 'poolDepartmentId','label' => 'Cơ sở',             'type' => 'select',  'required' => false, 'options' => 'PoolUnit kind=department (con của Địa điểm)'],
                 ['field' => 'personId',        'label' => 'Nhân viên phụ trách', 'type' => 'search', 'required' => false, 'note' => 'Autocomplete user'],
-                ['field' => 'recallByColumns', 'label' => 'Áp dụng luật thu hồi tự động', 'type' => 'checkbox', 'required' => false, 'note' => 'col 1-3 trong 1 ngày, đủ 5 cột trong 3 ngày'],
+                ['field' => 'skipRecall', 'label' => 'Không áp dụng luật thu hồi', 'type' => 'checkbox', 'required' => false, 'note' => 'mặc định áp: 1 ngày cần ghi nhận cuộc gọi, 3 ngày cần đủ phân loại + kết quả + đóng phase 2'],
             ],
         ],
     ],
