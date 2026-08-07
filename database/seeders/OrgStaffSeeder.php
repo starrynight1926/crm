@@ -144,7 +144,7 @@ class OrgStaffSeeder extends Seeder
             ],
             'Observer' => [
                 'desc' => 'Xem toàn bộ, không thêm/sửa/xóa dịch vụ và nhân sự',
-                'perms' => ['lead.export','lead.view','lead.view_phone','report.view','report.view_all'],
+                'perms' => ['lead.export','lead.view','lead.view_phone','lead.view_pool','report.view','report.view_all'],
             ],
             'Team Leader' => [
                 'desc' => 'Trưởng nhóm — quyền như CM nhưng scope team, chia số cấp team',
@@ -181,12 +181,14 @@ class OrgStaffSeeder extends Seeder
             // Đà Nẵng — team làm xuyên suốt tele+book+sale, giữ job_title HC/Tele
             // nhưng có union perms Team sale + Team booking + book_action.
             'Team sale ĐN' => [
-                'desc' => 'Team sale Đà Nẵng — làm xuyên suốt tele + booking + sale (union quyền)',
+                'desc' => 'Team sale Đà Nẵng — làm xuyên suốt tele + booking + sale (union quyền). Tự up lead nguồn SA (Sale Appointment) — không chờ CM chia.',
                 'perms' => [
                     'lead.view','lead.view_phone','lead.create','lead.update','lead.consult','report.view',
                     'lead.read_booking','lead.update_booking','lead.book_action',
                     'lead.update_sale',
                     'payment.record',
+                    // 2026-08-07: Team Linda ĐN tự up lead SA để tele + booking cho bản thân.
+                    'source.up.sa',
                 ],
             ],
         ];
@@ -271,8 +273,7 @@ class OrgStaffSeeder extends Seeder
             ['email' => 'dn.trucpage@longevity.com.vn',  'name' => 'Tài khoản Nhập Lead cơ sở ĐN',  'job_title' => null],
             // 2026-08-05: tài khoản test đặt tên "Tài khoản + chức năng" cho rõ.
             // Bỏ cmbktg (CM Booking Team Giang) + cmsale (CM Sale) — không cần trong luồng test cơ bản.
-            ['email' => 'book1@longevity.com.vn',  'name' => 'Tài khoản Booking 1',  'job_title' => null],
-            ['email' => 'book2@longevity.com.vn',  'name' => 'Tài khoản Booking 2',  'job_title' => null],
+            // 2026-08-08: BỎ book1/book2 — trùng với hn.book01/hn.book02 (sau rename). Dùng 2 tk kia là đủ.
         ];
     }
 
@@ -343,12 +344,14 @@ class OrgStaffSeeder extends Seeder
             ['hbtl@longevity.com.vn', 'CM sale',     'team-ashley-sale', Assignment::SCOPE_TEAM, []],
             ['nmt@longevity.com.vn',  'CM sale',     'team-ashley-sale', Assignment::SCOPE_TEAM, []],
             ['lpt@longevity.com.vn',  'Trợ lý kinh doanh', 'company', Assignment::SCOPE_CUSTOM, ['company']],
-            // Đà Nẵng — CM Kim Phấn kiêm cả 2 vai: CM sale + CM booking (Đà Nẵng chưa có CM booking riêng).
-            ['ltkp@longevity.com.vn', 'CM sale',      'marketing-dn',  Assignment::SCOPE_TEAM,   []],
-            ['ltkp@longevity.com.vn', 'CM booking',   'marketing-dn',  Assignment::SCOPE_TEAM,   []],
-
-            // TL Bông ở marketing-dn (quản cả booking + sale).
-            ['ntb@longevity.com.vn',  'Team Leader',  'marketing-dn',  Assignment::SCOPE_TEAM,   []],
+            // 2026-08-07: Team Linda ĐN — thuộc Kinh Doanh ĐN (team-dn), KHÔNG ở Marketing.
+            //   Linda (Kim Phấn) = CM có cả 2 quyền chia số (distribute_tele + distribute_sale) qua role 'CM sale' mới.
+            //   Bông = TL của cùng team này. 7 HC/Tele còn lại ở team-dn-sale (subtree, Bông vẫn thấy).
+            ['ltkp@longevity.com.vn', 'CM sale',      'team-dn',       Assignment::SCOPE_TEAM,   []],
+            ['ntb@longevity.com.vn',  'Team Leader',  'team-dn',       Assignment::SCOPE_TEAM,   []],
+            // 2026-08-08: Đặc thù ĐN — Bông (TL) kiêm role CM sale để up được nguồn BDM/BOD/WI
+            //   (perm source.up.admin). Các TL khác (HN/HCM) không có quyền này.
+            ['ntb@longevity.com.vn',  'CM sale',      'team-dn',       Assignment::SCOPE_TEAM,   []],
 
             // 3 HC + 4 Tele đều gộp về team-dn-sale, role "Team sale ĐN" — union perms tele+book+sale.
             ['ntan@longevity.com.vn', 'Team sale ĐN', 'team-dn-sale',  Assignment::SCOPE_SELF, []],
@@ -359,18 +362,24 @@ class OrgStaffSeeder extends Seeder
             ['tnah@longevity.com.vn', 'Team sale ĐN', 'team-dn-sale',  Assignment::SCOPE_SELF, []],
             ['ntmh@longevity.com.vn', 'Team sale ĐN', 'team-dn-sale',  Assignment::SCOPE_SELF, []],
 
-            // Sale Team Hợi HN
-            ['thk@longevity.com.vn', 'Sale', 'team-hoi-booking', Assignment::SCOPE_SELF, []],
-            ['nhg@longevity.com.vn', 'Sale', 'team-hoi-sale',    Assignment::SCOPE_SELF, []],
+            // 2026-08-08: Chuẩn hoá theo sbooking phong_ban_id:
+            //   Phòng 29 = Team Giang → 6 sale (Kiên, Hương Giang, Phương, Anh, Nga, Lan Anh)
+            //   Phòng 30 = Team Hợi  → 5 sale (Trúc, Thúy, Tú Anh, Trà My, Mai Anh)
+            //   Sbooking không phân sub-team booking/sale → tất cả vào team-*-sale.
+            //   Tk chung hn.book01/hn.book02 vẫn ở team-*-booking (role Team Tele).
+            // Sale Team Giang HN (Phòng 29)
+            ['thk@longevity.com.vn', 'Sale', 'team-giang-sale',  Assignment::SCOPE_SELF, []],
+            ['nhg@longevity.com.vn', 'Sale', 'team-giang-sale',  Assignment::SCOPE_SELF, []],
             ['nmp@longevity.com.vn', 'Sale', 'team-giang-sale',  Assignment::SCOPE_SELF, []],
-            ['nta@longevity.com.vn', 'Sale', 'team-hoi-booking', Assignment::SCOPE_SELF, []],
-            ['ntn@longevity.com.vn', 'Sale', 'team-hoi-sale',    Assignment::SCOPE_SELF, []],
-            ['cla@longevity.com.vn', 'Sale', 'team-hoi-sale',    Assignment::SCOPE_SELF, []],
-            ['ptt@longevity.com.vn', 'Sale', 'team-hoi-booking', Assignment::SCOPE_SELF, []],
+            ['nta@longevity.com.vn', 'Sale', 'team-giang-sale',  Assignment::SCOPE_SELF, []],
+            ['ntn@longevity.com.vn', 'Sale', 'team-giang-sale',  Assignment::SCOPE_SELF, []],
+            ['cla@longevity.com.vn', 'Sale', 'team-giang-sale',  Assignment::SCOPE_SELF, []],
+            // Sale Team Hợi HN (Phòng 30)
+            ['ptt@longevity.com.vn', 'Sale', 'team-hoi-sale',    Assignment::SCOPE_SELF, []],
             ['ntt@longevity.com.vn', 'Sale', 'team-hoi-sale',    Assignment::SCOPE_SELF, []],
-            ['pta@longevity.com.vn', 'Sale', 'team-hoi-booking', Assignment::SCOPE_SELF, []],
+            ['pta@longevity.com.vn', 'Sale', 'team-hoi-sale',    Assignment::SCOPE_SELF, []],
             ['ntm@longevity.com.vn', 'Sale', 'team-hoi-sale',    Assignment::SCOPE_SELF, []],
-            ['nma@longevity.com.vn', 'Sale', 'team-hoi-booking', Assignment::SCOPE_SELF, []],
+            ['nma@longevity.com.vn', 'Sale', 'team-hoi-sale',    Assignment::SCOPE_SELF, []],
 
             // Sale Team Ashley HCM
             ['tyn@longevity.com.vn',  'Sale', 'team-ashley-sale', Assignment::SCOPE_SELF, []],
@@ -384,8 +393,7 @@ class OrgStaffSeeder extends Seeder
             ['hn.trucpage@longevity.com.vn',  'Trực Page', 'team-nhap-lead',     Assignment::SCOPE_SELF, []],
             ['hcm.trucpage@longevity.com.vn', 'Trực Page', 'team-nhap-lead-hcm', Assignment::SCOPE_SELF, []],
             ['dn.trucpage@longevity.com.vn',  'Trực Page', 'team-nhap-lead-dn',  Assignment::SCOPE_SELF, []],
-            ['book1@longevity.com.vn',  'Team Tele',   'team-giang-booking', Assignment::SCOPE_SELF, []],
-            ['book2@longevity.com.vn',  'Team Tele',   'team-hoi-booking',   Assignment::SCOPE_SELF, []],
+            // 2026-08-08: BỎ book1/book2 assignments — đã dọn user.
         ];
 
         // Cleanup: nhân sự Đà Nẵng lần trước từng được gán role Team sale/Team booking @ marketing-dn.
@@ -399,6 +407,17 @@ class OrgStaffSeeder extends Seeder
         $marketingDnId = OrgUnit::where('code', 'marketing-dn')->value('id');
         if ($dnUserIds->isNotEmpty() && $marketingDnId) {
             Assignment::whereIn('user_id', $dnUserIds)
+                ->where('org_unit_id', $marketingDnId)
+                ->delete();
+        }
+
+        // 2026-08-07: Kim Phấn (Linda) + Bông trước ở marketing-dn (CM sale + CM booking / TL).
+        // Move sang team-dn (Team Kinh Doanh của Bông) → xoá assignment cũ ở marketing-dn.
+        $leadDnUserIds = User::whereIn('email', ['ltkp@longevity.com.vn', 'ntb@longevity.com.vn'])
+            ->orWhereIn('name', ['Lương Thị Kim Phấn', 'Nguyễn Thị Bông'])
+            ->pluck('id');
+        if ($leadDnUserIds->isNotEmpty() && $marketingDnId) {
+            Assignment::whereIn('user_id', $leadDnUserIds)
                 ->where('org_unit_id', $marketingDnId)
                 ->delete();
         }

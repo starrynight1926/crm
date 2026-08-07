@@ -191,34 +191,11 @@ class RealCmStaffSeeder extends Seeder
             }
         }
 
-        $this->reassignHoiStaff($subUnits['team-hoi-booking'], $subUnits['team-hoi-sale']);
+        // 2026-08-08: BỎ reassignHoiStaff() — hàm này ghi đè dòng 65-70 ở trên, dồn 5 sale
+        //   (Kiên/Hương Giang/Anh/Nga/Lan Anh) từ team-giang-sale ngược về team-hoi-*,
+        //   khiến team Giang chỉ còn 1 người. Theo sbooking phong_ban_id=29 (Team Giang) thì
+        //   5 người này ĐÚNG là của team Giang.
         // 2026-08-03: bỏ seed khách hàng ảo (seedHoiLeads) — chỉ giữ staff/role/perm.
-    }
-
-    /** Chuyển các Sale không xung đột role về sub-team Booking/Sale của Team Hợi. */
-    private function reassignHoiStaff(OrgUnit $booking, OrgUnit $sale): void
-    {
-        $roleSale = Role::firstWhere('name', 'Sale');
-        if (! $roleSale) {
-            return;
-        }
-
-        $moves = [
-            $sale->id => ['Nguyễn Hương Giang', 'Nguyễn Trà My', 'Cao Thị Lan Anh', 'Nguyễn Thị Nga', 'Nguyễn Thị Thúy'],
-            $booking->id => ['Phạm Tú Anh', 'Phạm Thanh Trúc', 'Nguyễn Mai Anh', 'Trần Huy Kiên', 'Nguyễn Thị Anh'],
-        ];
-
-        foreach ($moves as $orgId => $names) {
-            foreach ($names as $name) {
-                $user = User::firstWhere('name', $name);
-                if (! $user) {
-                    continue;
-                }
-                Assignment::where('user_id', $user->id)
-                    ->where('role_id', $roleSale->id)
-                    ->update(['org_unit_id' => $orgId, 'data_scope' => Assignment::SCOPE_SELF]);
-            }
-        }
     }
 
     /** 5 lead cho Team Booking Hợi + 5 lead cho Team Sale Hợi, pool_level=team → chỉ team đó thấy. */

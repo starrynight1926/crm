@@ -29,8 +29,8 @@ class PermissionSeeder extends Seeder
         'distribution' => [
             'lead.view_pool' => 'Xem kho số (kho chung công ty, chưa chia)',
             'lead.distribute' => 'Chia số thủ công',
-            'lead.distribute_tele' => 'Chia số ở kho Tele (CM team tele)',
-            'lead.distribute_sale' => 'Chia số ở kho Sale (CM team sale)',
+            'lead.distribute_tele' => 'Chia số tele (chia lead nhóm 1 cho tele/booker gọi khách)',
+            'lead.distribute_sale' => 'Chia số tiếp đón (chia sale tiếp đón khách tại clinic — nhóm 2/3)',
             'lead.distribute_to_team' => 'CM cơ sở: chia lead từ kho công ty/cơ sở xuống kho team',
             'lead.distribute_to_sale' => 'CM team: chia lead từ kho team xuống sale (owner)',
             'lead.recall' => 'Thu hồi lead + đặt mốc thu hồi khi chia',

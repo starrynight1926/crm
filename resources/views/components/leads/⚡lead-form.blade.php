@@ -2403,7 +2403,10 @@ new class extends Component
                         </div>
                         <div>
                             <label class="block text-sm font-medium mb-1.5">SĐT <span class="text-red-500">*</span></label>
-                            <input type="text" wire:model="phone" placeholder="0xxx xxx xxx" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-gold-500">
+                            <input type="text" wire:model="phone" placeholder="0xxx xxx xxx"
+                                x-on:paste.stop="setTimeout(() => { let v = $event.target.value.replace(/\D+/g,''); if (v.startsWith('84')) v = '0' + v.slice(2); if (v.length === 9 && !v.startsWith('0')) v = '0' + v; $event.target.value = v; $wire.set('phone', v); }, 0)"
+                                x-on:blur="let v = $event.target.value.replace(/\D+/g,''); if (v.startsWith('84')) v = '0' + v.slice(2); if (v.length === 9 && !v.startsWith('0')) v = '0' + v; if (v !== $event.target.value) { $event.target.value = v; $wire.set('phone', v); }"
+                                class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-gold-500">
                             @error('phone')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
                         </div>
                         <div>
@@ -2526,7 +2529,7 @@ new class extends Component
             </h2>
             <p class="text-xs text-ink/50 mb-5">Trường có <span class="text-red-500">*</span> là bắt buộc.</p>
 <?php $cfLabels2 = \App\Models\CustomField::labelMap($customFields); ?>
-            <div class="space-y-4">
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-4">
                 @foreach ($customFields as $field)
 <?php $ck2 = $field->rules['code_kind'] ?? null; ?>
                     @continue($field->field_type === 'code' && $ck2 === 'fixed')
@@ -2883,8 +2886,8 @@ new class extends Component
                              Không chọn tay. + Thêm CV → tăng slot, tự pick sale kế tiếp. --}}
                         <div class="space-y-1.5">
                             <div class="text-xs font-semibold text-ink/60">
-                                Chuyên viên tư vấn (⚡ auto UPS)
-                                <span class="font-normal text-ink/40">— người đầu tiên = Sale phụ trách nếu booking được duyệt.</span>
+                                Nhân viên tiếp đón (⚡ auto UPS)
+                                <span class="font-normal text-ink/40">— người đầu tiên = nhân viên tiếp đón chính khi booking được duyệt.</span>
                                 @if ($cvPoolFacilityName)
                                     <span class="text-[10px] text-emerald-700 font-normal">· Cơ sở: <b>{{ $cvPoolFacilityName }}</b></span>
                                 @endif
@@ -2906,7 +2909,7 @@ new class extends Component
                                         @endif
                                     </div>
                                 @endforeach
-                                <button type="button" wire:click="addBookingConsultantSlot" class="text-xs font-semibold text-gold-700 hover:text-gold-800">+ Thêm CV (sale kế tiếp trong UPS)</button>
+                                <button type="button" wire:click="addBookingConsultantSlot" class="text-xs font-semibold text-gold-700 hover:text-gold-800">+ Thêm nhân viên tiếp đón (kế tiếp trong UPS)</button>
                             @endif
                         </div>
                         {{-- Phase C1.b rev9 2026-08-02: 4 field bổ sung đồng bộ với sbooking. --}}
@@ -3676,7 +3679,7 @@ new class extends Component
                                     </span>
                                 </label>
                             </div>
-                            <div x-data="{ open: false }" @click.outside="open = false">
+                            <div x-data="{ open: false }" @click.outside="open = false" @if ($mktMode === 'pool') style="display:none" @endif>
                                 <label class="block text-sm font-medium mb-1.5">NHÂN VIÊN PHỤ TRÁCH</label>
                                 @if ($selectedPerson)
                                     <div class="flex items-center justify-between gap-2 border border-gold-300 bg-gold-50 rounded-md px-3 py-2.5">

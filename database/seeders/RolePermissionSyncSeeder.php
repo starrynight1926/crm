@@ -70,15 +70,21 @@ class RolePermissionSyncSeeder extends Seeder
         'CM sale' => [
             'lead.assign_direct',
             'lead.consult', 'lead.create', 'lead.distribute',
-            'lead.distribute_sale', 'lead.distribute_to_sale', 'lead.recall',
-            'lead.update', 'lead.update_sale', 'lead.view', 'lead.view_phone',
+            // 2026-08-07: CM có CẢ 2 quyền chia số (tele + tiếp đón). Trước đây tách CM sale / CM Tele
+            // mỗi role 1 quyền — giờ gộp lại: ai là CM thì chia được cả hai luồng.
+            'lead.distribute_sale', 'lead.distribute_tele',
+            'lead.distribute_to_sale', 'lead.recall',
+            'lead.update', 'lead.update_sale', 'lead.update_booking', 'lead.view', 'lead.view_phone', 'lead.view_pool',
+            'lead.read_booking',
             'payment.record', 'phase.close.booking', 'phase.close.call',
             'phase.close.new', 'report.view',
             'source.up.admin', 'source.up.sa', 'source.up.sale',
         ],
         'CM Tele' => [
             'lead.assign_direct',
-            'lead.create', 'lead.distribute', 'lead.distribute_tele',
+            'lead.create', 'lead.distribute',
+            // 2026-08-07: CM Tele cũng có luôn distribute_sale — nhất quán với 'CM sale'.
+            'lead.distribute_tele', 'lead.distribute_sale',
             'lead.distribute_to_sale', 'lead.read_booking', 'lead.recall', 'lead.update',
             'lead.update_booking', 'lead.view', 'lead.view_phone', 'lead.view_pool',
             'payment.record', 'phase.close.call',
@@ -110,6 +116,9 @@ class RolePermissionSyncSeeder extends Seeder
             'report.view', 'source.up.sa', 'source.up.sale',
         ],
         'Team sale ĐN' => [
+            // 2026-08-07: Team Linda ĐN — xuyên suốt tele+booking+sale. Thêm book_action để tự
+            // đặt booking (trước bị thiếu, không tạo được booking được).
+            'lead.book_action',
             'lead.consult', 'lead.create', 'lead.read_booking',
             'lead.update', 'lead.update_booking', 'lead.update_sale', 'lead.view',
             'lead.view_phone', 'payment.record', 'phase.close.booking',
@@ -133,8 +142,9 @@ class RolePermissionSyncSeeder extends Seeder
             'ups.checkin', 'ups.confirm_daily', 'ups.override', 'ups.view',
         ],
         'Observer' => [
-            'lead.export', 'lead.view', 'lead.view_phone', 'report.view',
-            'report.view_all',
+            // 2026-08-08: thêm view_pool để Observer xem được kho số (kho chung/team chưa chia).
+            'lead.export', 'lead.view', 'lead.view_phone', 'lead.view_pool',
+            'report.view', 'report.view_all',
         ],
     ];
 

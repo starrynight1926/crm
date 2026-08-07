@@ -557,20 +557,21 @@ new class extends Component
         $sheet->setTitle('Hướng dẫn');
 
         $rows = [
-            ['Cột', 'Bắt buộc', 'Format / Ghi chú'],
-            ['Tên khách hàng',        'CÓ',      'Họ tên đầy đủ. VD: Nguyễn Văn A'],
-            ['SĐT',                   'CÓ',      'Bắt đầu 0 hoặc +84. VD: 0912345678'],
-            ['Ngày nhập',             'không',   'DD-MM-YYYY (VD: 25-12-1990) hoặc YYYY-MM-DD. Bỏ trống = ngày hôm nay.'],
-            ['Nhóm nguồn',            'CÓ',      'Mã 1 trong 7 nguồn — xem sheet "List nguồn". VD: MKT / SA / BOD / BDM / WI / BA / MKT_BR.'],
-            ['Ghi chú insight khách', 'không',   'Text tự do — ghi chú insight ban đầu về khách.'],
-            ['Link',                  'không',   'URL nguồn (fanpage, comment, form, …).'],
-            ['Ngày sinh',             'không',   'DD-MM-YYYY. VD: 25-12-1990.'],
-            ['Nghề nghiệp',           'không',   'Text tự do.'],
-            ['Địa chỉ',               'không',   'Text tự do.'],
-            ['Khai thác tiền sử',     'không',   'Text nhiều dòng — bệnh lý, dịch vụ đã dùng, …'],
-            ['Email Booking phụ trách', 'không', 'Email chính xác của Tele/Booker — xem sheet "List Booking". Trùng tên → chỉ nhận email.'],
-            ['Email Sale phụ trách',    'không', 'Email chính xác của Sale — xem sheet "List Sale". Bỏ trống = vào kho chờ CM chia.'],
-            ['(Trường bổ sung)',      'tùy',     'Các cột phía sau là trường tùy biến của phòng đã chọn (có * = bắt buộc theo config phòng).'],
+            ['Cột', 'Bắt buộc', 'Áp cho nguồn nào', 'Format / Ghi chú'],
+            ['Tên khách hàng',          'CÓ',    'Mọi nguồn',                'Họ tên đầy đủ. VD: Nguyễn Văn A'],
+            ['SĐT',                     'CÓ',    'Mọi nguồn',                'Bắt đầu 0 hoặc +84. Dán từ Excel bị mất số 0 đầu (VD 912345678) hệ thống tự thêm lại → thành 0912345678.'],
+            ['Ngày nhập',               'không', 'Mọi nguồn',                'DD-MM-YYYY hoặc YYYY-MM-DD. Bỏ trống = ngày hôm nay.'],
+            ['Nhóm nguồn',              'CÓ',    'Mọi nguồn',                'Mã nguồn — xem sheet "7 nguồn". Chỉ được up nguồn nằm trong quyền của mày (Trực Page = MKT; QL Sale/Admin cơ sở = BDM/BOD/WI; Sale = MKT_BR/SA; Tele = BA). Up sai nguồn → dòng bị fail.'],
+            ['Phương thức chia',        'không', 'CHỈ MKT',                  'Chỉ có tác dụng khi Nhóm nguồn = MKT. Giá trị: "Tự động" (chia từ UPS list) hoặc tên kho ở sheet "Danh mục kho". Nguồn khác điền vô sẽ bị BỎ QUA — lead luôn vào kho chung chờ CM chia.'],
+            ['Ghi chú insight khách',   'không', 'Mọi nguồn',                'Text tự do — insight ban đầu về khách.'],
+            ['Link',                    'không', 'Mọi nguồn',                'URL nguồn (fanpage, comment, form, …).'],
+            ['Ngày sinh',               'không', 'Mọi nguồn',                'DD-MM-YYYY. VD: 25-12-1990.'],
+            ['Nghề nghiệp',             'không', 'Mọi nguồn',                'Text tự do.'],
+            ['Địa chỉ',                 'không', 'Mọi nguồn',                'Text tự do.'],
+            ['Khai thác tiền sử',       'không', 'Mọi nguồn',                'Text nhiều dòng — bệnh lý, dịch vụ đã dùng, …'],
+            ['Email Booking phụ trách', 'không', '(chưa dùng — dự phòng)',    'Cột dự phòng, hiện KHÔNG có tác dụng ở pipeline. Nguồn MKT/MKT_BR/BDM lead luôn vào kho Booking chờ CM booking chia.'],
+            ['Email Sale phụ trách',    'không', 'CHỈ BOD / SA / BA / WI',   'Email chính xác của Sale — xem sheet "List Sale". Có email hợp lệ → gán thẳng lead cho sale đó (bỏ qua kho chờ). Nguồn MKT/MKT_BR/BDM điền vô sẽ bị BỎ QUA (luồng booking, chưa tới sale).'],
+            ['(Trường bổ sung)',        'tùy',   'Theo phòng đã chọn',       'Các cột phía sau là trường tùy biến của phòng đã chọn ở bước tải mẫu (có * = bắt buộc theo config phòng).'],
         ];
         foreach ($rows as $r => $row) {
             foreach ($row as $c => $val) {
@@ -578,11 +579,14 @@ new class extends Component
                 $sheet->setCellValue($col . ($r + 1), $val);
             }
         }
-        $sheet->getStyle('A1:C1')->getFont()->setBold(true);
-        $sheet->getStyle('A1:C1')->getFill()->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)->getStartColor()->setARGB('FFEEE9D6');
+        $sheet->getStyle('A1:D1')->getFont()->setBold(true);
+        $sheet->getStyle('A1:D1')->getFill()->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)->getStartColor()->setARGB('FFEEE9D6');
         $sheet->getStyle('A2:A' . (count($rows)))->getFont()->setBold(true);
-        foreach (['A', 'B', 'C'] as $col) $sheet->getColumnDimension($col)->setAutoSize(true);
-        $sheet->getColumnDimension('C')->setWidth(80);
+        foreach (['A', 'B', 'C', 'D'] as $col) $sheet->getColumnDimension($col)->setAutoSize(true);
+        $sheet->getColumnDimension('C')->setWidth(30);
+        $sheet->getColumnDimension('D')->setWidth(80);
+        // Wrap text cho cột D (mô tả dài).
+        $sheet->getStyle('D2:D' . count($rows))->getAlignment()->setWrapText(true);
     }
 
     /** Sheet "List Booking" — Tele (Team Nhập Lead + Team Tele) chia theo cơ sở. */
