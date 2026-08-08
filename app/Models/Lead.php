@@ -272,9 +272,15 @@ class Lead extends Model
 
         $phase = self::PHASES[$this->pipeline_phase] ?? $this->pipeline_phase;
         if ($this->pipeline_status === self::PSTATUS_WAITING) {
-            $statusLabel = $this->pipeline_phase === self::PHASE_BOOKING
-                ? 'Chờ CM booking chia'
-                : 'Chờ CM sale chia';
+            // 2026-08-09: MKT/MKT_BR/BDM mode pool → chờ tele nhặt/cập nhật (không còn CM booking chia trong flow mới).
+            if ($this->pipeline_phase === self::PHASE_BOOKING
+                && in_array($this->source_group, [self::SOURCE_MKT, self::SOURCE_MKT_BR, self::SOURCE_BDM], true)) {
+                $statusLabel = 'Chờ tele cập nhật';
+            } else {
+                $statusLabel = $this->pipeline_phase === self::PHASE_BOOKING
+                    ? 'Chờ CM booking chia'
+                    : 'Chờ CM sale chia';
+            }
         } else {
             $statusLabel = self::PIPELINE_STATUSES[$this->pipeline_status] ?? $this->pipeline_status;
         }
@@ -311,9 +317,11 @@ class Lead extends Model
     /** Suy ra phase/status khởi tạo cho lead mới dựa trên source_group + owner_id. */
     public static function initialPipelineFor(?string $sourceGroup, ?int $ownerId): array
     {
-        // Nhóm 1 (MKT / MKT BR / BDM) → vào kho booking, chờ QL booking chia.
+        // Nhóm 1 (MKT / MKT BR / BDM) → vào kho booking.
+        // 2026-08-09: nếu Trực Page auto-assign qua MKT List UPS → owner có tele → IN_CARE
+        // (nếu không có owner = mode pool → WAITING chờ tele nhặt).
         if (in_array($sourceGroup, [self::SOURCE_MKT, self::SOURCE_MKT_BR, self::SOURCE_BDM], true)) {
-            return [self::PHASE_BOOKING, self::PSTATUS_WAITING];
+            return [self::PHASE_BOOKING, $ownerId ? self::PSTATUS_IN_CARE : self::PSTATUS_WAITING];
         }
         // Nhóm 2 (BOD/SA/BA) + Nhóm 3 (WI): sale nhận trực tiếp.
         // Có owner → sale/in_care; chưa có → sale/waiting (chờ CM sale chia).
@@ -614,6 +622,7 @@ class Lead extends Model
         return $query->where(function (Builder $q) use ($user) {
             $orgIds = $user->visibleOrgUnitIds();
             $memberOrgIds = $user->memberOrgUnitIds();
+            $poolUnitIds = $user->visiblePoolUnitIds();
             // Phase 6.23 — Kho chung công ty chỉ visible với user có perm `lead.view_pool`.
             $canSeePool = $user->hasPermission('lead.view_pool');
             if ($orgIds !== []) {
@@ -625,6 +634,11 @@ class Lead extends Model
             // Kho chung phòng/team: thành viên (org của mình + cấp cha) thấy được, dù scope self
             if ($memberOrgIds !== []) {
                 $q->orWhere(fn (Builder $sub) => $sub->where('pool_level', self::POOL_TEAM)->whereIn('org_unit_id', $memberOrgIds));
+            }
+            // Fix 2026-08-08 (Phase 6.24 regression): lead nằm trong Kho số (pool_unit_id) với
+            // org_unit_id=null vẫn phải visible cho user có scope đến kho đó.
+            if ($poolUnitIds !== []) {
+                $q->orWhereIn('pool_unit_id', $poolUnitIds);
             }
             // Past handler: lead đã từng ở org của user → user vẫn thấy (read-only + add note).
             $pastOrgIds = array_values(array_unique(array_merge($orgIds ?: [], $memberOrgIds ?: [])));
@@ -675,6 +689,10 @@ class Lead extends Model
         }
 
         if ($this->org_unit_id === null) {
+            // Fix 2026-08-08 (Phase 6.24 regression): lead trong Kho số → check pool_unit_id.
+            if ($this->pool_unit_id && in_array((int) $this->pool_unit_id, $user->visiblePoolUnitIds(), true)) {
+                return true;
+            }
             // Phase 6.23 — Kho chung công ty chỉ visible với user có perm `lead.view_pool`.
             return $this->pool_level === self::POOL_COMMON && $user->hasPermission('lead.view_pool');
         }
@@ -727,7 +745,9 @@ class Lead extends Model
     {
         $digits = preg_replace('/\D+/', '', $raw);
 
-        if (str_starts_with($digits, '84')) {
+        // Fix 2026-08-08: chỉ strip '84' khi tổng độ dài = 11 (mã quốc gia +84 + 9 số mobile chuẩn).
+        // Trước đó: '842798596' (9 số, bắt đầu 084 - đầu số Viettel) bị strip 84 nhầm → '02798596'.
+        if (str_starts_with($digits, '84') && strlen($digits) === 11) {
             $digits = '0' . substr($digits, 2);
         }
         if (strlen($digits) === 9 && ! str_starts_with($digits, '0')) {

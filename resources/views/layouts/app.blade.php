@@ -8,17 +8,17 @@
         //   KHU 2 (quản trị) — dropdown "Quản trị" cho ops.manage / rule.manage / connection.manage
         //   KHU 3 (setup) — dropdown "Thiết lập" chỉ user.manage, dẫn về /settings tab-hóa
 
-        // KHU 1 — Khách hàng: gộp danh sách + thêm + duyệt (bỏ Chia số/UPS ra menu riêng)
+        // KHU 1 — Khách hàng: danh sách + thêm + duyệt + kho lead (2026-08-08: move Kho lead từ Chia số về Khách hàng)
         $customerChildren = array_values(array_filter([
             ['label' => 'Danh sách khách hàng', 'route' => $u->hasAnyPermission(['lead.view', 'lead.import']) ? 'leads.index' : null, 'match' => 'leads.index'],
             ['label' => 'Thêm khách hàng', 'route' => $u->hasPermission('lead.create') ? 'leads.create' : null, 'match' => 'leads.create'],
+            ['label' => 'Kho lead', 'route' => $u->hasPermission('lead.view') ? 'distribution.pools' : null, 'match' => 'distribution.pools'],
             ['label' => 'Duyệt Lead', 'route' => $u->hasPermission('lead.approve_source') ? 'leads.approvals' : null, 'match' => 'leads.approvals'],
         ], fn ($i) => $i['route']));
 
-        // KHU 1 — Chia số & UPS (tách khỏi Khách hàng, khái niệm độc lập)
+        // KHU 1 — UPS list (2026-08-08: đổi tên từ "Chia số" — kho lead đã move về Khách hàng)
         $distChildren = array_values(array_filter([
             ['label' => 'UPS hôm nay',   'route' => 'ups.today', 'match' => 'ups.today'],
-            ['label' => 'Kho lead',      'route' => $u->hasPermission('lead.view') ? 'distribution.pools' : null, 'match' => 'distribution.pools'],
             ['label' => 'UPS check-in (BO)', 'route' => $u->hasPermission('ups.view') ? 'ups.list' : null, 'match' => 'ups.list'],
         ], fn ($i) => $i['route']));
 
@@ -46,11 +46,11 @@
         $navItems = array_values(array_filter([
             ['label' => 'Dashboard', 'route' => 'dashboard', 'match' => 'dashboard'],
             !empty($customerChildren) ? ['label' => 'Khách hàng', 'match' => 'leads.*', 'children' => $customerChildren] : null,
-            !empty($distChildren) ? ['label' => 'Chia số', 'match' => 'distribution.pools|ups.*', 'children' => $distChildren] : null,
+            !empty($distChildren) ? ['label' => 'UPS list', 'match' => 'ups.*', 'children' => $distChildren] : null,
             !empty($bizChildren) ? ['label' => 'Kinh doanh', 'match' => 'services.*|payments.*', 'children' => $bizChildren] : null,
             $u->hasAnyPermission(['report.view', 'report.view_all']) ? ['label' => 'Báo cáo', 'route' => 'reports.index', 'match' => 'reports.*'] : null,
             !empty($mgmtChildren) ? ['label' => 'Quản trị', 'match' => 'ops.*|distribution.rules|settings.booking-connection|sources.*', 'children' => $mgmtChildren] : null,
-            !empty($setupChildren) ? ['label' => 'Thiết lập', 'match' => 'settings.*|org.*|admin.catalog*', 'children' => $setupChildren] : null,
+            // 2026-08-08: "Thiết lập" đã có trong avatar dropdown → bỏ khỏi nav để tránh trùng.
         ]));
 
         $isActive = function ($match) {

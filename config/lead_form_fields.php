@@ -43,7 +43,7 @@ return [
             'Trường bổ sung (custom fields — dynamic)' => [
                 ['field' => 'custom.*', 'label' => 'Theo cấu hình CustomField của phòng ban', 'type' => 'dynamic', 'required' => 'per field', 'note' => 'Xem bảng "Trường tùy biến" bên dưới'],
             ],
-            'Trạng thái chăm sóc' => [
+            'Ghi nhận tình trạng' => [
                 ['field' => 'status_1',       'label' => 'Trạng thái 1',    'type' => 'text',   'required' => false],
                 ['field' => 'status_2',       'label' => 'Trạng thái 2',    'type' => 'text',   'required' => false],
                 ['field' => 'classification', 'label' => 'Phân loại',       'type' => 'select', 'required' => true, 'options' => 'new / potential / warm / cold / ...'],

@@ -28,6 +28,8 @@ trait HasAccessControl
 
     private ?array $memberOrgUnitIdsCache = null;
 
+    private ?array $visiblePoolUnitIdsCache = null;
+
     /** @return Collection<int, Assignment> */
     public function effectiveAssignments(): Collection
     {
@@ -144,6 +146,36 @@ trait HasAccessControl
         return $this->memberOrgUnitIdsCache = array_keys($ids);
     }
 
+    /**
+     * Id các pool_unit (cây Kho số) user được thấy — resolve qua org_pool_map từ
+     * visibleOrgUnitIds ∪ memberOrgUnitIds. Fix 2026-08-08: Phase 6.24 tách pool_unit_id
+     * khỏi org_unit_id, nhưng Lead::scopeVisibleTo trước đó chỉ check org → lead nằm trong
+     * kho (pool_level=team, org_unit_id=null) bị vô hình với mọi user trừ imported_by.
+     */
+    public function visiblePoolUnitIds(): array
+    {
+        if ($this->visiblePoolUnitIdsCache !== null) {
+            return $this->visiblePoolUnitIdsCache;
+        }
+
+        $orgIds = array_values(array_unique(array_merge(
+            $this->visibleOrgUnitIds(),
+            $this->memberOrgUnitIds(),
+        )));
+
+        if ($orgIds === []) {
+            return $this->visiblePoolUnitIdsCache = [];
+        }
+
+        return $this->visiblePoolUnitIdsCache = \DB::table('org_pool_map')
+            ->whereIn('org_unit_id', $orgIds)
+            ->pluck('pool_unit_id')
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
     /** User có ít nhất một assignment còn hiệu lực → được thấy dữ liệu bản thân. */
     public function hasSelfScope(): bool
     {
@@ -161,5 +193,6 @@ trait HasAccessControl
         $this->permissionKeysCache = null;
         $this->visibleOrgUnitIdsCache = null;
         $this->memberOrgUnitIdsCache = null;
+        $this->visiblePoolUnitIdsCache = null;
     }
 }

@@ -138,7 +138,7 @@ class RolePermissionSyncSeeder extends Seeder
             'lead.view', 'report.view',
         ],
         'BO (Lễ Tân)' => [
-            'lead.distribute_sale', 'lead.view', 'lead.view_phone',
+            // 2026-08-08: BO chỉ dùng UPS list — bỏ 3 perm lead.* (không cần Dashboard/Khách hàng/Thiết lập).
             'ups.checkin', 'ups.confirm_daily', 'ups.override', 'ups.view',
         ],
         'Observer' => [

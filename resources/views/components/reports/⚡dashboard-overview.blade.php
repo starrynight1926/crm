@@ -11,6 +11,8 @@ new class extends Component
     public string $fPhase = '';
     public string $fSource = '';
     public string $fSearch = '';
+    // 2026-08-09: chip filter Tất cả / Tele / Booking cho sale kiêm nhiều role trong ngày.
+    public string $fRole = '';
 
     // 2026-08-06 (T16): dropdown per-row cho widget Kho số (lead_id => user_id).
     public array $poolAssignments = [];
@@ -20,9 +22,40 @@ new class extends Component
         return auth()->user()->hasPermission('report.view_all');
     }
 
+    /**
+     * 2026-08-09: nhân viên không có quyền chia số (VD sale) chỉ thấy leads MÌNH phụ trách trên dashboard —
+     * không thấy leads của cả team. CM/Manager (có lead.distribute) giữ scope team qua visibleTo.
+     */
+    private function isPersonalScopeOnly(): bool
+    {
+        $u = auth()->user();
+        return ! $u->hasPermission('report.view_all')
+            && ! $u->hasPermission('lead.distribute');
+    }
+
     private function reportLeadQuery()
     {
-        return $this->seesAllReports() ? Lead::query() : Lead::visibleTo(auth()->user());
+        $u = auth()->user();
+        if ($this->seesAllReports()) return Lead::query();
+        if ($this->isPersonalScopeOnly()) {
+            return Lead::query()->where(function ($q) use ($u) {
+                $q->where('owner_id', $u->id)->orWhere('receiver_id', $u->id);
+            });
+        }
+        return Lead::visibleTo($u);
+    }
+
+    /**
+     * Áp filter chip "Tất cả / Tele / Booking" theo pipeline_phase (vai trò user đang giữ với lead).
+     *   Tele    = pipeline_phase='booking' (chăm sóc, đang đặt lịch)
+     *   Booking = pipeline_phase='sale'    (đã book, chuyển sale close/tiếp đón)
+     * KHÔNG dùng cột `phase` (CF 1-6) vì Trực Page tạo lead xong phase vẫn = 1 dù đã auto-assign owner.
+     */
+    private function applyRoleFilter($q)
+    {
+        if ($this->fRole === 'tele')    return $q->where('pipeline_phase', Lead::PHASE_BOOKING);
+        if ($this->fRole === 'booking') return $q->where('pipeline_phase', Lead::PHASE_SALE);
+        return $q;
     }
 
     /* ========== 2026-08-06 (T16) Widget "Kho số" ========== */
@@ -174,9 +207,10 @@ new class extends Component
     {
         $today = now()->toDateString();
         $q = $this->reportLeadQuery()
-            ->with('owner')
+            ->with(['owner', 'receiver'])
             ->whereDate('received_date', $today);
 
+        $q = $this->applyRoleFilter($q);
         if ($this->fPhase !== '') $q->where('phase', (int) $this->fPhase);
         if ($this->fSource !== '') $q->where('source_group', $this->fSource);
         if ($this->fSearch !== '') {
@@ -193,7 +227,7 @@ new class extends Component
         return [
             'widgets' => $this->mainWidgets(),
             'todayLeads' => $this->todayLeads(),
-            'todayCount' => $this->reportLeadQuery()->whereDate('received_date', today())->count(),
+            'todayCount' => $this->applyRoleFilter($this->reportLeadQuery())->whereDate('received_date', today())->count(),
             'poolLeads' => $this->poolLeads(),
             'poolLeadsCount' => $this->poolLeadsCount(),
             'poolSaleUsers' => $this->poolSaleUsers(),
@@ -338,6 +372,22 @@ new class extends Component
                 <span class="text-xs bg-gold-100 text-gold-700 px-2 py-0.5 rounded-full">{{ number_format($todayCount) }}</span>
             </h2>
             <div class="flex flex-wrap items-center gap-2 text-sm">
+                {{-- 2026-08-09: chip filter cho user kiêm nhiều role trong ngày (sale hôm nay làm tele, mai làm book). --}}
+                @php
+                    $roleChips = [
+                        ['k' => '', 'label' => 'Tất cả'],
+                        ['k' => 'tele', 'label' => 'Tele'],
+                        ['k' => 'booking', 'label' => 'Booking'],
+                    ];
+                @endphp
+                <div class="inline-flex rounded-md border border-gold-200 bg-white overflow-hidden text-xs font-semibold">
+                    @foreach ($roleChips as $c)
+                        <button type="button" wire:click="$set('fRole','{{ $c['k'] }}')"
+                            class="px-3 py-1.5 border-r border-gold-200 last:border-r-0 {{ $fRole === $c['k'] ? 'bg-gold-600 text-white' : 'text-ink/70 hover:bg-gold-50' }}">
+                            {{ $c['label'] }}
+                        </button>
+                    @endforeach
+                </div>
                 <input wire:model.live.debounce.400ms="fSearch" placeholder="🔍 Tên / SĐT / mã KH" class="border border-slate-300 rounded px-2.5 py-1.5 text-sm w-52">
                 <select wire:model.live="fPhase" class="border border-slate-300 rounded px-2 py-1.5 text-sm">
                     <option value="">Mọi Phase</option>
@@ -362,15 +412,19 @@ new class extends Component
                         <th class="px-4 py-2.5 font-semibold">SĐT</th>
                         <th class="px-4 py-2.5 font-semibold">Nguồn</th>
                         <th class="px-4 py-2.5 font-semibold text-center">Phase</th>
-                        <th class="px-4 py-2.5 font-semibold">Chia cho</th>
+                        <th class="px-4 py-2.5 font-semibold">Tele phụ trách</th>
                         <th class="px-4 py-2.5 font-semibold">Trạng thái booking</th>
-                        <th class="px-4 py-2.5 font-semibold">Trạng thái</th>
+                        <th class="px-4 py-2.5 font-semibold">Sale tiếp đón</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-gold-50">
                     @forelse ($todayLeads as $lead)
                         {{-- 2026-08-05: mọi user click → /edit (form 7 phase). Route gate canOpenEditForm sẽ tự chặn nếu không có quyền. --}}
-                        @php $rowHref = route('leads.edit', $lead); @endphp
+                        @php
+                            $rowHref = route('leads.edit', $lead);
+                            $teleCare = $lead->pipeline_phase === \App\Models\Lead::PHASE_BOOKING ? $lead->owner?->name : $lead->receiver?->name;
+                            $saleCare = $lead->pipeline_phase === \App\Models\Lead::PHASE_SALE ? $lead->owner?->name : null;
+                        @endphp
                         <tr class="hover:bg-gold-50/40 cursor-pointer" onclick="window.location='{{ $rowHref }}'">
                             <td class="px-4 py-2 font-mono text-xs text-gold-700">{{ $lead->code ?? '—' }}</td>
                             <td class="px-4 py-2 font-semibold">{{ $lead->name }}</td>
@@ -379,16 +433,14 @@ new class extends Component
                             <td class="px-4 py-2 text-center">
                                 <span class="text-xs font-bold bg-blue-50 text-blue-700 px-2 py-0.5 rounded">P{{ $lead->phase }}</span>
                             </td>
-                            <td class="px-4 py-2 text-ink/70">{{ $lead->owner?->name ?: '—' }}</td>
+                            <td class="px-4 py-2 text-ink/70">{{ $teleCare ?: '—' }}</td>
                             <td class="px-4 py-2">
                                 @php $bs = $lead->booking_status; @endphp
                                 <span class="text-xs px-2 py-0.5 rounded-full border {{ \App\Models\Lead::BOOKING_STATUS_COLORS[$bs] ?? 'bg-slate-50 border-slate-200 text-slate-700' }}">
                                     {{ (\App\Models\Lead::BOOKING_STATUS_ICONS[$bs] ?? '') }} {{ \App\Models\Lead::BOOKING_STATUSES[$bs] ?? '—' }}
                                 </span>
                             </td>
-                            <td class="px-4 py-2">
-                                <span class="text-xs bg-gold-50 border border-gold-200 text-gold-700 px-2 py-0.5 rounded-full">{{ $lead->classificationLabel() }}</span>
-                            </td>
+                            <td class="px-4 py-2 text-ink/70">{{ $saleCare ?: '—' }}</td>
                         </tr>
                     @empty
                         <tr>

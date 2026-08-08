@@ -46,7 +46,21 @@ class AuthController extends Controller
         $request->session()->regenerate();
         $user->forceFill(['last_login_at' => now()])->save();
 
-        return redirect()->intended(route('dashboard'));
+        return redirect()->intended($this->landingRouteFor($user));
+    }
+
+    /**
+     * Landing page sau login. User không có quyền xem dashboard/lead (VD BO Lễ Tân
+     * chỉ có ups.*) thì dội về /ups-list — trang duy nhất họ dùng.
+     */
+    private function landingRouteFor(User $user): string
+    {
+        if (! $user->hasAnyPermission(['report.view', 'report.view_all', 'lead.view', 'lead.create', 'lead.import'])
+            && $user->hasPermission('ups.view')) {
+            return route('ups.list');
+        }
+
+        return route('dashboard');
     }
 
     public function logout(Request $request): RedirectResponse
