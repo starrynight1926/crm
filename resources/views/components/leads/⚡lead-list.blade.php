@@ -4,6 +4,7 @@ use App\Models\AuditLog;
 use App\Models\CustomField;
 use App\Models\Lead;
 use App\Services\DistributionEngine;
+use App\Services\Ups\UpsDispatcher;
 use Livewire\Component;
 use Livewire\WithPagination;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -206,6 +207,10 @@ new class extends Component
      * 2026-08-10: Chia tự động hàng loạt các lead đang tick.
      * Chỉ áp cho lead ở kho (chưa có owner) — có owner rồi thì skip.
      * Cần perm lead.distribute.
+     *
+     * Logic chia:
+     *  - MKT / MKT_BR → pick từ MKT List UPS của cơ sở lead (UpsDispatcher::pickMkt).
+     *  - Nguồn khác → DistributionEngine (rule-based).
      */
     public function distributeSelected(): void
     {
@@ -218,24 +223,58 @@ new class extends Component
             ->get();
 
         $engine = app(DistributionEngine::class);
+        $ups = app(UpsDispatcher::class);
         $assigned = 0;
         $keptInPool = 0;
+        $upsEmpty = 0;
         foreach ($leads as $lead) {
-            $engine->distribute($lead);
-            $lead->refresh();
-            if ($lead->owner_id) {
-                $assigned++;
+            if (in_array($lead->source_group, [Lead::SOURCE_MKT, Lead::SOURCE_MKT_BR], true)) {
+                $poolFacId = $this->resolveLeadFacilityPoolId($lead);
+                $picked = $poolFacId ? $ups->pickMkt($poolFacId) : null;
+                if ($picked) {
+                    $lead->update([
+                        'owner_id' => $picked->id,
+                        'assigned_at' => now(),
+                        'pool_level' => Lead::POOL_PERSONAL,
+                        'pipeline_status' => Lead::PSTATUS_IN_CARE,
+                    ]);
+                    $assigned++;
+                } else {
+                    $upsEmpty++;
+                }
             } else {
-                $keptInPool++;
+                $engine->distribute($lead);
+                $lead->refresh();
+                if ($lead->owner_id) {
+                    $assigned++;
+                } else {
+                    $keptInPool++;
+                }
             }
         }
         $skipped = count($ids) - $leads->count();
 
         $this->reset('selected', 'selectAll');
         $parts = ["Đã chia {$assigned} lead"];
+        if ($upsEmpty) $parts[] = "{$upsEmpty} MKT không có sale trong UPS list";
         if ($keptInPool) $parts[] = "{$keptInPool} về kho team (chưa match rule)";
         if ($skipped) $parts[] = "{$skipped} bỏ qua (đã có owner)";
         session()->flash('status', implode(' · ', $parts) . '.');
+    }
+
+    /** Resolve facility_pool_unit_id từ lead (theo org_unit_id → org_pool_map). */
+    private function resolveLeadFacilityPoolId(Lead $lead): ?int
+    {
+        if (! $lead->org_unit_id) return null;
+        // Lấy ancestor org ids (cả path) → tìm pool_unit facility đầu tiên map với 1 trong đó.
+        $orgIds = collect(explode('/', trim((string) $lead->orgUnit?->path, '/')))
+            ->filter()->map(fn ($id) => (int) $id)->all();
+        if (! $orgIds) $orgIds = [$lead->org_unit_id];
+
+        return \App\Models\PoolUnit::where('kind', 'facility')->where('is_active', true)
+            ->whereIn('id', function ($q) use ($orgIds) {
+                $q->select('pool_unit_id')->from('org_pool_map')->whereIn('org_unit_id', $orgIds);
+            })->value('id');
     }
 
     /**
