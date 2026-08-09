@@ -105,6 +105,7 @@ new class extends Component
             'groups' => Permission::orderBy('position')->get()->groupBy('group'),
             'groupLabels' => [
                 'lead' => 'Quản lý Lead',
+                'source_up' => 'Đăng nguồn (tick nguồn role này được up)',
                 'distribution' => 'Chia số & Kho lead',
                 'organization' => 'Tổ chức & Nhân sự',
                 'service' => 'Dịch vụ & Thanh toán',

@@ -27,10 +27,10 @@ class RolePermissionMatrixTest extends TestCase
 
     /** Ánh xạ role → tập perm cần cấp cho scope test. */
     private const ROLE_PERMS = [
-        'Trực Page' => ['lead.view', 'lead.create', 'source.up.trucpage'],
-        'Team Tele' => ['lead.view', 'lead.create', 'source.up.tele'],
-        'Team sale' => ['lead.view', 'lead.create', 'source.up.sale'],
-        'CM sale'   => ['lead.view', 'lead.create', 'source.up.sale', 'source.up.admin', 'lead.distribute', 'lead.distribute_sale'],
+        'Trực Page' => ['lead.view', 'lead.create', 'source.up.mkt'],
+        'Team Tele' => ['lead.view', 'lead.create', 'source.up.ba'],
+        'Team sale' => ['lead.view', 'lead.create', 'source.up.mkt_br', 'source.up.sa'],
+        'CM sale'   => ['lead.view', 'lead.create', 'source.up.mkt_br', 'source.up.sa', 'source.up.bdm', 'source.up.bod', 'source.up.wi', 'lead.distribute', 'lead.distribute_sale'],
         'Admin cơ sở' => ['lead.view', 'lead.create', 'lead.source_all', 'lead.distribute', 'lead.distribute_tele', 'lead.distribute_sale'],
     ];
 
@@ -56,7 +56,7 @@ class RolePermissionMatrixTest extends TestCase
         foreach ([
             'lead.view', 'lead.create', 'lead.source_all',
             'lead.distribute', 'lead.distribute_tele', 'lead.distribute_sale',
-            'source.up.trucpage', 'source.up.sale', 'source.up.tele', 'source.up.admin',
+            'source.up.mkt', 'source.up.mkt_br', 'source.up.sa', 'source.up.ba', 'source.up.bdm', 'source.up.bod', 'source.up.wi',
         ] as $key) {
             Permission::firstOrCreate(['key' => $key], ['label' => $key, 'group' => 'test']);
         }

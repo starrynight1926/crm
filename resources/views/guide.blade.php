@@ -37,100 +37,83 @@
 </header>
 
 @php
-    // 2026-08-04 update: 8 role đầy đủ theo file HUONG_DAN_SU_DUNG.md + quy tắc PKD.
+    // 2026-08-09 update — 7 role rút gọn theo scope thực tế.
     $roles = [
         'truc_page' => [
             'icon' => '📝',
             'name' => 'Trực Page',
-            'summary' => 'Up lead MKT',
-            'intro' => 'Nhận data khách marketing từ nhiều nguồn (post, ads, page…) và up lên hệ thống để phòng Booking gọi.',
+            'summary' => 'Up lead MKT / MKT BR',
+            'intro' => 'Nhập lead nguồn Marketing / Marketing BR. Hệ thống tự chia Tele sale theo UPS list.',
             'steps' => [
-                ['Up 1 lead mới', 'Bấm <strong>+ Thêm mới lead</strong> góc phải. Điền: <strong>Họ tên, SĐT, Ngày nhập</strong> (tự điền hôm nay), <strong>Nhóm nguồn</strong> (Marketing / Marketing BR / BDM), <strong>Link nguồn</strong>, <strong>Insight</strong> (khách nói gì).'],
-                ['Chọn cơ sở đích', 'Mục <strong>Chia số</strong>: KHÔNG tick "Kho chung công ty". Chọn cascade Địa điểm → Cơ sở → (không cần chọn Phòng ban). Hệ thống tự chia lead cho 1 sale trong MKT List UPS của cơ sở đó.'],
-                ['Xác nhận', 'Bấm <strong>Lưu</strong>. Flash xanh: "MKT List: Đã chia lead cho [tên sale]."'],
-                ['Nếu bị chặn "UPS chưa chốt"', 'BO/Lễ Tân của cơ sở đó chưa chốt UPS đầu ngày. Liên hệ BO chốt trước.'],
-                ['Xem lại lead đã up', 'Menu <strong>Khách hàng → Danh sách</strong> → filter "Người nhập" = bạn. Bạn có thể sửa thông tin lead do CHÍNH BẠN up.'],
+                ['Thêm mới', 'Bấm <strong>+ Thêm mới lead</strong>. Nhập <strong>Họ tên · SĐT · Nhóm nguồn · Phân loại · Kết quả</strong>. Bấm <strong>Lưu</strong>.'],
+                ['Hệ thống tự chia', 'Sau khi lưu, hệ thống tự chia lead cho 1 Tele sale theo <strong>UPS list hôm nay</strong> (bucket MKT của cơ sở đã chọn). Không cần thao tác gì thêm.'],
             ],
         ],
         'bo' => [
             'icon' => '⚡',
             'name' => 'BO (Lễ Tân)',
-            'summary' => 'Chốt UPS đầu ngày',
-            'intro' => 'Quản UPS check-in đầu ngày. Sale không thể nhận lead cho tới khi bạn chốt UPS.',
+            'summary' => 'Chốt UPS list đầu ngày',
+            'intro' => 'Điểm danh sale hàng ngày để tạo UPS list — nguồn dữ liệu chia Tele sale và Sale tiếp đón.',
             'steps' => [
-                ['Vào UPS', 'Menu <strong>UPS SYSTEM → Check-in (BO)</strong>.'],
-                ['Check-in từng sale', 'Chọn tên sale → chọn <strong>Vị trí</strong> (Tiếp đón / Nhận số MKT) → chọn <strong>Tier</strong> (Tự động / A / B / C / OFF) → bấm <strong>+ Check in</strong>.'],
-                ['Chốt UPS', 'Khi đủ nhân sự, bấm nút vàng <strong>Chốt UPS hôm nay</strong> ở cơ sở → mở khoá chia số cho cả ngày.'],
-                ['Sửa sau khi check-in', 'Dùng dropdown "↔" chuyển bucket, hoặc ✕ đỏ để xoá. Sau khi đã chốt UPS, muốn sửa: bấm <strong>Hủy chốt UPS</strong> → chỉnh → chốt lại.'],
-                ['Ý nghĩa bucket', '<strong>A</strong>: khách BOD/Hotline/MKT/AFF/WI/BR (sale có doanh thu >20TR hôm trước). <strong>B</strong>: khách APPT/PNS/VOUCHER (sale có 2 show/thu tiền). <strong>C</strong>: backup khi B bận. <strong>OFF</strong>: không nhận số hôm nay (KHÔNG phải nghỉ làm — sale vẫn ở clinic). <strong>MKT</strong>: TM team HC nhận lead MKT theo thứ tự.'],
+                ['Điểm danh sale', 'Menu <strong>Chia số → UPS check-in (BO)</strong>. Check-in từng sale, chọn <strong>vị trí</strong> (Tiếp đón / Tele) + <strong>bucket</strong> (A / B / C / OFF hoặc MKT).'],
+                ['Chốt UPS list', 'Phải bấm <strong>"Chốt UPS list"</strong> ở cơ sở → hệ thống mới có dữ liệu để chia Tele sale và Sale tiếp đón. Chưa chốt → không sale nào nhận được khách.'],
+            ],
+        ],
+        'cm' => [
+            'icon' => '🎯',
+            'name' => 'CM / Team Leader',
+            'summary' => 'Sale + up nguồn admin',
+            'intro' => 'Vai trò như một sale bình thường: up được nguồn <strong>MKT BR, SA</strong>. Ngoài ra được up thêm các nguồn: <strong>BDM · BOD · WI</strong>.',
+            'steps' => [
+                ['Nghiệp vụ sale', 'Chăm khách như sale thường: up nguồn <strong>MKT BR, SA</strong>, nhận lead qua UPS, đặt booking, tiếp đón, thu tiền.'],
+                ['Up nguồn admin', 'Ngoài MKT BR + SA, được up thêm <strong>BDM · BOD · WI</strong>. Dropdown nguồn hiện đủ.'],
+                ['Nhân viên Tele sale chia theo UPS', 'Nhân viên <strong>Tele sale</strong> được chia theo <strong>list UPS ngày hôm đó</strong>.'],
+                ['Thu hồi khả nghi', 'Sale up lead SA/BA khả nghi → vào <strong>Chia số → Kho lead</strong> → bấm <strong>Thu hồi</strong> đưa lead về kho team.'],
+            ],
+        ],
+        'tele' => [
+            'icon' => '📞',
+            'name' => 'Tele sale',
+            'summary' => 'Gọi khách + book lịch',
+            'intro' => 'Sale đang ở <strong>bucket Tele (MKT)</strong> theo UPS list hôm nay.',
+            'steps' => [
+                ['Được up khách', 'Up nguồn <strong>MKT BR, SA</strong>.'],
+                ['Nhận khách', 'Nhận khách các nguồn <strong>MKT</strong> (từ Trực Page) và <strong>BA</strong> (do Sale tiếp đón up).'],
+                ['Thu thập insight', 'Gọi khách, ghi note, cập nhật đầy đủ thông tin + trường bổ sung.'],
+                ['Tạo booking', 'Bấm <strong>+ Thêm booking</strong>. Chọn Cơ sở · Phòng · Dịch vụ · Bác sĩ · Khung giờ. <strong>Nhân viên sale tiếp đón được phân tự động</strong>.'],
             ],
         ],
         'sale' => [
-            'icon' => '💰',
-            'name' => 'Team Sale',
-            'summary' => 'Tiếp đón & chốt tại clinic',
-            'intro' => 'Nhận lead sau khi Tele đã book lịch và khách đã tới clinic. Tư vấn trực tiếp → chốt dịch vụ. <strong class="text-red-700">Không phải người điền info khách — info do Tele nhập ở phase trước.</strong>',
+            'icon' => '🤝',
+            'name' => 'Sale tiếp đón (Booking)',
+            'summary' => 'Đón khách tại cơ sở',
+            'intro' => 'Sale đang ở <strong>bucket Tiếp đón (A/B/C/OFF)</strong> theo UPS list hôm nay.',
             'steps' => [
-                ['Đầu ngày', 'Đến clinic, BO check-in cho bạn vào UPS. Bạn không cần thao tác gì với UPS.'],
-                ['Nhận lead khi khách tới clinic', 'Lễ tân/Admin sbooking bấm <strong>"Khách đã tới"</strong> → hệ thống tự gán 1 sale từ Sale Tiếp Đón (thứ tự A→B→C→OFF, wrap-around khi cả bucket bận). Bạn nhận toast <strong>🔔 Lead mới</strong> → mở lead.'],
-                ['⚠️ Bạn KHÔNG sửa được thông tin khách', '<span class="text-red-700 font-semibold">Info khách (họ tên, SĐT, ngày sinh, nghề nghiệp, địa chỉ, tiền sử, Trường bổ sung…) đã do Tele/Booking điền ở phase trước và bị khóa readonly khi lead sang phase Sale.</span> Cần chỉnh info → báo Tele/CM Booking sửa.'],
-                ['Việc của bạn: ghi trao đổi', 'Mở lead → dùng phần <strong>Trao đổi / Ghi chú tư vấn</strong> để log lại quá trình chăm khách. Các trường info bên trên bị làm mờ (readonly) — không đụng vào.'],
-                ['Đang tiếp đón / Hoàn tất', 'Vào Booking bấm <strong>Đang tiếp đón</strong> → hệ thống đánh dấu bạn bận, khách tiếp theo chuyển sale khác. Tư vấn xong bấm <strong>Hoàn tất</strong> → sẵn sàng nhận khách mới.'],
-                ['Xem lead của bạn', 'Menu <strong>Khách hàng → Kho khách → tab Cá nhân</strong>. Chỉ liệt kê lead bạn được gán.'],
-            ],
-        ],
-        'booking' => [
-            'icon' => '📅',
-            'name' => 'Team Tele / Booking',
-            'summary' => 'Gọi lead & book lịch',
-            'intro' => 'Gọi lead nguồn MKT/MKT_BR/BDM sau khi trực page up. Xác định khách có tiềm năng → điền đầy đủ info + Trường bổ sung → book lịch. Đây là người <strong>duy nhất</strong> điền thông tin khách trong toàn bộ vòng đời lead.',
-            'steps' => [
-                ['Nhận lead', 'Lead nhóm 1 (MKT/MKT_BR/BDM) sau khi trực page up nằm trong <strong>Kho Booking</strong>. CM Booking chia cho bạn (thủ công hoặc auto qua rule). Xem lead ở <strong>Khách hàng → Kho khách → tab Cá nhân</strong>.'],
-                ['Gọi khách + cập nhật info', 'Bấm <strong>Gọi điện</strong> → chọn trạng thái (Thành công/Thất bại/Không nghe máy) → ghi note. <strong>Sửa đầy đủ info khách</strong> (họ tên, ngày sinh, nghề nghiệp, địa chỉ, tiền sử, Trường bổ sung của phòng) — vì Sale ở phase sau <strong>không sửa được</strong>, chỉ đọc.'],
-                ['⚠️ Quy tắc thu hồi PKD', '<span class="text-red-700 font-semibold">Trong 1 ngày phải cập nhật đủ 3 field đầu (theo config phòng — thường là PAGE, Camp, Phân loại). Trong 3 ngày phải đủ 5 field (thêm Kết quả, S.I.C).</span> Không → hệ thống tự thu hồi lead về kho team. Áp dụng khi CM tick "Áp dụng luật thu hồi tự động".'],
-                ['Đặt booking', 'Phase Booking → <strong>+ Thêm booking</strong>. Chọn Loại → Cơ sở → Phòng → Dịch vụ → Bác sĩ → Khung giờ. Dropdown BS chỉ hiện BS phù hợp với dịch vụ. Chọn CV tư vấn (người đầu tiên = Sale phụ trách khi booking duyệt).'],
-                ['Chuyển sang Sale', 'Khi booking được sbooking duyệt và lễ tân bấm "Khách đã tới" → hệ thống tự pickGreet 1 sale từ Sale Tiếp Đón. Lead chuyển sang phase Sale, info bị khóa readonly, sale chỉ ghi trao đổi.'],
-            ],
-        ],
-        'chia_tele' => [
-            'icon' => '📋',
-            'name' => 'Chia số tele',
-            'summary' => 'Chia lead cho tele/booker',
-            'intro' => 'Người có quyền <code>lead.distribute_tele</code>. Chia lead nhóm 1 (MKT/MKT_BR/BDM) từ kho Booking cho Team Tele/Booker gọi khách. Mặc định set cho các CM (Giang, Hợi, Ashley, Linda…).',
-            'steps' => [
-                ['Duyệt lead nguồn', 'Menu <strong>Khách hàng → Duyệt Lead</strong> → duyệt lead trực page vừa up → lead vào kho Booking chờ chia.'],
-                ['Chia thủ công', 'Menu <strong>Chia số → Kho lead → tab Team</strong>. Filter cascade Địa điểm → Cơ sở → Phòng ban. Tick chọn lead → <strong>Chia thủ công hàng loạt</strong> → chọn tele → OK.'],
-                ['Chia tự động', 'Bấm <strong>Chia tự động</strong> (theo rule chia đã cấu hình). Hoặc widget <strong>Kho số</strong> ở Dashboard để chia nhanh 1 lead cho 1 tele.'],
-                ['Áp dụng luật thu hồi', 'Khi chia, có thể tick <strong>"Áp dụng luật thu hồi tự động"</strong> → sau 1 ngày tele không update đủ 3 field đầu (PAGE, Camp, Phân loại) → tự thu hồi về kho team.'],
-                ['Rút lead về kho', 'Menu <strong>Chia số → Kho lead → tab Cá nhân</strong> → tìm lead → bấm <strong>Thu hồi</strong>.'],
-            ],
-        ],
-        'chia_tiepdon' => [
-            'icon' => '⬧',
-            'name' => 'Chia số tiếp đón',
-            'summary' => 'Chia sale tiếp đón khách',
-            'intro' => 'Người có quyền <code>lead.distribute_sale</code>. Chia lead nhóm 2/3 (BOD/SA/BA/WI) hoặc lead đã tới clinic cho sale tiếp đón. Mặc định set cho các CM (Giang, Hợi, Ashley, Linda…). Ai có role <strong>CM</strong> hoặc <strong>Team Leader</strong> đều tự động có quyền này.',
-            'steps' => [
-                ['Chia thủ công', 'Menu <strong>Chia số → Kho lead → tab Team</strong>. Filter cascade: Địa điểm → Cơ sở → Phòng ban. Tick chọn lead → <strong>Chia thủ công hàng loạt</strong> → chọn nhân viên tiếp đón → OK.'],
-                ['Chia tự động qua UPS', 'Không cần thao tác — khi lễ tân sbooking bấm "Khách đã tới", hệ thống tự pickGreet 1 sale từ Sale Tiếp Đón (bucket A→B→C→OFF).'],
-                ['Rút lead về kho', 'Menu <strong>Chia số → Kho lead → tab Cá nhân</strong> → tìm lead → bấm <strong>Thu hồi</strong>.'],
-                ['Cấu hình rule chia', 'Menu <strong>Quản trị → Rule chia số</strong>. Tạo rule cascade Địa điểm/Cơ sở/Phòng ban → chiến lược round-robin / weighted.'],
-                ['Xem báo cáo team', 'Menu <strong>Báo cáo</strong> → chọn khoảng thời gian → xem funnel + top nhân viên.'],
+                ['Được up khách', 'Up nguồn <strong>MKT BR, BA</strong>.'],
+                ['Nhận khách', 'Nhận khách từ <strong>tất cả các nguồn</strong> — được phân tự động khi Tele tạo booking hoặc khi khách đến check-in.'],
+                ['Khách tới → bấm "Khách đã tới"', 'Khi khách đến cơ sở, bấm <strong>"Khách đã tới"</strong> trên booking để bắt đầu tiếp đón.'],
+                ['Tư vấn khách', 'Tiếp đón, tư vấn dịch vụ.'],
+                ['Hoàn tất', 'Khi khách sử dụng xong dịch vụ, bấm <strong>"Đã hoàn thành"</strong>.'],
+                ['⚠️ Lưu ý', '<span class="text-red-700 font-semibold">Không bấm "Đã hoàn thành" sẽ chỉ nhận khách xoay tua (không được ưu tiên).</span>'],
             ],
         ],
         'admin' => [
             'icon' => '⚙️',
-            'name' => 'DM & Admin',
-            'summary' => 'Cấu hình toàn hệ thống',
-            'intro' => 'Cấu hình toàn hệ thống. Xem báo cáo toàn khu vực/toàn công ty. Quản nhân sự, phân quyền, dịch vụ, kết nối sbooking, rule chia số.',
+            'name' => 'DM / Admin',
+            'summary' => 'Toàn quyền',
+            'intro' => 'Toàn quyền cấu hình hệ thống, quản nhân sự, phân quyền, dịch vụ, rule chia số, sync sbooking, báo cáo.',
             'steps' => [
-                ['Menu Thiết lập', 'Menu <strong>Thiết lập → Trang thiết lập</strong>. Có 4 tab: <strong>Tổ chức</strong> (Sơ đồ tổ chức · Người dùng · Vai trò · Bác sĩ &amp; Cơ sở) · <strong>Danh mục dữ liệu</strong> (Danh mục hệ thống · Trường tùy biến · Duyệt trường · Dịch vụ) · <strong>Hệ thống</strong> (Thiết lập thông báo · Nhật ký thông báo · Sao lưu &amp; khôi phục) · <strong>Cá nhân</strong>.'],
-                ['Menu Quản trị', 'Menu <strong>Quản trị</strong>: <strong>Quy tắc vận hành</strong> (SLA / thu hồi) · <strong>Rule chia số</strong> (cascade Địa điểm → Cơ sở → Phòng ban, chiến lược round-robin) · <strong>Kết nối Booking</strong> (sync với sbooking) · <strong>Kết nối nguồn Ads</strong>.'],
-                ['Menu Chia số', 'Menu <strong>Chia số</strong>: <strong>UPS hôm nay</strong> · <strong>Kho lead</strong> (xem tất cả kho công ty/chi nhánh/cơ sở/phòng) · <strong>UPS check-in (BO)</strong>.'],
-                ['Kết nối 2 hệ (sbooking)', 'Quản trị → <strong>Kết nối Booking</strong>. Bấm <strong>Sync Users</strong> (kéo users sbooking + auto-map). <strong>Sync Services / Phòng / BS</strong> để form booking có dropdown chuẩn.'],
-                ['Reconcile drift', 'Nếu booking lệch dữ liệu: chạy <code class="bg-slate-100 px-2 py-0.5 rounded text-xs">php artisan sb:reconcile-bookings --dry-run</code> để xem, rồi bỏ <code>--dry-run</code> để apply.'],
-                ['Xuất danh sách khách', 'Menu <strong>Khách hàng → Danh sách</strong> → bấm <strong>⬇ Export</strong>. Mặc định CHỈ tick core columns. Custom fields tick manual nếu cần.'],
-                ['Observer / Trợ lý', 'Chỉ xem dashboard + báo cáo, không thêm/sửa/xóa.'],
+                ['Toàn quyền', 'Truy cập mọi menu, mọi thao tác. Không có giới hạn scope.'],
+            ],
+        ],
+        'observer' => [
+            'icon' => '👁️',
+            'name' => 'Observer / Moderator',
+            'summary' => 'Chỉ xem',
+            'intro' => 'Chỉ xem danh sách khách + xem báo cáo. Không tạo / sửa / xóa / chia số / thu tiền.',
+            'steps' => [
+                ['Xem danh sách khách', 'Menu <strong>Khách hàng → Danh sách</strong> — chỉ xem, không có nút hành động.'],
+                ['Xem báo cáo', 'Menu <strong>Báo cáo</strong> — funnel, top nhân viên, doanh số.'],
             ],
         ],
     ];
@@ -150,8 +133,8 @@
             Chung — mọi vai trò
         </h2>
         <div class="bg-white border border-gold-200 rounded-xl shadow-sm p-5 text-sm text-ink/80 space-y-2">
-            <p><strong>Đăng nhập:</strong> vào <em>{{ url('/login') }}</em>. Nhập email công ty + mật khẩu (BO cấp cho bạn).</p>
-            <p><strong>Trang chủ:</strong> Dashboard có 5 ô hôm nay: UPS hôm nay · Khách mới · Khách bạn được nhận (7 ngày) · Chờ duyệt · Chờ chia. Hiển thị theo vai trò của bạn. Bấm ô để nhảy trang chi tiết.</p>
+            <p><strong>Đăng nhập:</strong> vào <em>{{ url('/login') }}</em>. Nhập email công ty + mật khẩu (IT cấp cho bạn).</p>
+            <p><strong>Trang chủ:</strong> Dashboard có 3 ô hôm nay: <strong>Số lead hôm nay</strong> · <strong>Lead Tele sale</strong> · <strong>Lead Booking</strong>. Hiển thị theo vai trò của bạn. Bấm ô để nhảy trang chi tiết.</p>
             <p><strong>Thông báo:</strong> Chuông góc phải nháy khi có lead mới / booking đổi trạng thái / tin nhắn. Bấm chuông xem chi tiết.</p>
             <p><strong>Đổi mật khẩu:</strong> Avatar góc phải → Đổi mật khẩu.</p>
         </div>
@@ -186,12 +169,12 @@
             Quy tắc thu hồi lead (PKD Update 01/04/2026)
         </h2>
         <div class="bg-amber-50 border border-amber-300 rounded-lg p-5 text-sm text-ink/85 space-y-2">
-            <p>Khi <strong>CM/Admin tick "Áp dụng luật thu hồi tự động"</strong> lúc chia lead cho sale:</p>
+            <p>Mặc định lead chia cho Tele sale sẽ <strong>auto thu hồi</strong> nếu không update đúng SLA:</p>
             <ul class="list-disc list-inside ml-2 space-y-1">
-                <li>Sau <strong>1 ngày</strong>: sale phải cập nhật đủ <strong>3 cột đầu</strong> (<em>PAGE, Camp, Phân loại</em>). Không → hệ thống tự thu hồi lead về kho team.</li>
-                <li>Sau <strong>3 ngày</strong>: sale phải cập nhật đủ <strong>5 cột</strong> (thêm <em>Kết quả, S.I.C</em>). Không → thu hồi.</li>
+                <li>Sau <strong>1 ngày</strong>: Tele sale phải cập nhật đủ <strong>3 cột đầu</strong> (<em>PAGE, Camp, Phân loại</em>). Không → hệ thống tự thu hồi lead về kho team.</li>
+                <li>Sau <strong>3 ngày</strong>: Tele sale phải cập nhật đủ <strong>5 cột</strong> (thêm <em>Kết quả, S.I.C</em>). Không → thu hồi.</li>
             </ul>
-            <p class="text-xs text-ink/60 mt-2">Nếu CM không tick → lead giữ vĩnh viễn với sale được chia (không auto thu hồi).</p>
+            <p class="text-xs text-ink/60 mt-2">Nếu <strong>CM/Team Leader tick "Không thu hồi"</strong> khi chia → lead đó không áp dụng quy định trên.</p>
         </div>
     </section>
 
@@ -202,11 +185,11 @@
             Luồng "Đang tiếp đón / Hoàn tất"
         </h2>
         <div class="bg-emerald-50 border border-emerald-200 rounded-lg p-5 text-sm text-ink/85 space-y-2">
-            <p>Khi khách đến clinic → lễ tân sbooking bấm <strong>Khách đã tới</strong>:</p>
+            <p>Khi khách đến cơ sở → lễ tân truy cập phần mềm Booking bấm <strong>"Khách đã tới"</strong> (hoặc <em>Khách tới trễ</em>, <em>Khách hủy</em>…):</p>
             <ol class="list-decimal list-inside ml-2 space-y-1">
                 <li>Nếu UPS đã chốt → hệ thống <strong>tự động</strong> gán 1 sale từ Sale Tiếp Đón (theo thứ tự A→B→C→OFF).</li>
-                <li>Sale vào hệ thống Booking, bấm <strong>Đang tiếp đón</strong> → hệ thống đánh dấu sale bận, khách tiếp theo chuyển cho sale khác.</li>
-                <li>Sale tư vấn xong bấm <strong>Hoàn tất</strong> → sale rảnh lại, sẵn sàng nhận khách tiếp theo.</li>
+                <li>Sale tiếp đón vào hệ thống Booking, bấm <strong>Đang tiếp đón</strong> → hệ thống đánh dấu sale bận, khách tiếp theo chuyển cho sale kế tiếp.</li>
+                <li>Sale tiếp đón tư vấn xong bấm <strong>"Hoàn tất"</strong> để tiếp tục đón khách tiếp theo.</li>
             </ol>
         </div>
     </section>
@@ -218,7 +201,7 @@
             Đặc thù cơ sở Đà Nẵng
         </h2>
         <div class="bg-blue-50 border border-blue-200 rounded-lg p-5 text-sm text-ink/85">
-            <p>Riêng sale khu vực Đà Nẵng được cấp quyền <strong>nhập lead – booking – tư vấn</strong> xuyên suốt (không tách vai trò).</p>
+            <p>Riêng cơ sở Đà Nẵng, mọi sale sẽ đảm nhiệm full 4 khâu <strong>"Tạo – Tele – Book – Checkin"</strong>.</p>
         </div>
     </section>
 

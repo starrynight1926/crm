@@ -29,8 +29,8 @@ class RolePermissionSyncSeeder extends Seeder
             'payment.record', 'phase.close.booking', 'phase.close.call',
             'phase.close.checkin', 'phase.close.new',
             'phase.rollback', 'report.view', 'report.view_all', 'role.manage',
-            'rule.manage', 'service.manage', 'source.up.admin', 'source.up.sa',
-            'source.up.sale', 'source.up.tele', 'source.up.trucpage', 'staff.manage',
+            'rule.manage', 'service.manage', 'source.up.bdm', 'source.up.bod', 'source.up.wi', 'source.up.sa',
+            'source.up.mkt_br', 'source.up.ba', 'source.up.mkt', 'staff.manage',
             'system.backup',
             'ups.checkin', 'ups.confirm_daily', 'ups.override', 'ups.view',
             'user.manage',
@@ -45,8 +45,8 @@ class RolePermissionSyncSeeder extends Seeder
             'lead.view', 'lead.view_phone', 'lead.view_pool', 'payment.record',
             'phase.close.booking', 'phase.close.call', 'phase.close.checkin',
             'phase.close.new', 'report.view', 'report.view_all',
-            'rule.manage', 'service.manage', 'source.up.admin', 'source.up.sa',
-            'source.up.sale', 'source.up.tele', 'source.up.trucpage', 'user.manage',
+            'rule.manage', 'service.manage', 'source.up.bdm', 'source.up.bod', 'source.up.wi', 'source.up.sa',
+            'source.up.mkt_br', 'source.up.ba', 'source.up.mkt', 'user.manage',
         ],
         'Manager' => [
             'lead.approve_source', 'lead.assign_direct',
@@ -56,7 +56,7 @@ class RolePermissionSyncSeeder extends Seeder
             'lead.update_booking', 'lead.update_sale', 'lead.view', 'lead.view_phone',
             'lead.view_pool', 'phase.close.booking', 'phase.close.call',
             'phase.close.checkin', 'phase.close.new',
-            'report.view', 'source.up.sa', 'source.up.sale',
+            'report.view', 'source.up.sa', 'source.up.mkt_br',
         ],
         'Admin cơ sở' => [
             'lead.book_action', 'lead.create', 'lead.delete', 'lead.distribute',
@@ -64,7 +64,7 @@ class RolePermissionSyncSeeder extends Seeder
             'lead.distribute_to_team', 'lead.import', 'lead.read_booking', 'lead.recall',
             'lead.update_booking', 'lead.view', 'lead.view_phone', 'lead.view_pool',
             'phase.close.new', 'phase.close.booking', 'phase.close.call', 'phase.close.checkin',
-            'report.view', 'source.up.admin', 'source.up.sa',
+            'report.view', 'source.up.bdm', 'source.up.bod', 'source.up.wi', 'source.up.sa',
             'ups.view',
         ],
         'CM sale' => [
@@ -78,7 +78,7 @@ class RolePermissionSyncSeeder extends Seeder
             'lead.read_booking',
             'payment.record', 'phase.close.booking', 'phase.close.call',
             'phase.close.new', 'report.view',
-            'source.up.admin', 'source.up.sa', 'source.up.sale',
+            'source.up.bdm', 'source.up.bod', 'source.up.wi', 'source.up.sa', 'source.up.mkt_br',
         ],
         'CM Tele' => [
             'lead.assign_direct',
@@ -88,7 +88,7 @@ class RolePermissionSyncSeeder extends Seeder
             'lead.distribute_to_sale', 'lead.read_booking', 'lead.recall', 'lead.update',
             'lead.update_booking', 'lead.view', 'lead.view_phone', 'lead.view_pool',
             'payment.record', 'phase.close.call',
-            'phase.close.new', 'report.view', 'source.up.tele',
+            'phase.close.new', 'report.view', 'source.up.ba',
         ],
         'Team Leader' => [
             'lead.approve_source', 'lead.create', 'lead.distribute',
@@ -96,7 +96,7 @@ class RolePermissionSyncSeeder extends Seeder
             'lead.read_booking', 'lead.recall', 'lead.update', 'lead.view',
             'lead.view_phone', 'lead.view_pool', 'payment.record',
             'phase.close.booking', 'phase.close.call',
-            'phase.close.new', 'report.view', 'source.up.sa', 'source.up.sale',
+            'phase.close.new', 'report.view', 'source.up.sa', 'source.up.mkt_br', 'source.up.ba',
         ],
         'Sale' => [
             'lead.consult', 'lead.create', 'lead.update',
@@ -104,8 +104,9 @@ class RolePermissionSyncSeeder extends Seeder
             // (owner = sale, pipeline_phase=booking) phải sửa info + đặt booking được, không chỉ Team Tele.
             'lead.update_sale', 'lead.update_booking', 'lead.read_booking', 'lead.book_action',
             'lead.view', 'payment.record', 'phase.close.booking',
+            // 2026-08-09: thêm source.up.tele — Sale bucket MKT hôm nay được up BA (gate bởi UPS bucket).
             'phase.close.call', 'phase.close.new', 'report.view', 'source.up.sa',
-            'source.up.sale',
+            'source.up.mkt_br', 'source.up.ba',
         ],
         'Team sale' => [
             'lead.consult', 'lead.update', 'lead.update_sale',
@@ -113,7 +114,8 @@ class RolePermissionSyncSeeder extends Seeder
             'lead.update_booking', 'lead.read_booking', 'lead.book_action',
             'lead.view', 'lead.view_phone', 'payment.record', 'phase.close.booking',
             'phase.close.call', 'phase.close.new',
-            'report.view', 'source.up.sa', 'source.up.sale',
+            // 2026-08-09: thêm source.up.tele — Sale bucket MKT hôm nay được up BA (gate bởi UPS bucket).
+            'report.view', 'source.up.sa', 'source.up.mkt_br', 'source.up.ba',
         ],
         'Team sale ĐN' => [
             // 2026-08-07: Team Linda ĐN — xuyên suốt tele+booking+sale. Thêm book_action để tự
@@ -123,16 +125,18 @@ class RolePermissionSyncSeeder extends Seeder
             'lead.update', 'lead.update_booking', 'lead.update_sale', 'lead.view',
             'lead.view_phone', 'payment.record', 'phase.close.booking',
             'phase.close.call', 'phase.close.new',
-            'report.view', 'source.up.sa', 'source.up.sale',
+            // 2026-08-09: thêm source.up.tele — Sale bucket MKT hôm nay được up BA (gate bởi UPS bucket).
+            'report.view', 'source.up.sa', 'source.up.mkt_br', 'source.up.ba',
         ],
         'Team Tele' => [
             'lead.create', 'lead.read_booking', 'lead.update',
             'lead.update_booking', 'lead.view', 'lead.view_phone', 'phase.close.call',
-            'phase.close.new', 'source.up.tele',
+            'phase.close.new', 'source.up.ba',
         ],
         'Trực Page' => [
             'lead.create', 'lead.import', 'lead.view', 'phase.close.new',
-            'source.up.trucpage',
+            // 2026-08-09: Trực Page up được Marketing (MKT) + Marketing BR (MKT_BR).
+            'source.up.mkt', 'source.up.mkt_br',
         ],
         'Trợ lý kinh doanh' => [
             'lead.view', 'report.view',

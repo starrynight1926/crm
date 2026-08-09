@@ -69,6 +69,7 @@ class SyncRoomsFromSbooking extends Command
                     'ten' => $r['ten'] ?? '',
                     'loai' => $r['loai'] ?? null,
                     'kieu_phong' => $r['kieu_phong'] ?? null,
+                    'duoc_dat_tu_van' => (bool) ($r['duoc_dat_tu_van'] ?? true),
                     'so_slot_toi_da' => (int) ($r['so_slot_toi_da'] ?? 1),
                     'phut_moi_khach' => (int) ($r['phut_moi_khach'] ?? 0),
                     'trang_thai' => $r['trang_thai'] ?? 'hoat_dong',

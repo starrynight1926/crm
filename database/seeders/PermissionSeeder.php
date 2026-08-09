@@ -64,11 +64,14 @@ class PermissionSeeder extends Seeder
             'system.backup' => 'Sao lưu & khôi phục cấu hình / dữ liệu hệ thống',
         ],
         'source_up' => [
-            'source.up.trucpage' => 'Up lead nguồn MKT (Trực Page)',
-            'source.up.sale'     => 'Up lead nguồn MKT BR (Sale nhân viên tự nhận)',
-            'source.up.sa'       => 'Up lead nguồn SA (Sale hẹn lại — Sale tự nhận)',
-            'source.up.tele'     => 'Up lead nguồn BA (Tele tự nhận)',
-            'source.up.admin'    => 'Up lead nguồn BDM / BOD / Walk-in (QL Sale / Admin cơ sở)',
+            // 2026-08-09: refactor 1-1 với 7 nguồn.
+            'source.up.mkt'    => 'Đăng nguồn: MKT (Marketing)',
+            'source.up.mkt_br' => 'Đăng nguồn: MKT BR (Marketing BR)',
+            'source.up.sa'     => 'Đăng nguồn: SA (Sale hẹn lại)',
+            'source.up.ba'     => 'Đăng nguồn: BA (Bạn giới thiệu)',
+            'source.up.bdm'    => 'Đăng nguồn: BDM',
+            'source.up.bod'    => 'Đăng nguồn: BOD',
+            'source.up.wi'     => 'Đăng nguồn: WI (Walk-in)',
         ],
         'ups' => [
             'ups.view' => 'Xem bảng UPS check-in',

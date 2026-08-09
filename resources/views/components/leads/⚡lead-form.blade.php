@@ -139,7 +139,7 @@ new class extends Component
     public string $newCallNote = '';
 
     // State form thêm booking log
-    public string $newBookingType = ''; // '' = -- Chọn --, tham_kham | dich_vu (required)
+    public string $newBookingType = ''; // '' = -- Chọn --, 3 bucket: kham_ls | tu_van | dich_vu (2026-08-09 tách "tham_kham" thành 2 bucket con). Map sang booking_logs.type (tham_kham|dich_vu) khi save.
     /** @var array<int, array{gio_bat_dau: string, label: string}> Phase C1.d: slot đọc từ sbooking per phong */
     public array $availableSlots = [];
     /** @var array<int, array{id:int, ten:string, so_slot_toi_da:int, kieu_phong:?string}> Phase C1.d: phòng của cơ sở */
@@ -228,7 +228,7 @@ new class extends Component
             return;
         }
         $this->validate([
-            'newBookingType'          => 'required|in:tham_kham,dich_vu',
+            'newBookingType'          => 'required|in:kham_ls,tu_van,dich_vu',
             'newBookingStatus'        => 'required|in:' . implode(',', array_keys(BookingLog::STATUSES)),
             'newBookingScheduledAt'   => 'nullable|date',
             'newBookingFacilityId'    => 'required|exists:facilities,id',
@@ -246,7 +246,7 @@ new class extends Component
             'newBookingConsultantIds' => 'array',
             'newBookingConsultantIds.*' => 'nullable|exists:users,id',
         ], [
-            'newBookingType.required' => 'Chọn loại booking (Thăm khám hoặc Dịch vụ).',
+            'newBookingType.required' => 'Chọn loại booking (Khám lâm sàng / Tư vấn / Dịch vụ).',
             'newBookingFacilityId.required' => 'Chọn cơ sở — booking phải gắn cơ sở để đẩy sang sbooking.',
             'newBookingRoomId.required' => 'Chọn phòng — sbooking cần phòng để check capacity.',
         ]);
@@ -328,7 +328,9 @@ new class extends Component
         $bl = BookingLog::create([
             'lead_id'      => $this->lead->id,
             'user_id'      => $user->id,
-            'type'         => $this->newBookingType,
+            // 2026-08-09: booking_logs.type vẫn giữ enum cũ (tham_kham|dich_vu) để tương thích sbooking.
+            //   Bucket UI 'kham_ls' + 'tu_van' đều map về 'tham_kham' (loai_dat_lich=phong_kham bên sbooking).
+            'type'         => $this->newBookingType === 'dich_vu' ? 'dich_vu' : 'tham_kham',
             'status'       => $this->newBookingStatus,
             'scheduled_at' => $scheduledAt,
             'scheduled_end_at' => $scheduledEndAt,
@@ -488,12 +490,34 @@ new class extends Component
         $sbCoSoId = $this->resolveSbCoSoId((int) $value);
         if (! $sbCoSoId) return;
 
-        $this->availableRooms = \App\Models\SbRoom::where('sbooking_co_so_id', $sbCoSoId)
-            ->where('trang_thai', 'hoat_dong')
-            ->orderBy('ten')
-            ->get(['sbooking_id as id', 'ten', 'so_slot_toi_da', 'kieu_phong'])
+        // 2026-08-09: filter theo bucket (newBookingType).
+        //   tu_van   → phòng phải có duoc_dat_tu_van=true (không giới hạn kieu_phong).
+        //   kham_ls  → kieu_phong=phong_kham.
+        //   dich_vu  → kieu_phong=phong_dich_vu.
+        //   Chưa chọn bucket → hiện all phòng của cơ sở.
+        $q = \App\Models\SbRoom::where('sbooking_co_so_id', $sbCoSoId)->where('trang_thai', 'hoat_dong');
+        if ($this->newBookingType === 'tu_van') {
+            $q->where('duoc_dat_tu_van', true);
+        } elseif ($this->newBookingType === 'kham_ls') {
+            $q->where('kieu_phong', 'phong_kham');
+        } elseif ($this->newBookingType === 'dich_vu') {
+            $q->where('kieu_phong', 'phong_dich_vu');
+        }
+        $this->availableRooms = $q->orderBy('ten')
+            ->get(['sbooking_id as id', 'ten', 'so_slot_toi_da', 'kieu_phong', 'duoc_dat_tu_van'])
             ->map(fn ($r) => $r->toArray())
             ->all();
+    }
+
+    /** 2026-08-09: đổi bucket → reload phòng theo filter mới. */
+    public function updatedNewBookingType(mixed $value): void
+    {
+        $this->newBookingServiceId = null;
+        $this->newBookingRoomId = null;
+        $this->newBookingSbBacSiId = null;
+        if ($this->newBookingFacilityId) {
+            $this->updatedNewBookingFacilityId($this->newBookingFacilityId);
+        }
     }
 
     /** Đổi phòng / dịch vụ / ngày → reload slot theo (phong, dv, ngày). */
@@ -1380,7 +1404,7 @@ new class extends Component
         //   auto → chia ngay từ MKT List UPS (round-robin theo cơ sở trực page).
         //   pool → thả kho, cấp kho theo quyền (distribute_company > distribute_branch > mặc định cơ sở).
         $mktAutoAssigned = false;
-        if (! $this->lead?->exists && $this->sourceGroup === Lead::SOURCE_MKT && ! $this->personId) {
+        if (! $this->lead?->exists && in_array($this->sourceGroup, [Lead::SOURCE_MKT, Lead::SOURCE_MKT_BR], true) && ! $this->personId) {
             $facility = $this->trucPageFacility();
             if (! $facility) {
                 $this->addError('mktMode', 'Tài khoản trực page không map được cơ sở duy nhất — liên hệ Admin kiểm tra org_pool_map.');
@@ -1905,17 +1929,17 @@ new class extends Component
                 : CustomField::applicableTo($this->targetOrgUnit()),
             'facilities' => $facilities,
             // 2026-08-05: label kho đích cho radio "Chia về kho" (khi trực page up MKT).
-            'mktPoolTargetLabel' => (! $this->lead?->exists && $this->sourceGroup === Lead::SOURCE_MKT)
+            'mktPoolTargetLabel' => (! $this->lead?->exists && in_array($this->sourceGroup, [Lead::SOURCE_MKT, Lead::SOURCE_MKT_BR], true))
                 ? ($this->mktPoolTarget()?->name)
                 : null,
-            'mktFacilityName' => (! $this->lead?->exists && $this->sourceGroup === Lead::SOURCE_MKT)
+            'mktFacilityName' => (! $this->lead?->exists && in_array($this->sourceGroup, [Lead::SOURCE_MKT, Lead::SOURCE_MKT_BR], true))
                 ? ($this->trucPageFacility()?->name)
                 : null,
             // 2026-08-05: preview sale kế trong MKT List — hiện trong banner "Tự động" để user theo dõi trước khi Lưu.
-            'mktNextSale' => (! $this->lead?->exists && $this->sourceGroup === Lead::SOURCE_MKT && $this->mktMode === 'auto' && ($__f = $this->trucPageFacility()))
+            'mktNextSale' => (! $this->lead?->exists && in_array($this->sourceGroup, [Lead::SOURCE_MKT, Lead::SOURCE_MKT_BR], true) && $this->mktMode === 'auto' && ($__f = $this->trucPageFacility()))
                 ? $this->previewMktNextSale($__f->id)
                 : null,
-            'mktListToday' => (! $this->lead?->exists && $this->sourceGroup === Lead::SOURCE_MKT && ($__f2 = $this->trucPageFacility()))
+            'mktListToday' => (! $this->lead?->exists && in_array($this->sourceGroup, [Lead::SOURCE_MKT, Lead::SOURCE_MKT_BR], true) && ($__f2 = $this->trucPageFacility()))
                 ? \App\Models\DailyAttendance::with('user')
                     ->where('facility_pool_unit_id', $__f2->id)
                     ->whereDate('work_date', now()->toDateString())
@@ -1925,7 +1949,7 @@ new class extends Component
             // 2026-08-05: user list cho radio "Thủ công" — filter theo data_scope của user hiện tại (visibleOrgUnitIds).
             //   Chỉ trả về khi user có perm lead.assign_direct. Giới hạn active + status active.
             'manualAssignableUsers' => (auth()->user()->hasPermission('lead.assign_direct')
-                && $this->sourceGroup === Lead::SOURCE_MKT && ! $this->lead?->exists)
+                && in_array($this->sourceGroup, [Lead::SOURCE_MKT, Lead::SOURCE_MKT_BR], true) && ! $this->lead?->exists)
                 ? \App\Models\User::whereHas('assignments', fn ($q) => $q->whereIn('org_unit_id', auth()->user()->visibleOrgUnitIds() ?: [0]))
                     ->where('status', \App\Models\User::STATUS_ACTIVE)
                     ->orderBy('name')->get()
@@ -2465,8 +2489,10 @@ new class extends Component
                                         : 'Chuyển sang tab "2. Chia số" để chọn sale nhận (bắt buộc, không qua duyệt).';
                                 } elseif ($sourceGroup === \App\Models\Lead::SOURCE_WI) {
                                     $nextStep = 'Lead sẽ về kho team → chờ CM team sale chia cho nhân viên.';
-                                } elseif (in_array($sourceGroup, [\App\Models\Lead::SOURCE_MKT, \App\Models\Lead::SOURCE_MKT_BR, \App\Models\Lead::SOURCE_BDM], true)) {
-                                    $nextStep = 'Nhập phân loại, nguồn → Tele sale chuẩn bị.';
+                                } elseif (in_array($sourceGroup, [\App\Models\Lead::SOURCE_MKT, \App\Models\Lead::SOURCE_MKT_BR], true)) {
+                                    $nextStep = 'Hệ thống tự chia Tele sale theo MKT List UPS hôm nay.';
+                                } elseif ($sourceGroup === \App\Models\Lead::SOURCE_BDM) {
+                                    $nextStep = 'Lead vào kho Booking, chờ CM chia cho Tele sale.';
                                 }
                             @endphp
                             @if ($nextStep)
@@ -2759,9 +2785,11 @@ new class extends Component
                         <div class="text-xs font-semibold text-ink/60">Thêm booking mới <span class="font-normal text-ink/40">— mặc định "Chờ xác nhận", bên booking cập nhật sẽ tự sync về đây</span></div>
                         {{-- Hàng 1: Loại | Trạng thái (lock) | Datetime --}}
                         <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
+                            {{-- 2026-08-09: 3 bucket — Khám lâm sàng / Tư vấn / Dịch vụ. --}}
                             <select wire:model.live="newBookingType" class="border border-slate-300 rounded px-2 py-1.5 text-sm">
                                 <option value="">— Loại * —</option>
-                                <option value="tham_kham">🩺 Thăm khám</option>
+                                <option value="kham_ls">🩺 Khám lâm sàng</option>
+                                <option value="tu_van">💬 Tư vấn</option>
                                 <option value="dich_vu">💆 Dịch vụ</option>
                             </select>
                             <div class="inline-flex items-center gap-1.5 border border-slate-300 rounded px-2 py-1.5 text-sm bg-slate-100 text-ink/60">
@@ -2849,32 +2877,39 @@ new class extends Component
                             {{-- Cột 2: Nội dung — Dịch vụ → Số lượng (gộp thay cho "Số liệu trình" + "Dung tích lọ") --}}
                             <div class="space-y-2">
                                 <div class="text-[11px] uppercase tracking-wider font-semibold text-ink/50">Nội dung</div>
+                                @php
+                                    // 2026-08-09: 3 bucket filter.
+                                    //   kham_ls → la_dich_vu=false AND thuoc_nhom=kham_ls
+                                    //   tu_van  → la_dich_vu=false AND thuoc_nhom=tu_van
+                                    //   dich_vu → la_dich_vu=true (mọi thuoc_nhom)
+                                    $__bucketLabel = ['kham_ls' => 'khám lâm sàng', 'tu_van' => 'tư vấn', 'dich_vu' => 'dịch vụ'][$newBookingType] ?? '';
+                                @endphp
                                 <select wire:model.live="newBookingServiceId" @disabled(! $newBookingType) class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm">
                                     <option value="">
-                                        {{ $newBookingType ? '— ' . ($newBookingType === 'tham_kham' ? 'Chọn thăm khám' : 'Chọn dịch vụ') . ' —' : '— Chọn loại trước —' }}
+                                        {{ $newBookingType ? '— Chọn ' . $__bucketLabel . ' —' : '— Chọn loại trước —' }}
                                     </option>
                                     @if ($newBookingType)
                                         @php
-                                            $__isDv = $newBookingType === 'dich_vu';
-                                            $__svcQuery = \App\Models\SbService::where('active', true)->where('la_dich_vu', $__isDv);
+                                            $__svcQuery = \App\Models\SbService::where('active', true);
+                                            if ($newBookingType === 'dich_vu') {
+                                                $__svcQuery->where('la_dich_vu', true);
+                                            } else {
+                                                $__svcQuery->where('la_dich_vu', false)->where('thuoc_nhom', $newBookingType);
+                                            }
                                             if ($sbCoSoForBs) $__svcQuery->where(function ($q) use ($sbCoSoForBs) {
                                                 $q->where('sbooking_co_so_id', $sbCoSoForBs)->orWhereNull('sbooking_co_so_id');
                                             });
                                             $__svcAll = $__svcQuery->orderBy('ten')->get();
                                             $__svcOptions = $__svcAll->sortByDesc(fn ($s) => $s->sbooking_co_so_id === $sbCoSoForBs ? 1 : 0)
                                                 ->unique('ten')->sortBy('ten')->values();
-                                            if ($__svcOptions->isEmpty()) {
-                                                $__legacy = \App\Models\Service::where('active', true)->where('service_type', $newBookingType)->orderBy('name')->get();
-                                                foreach ($__legacy as $l) $__svcOptions->push((object)['id' => $l->id, 'sbooking_id' => null, 'ten' => $l->name, 'thoi_gian_phut' => null]);
-                                            }
                                         @endphp
                                         @foreach ($__svcOptions as $s)
-                                            <option value="{{ $s->sbooking_id ?? $s->id }}" data-src="{{ $s->sbooking_id ? 'sb' : 'legacy' }}">
+                                            <option value="{{ $s->sbooking_id ?? $s->id }}">
                                                 {{ $s->ten }}@if($s->thoi_gian_phut) ({{ $s->thoi_gian_phut }}') @endif
                                             </option>
                                         @endforeach
                                         @if ($__svcOptions->isEmpty())
-                                            <option value="" disabled>(chưa có {{ $newBookingType === 'tham_kham' ? 'thăm khám' : 'dịch vụ' }} — sync bên sbooking trước)</option>
+                                            <option value="" disabled>(chưa có {{ $__bucketLabel }} — sync bên sbooking trước)</option>
                                         @endif
                                     @endif
                                 </select>
@@ -3441,7 +3476,7 @@ new class extends Component
 
                 {{-- 2026-08-05: nguồn MKT — radio Cách chia (hiện cho MỌI user, kể cả trực page không có perm distribute).
                      Option 'manual' chỉ hiện khi user có perm lead.assign_direct (CM sale/CM Tele/DM HCM/Manager/Admin). --}}
-                @if ($sourceGroup === \App\Models\Lead::SOURCE_MKT && ! $lead?->exists)
+                @if (in_array($sourceGroup, [\App\Models\Lead::SOURCE_MKT, \App\Models\Lead::SOURCE_MKT_BR], true) && ! $lead?->exists)
                     @php $__canAssignDirect = auth()->user()->hasPermission('lead.assign_direct'); @endphp
                     <div class="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-md">
                         <label class="block text-sm font-bold text-amber-900 mb-2">🎯 Cách chia lead (nguồn Marketing) <span class="text-red-500">*</span></label>
@@ -3493,7 +3528,7 @@ new class extends Component
 
                 {{-- 2026-08-05: Form Phân phối — hiện cho user có perm chia HOẶC Trực Page up MKT
                      (Trực Page cần xem Check UPS + preview sale khi chọn Tự động, dù không có lead.distribute). --}}
-                @if ($canDistribute || ($sourceGroup === \App\Models\Lead::SOURCE_MKT && ! $lead?->exists))
+                @if ($canDistribute || (in_array($sourceGroup, [\App\Models\Lead::SOURCE_MKT, \App\Models\Lead::SOURCE_MKT_BR], true) && ! $lead?->exists))
                     <div class="border-t border-gold-200 pt-5">
                         @php $upsBlockedHere = app(\App\Services\Ups\UpsGate::class)->isBlockedFor(auth()->user()); @endphp
                         <div class="flex items-center justify-between flex-wrap gap-2 mb-4">
@@ -3557,7 +3592,7 @@ new class extends Component
                         {{-- 2026-08-05: nguồn MKT create → chỉ hiện cascade+nhân viên khi mode=pool.
                              Auto dùng UPS list, manual dùng dropdown ở card. --}}
                         @php
-                            $__isMktCreate = ($sourceGroup === \App\Models\Lead::SOURCE_MKT && ! $lead?->exists);
+                            $__isMktCreate = (in_array($sourceGroup, [\App\Models\Lead::SOURCE_MKT, \App\Models\Lead::SOURCE_MKT_BR], true) && ! $lead?->exists);
                             $__hideCascade = $__isMktCreate && $mktMode !== 'pool';
                             $__nextSaleObj = $mktNextSale['sale'] ?? null;
                             $__rotated = $mktNextSale['rotated'] ?? false;
@@ -3707,7 +3742,7 @@ new class extends Component
                         <p class="text-xs text-ink/50 mt-4 italic">Chọn xong bấm "Lưu thông tin" ở footer — hệ thống lưu lead + chia số ở phase 1 và chuyển sang phase 3 (Booking thăm khám).</p>
                         @endif {{-- close @if ($canDistribute) inner cascade+person section --}}
                     </div>
-                @elseif (! ($sourceGroup === \App\Models\Lead::SOURCE_MKT && ! $lead?->exists))
+                @elseif (! (in_array($sourceGroup, [\App\Models\Lead::SOURCE_MKT, \App\Models\Lead::SOURCE_MKT_BR], true) && ! $lead?->exists))
                     <div class="border-t border-gold-200 pt-4 text-sm text-ink/60 italic">
                         Bạn không có quyền chia số. Người có quyền (CM cơ sở / CM team / Admin) sẽ chia lead này.
                     </div>

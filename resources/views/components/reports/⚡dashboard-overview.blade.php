@@ -172,7 +172,11 @@ new class extends Component
      */
     private function mainWidgets(): array
     {
-        $q = fn () => $this->reportLeadQuery();
+        // 2026-08-09: header ghi "Số liệu <hôm nay>" → widget cũng phải filter today
+        // để khớp với danh sách "Lead hôm nay" bên dưới. Trước đây count all-time
+        // → widget 2, danh sách 0 → user confuse.
+        $today = today();
+        $q = fn () => $this->reportLeadQuery()->whereDate('received_date', $today);
 
         return [
             [

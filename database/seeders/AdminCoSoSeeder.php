@@ -23,7 +23,7 @@ class AdminCoSoSeeder extends Seeder
     public const PERMS = [
         'lead.view', 'lead.view_phone',
         // Nhập / import / xóa mềm / up 4 nguồn QL Sale
-        'lead.create', 'lead.import', 'lead.delete', 'source.up.admin',
+        'lead.create', 'lead.import', 'lead.delete', 'source.up.bdm', 'source.up.bod', 'source.up.wi',
         // Chia số phase 2
         'lead.view_pool', 'lead.distribute', 'lead.distribute_tele', 'lead.distribute_sale',
         'lead.distribute_to_team', 'lead.distribute_to_sale', 'lead.recall',

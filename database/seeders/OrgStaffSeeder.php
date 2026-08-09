@@ -172,7 +172,7 @@ class OrgStaffSeeder extends Seeder
             ],
             'CM sale' => [
                 'desc' => 'CM Phòng Kinh doanh — chia lead đã đồng ý sang sale + sửa info cá nhân khi ở phase Sale + duyệt/ghi thu tiền hộ team sale',
-                'perms' => ['lead.book_action','lead.create','lead.distribute','lead.distribute_sale','lead.distribute_to_sale','lead.recall','lead.update','lead.update_sale','lead.consult','lead.view','lead.view_phone','payment.record','report.view','source.up.admin'],
+                'perms' => ['lead.book_action','lead.create','lead.distribute','lead.distribute_sale','lead.distribute_to_sale','lead.recall','lead.update','lead.update_sale','lead.consult','lead.view','lead.view_phone','payment.record','report.view','source.up.bdm','source.up.bod','source.up.wi'],
             ],
             'Team sale' => [
                 'desc' => 'Sale nhân viên — chăm sóc khách, ghi chú, phân loại, gắn dịch vụ, thu tiền khách trực tiếp cho lead mình phụ trách',

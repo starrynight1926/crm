@@ -104,21 +104,16 @@ class Lead extends Model
         return self::SOURCE_GROUP_CODES[$this->source_group] ?? '';
     }
 
-    // Permission cần có để thấy nhóm nguồn đó ở form thêm lead (Phase 6.21f, 2026-07-30; sửa 2026-08-03 tách SA ra perm riêng).
-    // Mapping:
-    //   MKT              → source.up.trucpage (Trực Page)
-    //   MKT_BR           → source.up.sale     (Sale nhân viên tự nhận)
-    //   SA               → source.up.sa       (Sale hẹn lại — Sale tự nhận + CM sale / Admin cơ sở up hộ)
-    //   BA               → source.up.tele     (Tele tự nhận)
-    //   BDM, BOD, WI     → source.up.admin    (QL Sale / Admin cơ sở up)
+    // Permission cần có để thấy nhóm nguồn đó ở form thêm lead.
+    // 2026-08-09: refactor 1-1 với 7 nguồn để admin tick UI theo tên nguồn (không cần map role→group).
     public const SOURCE_PERMISSIONS = [
-        self::SOURCE_MKT    => 'source.up.trucpage',
-        self::SOURCE_MKT_BR => 'source.up.sale',
+        self::SOURCE_MKT    => 'source.up.mkt',
+        self::SOURCE_MKT_BR => 'source.up.mkt_br',
         self::SOURCE_SA     => 'source.up.sa',
-        self::SOURCE_BA     => 'source.up.tele',
-        self::SOURCE_BDM    => 'source.up.admin',
-        self::SOURCE_BOD    => 'source.up.admin',
-        self::SOURCE_WI     => 'source.up.admin',
+        self::SOURCE_BA     => 'source.up.ba',
+        self::SOURCE_BDM    => 'source.up.bdm',
+        self::SOURCE_BOD    => 'source.up.bod',
+        self::SOURCE_WI     => 'source.up.wi',
     ];
 
     // Phase 6.8 — Trục lifecycle: phase (giai đoạn) + status (trạng thái trong giai đoạn)
@@ -317,13 +312,12 @@ class Lead extends Model
     /** Suy ra phase/status khởi tạo cho lead mới dựa trên source_group + owner_id. */
     public static function initialPipelineFor(?string $sourceGroup, ?int $ownerId): array
     {
-        // Nhóm 1 (MKT / MKT BR / BDM) → vào kho booking.
-        // 2026-08-09: nếu Trực Page auto-assign qua MKT List UPS → owner có tele → IN_CARE
-        // (nếu không có owner = mode pool → WAITING chờ tele nhặt).
+        // Nhóm 1 (MKT / MKT_BR / BDM) → vào kho booking.
+        // 2026-08-09: MKT_BR đi cùng luồng MKT (auto MKT List UPS).
         if (in_array($sourceGroup, [self::SOURCE_MKT, self::SOURCE_MKT_BR, self::SOURCE_BDM], true)) {
             return [self::PHASE_BOOKING, $ownerId ? self::PSTATUS_IN_CARE : self::PSTATUS_WAITING];
         }
-        // Nhóm 2 (BOD/SA/BA) + Nhóm 3 (WI): sale nhận trực tiếp.
+        // Nhóm direct sale (BOD / SA / BA / WI): sale nhận trực tiếp.
         // Có owner → sale/in_care; chưa có → sale/waiting (chờ CM sale chia).
         return $ownerId
             ? [self::PHASE_SALE, self::PSTATUS_IN_CARE]
@@ -422,14 +416,50 @@ class Lead extends Model
         if ($user->hasPermission('lead.source_all')) {
             return self::SOURCE_GROUPS;
         }
+        $bucketOverride = self::todayBucketSourceOverride($user);
         $out = [];
         foreach (self::SOURCE_GROUPS as $key => $label) {
+            if ($bucketOverride !== null && array_key_exists($key, $bucketOverride)) {
+                if ($bucketOverride[$key]) {
+                    $out[$key] = $label;
+                }
+                continue;
+            }
             $perm = self::SOURCE_PERMISSIONS[$key];
             if ($perm === null || $user->hasPermission($perm)) {
                 $out[$key] = $label;
             }
         }
         return $out;
+    }
+
+    /**
+     * Rule 2026-08-09: SA / BA cho user Sale chịu chi phối bởi UPS bucket hôm nay.
+     *  - Bucket MKT (Tele hôm nay) → up được SA, KHÔNG up BA.
+     *  - Bucket A/B/C/OFF (Tiếp đón hôm nay) → up được BA, KHÔNG up SA.
+     *  - Không có attendance hôm nay → không override (fallback perm mặc định).
+     * Admin có `lead.source_all` bypass hoàn toàn (check trước khi gọi hàm này).
+     *
+     * @return array<string,bool>|null map [SOURCE_SA|SOURCE_BA => allow?]. Null = không áp bucket gate.
+     */
+    public static function todayBucketSourceOverride(User $user, ?string $date = null): ?array
+    {
+        $date = $date ?? now()->toDateString();
+        $bucket = DailyAttendance::query()
+            ->where('user_id', $user->id)
+            ->whereDate('work_date', $date)
+            ->value('list_bucket');
+
+        if (! $bucket) {
+            return null;
+        }
+
+        if ($bucket === 'MKT') {
+            return [self::SOURCE_SA => true, self::SOURCE_BA => false];
+        }
+
+        // A / B / C / OFF → tiếp đón bucket.
+        return [self::SOURCE_SA => false, self::SOURCE_BA => true];
     }
 
     public function owner(): BelongsTo
