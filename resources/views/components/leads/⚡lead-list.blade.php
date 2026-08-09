@@ -262,19 +262,54 @@ new class extends Component
         session()->flash('status', implode(' · ', $parts) . '.');
     }
 
-    /** Resolve facility_pool_unit_id từ lead (theo org_unit_id → org_pool_map). */
+    /**
+     * Resolve facility_pool_unit_id từ lead — priority:
+     *   1. lead.pool_unit_id (nếu là facility).
+     *   2. lead.org_unit_id → org_pool_map.
+     *   3. importer's org → org_pool_map (khi lead import không set org).
+     */
     private function resolveLeadFacilityPoolId(Lead $lead): ?int
     {
-        if (! $lead->org_unit_id) return null;
-        // Lấy ancestor org ids (cả path) → tìm pool_unit facility đầu tiên map với 1 trong đó.
-        $orgIds = collect(explode('/', trim((string) $lead->orgUnit?->path, '/')))
-            ->filter()->map(fn ($id) => (int) $id)->all();
-        if (! $orgIds) $orgIds = [$lead->org_unit_id];
+        // (1) pool_unit_id trực tiếp nếu đó là facility.
+        if ($lead->pool_unit_id) {
+            $isFacility = \App\Models\PoolUnit::where('id', $lead->pool_unit_id)
+                ->where('kind', 'facility')->where('is_active', true)->exists();
+            if ($isFacility) return (int) $lead->pool_unit_id;
+        }
 
-        return \App\Models\PoolUnit::where('kind', 'facility')->where('is_active', true)
-            ->whereIn('id', function ($q) use ($orgIds) {
-                $q->select('pool_unit_id')->from('org_pool_map')->whereIn('org_unit_id', $orgIds);
-            })->value('id');
+        // (2) org_unit_id (+ ancestors) → org_pool_map.
+        if ($lead->org_unit_id) {
+            $orgIds = collect(explode('/', trim((string) $lead->orgUnit?->path, '/')))
+                ->filter()->map(fn ($id) => (int) $id)->all();
+            if (! $orgIds) $orgIds = [$lead->org_unit_id];
+
+            $facId = \App\Models\PoolUnit::where('kind', 'facility')->where('is_active', true)
+                ->whereIn('id', function ($q) use ($orgIds) {
+                    $q->select('pool_unit_id')->from('org_pool_map')->whereIn('org_unit_id', $orgIds);
+                })->value('id');
+            if ($facId) return (int) $facId;
+        }
+
+        // (3) Fallback: importer's org — cho case lead import không set org_unit_id.
+        if ($lead->imported_by) {
+            $importer = \App\Models\User::find($lead->imported_by);
+            if ($importer) {
+                $ancestorOrgIds = [];
+                foreach ($importer->effectiveAssignments() as $a) {
+                    foreach (array_filter(explode('/', trim((string) $a->orgUnit->path, '/'))) as $seg) {
+                        $ancestorOrgIds[(int) $seg] = true;
+                    }
+                }
+                if ($ancestorOrgIds) {
+                    return (int) (\App\Models\PoolUnit::where('kind', 'facility')->where('is_active', true)
+                        ->whereIn('id', function ($q) use ($ancestorOrgIds) {
+                            $q->select('pool_unit_id')->from('org_pool_map')->whereIn('org_unit_id', array_keys($ancestorOrgIds));
+                        })->value('id')) ?: null;
+                }
+            }
+        }
+
+        return null;
     }
 
     /**
