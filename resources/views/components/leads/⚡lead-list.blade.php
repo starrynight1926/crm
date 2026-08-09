@@ -274,11 +274,25 @@ new class extends Component
      */
     private function resolveLeadFacilityPoolId(Lead $lead): ?int
     {
-        // (1) pool_unit_id trực tiếp nếu đó là facility.
+        // (1) pool_unit_id — có thể là facility (dùng luôn) hoặc branch/company/department (walk descendant).
         if ($lead->pool_unit_id) {
-            $isFacility = \App\Models\PoolUnit::where('id', $lead->pool_unit_id)
-                ->where('kind', 'facility')->where('is_active', true)->exists();
-            if ($isFacility) return (int) $lead->pool_unit_id;
+            $pool = \App\Models\PoolUnit::find($lead->pool_unit_id);
+            if ($pool && $pool->is_active) {
+                if ($pool->kind === 'facility') {
+                    return (int) $pool->id;
+                }
+                // Branch/company/department → tìm facility descendant. Prefer facility có
+                // MKT list chốt hôm nay (có sale bucket MKT).
+                $descIds = \App\Models\PoolUnit::where('kind', 'facility')->where('is_active', true)
+                    ->where('path', 'like', $pool->path . '%')->pluck('id');
+                if ($descIds->isNotEmpty()) {
+                    $withMkt = \App\Models\DailyAttendance::whereIn('facility_pool_unit_id', $descIds)
+                        ->whereDate('work_date', today())->where('list_bucket', 'MKT')
+                        ->value('facility_pool_unit_id');
+                    if ($withMkt) return (int) $withMkt;
+                    return (int) $descIds->first();
+                }
+            }
         }
 
         // (2) org_unit_id (+ ancestors) → org_pool_map.
