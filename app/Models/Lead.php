@@ -256,6 +256,12 @@ class Lead extends Model
         if ($this->owner_id === null && $this->pool_level === self::POOL_COMMON && $this->receiver_id === null) {
             return 'Kho chung · Chưa chia';
         }
+        // 2026-08-10: pool_level=TEAM + chưa có owner → "Kho chung <tên kho> · Chưa chia".
+        //   Sau khi admin chia hàng loạt từ /distribution/pools "về kho HN" nhưng chưa gán sale.
+        if ($this->owner_id === null && $this->pool_level === self::POOL_TEAM) {
+            $poolName = $this->poolUnit?->name ?? $this->orgUnit?->name;
+            return $poolName ? "Kho chung {$poolName} · Chưa chia" : 'Kho team · Chưa chia';
+        }
 
         // 2026-08-03: sau khi Kết thúc phase 3 (Gọi điện) — Tele đã care xong, chờ book thăm khám.
         //   Điều kiện: đã có closure phase 3 + chưa book (booking_status = not_booked / rescheduled) + phase >= 4.
