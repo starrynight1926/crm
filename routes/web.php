@@ -65,6 +65,12 @@ Route::middleware('auth')->group(function () {
         Route::view('/failed', 'leads.failed')->middleware('permission:lead.import')->name('leads.failed');
         Route::view('/trash', 'leads.trash')->middleware('permission:phase.rollback')->name('leads.trash');
         Route::view('/approvals', 'leads.approvals')->middleware('permission:lead.approve_source')->name('leads.approvals');
+        // 2026-08-09: shortcut cho sbooking link về SCRM theo lead code (VD KH-014-MKT).
+        Route::get('/by-code/{code}', function (string $code) {
+            $lead = \App\Models\Lead::where('code', $code)->firstOrFail();
+            abort_unless($lead->canOpenEditForm(auth()->user()), 403);
+            return redirect()->route('leads.edit', $lead);
+        })->name('leads.by-code');
         Route::get('/{lead}', fn (\App\Models\Lead $lead) => view('leads.show', ['lead' => $lead]))->name('leads.show');
         Route::get('/{lead}/booking-callback', \App\Http\Controllers\BookingCallbackController::class)->name('leads.booking-callback');
         Route::get('/{lead}/edit', function (\App\Models\Lead $lead) {

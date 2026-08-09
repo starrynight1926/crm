@@ -13,6 +13,13 @@ class OrgUnitManagerSeeder extends Seeder
      * sang format vị trí (hn.sale01@...) — match lại qua tên.
      */
     private const EMAIL_TO_NAME = [
+        // 2026-08-09: 5 Observer đổi email pattern huyently/hangktt/... → vh.obs01..05.
+        // Giữ email cũ trong map để fallback name-match hoạt động cho DB đã seed từ trước.
+        'vh.obs01@longevity.com.vn' => 'Huyền',
+        'vh.obs02@longevity.com.vn' => 'Hằng',
+        'vh.obs03@longevity.com.vn' => 'Ly',
+        'vh.obs04@longevity.com.vn' => 'An',
+        'vh.obs05@longevity.com.vn' => 'Tuyết',
         'mstuyet@longevity.com.vn' => 'Tuyết',
         'msan@longevity.com.vn'    => 'An',
         'tnkn@longevity.com.vn'    => 'Trần Nguyễn Kim Ngân',
@@ -31,7 +38,7 @@ class OrgUnitManagerSeeder extends Seeder
     {
         // org unit code => list email người quản lý (nhiều người được)
         $map = [
-            'company'          => ['mstuyet@longevity.com.vn', 'msan@longevity.com.vn'],
+            'company'          => ['vh.obs05@longevity.com.vn', 'vh.obs04@longevity.com.vn'],
             'branch-hcm'       => ['tnkn@longevity.com.vn'],
             'marketing-dn'     => ['ltkp@longevity.com.vn'],
             'team-giang'       => ['ttg@longevity.com.vn'],

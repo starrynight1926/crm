@@ -72,8 +72,31 @@ new class extends Component
             'called_at' => now(),
         ]);
         $this->newCallNote = '';
+
+        // 2026-08-09: call log status = "Thành công" → auto-close phase 2 (Gọi điện).
+        // Fail / Không nghe máy → giữ nguyên phase, user gọi lại sau.
+        $flash = 'Đã ghi log cuộc gọi.';
+        if ($this->newCallStatus === CallLog::STATUS_THANH_CONG
+            && ! $this->lead->phaseClosures()->where('phase', Lead::CF_PHASE_CALL)->exists()) {
+            try {
+                // Fix 2026-08-09: lead do Trực Page tạo → phase = 1 dù closure phase 1 đã có
+                // (comment cũ ở lead-form.blade.php:1567). Sync phase từ closures trước
+                // để closePhase(2) khỏi throw "Chỉ chốt được phase hiện tại (đang ở phase 1)".
+                if ((int) $this->lead->phase === 1
+                    && $this->lead->phaseClosures()->where('phase', Lead::CF_PHASE_NEW)->exists()) {
+                    $this->lead->update(['phase' => Lead::CF_PHASE_CALL]);
+                    $this->lead->refresh();
+                }
+                $this->lead->closePhase(Lead::CF_PHASE_CALL, $user, 'Auto: call thành công');
+                $this->activePhase = min((int) $this->lead->fresh()->phase, 4);
+                $flash .= ' Đã tự động chốt Phase 2 (Gọi điện) do cuộc gọi thành công.';
+            } catch (\Throwable $e) {
+                $flash .= ' Không tự chốt phase 2 được: ' . $e->getMessage();
+            }
+        }
+
         $this->lead->refresh();
-        session()->flash('cf_ok', 'Đã ghi log cuộc gọi.');
+        session()->flash('cf_ok', $flash);
     }
 
     public function addBookingLog(): void

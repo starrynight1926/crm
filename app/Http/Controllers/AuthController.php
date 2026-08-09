@@ -46,7 +46,12 @@ class AuthController extends Controller
         $request->session()->regenerate();
         $user->forceFill(['last_login_at' => now()])->save();
 
-        return redirect()->intended($this->landingRouteFor($user));
+        // 2026-08-09: bỏ intended() — luôn về landing route mặc định.
+        //   Trước đây user session expire ở /leads/13 → login lại → redirect về /leads/13
+        //   → nếu lead 13 đã bị xoá/mất quyền → 404/403, user hoảng.
+        //   Sau: mọi login đều về Dashboard (hoặc /ups-list cho BO), user thấy trang quen thuộc.
+        $request->session()->forget('url.intended');
+        return redirect($this->landingRouteFor($user));
     }
 
     /**

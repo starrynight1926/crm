@@ -117,9 +117,9 @@
                     $upsTarget = $u->hasPermission('ups.view') ? 'ups.list' : 'ups.today';
                     $upsBlockedGlobal = app(\App\Services\Ups\UpsGate::class)->isBlockedFor($u);
                 @endphp
-                <a href="{{ route($upsTarget) }}"
+                <a href="{{ route($upsTarget) }}" target="_blank" rel="noopener"
                    class="hidden md:inline-flex items-center gap-1.5 text-sm font-bold px-3 py-2 rounded-md whitespace-nowrap {{ $upsBlockedGlobal ? 'bg-red-600 hover:bg-red-700 text-white animate-pulse' : 'bg-gold-600 hover:bg-gold-700 text-white' }}"
-                   title="{{ $upsBlockedGlobal ? 'Chưa chốt UPS hôm nay — chia số đang bị khóa' : 'UPS hôm nay' }}">
+                   title="{{ $upsBlockedGlobal ? 'Chưa chốt UPS hôm nay — chia số đang bị khóa' : 'UPS hôm nay (mở tab mới)' }}">
                     <span>⚡ UPS SYSTEM</span>
                     @if ($upsBlockedGlobal)
                         <span class="text-[10px] bg-white/20 px-1 rounded">!</span>
@@ -204,6 +204,23 @@
 
     {{-- SortableJS — drag & drop mượt cho picker cột báo cáo, kanban… --}}
     <script src="{{ asset('vendor/sortable/Sortable.min.js') }}"></script>
+
+    {{-- SweetAlert2 — popup xác nhận đẹp (dùng cho: booking tạo xong, close phase, v.v.) --}}
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script>
+        window.addEventListener('scrm-swal', (e) => {
+            if (typeof Swal === 'undefined') return;
+            const { title, text, icon, timer } = e.detail || {};
+            Swal.fire({
+                title: title || 'Xong',
+                text: text || '',
+                icon: icon || 'success',
+                timer: timer ?? 2500,
+                showConfirmButton: false,
+                timerProgressBar: true,
+            });
+        });
+    </script>
 
     {{-- Column resizer — kéo mép phải header table để đổi chiều rộng cột. --}}
     <script>

@@ -212,12 +212,13 @@ class OrgStaffSeeder extends Seeder
             // 2026-08-05: BỎ nvkd + nvmkt — Marketing chỉ dùng "Tài khoản Trực Page" up lead,
             // Kinh doanh dùng các tài khoản CM/Sale/CM sale thật (Giang/Hợi/Ashley/CM sale…).
 
-            // Observer (BOD / trợ lý / kế toán)
-            ['email' => 'huyently@longevity.com.vn', 'name' => 'Huyền', 'job_title' => 'Trợ lý kinh doanh'],
-            ['email' => 'hangktt@longevity.com.vn',  'name' => 'Hằng',  'job_title' => 'Kế toán trưởng'],
-            ['email' => 'lyktdt@longevity.com.vn',   'name' => 'Ly',    'job_title' => 'Kế toán doanh thu'],
-            ['email' => 'msan@longevity.com.vn',     'name' => 'An',    'job_title' => 'COO'],
-            ['email' => 'mstuyet@longevity.com.vn',  'name' => 'Tuyết', 'job_title' => 'CEO'],
+            // Observer / Vận hành-Giám sát (BOD / trợ lý / kế toán). 2026-08-09: đổi email
+            // sang pattern vh.obs01..05 để khớp SCRM UPS + sbooking username sau refactor.
+            ['email' => 'vh.obs01@longevity.com.vn', 'name' => 'Huyền', 'job_title' => 'Trợ lý kinh doanh'],
+            ['email' => 'vh.obs02@longevity.com.vn', 'name' => 'Hằng',  'job_title' => 'Kế toán trưởng'],
+            ['email' => 'vh.obs03@longevity.com.vn', 'name' => 'Ly',    'job_title' => 'Kế toán doanh thu'],
+            ['email' => 'vh.obs04@longevity.com.vn', 'name' => 'An',    'job_title' => 'COO'],
+            ['email' => 'vh.obs05@longevity.com.vn', 'name' => 'Tuyết', 'job_title' => 'CEO'],
 
             // Admin hệ thống
             ['email' => 'baoit@longevity.com.vn', 'name' => 'Bảo', 'job_title' => 'IT hệ thống'],
@@ -321,12 +322,12 @@ class OrgStaffSeeder extends Seeder
             // Admin gốc
             ['admin@longevity.com.vn', 'Admin', 'ops-monitor', Assignment::SCOPE_CUSTOM, ['company']],
 
-            // Observer nhóm giám sát — scope toàn công ty
-            ['huyently@longevity.com.vn', 'Observer', 'ops-monitor-sub', Assignment::SCOPE_CUSTOM, ['company']],
-            ['hangktt@longevity.com.vn',  'Observer', 'ops-monitor-sub', Assignment::SCOPE_CUSTOM, ['company']],
-            ['lyktdt@longevity.com.vn',   'Observer', 'ops-monitor-sub', Assignment::SCOPE_CUSTOM, ['company']],
-            ['msan@longevity.com.vn',     'Observer', 'ops-monitor-sub', Assignment::SCOPE_CUSTOM, ['company']],
-            ['mstuyet@longevity.com.vn',  'Observer', 'ops-monitor-sub', Assignment::SCOPE_CUSTOM, ['company']],
+            // Observer nhóm giám sát — scope toàn công ty (Vận hành phòng giám sát)
+            ['vh.obs01@longevity.com.vn', 'Observer', 'ops-monitor-sub', Assignment::SCOPE_CUSTOM, ['company']],
+            ['vh.obs02@longevity.com.vn', 'Observer', 'ops-monitor-sub', Assignment::SCOPE_CUSTOM, ['company']],
+            ['vh.obs03@longevity.com.vn', 'Observer', 'ops-monitor-sub', Assignment::SCOPE_CUSTOM, ['company']],
+            ['vh.obs04@longevity.com.vn', 'Observer', 'ops-monitor-sub', Assignment::SCOPE_CUSTOM, ['company']],
+            ['vh.obs05@longevity.com.vn', 'Observer', 'ops-monitor-sub', Assignment::SCOPE_CUSTOM, ['company']],
 
             // Admin IT/QC nhóm vận hành
             ['baoit@longevity.com.vn', 'Admin', 'ops-run', Assignment::SCOPE_CUSTOM, ['company']],

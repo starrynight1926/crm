@@ -102,12 +102,13 @@ class StaffAndOrgSeeder extends Seeder
             return;
         }
 
+        // 2026-08-09: đổi email pattern → vh.obs01..05 (khớp SCRM + sbooking sau refactor).
         $accounts = [
-            ['email' => 'huyently', 'name' => 'Huyền', 'job_title' => 'Trợ lý kinh doanh'],
-            ['email' => 'hangktt', 'name' => 'Hằng', 'job_title' => 'Kế toán trưởng'],
-            ['email' => 'lyktdt', 'name' => 'Ly', 'job_title' => 'Kế toán doanh thu'],
-            ['email' => 'msan', 'name' => 'An', 'job_title' => 'COO'],
-            ['email' => 'mstuyet', 'name' => 'Tuyết', 'job_title' => 'CEO'],
+            ['email' => 'vh.obs01', 'name' => 'Huyền', 'job_title' => 'Trợ lý kinh doanh'],
+            ['email' => 'vh.obs02', 'name' => 'Hằng', 'job_title' => 'Kế toán trưởng'],
+            ['email' => 'vh.obs03', 'name' => 'Ly', 'job_title' => 'Kế toán doanh thu'],
+            ['email' => 'vh.obs04', 'name' => 'An', 'job_title' => 'COO'],
+            ['email' => 'vh.obs05', 'name' => 'Tuyết', 'job_title' => 'CEO'],
         ];
 
         foreach ($accounts as $acc) {

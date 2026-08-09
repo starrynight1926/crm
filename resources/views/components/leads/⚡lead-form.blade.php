@@ -378,8 +378,42 @@ new class extends Component
             'availableRooms', 'availableSlots', 'roomStatus',
         ]);
         $this->newBookingConsultantIds = [null];
+
+        // 2026-08-09: booking tạo xong → auto-close phase 3 (Booking thăm khám).
+        //   Trước đó phải sync lead.phase từ closures (giống logic ở addCallLog auto-close).
+        //   Cần perm phase.close.booking OR phase.rollback — Sale/CM/Admin đều có.
+        $bookingClosed = false;
+        if (! $this->lead->phaseClosures()->where('phase', Lead::CF_PHASE_BOOKING)->exists()) {
+            try {
+                $curPhase = (int) $this->lead->phase;
+                if ($curPhase < Lead::CF_PHASE_BOOKING) {
+                    for ($p = 1; $p < Lead::CF_PHASE_BOOKING; $p++) {
+                        \App\Models\LeadPhaseClosure::firstOrCreate(
+                            ['lead_id' => $this->lead->id, 'phase' => $p],
+                            ['closed_by' => $user->id, 'closed_at' => now(), 'note' => 'Auto: skip khi tạo booking phase 3'],
+                        );
+                    }
+                    $this->lead->update(['phase' => Lead::CF_PHASE_BOOKING]);
+                    $this->lead->refresh();
+                }
+                $this->lead->closePhase(Lead::CF_PHASE_BOOKING, $user, 'Auto: sau khi tạo booking');
+                $bookingClosed = true;
+            } catch (\Throwable $e) {
+                session()->flash('cf_warn', 'Đã tạo booking nhưng không tự chốt phase 3: ' . $e->getMessage());
+            }
+        }
+
         $this->lead->refresh();
+        $this->activePhase = min((int) $this->lead->phase, 4);
         $this->bookingStatus = $this->lead->booking_status ?? 'not_booked';
+
+        $this->dispatch('scrm-swal',
+            title: 'Đã tạo booking',
+            text: $bookingClosed
+                ? 'Booking đã ghi và đồng bộ. Phase 3 (Booking thăm khám) tự động đóng.'
+                : 'Booking đã ghi và đồng bộ.',
+            icon: 'success',
+        );
         session()->flash('cf_ok', 'Đã ghi booking mới. Đã đồng bộ trạng thái.');
     }
 
@@ -2006,23 +2040,23 @@ new class extends Component
     // 2026-08-05: Trực Page chỉ được điền custom fields phase 2 — khóa lịch sử call trở xuống
     //   (Phase 2 order-1/2/3 + Phase 3/4/5 panels đều trong fieldset cfLocked bên dưới).
     $isTrucPage = auth()->user()->hasRole('Trực Page');
-    // Nút Đặt booking chỉ dùng khi phase Booking + có perm; tính URL sang lara-sbooking.
+    // 2026-08-09: Nút "Mở PM Booking" — ưu tiên deep-link đến booking cụ thể nếu đã có sbooking_booking_id.
+    // Fallback: danh sách sbooking filter theo crm_khach_ma (thấy hết booking của khách + trạng thái + sale).
+    // KHÔNG mở "tạo mới" (vô lý — Sale muốn xem lịch đã book chứ không phải tạo lại).
     $bookingClinicUrl = null;
-    $bookingServiceUrl = null;
-    if ($canBookAction) {
-        $_facility = $lead->facility;
+    if ($canBookAction && $lead) {
         $_coSoSlug = $lead->resolvedBookingSlug();
         $_bookingBase = \App\Models\AppSetting::get('booking_url', config('services.booking.url'));
-        if ($_coSoSlug) {
-            $_query = http_build_query([
-                'ho_ten' => $lead->name,
-                'so_dien_thoai' => $lead->phone,
-                'khach_ma' => $lead->code,
-                'return_url' => route('leads.booking-callback', $lead),
-            ]);
+        if ($_coSoSlug && $_bookingBase) {
             $_base = rtrim($_bookingBase, '/') . '/' . $_coSoSlug;
-            $bookingClinicUrl = $_base . '/tao-moi?' . $_query;
-            $bookingServiceUrl = $_base . '/dat-lich-dich-vu?' . $_query;
+            $_syncedBooking = $lead->bookingLogs()
+                ->whereNotNull('sbooking_booking_id')
+                ->orderByDesc('id')->first();
+            if ($_syncedBooking) {
+                $bookingClinicUrl = $_base . '/xem-dat-phong/' . $_syncedBooking->sbooking_booking_id;
+            } elseif ($lead->code) {
+                $bookingClinicUrl = $_base . '/danh-sach?' . http_build_query(['crm_khach_ma' => $lead->code]);
+            }
         }
     }
 ?>
@@ -2063,14 +2097,15 @@ new class extends Component
         </div>
         <div class="flex flex-wrap items-center gap-3">
             <a href="{{ $lead ? route('leads.show', $lead) : (auth()->user()->hasPermission('lead.view') ? route('leads.index') : route('dashboard')) }}" class="text-sm font-semibold text-ink/60 border border-gold-200 px-5 py-2.5 rounded-md hover:bg-gold-50">Hủy</a>
-            {{-- Phase C1.b rev4 2026-08-01: gộp "Đặt booking" cũ (mở tab sbooking) + "Lưu thông tin" thành 2 nút cùng chuyển sang section Booking (phase 4). --}}
-            @if ($canBookAction && $lead?->exists)
-                <button type="button" @click="phase = 4" x-on:click="document.documentElement.scrollTo({top:0,behavior:'smooth'})"
-                        class="flex items-center gap-2 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 px-5 py-2.5 rounded-md"
-                        title="Chuyển thẳng sang tab Booking (phase 4) để tạo booking mới bên sbooking">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3.75 8.25h16.5M4.5 6h15a.75.75 0 01.75.75v12a.75.75 0 01-.75.75h-15a.75.75 0 01-.75-.75v-12A.75.75 0 014.5 6z"/></svg>
-                    Đặt booking
-                </button>
+            {{-- 2026-08-09: đổi "Đặt booking" (chuyển tab nội bộ) → "Mở PM Booking" (mở tab mới sang sbooking).
+                 Sbooking dùng session riêng, session SCRM không share — nếu user chưa login sbooking sẽ vào form login (username khớp SCRM sau refactor 2026-08-09). --}}
+            @if ($canBookAction && $lead?->exists && $bookingClinicUrl)
+                <a href="{{ $bookingClinicUrl }}" target="_blank" rel="noopener"
+                   class="flex items-center gap-2 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 px-5 py-2.5 rounded-md"
+                   title="Mở phần mềm Booking (sbooking) — tab mới. Đăng nhập username khớp SCRM.">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25"/></svg>
+                    Mở PM Booking
+                </a>
             @endif
             {{-- 2026-08-05: dùng $canWrite trực tiếp (canEditPersonalInfo) — không dùng $isReadonly (đã nới cho owner). Sale owner không sửa info → không show button (khỏi bấm ăn 403). --}}
             @if ($canWrite)
@@ -2082,7 +2117,7 @@ new class extends Component
     @if ($isReadonly)
         <div class="mb-5 bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 text-sm text-blue-700 flex items-center gap-2">
             <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"/></svg>
-            <span>Bạn đang xem ở chế độ chỉ đọc — không có quyền chỉnh sửa thông tin ở phase này. @if ($canBookAction)Có thể bấm nút <strong>Đặt booking</strong> để chuyển sang hệ thống đặt lịch.@endif</span>
+            <span>Bạn đang xem ở chế độ chỉ đọc — không có quyền chỉnh sửa thông tin ở phase này. @if ($canBookAction)Có thể bấm nút <strong>Mở PM Booking</strong> để chuyển sang phần mềm đặt lịch.@endif</span>
         </div>
     @elseif ($isInfoReadonly && $ownerCanLog)
         {{-- 2026-08-05: banner cho owner (Sale/Tele) — info thì readonly (do phase closure), nhưng ghi log call/booking ở tab tương ứng OK. --}}
@@ -2155,8 +2190,11 @@ new class extends Component
                                     Đang nhập phase {{ $lead->openFrom() }}→{{ $lead->startPhase() }}
                                 </span>
                             @else
+                                {{-- 2026-08-09: badge phản ánh tab đang xem (activePhase) thay vì $lead->phase.
+                                     Trước đây pill kẹt ở Phase 1 dù user đã click sang phase 3 → confusing. --}}
+                                @php $__pillIdx = max((int) $lead->phase, (int) $activePhase); @endphp
                                 <span class="ml-auto inline-flex items-center gap-1 px-2.5 py-0.5 rounded bg-blue-50 border border-blue-200 text-blue-800 text-xs font-semibold">
-                                    {{ $lead->customerFlowLabel() }}
+                                    Phase {{ $__pillIdx }} · {{ \App\Models\Lead::CF_PHASE_LABELS[$__pillIdx] ?? '?' }}
                                 </span>
                             @endif
                         @endif
@@ -2186,12 +2224,24 @@ new class extends Component
                             $teleUserId = $lead->imported_by ?: $lead->receiver_id;
                         }
                         $teleName = $teleUserId ? \App\Models\User::find($teleUserId)?->name : null;
-                        $svUserId = $lead->phaseClosures->firstWhere('phase', 4)?->closed_by;
+                        // 2026-08-09: Sale phụ trách tư vấn = CV1 của booking mới nhất (theo priority):
+                        //   1. booking_log.consultants position=1 (chuyên viên tư vấn được gán khi tạo booking)
+                        //   2. booking_log.sale_id / consultant_1_id (fallback nếu chưa có consultants pivot)
+                        //   3. phase 4 closed_by
+                        //   4. owner nếu lead ở pipeline sale
+                        $svUserId = null;
+                        $__latestBooking = $lead->bookingLogs()->latest('id')->first();
+                        if ($__latestBooking) {
+                            $__cv1 = $__latestBooking->consultants()->wherePivot('position', 1)->first();
+                            $svUserId = $__cv1?->id;
+                        }
+                        if (! $svUserId) {
+                            $svUserId = $lead->phaseClosures->firstWhere('phase', 4)?->closed_by;
+                        }
                         if (! $svUserId && ($lead->pipeline_phase === 'sale' || (int) $lead->phase >= 4)) {
                             $svUserId = $lead->owner_id;
                         }
                         // 2026-08-02: nguồn SA (Sale Appointment) — Sale up trực tiếp, đóng luôn vai Sale phụ trách.
-                        //   Fallback: imported_by (người tạo lead).
                         if (! $svUserId && $lead->source_group === \App\Models\Lead::SOURCE_SA) {
                             $svUserId = $lead->imported_by ?: $lead->receiver_id;
                         }
@@ -2904,7 +2954,8 @@ new class extends Component
                                                 ->unique('ten')->sortBy('ten')->values();
                                         @endphp
                                         @foreach ($__svcOptions as $s)
-                                            <option value="{{ $s->sbooking_id ?? $s->id }}">
+                                            @php $__soon = stripos((string) $s->ten, '(sắp triển khai)') !== false; @endphp
+                                            <option value="{{ $s->sbooking_id ?? $s->id }}" @disabled($__soon)>
                                                 {{ $s->ten }}@if($s->thoi_gian_phut) ({{ $s->thoi_gian_phut }}') @endif
                                             </option>
                                         @endforeach
@@ -3942,11 +3993,13 @@ new class extends Component
                     $cfClosuresMap = $lead->phaseClosures->keyBy('phase');
                 @endphp
                 {{-- 2026-08-05: phase 4 (Check-in) chỉ cho Admin/Lễ tân có phase.close.checkin (hoặc rollback) đóng.
-                     Trực page + Sale không thao tác — sbooking tự auto-close khi khách tới (da_toi/toi_tre callback). --}}
+                     Trực page + Sale không thao tác — sbooking tự auto-close khi khách tới (da_toi/toi_tre callback).
+                     2026-08-09: guard chung theo perm phase.close.<slug> — Trực Page chỉ có
+                     phase.close.new (=phase 1), không thấy nút ở phase 2/3/4. --}}
                 @php
-                    $cfCanCloseCurrent = ! ($activePhase === 4)
-                        || auth()->user()->hasPermission('phase.close.checkin')
-                        || $cfCanRollback;
+                    $__closePerm = \App\Models\Lead::CF_PHASE_CLOSE_PERM[$activePhase] ?? null;
+                    $cfCanCloseCurrent = $cfCanRollback
+                        || ($__closePerm && auth()->user()->hasPermission($__closePerm));
                 @endphp
                 @if ($cfIsBulk && $activePhase >= $cfOpen && $activePhase <= $cfStart)
                     @unless ($cfClosuresMap->has($activePhase))

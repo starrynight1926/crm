@@ -126,22 +126,19 @@ new class extends Component
         </div>
         <div class="p-3 space-y-2">
             @foreach ($roles as $role)
-                <button wire:click="selectRole({{ $role->id }})"
-                        class="w-full text-left px-4 py-3 rounded-lg border flex items-center gap-3
-                               {{ $selectedRoleId === $role->id ? 'bg-gold-100 border-gold-300' : 'bg-white border-gold-100 hover:border-gold-300' }}">
-                    <span class="w-9 h-9 rounded-lg {{ $selectedRoleId === $role->id ? 'bg-gold-600 text-white' : 'bg-gold-50 text-gold-600' }} flex items-center justify-center">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"/>
-                        </svg>
-                    </span>
-                    <span class="flex-1">
-                        <span class="block font-semibold">{{ $role->name }}</span>
-                        <span class="block text-xs text-ink/50">{{ $role->description ?: $role->permissions_count . ' quyền' }}</span>
-                    </span>
-                    @if ($role->is_system)
-                        <span class="text-[10px] font-semibold uppercase tracking-wider bg-gold-50 border border-gold-200 text-gold-700 px-2 py-0.5 rounded">Hệ thống</span>
-                    @endif
-                </button>
+                <div class="w-full flex items-center gap-2 px-3 py-2 rounded-lg border
+                            {{ $selectedRoleId === $role->id ? 'bg-gold-100 border-gold-300' : 'bg-white border-gold-100 hover:border-gold-300' }}">
+                    <button wire:click="selectRole({{ $role->id }})" class="flex-1 flex items-center gap-2 text-left min-w-0">
+                        <span class="w-7 h-7 rounded-md shrink-0 {{ $selectedRoleId === $role->id ? 'bg-gold-600 text-white' : 'bg-gold-50 text-gold-600' }} flex items-center justify-center">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"/>
+                            </svg>
+                        </span>
+                        <span class="font-semibold text-sm truncate">{{ $role->name }}</span>
+                    </button>
+                    <span class="shrink-0 inline-flex items-center justify-center w-5 h-5 rounded-full bg-slate-100 text-slate-500 text-[11px] font-bold cursor-help hover:bg-gold-100 hover:text-gold-700"
+                          title="{{ $role->description ?: 'Chưa có mô tả — bấm vào role để thêm ở ô "Mô tả ngắn".' }} ({{ $role->permissions_count }} quyền{{ $role->is_system ? ' · Hệ thống' : '' }})">?</span>
+                </div>
             @endforeach
             @if ($creating)
                 <div class="w-full px-4 py-3 rounded-lg border bg-gold-100 border-gold-300 font-semibold text-gold-700">
