@@ -47,9 +47,6 @@ new class extends Component
 
     public bool $selectAll = false;
 
-    /** 2026-08-10: facility đích cho bulk chia MKT (admin đa cơ sở phải chọn). */
-    public string $distributeFacilityId = '';
-
     public bool $showColumnPicker = false;
 
     /** Các cột đang hiển thị trong bảng. */
@@ -270,42 +267,13 @@ new class extends Component
     }
 
     /**
-     * Facility user được phép chia — dùng để render dropdown "Chia vào cơ sở nào".
-     * Nếu return chỉ 1 facility → không show dropdown (user thuộc 1 cơ sở, chia mặc định).
-     * Nếu > 1 → show dropdown (admin đa cơ sở phải chọn).
-     */
-    public function distributeFacilityOptions()
-    {
-        $user = auth()->user();
-        $ancestorOrgIds = [];
-        foreach ($user->effectiveAssignments() as $a) {
-            foreach (array_filter(explode('/', trim((string) $a->orgUnit->path, '/'))) as $seg) {
-                $ancestorOrgIds[(int) $seg] = true;
-            }
-        }
-        $q = \App\Models\PoolUnit::where('kind', 'facility')->where('is_active', true);
-        if ($ancestorOrgIds && ! $user->hasPermission('lead.source_all')) {
-            $q->whereIn('id', function ($qq) use ($ancestorOrgIds) {
-                $qq->select('pool_unit_id')->from('org_pool_map')->whereIn('org_unit_id', array_keys($ancestorOrgIds));
-            });
-        }
-        // Admin có source_all hoặc không assign → tất cả facility active.
-        return $q->orderBy('name')->get(['id', 'name']);
-    }
-
-    /**
      * Resolve facility_pool_unit_id từ lead — priority:
-     *   0. distributeFacilityId user chọn ở dropdown (admin bulk chia).
      *   1. lead.pool_unit_id (nếu là facility).
      *   2. lead.org_unit_id → org_pool_map.
      *   3. importer's org → org_pool_map (khi lead import không set org).
      */
     private function resolveLeadFacilityPoolId(Lead $lead): ?int
     {
-        // (0) User chọn tay ở dropdown bulk chia → override.
-        if ($this->distributeFacilityId) {
-            return (int) $this->distributeFacilityId;
-        }
         // (1) pool_unit_id trực tiếp nếu đó là facility.
         if ($lead->pool_unit_id) {
             $isFacility = \App\Models\PoolUnit::where('id', $lead->pool_unit_id)
@@ -770,26 +738,9 @@ new class extends Component
 
     {{-- Thanh thao tác hàng loạt --}}
     @if (count($selected) > 0)
-        @php
-            $__facOpts = auth()->user()->hasPermission('lead.distribute') ? $this->distributeFacilityOptions() : collect();
-            $__multiFac = $__facOpts->count() > 1;
-        @endphp
         <div class="bg-gold-50 border border-gold-300 rounded-xl px-5 py-3 mb-3 flex flex-wrap items-center gap-3">
             <span class="text-sm font-semibold text-gold-800">Đã chọn {{ count($selected) }} khách hàng</span>
             @if (auth()->user()->hasPermission('lead.distribute'))
-                @if ($__multiFac)
-                    {{-- Admin đa cơ sở: dropdown TÙY CHỌN — override facility cho lead thiếu org.
-                         Lead đã có pool_unit_id / org_unit_id → resolver tự tìm, không cần chọn. --}}
-                    <label class="flex items-center gap-1.5 text-sm">
-                        <span class="text-ink/60">Chia vào:</span>
-                        <select wire:model.live="distributeFacilityId" class="border border-gold-300 rounded-md px-2 py-1 text-sm bg-white">
-                            <option value="">— tự resolve theo lead —</option>
-                            @foreach ($__facOpts as $fac)
-                                <option value="{{ $fac->id }}">{{ $fac->name }} (override)</option>
-                            @endforeach
-                        </select>
-                    </label>
-                @endif
                 <button wire:click="distributeSelected" wire:confirm="Chạy chia tự động cho {{ count($selected) }} lead đã chọn (chỉ áp lead chưa có owner)?"
                         class="text-sm font-semibold text-blue-700 border border-blue-300 hover:bg-blue-50 px-4 py-1.5 rounded-md">⚡ Chia tự động</button>
             @endif
