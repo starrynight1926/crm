@@ -3,6 +3,7 @@
 use App\Models\AuditLog;
 use App\Models\CustomField;
 use App\Models\Lead;
+use App\Services\DistributionEngine;
 use Livewire\Component;
 use Livewire\WithPagination;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -194,6 +195,42 @@ new class extends Component
         $count = $leads->count();
         $this->reset('selected', 'selectAll');
         session()->flash('status', "Đã xóa {$count} khách hàng.");
+    }
+
+    /**
+     * 2026-08-10: Chia tự động hàng loạt các lead đang tick.
+     * Chỉ áp cho lead ở kho (chưa có owner) — có owner rồi thì skip.
+     * Cần perm lead.distribute.
+     */
+    public function distributeSelected(): void
+    {
+        abort_unless(auth()->user()->hasPermission('lead.distribute'), 403);
+
+        $ids = array_map('intval', $this->selected);
+        $leads = Lead::visibleTo(auth()->user())
+            ->whereIn('id', $ids)
+            ->whereNull('owner_id')
+            ->get();
+
+        $engine = app(DistributionEngine::class);
+        $assigned = 0;
+        $keptInPool = 0;
+        foreach ($leads as $lead) {
+            $engine->distribute($lead);
+            $lead->refresh();
+            if ($lead->owner_id) {
+                $assigned++;
+            } else {
+                $keptInPool++;
+            }
+        }
+        $skipped = count($ids) - $leads->count();
+
+        $this->reset('selected', 'selectAll');
+        $parts = ["Đã chia {$assigned} lead"];
+        if ($keptInPool) $parts[] = "{$keptInPool} về kho team (chưa match rule)";
+        if ($skipped) $parts[] = "{$skipped} bỏ qua (đã có owner)";
+        session()->flash('status', implode(' · ', $parts) . '.');
     }
 
     /**
@@ -617,11 +654,17 @@ new class extends Component
     </div>
 
     {{-- Thanh thao tác hàng loạt --}}
-    @if ($canDelete && count($selected) > 0)
-        <div class="bg-gold-50 border border-gold-300 rounded-xl px-5 py-3 mb-3 flex items-center gap-4">
+    @if (count($selected) > 0)
+        <div class="bg-gold-50 border border-gold-300 rounded-xl px-5 py-3 mb-3 flex flex-wrap items-center gap-3">
             <span class="text-sm font-semibold text-gold-800">Đã chọn {{ count($selected) }} khách hàng</span>
-            <button wire:click="deleteSelected" wire:confirm="Xóa {{ count($selected) }} khách hàng đã chọn?"
-                    class="text-sm font-semibold text-red-600 border border-red-300 hover:bg-red-50 px-4 py-1.5 rounded-md">🗑 Xóa đã chọn</button>
+            @if (auth()->user()->hasPermission('lead.distribute'))
+                <button wire:click="distributeSelected" wire:confirm="Chạy chia tự động cho {{ count($selected) }} lead đã chọn (chỉ áp lead chưa có owner)?"
+                        class="text-sm font-semibold text-blue-700 border border-blue-300 hover:bg-blue-50 px-4 py-1.5 rounded-md">⚡ Chia tự động</button>
+            @endif
+            @if ($canDelete)
+                <button wire:click="deleteSelected" wire:confirm="Xóa {{ count($selected) }} khách hàng đã chọn?"
+                        class="text-sm font-semibold text-red-600 border border-red-300 hover:bg-red-50 px-4 py-1.5 rounded-md">🗑 Xóa đã chọn</button>
+            @endif
             <button wire:click="$set('selected', [])" class="text-sm text-ink/50 hover:underline">Bỏ chọn</button>
         </div>
     @endif
