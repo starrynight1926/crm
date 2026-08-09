@@ -7,36 +7,29 @@ use App\Models\OrgUnit;
 use Illuminate\Database\Seeder;
 
 /**
- * Trường tùy biến của Team Hợi (nhánh Marketing) — dựng từ file
- * "Data team Hợi (tách 1).xlsx". Team Hợi = "Team (Tạ Văn Hợi)" thuộc Marketing.
+ * Trường tùy biến — dựng từ file "Data team Hợi (tách 1).xlsx".
+ *
+ * 2026-08-10: Refactor scope
+ *   - Phân loại + Kết quả: đưa lên CẤP CÔNG TY (org_unit_id=null) — dùng chung mọi team.
+ *   - S.I.C: giữ ở Team Hợi (chỉ team này dùng).
  *
  * Cột file gốc đã có field chuẩn trong `leads` (Ngày, PAGE, Tên, SĐT, CAMP,
  * Insight, Link, Nguồn, CHIA CHO, tình trạng 1/2, NOTE, KHU VỰC) → không tạo lại.
- * 3 cột không có field chuẩn → trường tùy biến:
- *   - Phân loại (P), Kết quả (Q): select, bắt buộc.
- *   - S.I.C (J): select.
- * import_code để trùng tên cột gốc cho import Excel tự khớp header.
  */
 class TeamHoiCustomFieldSeeder extends Seeder
 {
     public function run(): void
     {
-        // Team Hợi HN nằm sẵn trong OrgStaffSeeder (code team-hoi-hn).
-        $teamHoi = OrgUnit::firstWhere('code', 'team-hoi-hn');
-        if (! $teamHoi) {
-            $this->command?->error('Không tìm thấy Team Hợi (code=team-hoi-hn). Chạy OrgStaffSeeder trước.');
-            return;
-        }
-
-        $fields = [
+        // ---- Cấp công ty: Phân loại + Kết quả ----
+        $companyFields = [
             [
                 'key' => 'phan_loai',
                 'import_code' => 'Phân loại',
                 'label' => 'Phân loại',
                 'field_type' => 'select',
                 'options' => ['Quan tâm', 'Tìm hiểu', 'Không nhu cầu', 'KLLD', 'Tài chính yếu', 'Gọi lại sau', 'Nét', 'Tham khảo', 'Bệnh nặng, sai tệp'],
-                'required' => false, // 2026-08-03: Tele fill ở phase 3, không bắt buộc lúc chia số
-                'position' => 1,
+                'required' => false,
+                'position' => 10,
             ],
             [
                 'key' => 'ket_qua',
@@ -44,25 +37,15 @@ class TeamHoiCustomFieldSeeder extends Seeder
                 'label' => 'Kết quả',
                 'field_type' => 'select',
                 'options' => ['Missed', 'Follow', 'Booking', 'Show', 'Close'],
-                'required' => false, // 2026-08-03: Tele fill ở phase 3
-                'position' => 2,
-            ],
-            [
-                'key' => 'sic',
-                'import_code' => 'S.I.C',
-                'label' => 'S.I.C',
-                'field_type' => 'select',
-                'options' => ['Hợi'],
                 'required' => false,
-                'position' => 3,
+                'position' => 11,
             ],
         ];
-
-        foreach ($fields as $f) {
+        foreach ($companyFields as $f) {
             CustomField::updateOrCreate(
-                ['org_unit_id' => $teamHoi->id, 'key' => $f['key']],
+                ['org_unit_id' => null, 'key' => $f['key']],
                 array_merge($f, [
-                    'org_unit_id' => $teamHoi->id,
+                    'org_unit_id' => null,
                     'affects_code' => false,
                     'active' => true,
                     'status' => CustomField::STATUS_ACTIVE,
@@ -70,9 +53,37 @@ class TeamHoiCustomFieldSeeder extends Seeder
             );
         }
 
+        // ---- Team Hợi HN: chỉ giữ S.I.C ----
+        $teamHoi = OrgUnit::firstWhere('code', 'team-hoi-hn');
+        if (! $teamHoi) {
+            $this->command?->warn('Không tìm thấy Team Hợi (code=team-hoi-hn) — bỏ qua S.I.C.');
+            return;
+        }
+
+        // Xoá phan_loai + ket_qua cũ ở Team Hợi (đã chuyển lên company).
+        CustomField::where('org_unit_id', $teamHoi->id)
+            ->whereIn('key', ['phan_loai', 'ket_qua'])
+            ->get()->each->delete();
+
+        CustomField::updateOrCreate(
+            ['org_unit_id' => $teamHoi->id, 'key' => 'sic'],
+            [
+                'org_unit_id' => $teamHoi->id,
+                'import_code' => 'S.I.C',
+                'label' => 'S.I.C',
+                'field_type' => 'select',
+                'options' => ['Hợi'],
+                'required' => false,
+                'position' => 3,
+                'affects_code' => false,
+                'active' => true,
+                'status' => CustomField::STATUS_ACTIVE,
+            ]
+        );
+
         $this->seedTemplate($teamHoi->id);
 
-        $this->command?->info("Seeded 3 trường tùy biến + mẫu báo cáo vào Team Hợi (org_unit_id={$teamHoi->id}).");
+        $this->command?->info("Seeded Phân loại + Kết quả ở cấp công ty, S.I.C ở Team Hợi (org_unit_id={$teamHoi->id}).");
     }
 
     /**
@@ -82,8 +93,9 @@ class TeamHoiCustomFieldSeeder extends Seeder
      */
     private function seedTemplate(int $orgId): void
     {
-        $phan = CustomField::where('org_unit_id', $orgId)->where('key', 'phan_loai')->first();
-        $ket = CustomField::where('org_unit_id', $orgId)->where('key', 'ket_qua')->first();
+        // 2026-08-10: phan_loai + ket_qua giờ ở cấp công ty (org_unit_id=null).
+        $phan = CustomField::whereNull('org_unit_id')->where('key', 'phan_loai')->first();
+        $ket = CustomField::whereNull('org_unit_id')->where('key', 'ket_qua')->first();
         if (! $phan || ! $ket) {
             return;
         }
