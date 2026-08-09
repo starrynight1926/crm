@@ -417,7 +417,25 @@ new class extends Component
         $sheet->setCellValue('C2', now()->format('Y-m-d'));
         $sheet->setCellValue('D2', 'MKT');
         $sheet->setCellValue('E2', 'Tự động'); // cột "Phương thức chia"
-        $sheet->getStyle('A2:E2')->getFont()->getColor()->setARGB('FF888888');
+        // 2026-08-10: sample cho custom fields — select → option đầu, text → placeholder.
+        $customStartCol = count($coreHeaders); // 0-indexed → column index để đặt
+        $ci = $customStartCol;
+        foreach ($fields as $f) {
+            if ($f->field_type === 'code' && ($f->rules['code_kind'] ?? '') === 'fixed') {
+                continue;
+            }
+            $col = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($ci + 1);
+            $sample = match ($f->field_type) {
+                'select' => (is_array($f->options) && ! empty($f->options)) ? (string) $f->options[0] : '',
+                'text', 'textarea' => '(nhập ' . mb_strtolower($f->label) . ')',
+                'date' => now()->format('Y-m-d'),
+                default => '',
+            };
+            $sheet->setCellValue($col . '2', $sample);
+            $ci++;
+        }
+        $lastSampleCol = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($ci);
+        $sheet->getStyle('A2:' . $lastSampleCol . '2')->getFont()->getColor()->setARGB('FF888888');
         $sheet->freezePane('A2');
         $sheet->setTitle('Import');
 
