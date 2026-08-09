@@ -417,25 +417,7 @@ new class extends Component
         $sheet->setCellValue('C2', now()->format('Y-m-d'));
         $sheet->setCellValue('D2', 'MKT');
         $sheet->setCellValue('E2', 'Tự động'); // cột "Phương thức chia"
-        // 2026-08-10: sample cho custom fields — select → option đầu, text → placeholder.
-        $customStartCol = count($coreHeaders); // 0-indexed → column index để đặt
-        $ci = $customStartCol;
-        foreach ($fields as $f) {
-            if ($f->field_type === 'code' && ($f->rules['code_kind'] ?? '') === 'fixed') {
-                continue;
-            }
-            $col = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($ci + 1);
-            $sample = match ($f->field_type) {
-                'select' => (is_array($f->options) && ! empty($f->options)) ? (string) $f->options[0] : '',
-                'text', 'textarea' => '(nhập ' . mb_strtolower($f->label) . ')',
-                'date' => now()->format('Y-m-d'),
-                default => '',
-            };
-            $sheet->setCellValue($col . '2', $sample);
-            $ci++;
-        }
-        $lastSampleCol = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($ci);
-        $sheet->getStyle('A2:' . $lastSampleCol . '2')->getFont()->getColor()->setARGB('FF888888');
+        $sheet->getStyle('A2:E2')->getFont()->getColor()->setARGB('FF888888');
         $sheet->freezePane('A2');
         $sheet->setTitle('Import');
 
@@ -591,6 +573,25 @@ new class extends Component
             ['Email Sale phụ trách',    'không', 'CHỈ BOD / SA / BA / WI',   'Email chính xác của Sale — xem sheet "List Sale". Có email hợp lệ → gán thẳng lead cho sale đó (bỏ qua kho chờ). Nguồn MKT/MKT_BR/BDM điền vô sẽ bị BỎ QUA (luồng booking, chưa tới sale).'],
             ['(Trường bổ sung)',        'tùy',   'Theo phòng đã chọn',       'Các cột phía sau là trường tùy biến của phòng đã chọn ở bước tải mẫu (có * = bắt buộc theo config phòng).'],
         ];
+
+        // 2026-08-10: liệt kê giá trị hợp lệ cho từng field select (Phân loại, Kết quả, S.I.C...)
+        // để user copy-paste. Lấy fresh từ CustomField applicable.
+        $orgUnit = null;
+        if (str_starts_with($this->selectedOrgTemplate, 'org:')) {
+            $orgUnit = \App\Models\OrgUnit::find((int) substr($this->selectedOrgTemplate, 4));
+        }
+        foreach (CustomField::applicableTo($orgUnit) as $f) {
+            if ($f->field_type !== 'select' || ! is_array($f->options) || empty($f->options)) {
+                continue;
+            }
+            $opts = implode(' · ', array_map(fn ($o) => is_array($o) ? ($o['label'] ?? $o['value'] ?? '') : (string) $o, $f->options));
+            $rows[] = [
+                $f->label,
+                $f->required ? 'CÓ' : 'không',
+                'Trường bổ sung',
+                'Chọn 1 trong các giá trị: ' . $opts,
+            ];
+        }
         foreach ($rows as $r => $row) {
             foreach ($row as $c => $val) {
                 $col = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($c + 1);
