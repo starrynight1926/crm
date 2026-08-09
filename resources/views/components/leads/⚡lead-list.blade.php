@@ -52,6 +52,10 @@ new class extends Component
     public array $visibleCols = [];
 
     /** Danh sách cột có thể ẩn/hiện (key => label). */
+    // 2026-08-10: bỏ "Chia cho" gộp + "Danh mục", tách thành:
+    //   tele    = Tele phụ trách (owner khi pipeline=booking)
+    //   sale    = Sale tiếp đón (owner khi pipeline=sale, hoặc CV1 booking)
+    //   importer = Người up lead
     public const TABLE_COLUMNS = [
         'code' => 'Mã KH',
         'received_date' => 'Ngày',
@@ -62,13 +66,14 @@ new class extends Component
         'nguon' => 'Nguồn',
         'region' => 'Khu vực',
         'status' => 'Trạng thái',
-        'owner' => 'Chia cho',
-        'classification' => 'Danh mục',
+        'tele' => 'Tele phụ trách',
+        'sale' => 'Sale tiếp đón',
+        'importer' => 'Người up',
     ];
 
     /** Cột mặc định cho Trực Page (up lead nguồn MKT). */
     private const TRUC_PAGE_DEFAULT_COLS = [
-        'code', 'received_date', 'name', 'phone', 'nguon', 'status', 'owner',
+        'code', 'received_date', 'name', 'phone', 'nguon', 'status', 'tele', 'sale', 'importer',
     ];
 
     public function mount(): void
@@ -738,8 +743,9 @@ new class extends Component
                     @if ($this->colVisible('nguon'))       <th class="px-4 py-3 font-semibold">Nguồn</th> @endif
                     @if ($this->colVisible('region'))      <th class="px-4 py-3 font-semibold">Khu vực</th> @endif
                     @if ($this->colVisible('status'))      <th class="px-4 py-3 font-semibold">Trạng thái</th> @endif
-                    @if ($this->colVisible('owner'))       <th class="px-4 py-3 font-semibold">Chia cho</th> @endif
-                    @if ($this->colVisible('classification'))<th class="px-4 py-3 font-semibold">Danh mục</th> @endif
+                    @if ($this->colVisible('tele'))        <th class="px-4 py-3 font-semibold">Tele phụ trách</th> @endif
+                    @if ($this->colVisible('sale'))        <th class="px-4 py-3 font-semibold">Sale tiếp đón</th> @endif
+                    @if ($this->colVisible('importer'))    <th class="px-4 py-3 font-semibold">Người up</th> @endif
                     @if ($canUpdate || $canDelete)
                         <th class="px-4 py-3 font-semibold text-right">Thao tác</th>
                     @endif
@@ -791,32 +797,18 @@ new class extends Component
                                 </span>
                             </td>
                         @endif
-                        @if ($this->colVisible('owner'))
-                            <td class="px-4 py-3">{{ $lead->owner?->name ?: '—' }}</td>
+                        @php
+                            // 2026-08-10: tách "Chia cho" → Tele phụ trách + Sale tiếp đón.
+                            $__trio = ($this->colVisible('tele') || $this->colVisible('sale')) ? $lead->handlerTrio() : null;
+                        @endphp
+                        @if ($this->colVisible('tele'))
+                            <td class="px-4 py-3 text-ink/80">{{ $__trio['booking']?->name ?: '—' }}</td>
                         @endif
-                        @if ($this->colVisible('classification'))
-                            <td class="px-4 py-3">
-                                @php
-                                    $badge = match($lead->classification) {
-                                        'new'           => 'bg-gray-100 text-gray-700',
-                                        'lead'          => 'bg-blue-100 text-blue-800',
-                                        'follow'        => 'bg-cyan-100 text-cyan-800',
-                                        'net'           => 'bg-indigo-100 text-indigo-800',
-                                        'quan_tam'      => 'bg-yellow-100 text-yellow-800',
-                                        'tham_khao'     => 'bg-amber-100 text-amber-800',
-                                        'tim_hieu'      => 'bg-sky-100 text-sky-800',
-                                        'tai_chinh_yeu' => 'bg-rose-100 text-rose-700',
-                                        'goi_lai_sau'   => 'bg-slate-100 text-slate-700',
-                                        'booking'       => 'bg-orange-100 text-orange-800',
-                                        'show'          => 'bg-purple-100 text-purple-800',
-                                        'close'         => 'bg-green-100 text-green-800',
-                                        'klld'          => 'bg-red-100 text-red-700',
-                                        'missed'        => 'bg-red-100 text-red-700',
-                                        default         => 'bg-gray-100 text-gray-600',
-                                    };
-                                @endphp
-                                <span class="text-xs font-semibold px-2.5 py-1 rounded-full {{ $badge }}">{{ $lead->classificationLabel() }}</span>
-                            </td>
+                        @if ($this->colVisible('sale'))
+                            <td class="px-4 py-3 text-ink/80">{{ $__trio['sale']?->name ?: '—' }}</td>
+                        @endif
+                        @if ($this->colVisible('importer'))
+                            <td class="px-4 py-3 text-ink/70 text-xs">{{ $lead->importer?->name ?: '—' }}</td>
                         @endif
                         @if ($canUpdate || $canDelete)
                             <td class="px-4 py-3 text-right" onclick="event.stopPropagation()">
