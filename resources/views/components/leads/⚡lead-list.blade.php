@@ -267,6 +267,34 @@ new class extends Component
     }
 
     /**
+     * 2026-08-10: Thu hồi hàng loạt — clear owner_id, đưa lead về kho team.
+     * Cần perm lead.recall.
+     */
+    public function recallSelected(): void
+    {
+        abort_unless(auth()->user()->hasPermission('lead.recall'), 403);
+
+        $ids = array_map('intval', $this->selected);
+        $leads = Lead::visibleTo(auth()->user())
+            ->whereIn('id', $ids)
+            ->whereNotNull('owner_id')
+            ->get();
+
+        $engine = app(DistributionEngine::class);
+        $n = 0;
+        foreach ($leads as $lead) {
+            $engine->recall($lead, Lead::POOL_TEAM, auth()->id());
+            $n++;
+        }
+        $skipped = count($ids) - $leads->count();
+
+        $this->reset('selected', 'selectAll');
+        $parts = ["Đã thu hồi {$n} lead về kho team"];
+        if ($skipped) $parts[] = "{$skipped} bỏ qua (chưa có owner)";
+        session()->flash('status', implode(' · ', $parts) . '.');
+    }
+
+    /**
      * Resolve facility_pool_unit_id từ lead — priority:
      *   1. lead.pool_unit_id (nếu là facility).
      *   2. lead.org_unit_id → org_pool_map.
@@ -757,6 +785,10 @@ new class extends Component
             @if (auth()->user()->hasPermission('lead.distribute'))
                 <button wire:click="distributeSelected" wire:confirm="Chạy chia tự động cho {{ count($selected) }} lead đã chọn (chỉ áp lead chưa có owner)?"
                         class="text-sm font-semibold text-blue-700 border border-blue-300 hover:bg-blue-50 px-4 py-1.5 rounded-md">⚡ Chia tự động</button>
+            @endif
+            @if (auth()->user()->hasPermission('lead.recall'))
+                <button wire:click="recallSelected" wire:confirm="Thu hồi {{ count($selected) }} lead — xoá tên sale, đưa về kho team?"
+                        class="text-sm font-semibold text-amber-700 border border-amber-300 hover:bg-amber-50 px-4 py-1.5 rounded-md">↩ Thu hồi</button>
             @endif
             @if ($canDelete)
                 <button wire:click="deleteSelected" wire:confirm="Xóa {{ count($selected) }} khách hàng đã chọn?"
