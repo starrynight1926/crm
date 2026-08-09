@@ -28,8 +28,8 @@ class TeamHoiCustomFieldSeeder extends Seeder
                 'label' => 'Phân loại',
                 'field_type' => 'select',
                 'options' => ['Quan tâm', 'Tìm hiểu', 'Không nhu cầu', 'KLLD', 'Tài chính yếu', 'Gọi lại sau', 'Nét', 'Tham khảo', 'Bệnh nặng, sai tệp'],
-                'required' => false,
-                'position' => 10,
+                'required' => true, // 2026-08-10: bắt buộc
+                'position' => 1,    // 2026-08-10: cho lên đầu
             ],
             [
                 'key' => 'ket_qua',
@@ -37,8 +37,8 @@ class TeamHoiCustomFieldSeeder extends Seeder
                 'label' => 'Kết quả',
                 'field_type' => 'select',
                 'options' => ['Missed', 'Follow', 'Booking', 'Show', 'Close'],
-                'required' => false,
-                'position' => 11,
+                'required' => true, // 2026-08-10: bắt buộc
+                'position' => 2,    // 2026-08-10: cho lên đầu
             ],
         ];
         foreach ($companyFields as $f) {
@@ -72,7 +72,7 @@ class TeamHoiCustomFieldSeeder extends Seeder
                 'import_code' => 'S.I.C',
                 'label' => 'S.I.C',
                 'field_type' => 'select',
-                'options' => ['Hợi'],
+                'options' => ['Giang', 'Hợi'], // 2026-08-10: thêm Giang (Team Giang HN)
                 'required' => false,
                 'position' => 3,
                 'affects_code' => false,
