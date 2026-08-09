@@ -295,7 +295,12 @@ new class extends Component
     /** Lead hợp lệ trong lựa chọn, thuộc đúng tab hiện tại. */
     private function selectedLeads()
     {
-        return Lead::whereIn('id', $this->selected)->where('pool_level', $this->tab)->get();
+        // 2026-08-10 fix: $this->tab là key ('company/branch/...'), còn pool_level DB
+        //   là enum ('common/team/personal'). Trước đây where('pool_level', $this->tab)
+        //   luôn 0 hit → bulk chia không tác dụng.
+        $poolLevel = self::TAB_KINDS[$this->tab]['pool_level'] ?? null;
+        if (! $poolLevel) return collect();
+        return Lead::whereIn('id', $this->selected)->where('pool_level', $poolLevel)->get();
     }
 
     public function bulkAssign(): void
