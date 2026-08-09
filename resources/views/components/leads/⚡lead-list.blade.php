@@ -219,13 +219,9 @@ new class extends Component
     {
         abort_unless(auth()->user()->hasPermission('lead.distribute'), 403);
 
-        // 2026-08-10: admin đa cơ sở phải chọn facility đích trước khi chia.
-        // User có <= 1 facility trong scope → tự resolve, không cần chọn.
-        $facOptions = $this->distributeFacilityOptions();
-        if ($facOptions->count() > 1 && ! $this->distributeFacilityId) {
-            session()->flash('cf_error', 'Chọn cơ sở đích ở dropdown "Chia vào cơ sở" trước khi bấm.');
-            return;
-        }
+        // 2026-08-10: dropdown "Chia vào cơ sở" là OVERRIDE tùy chọn, không bắt buộc.
+        //   Resolver ưu tiên (0) override, (1) lead.pool_unit_id, (2) org_unit_id, (3) importer's org.
+        //   Chỉ khi tất cả 4 tầng đều fail → skip lead đó, báo cụ thể.
 
         $ids = array_map('intval', $this->selected);
         $leads = Lead::visibleTo(auth()->user())
@@ -782,20 +778,20 @@ new class extends Component
             <span class="text-sm font-semibold text-gold-800">Đã chọn {{ count($selected) }} khách hàng</span>
             @if (auth()->user()->hasPermission('lead.distribute'))
                 @if ($__multiFac)
-                    {{-- Admin đa cơ sở: bắt buộc chọn cơ sở đích cho MKT bulk chia. --}}
+                    {{-- Admin đa cơ sở: dropdown TÙY CHỌN — override facility cho lead thiếu org.
+                         Lead đã có pool_unit_id / org_unit_id → resolver tự tìm, không cần chọn. --}}
                     <label class="flex items-center gap-1.5 text-sm">
                         <span class="text-ink/60">Chia vào:</span>
                         <select wire:model.live="distributeFacilityId" class="border border-gold-300 rounded-md px-2 py-1 text-sm bg-white">
-                            <option value="">— chọn cơ sở —</option>
+                            <option value="">— tự resolve theo lead —</option>
                             @foreach ($__facOpts as $fac)
-                                <option value="{{ $fac->id }}">{{ $fac->name }}</option>
+                                <option value="{{ $fac->id }}">{{ $fac->name }} (override)</option>
                             @endforeach
                         </select>
                     </label>
                 @endif
                 <button wire:click="distributeSelected" wire:confirm="Chạy chia tự động cho {{ count($selected) }} lead đã chọn (chỉ áp lead chưa có owner)?"
-                        @if ($__multiFac && ! $distributeFacilityId) disabled @endif
-                        class="text-sm font-semibold text-blue-700 border border-blue-300 hover:bg-blue-50 px-4 py-1.5 rounded-md disabled:opacity-40 disabled:cursor-not-allowed">⚡ Chia tự động</button>
+                        class="text-sm font-semibold text-blue-700 border border-blue-300 hover:bg-blue-50 px-4 py-1.5 rounded-md">⚡ Chia tự động</button>
             @endif
             @if ($canDelete)
                 <button wire:click="deleteSelected" wire:confirm="Xóa {{ count($selected) }} khách hàng đã chọn?"
