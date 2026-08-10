@@ -10,11 +10,17 @@ use App\Models\User;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Http;
 use Livewire\Component;
+use Livewire\WithFileUploads;
 
 new class extends Component
 {
+    use WithFileUploads;
+
     public string $bookingUrl = '';
     public string $bookingApiToken = '';
+    public $importFile;
+    public ?string $importResult = null;
+    public ?string $importStatus = null;
     /** @var array<int, string> facility_id => slug */
     public array $facilitySlugs = [];
     /** @var array<int, ?int> facility_id => sbooking_co_so_id */
@@ -146,6 +152,59 @@ new class extends Component
         return $last ? \Carbon\Carbon::parse($last)->diffForHumans() : null;
     }
 
+    public function exportConnection()
+    {
+        $payload = [
+            'system' => 'scrm',
+            'exported_at' => now()->toIso8601String(),
+            'booking_url' => $this->bookingUrl,
+            'booking_api_token' => $this->bookingApiToken,
+            'facility_mappings' => collect($this->facilitySlugs)->map(fn ($slug, $id) => [
+                'facility_id' => (int) $id,
+                'facility_name' => Facility::find($id)?->name,
+                'booking_co_so_slug' => $slug,
+                'sbooking_co_so_id' => $this->facilitySbCoSoIds[$id] ?? null,
+            ])->values()->all(),
+        ];
+
+        return response()->streamDownload(
+            fn () => print(json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT)),
+            'scrm-connection-' . now()->format('Ymd-His') . '.json',
+            ['Content-Type' => 'application/json; charset=utf-8'],
+        );
+    }
+
+    public function importConnection(): void
+    {
+        $this->validate(['importFile' => 'required|file|mimes:json,txt|max:1024']);
+
+        $raw = file_get_contents($this->importFile->getRealPath());
+        $data = json_decode($raw, true);
+        if (! is_array($data)) {
+            $this->importStatus = 'err';
+            $this->importResult = 'File JSON không hợp lệ.';
+            return;
+        }
+
+        if (! empty($data['booking_url'])) $this->bookingUrl = $data['booking_url'];
+        if (! empty($data['booking_api_token'])) $this->bookingApiToken = $data['booking_api_token'];
+
+        if (! empty($data['facility_mappings'])) {
+            foreach ($data['facility_mappings'] as $m) {
+                $fId = $m['facility_id'] ?? null;
+                if ($fId && Facility::find($fId)) {
+                    $this->facilitySlugs[$fId] = $m['booking_co_so_slug'] ?? '';
+                    $this->facilitySbCoSoIds[$fId] = $m['sbooking_co_so_id'] ?? null;
+                }
+            }
+        }
+
+        $this->save();
+        $this->importStatus = 'ok';
+        $this->importResult = 'Đã nhập và lưu cấu hình kết nối từ file.';
+        $this->reset('importFile');
+    }
+
     public function testConnection(): void
     {
         $url = rtrim($this->bookingUrl ?: '', '/') . '/api/bookings?per_page=1';
@@ -229,6 +288,31 @@ new class extends Component
             <button wire:click="testConnection" type="button" class="border border-gold-300 text-ink/70 hover:bg-gold-50 font-semibold text-sm px-5 py-2 rounded-md">Test kết nối</button>
             @if ($testResult)
                 <span class="text-sm {{ $testStatus === 'ok' ? 'text-green-700' : 'text-red-700' }}">{{ $testResult }}</span>
+            @endif
+        </div>
+
+        {{-- Xuất / Nhập cấu hình kết nối --}}
+        <div class="border-t border-gold-100 pt-5">
+            <h2 class="text-sm font-bold text-gold-700 mb-1">Xuất / Nhập cấu hình kết nối</h2>
+            <p class="text-xs text-ink/50 mb-3">Xuất cấu hình ra file JSON để backup hoặc chuyển sang môi trường khác. Nhập file JSON để áp dụng cấu hình đã xuất.</p>
+            <div class="flex flex-wrap items-end gap-3">
+                <button wire:click="exportConnection" type="button"
+                    class="border border-gold-300 text-gold-700 hover:bg-gold-50 font-semibold text-sm px-4 py-2 rounded-md">
+                    Xuất JSON
+                </button>
+                <label class="text-sm">
+                    <span class="block text-ink/70 mb-1 font-semibold">Nhập từ file</span>
+                    <input type="file" wire:model="importFile" accept=".json" class="text-sm block">
+                </label>
+                <button wire:click="importConnection" type="button"
+                    class="border border-gold-300 text-ink/70 hover:bg-gold-50 font-semibold text-sm px-4 py-2 rounded-md"
+                    @if(!$importFile) disabled @endif>
+                    Nhập JSON
+                </button>
+            </div>
+            @error('importFile') <p class="text-xs text-red-600 mt-1">{{ $message }}</p> @enderror
+            @if ($importResult)
+                <div class="mt-2 text-xs p-2 rounded {{ $importStatus === 'ok' ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800' }}">{{ $importResult }}</div>
             @endif
         </div>
 

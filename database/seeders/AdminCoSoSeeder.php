@@ -37,9 +37,9 @@ class AdminCoSoSeeder extends Seeder
 
     /** Tra branch bằng nhiều alias code khả dĩ giữa các env seed. */
     public const ACCOUNTS = [
-        ['username' => 'admin.hn',  'name' => 'Admin Cơ sở Hà Nội',  'branch_codes' => ['branch-hn', 'hn', 'ha-noi']],
-        ['username' => 'admin.hcm', 'name' => 'Admin Cơ sở HCM',     'branch_codes' => ['branch-hcm', 'hcm', 'ho-chi-minh']],
-        ['username' => 'admin.dn',  'name' => 'Admin Cơ sở Đà Nẵng', 'branch_codes' => ['branch-dn', 'dn', 'da-nang']],
+        ['username' => 'admin.hn',  'sb_username' => 'admin59ntn',  'name' => 'Admin Cơ sở Hà Nội',  'branch_codes' => ['branch-hn', 'hn', 'ha-noi']],
+        ['username' => 'admin.hcm', 'sb_username' => 'admin207nvt', 'name' => 'Admin Cơ sở HCM',     'branch_codes' => ['branch-hcm', 'hcm', 'ho-chi-minh']],
+        ['username' => 'admin.dn',  'sb_username' => 'adminl23tdn', 'name' => 'Admin Cơ sở Đà Nẵng', 'branch_codes' => ['branch-dn', 'dn', 'da-nang']],
     ];
 
     public function run(): void
@@ -59,6 +59,7 @@ class AdminCoSoSeeder extends Seeder
             $user = User::firstWhere('email', $email) ?? User::firstWhere('name', $acc['name']);
             if (! $user) {
                 $user = User::create([
+                    'username' => $acc['sb_username'],
                     'email'    => $email,
                     'name'     => $acc['name'],
                     'password' => DefaultPassword::forEmail($email),
@@ -66,6 +67,7 @@ class AdminCoSoSeeder extends Seeder
                 ]);
             } else {
                 $user->update([
+                    'username' => $acc['sb_username'],
                     'email'  => $email,
                     'name'   => $acc['name'],
                     'status' => User::STATUS_ACTIVE,
