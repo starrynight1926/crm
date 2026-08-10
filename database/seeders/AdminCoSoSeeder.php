@@ -31,6 +31,8 @@ class AdminCoSoSeeder extends Seeder
         'lead.book_action', 'lead.update_booking', 'lead.read_booking', 'phase.close.booking',
         // Báo cáo
         'report.view',
+        // 2026-08-10 — Admin cơ sở được xem + edit UPS list (đồng bộ với tài khoản duyệt bên booking).
+        'ups.view', 'ups.checkin', 'ups.override', 'ups.confirm_daily',
     ];
 
     /** Tra branch bằng nhiều alias code khả dĩ giữa các env seed. */

@@ -69,6 +69,8 @@ class UpsDispatcher
                 ->where('facility_pool_unit_id', $facilityPoolUnitId)
                 ->whereDate('work_date', $workDate)
                 ->where('list_bucket', $bucket)
+                // 2026-08-10: dung_nhan_lead luôn loại khỏi vòng chia, kể cả wrap-around.
+                ->where('dung_nhan_lead', false)
                 ->orderBy('checkin_at');
             if (! $includeBusy) $q->where('is_busy', false);
             $sales = $q->get()->pluck('user')->filter()->values();
@@ -128,6 +130,28 @@ class UpsDispatcher
         $updated = DailyAttendance::where('user_id', $userId)
             ->whereDate('work_date', $workDate)
             ->update(['is_busy' => false, 'busy_since' => null]);
+
+        return $updated > 0;
+    }
+
+    /** 2026-08-10 — Sale tự tick "Dừng nhận lead" → loại khỏi vòng chia tuyệt đối. */
+    public function markPause(int $userId, ?string $workDate = null): bool
+    {
+        $workDate ??= now()->toDateString();
+        $updated = DailyAttendance::where('user_id', $userId)
+            ->whereDate('work_date', $workDate)
+            ->update(['dung_nhan_lead' => true, 'dung_nhan_lead_since' => now()]);
+
+        return $updated > 0;
+    }
+
+    /** Sale bấm "Nhận lead lại" → trở về vòng chia. */
+    public function markResume(int $userId, ?string $workDate = null): bool
+    {
+        $workDate ??= now()->toDateString();
+        $updated = DailyAttendance::where('user_id', $userId)
+            ->whereDate('work_date', $workDate)
+            ->update(['dung_nhan_lead' => false, 'dung_nhan_lead_since' => null]);
 
         return $updated > 0;
     }

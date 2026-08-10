@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 #[Fillable([
     'facility_pool_unit_id', 'user_id', 'work_date', 'checkin_at',
     'list_bucket', 'is_off', 'override_by', 'override_at',
+    'dung_nhan_lead', 'dung_nhan_lead_since',
 ])]
 class DailyAttendance extends Model
 {
@@ -23,6 +24,8 @@ class DailyAttendance extends Model
             'checkin_at' => 'datetime',
             'override_at' => 'datetime',
             'is_off' => 'boolean',
+            'dung_nhan_lead' => 'boolean',
+            'dung_nhan_lead_since' => 'datetime',
         ];
     }
 

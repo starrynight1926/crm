@@ -2,6 +2,31 @@
 
 > Làm xong phase nào ghi vào đây: ngày hoàn thành, việc đã làm, việc dời lại/chưa xong, ghi chú & quyết định phát sinh. Mẫu bên dưới.
 
+## 2026-08-10 — T5 (scrm) Cột `dung_nhan_lead` + Admin cơ sở edit UPS + nút quay lại phase 3 ✅
+
+Nhánh `final-01`. Đi kèm patch bên [lara-sbooking](../lara-sbooking/result.md) cùng ngày.
+
+- **[AdminCoSoSeeder.php](database/seeders/AdminCoSoSeeder.php)** — thêm 4 perms UPS (`ups.view`, `ups.checkin`, `ups.override`, `ups.confirm_daily`) vào role `Admin cơ sở`. `admin.hn/hcm/dn` giờ đồng bộ quyền UPS với tài khoản duyệt bên booking.
+- **Migration [2026_08_10_120000_add_dung_nhan_lead_to_daily_attendance.php](database/migrations/2026_08_10_120000_add_dung_nhan_lead_to_daily_attendance.php)** — cột `daily_attendance.dung_nhan_lead` bool + `dung_nhan_lead_since` timestamp + index.
+- **[UpsDispatcher.php](app/Services/Ups/UpsDispatcher.php)** — `pickFromBucket()` luôn `->where('dung_nhan_lead', false)` (kể cả wrap-around `includeBusy=true`). Khác với `is_busy`: sale đang tiếp đón vẫn được chia lại khi full, nhưng sale "Dừng nhận lead" bị loại tuyệt đối. Thêm methods `markPause()` + `markResume()`.
+- **[UpsAttendanceController.php](app/Http/Controllers/Api/UpsAttendanceController.php)** — 2 endpoint mới `POST /api/ups/pause` + `/api/ups/resume`, refactor `resolveAttendance()` chung cho busy/pause. Error message rõ hơn khi sale chưa check-in UPS.
+- **[⚡lead-form.blade.php](resources/views/components/leads/⚡lead-form.blade.php)** — 3 chỗ đổi:
+  - Popup "⚡ Check UPS List" hiển thị label `⏸️ Dừng nhận lead` (slate) tách khỏi `🔴 Đang tiếp đón` (amber) + `🟢 Sẵn sàng` (emerald). Áp cho cả 2 popup (Trực Page + Sale-book).
+  - `pickMktRoundRobin()` + `predictSaleGreetSequence()` skip `dung_nhan_lead=true`.
+  - Phase 4 (Check-in) panel: thêm nút `↩ Tạo booking khác cho khách này` (gate `canRestartBooking`), bấm gọi `markReturning(3)` để sale quay lại phase 3 tạo booking tiếp cho cùng lead.
+- **[DailyAttendance.php](app/Models/DailyAttendance.php)** — fillable + casts cho 2 cột mới.
+
+### QA
+- Migration chạy sạch: `migrate:fresh --seed` OK, seeder không lỗi.
+- Route đăng ký: `POST api/ups/pause`, `POST api/ups/resume` xuất hiện trong `route:list`.
+- Chưa QA tay browser — cần login `admin.hn` xem popup Check UPS + login 1 sale test flow "Đang tiếp đón" (đã check-in UPS trước) → popup phải hiện đỏ.
+
+### Ghi chú
+- Bug "Sale bấm Đang tiếp đón, popup vẫn Sẵn sàng": root cause đoán là sale chưa check-in UPS scrm hôm đó → `daily_attendance` không có row → `markBusy` return false. Đã thêm log rõ lỗi bên booking (`CrmPushService::pushTiepDon` giờ dump `reason` từ scrm response). Sale phải check-in UPS trước khi bấm — behavior đúng.
+- Chưa gắn broadcast event cho `UpsBusyChanged` khi paused/resume (topic khác). Có thể thêm sau nếu cần realtime Reverb.
+
+---
+
 ## 2026-08-06 — T16 Widget "Kho số" trên dashboard scrm ✅
 
 Thêm khối "Kho số — chờ chia" vào [⚡dashboard-overview.blade.php](resources/views/components/reports/⚡dashboard-overview.blade.php) để CM chia số tay nhanh, không phải mở `/distribution/pools`.

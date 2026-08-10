@@ -9,4 +9,6 @@ Route::middleware(AuthByApiToken::class)->group(function () {
     Route::post('/leads/{code}/booking-event', BookingEventController::class);
     Route::post('/ups/busy',     [UpsAttendanceController::class, 'busy']);
     Route::post('/ups/complete', [UpsAttendanceController::class, 'complete']);
+    Route::post('/ups/pause',    [UpsAttendanceController::class, 'pause']);
+    Route::post('/ups/resume',   [UpsAttendanceController::class, 'resume']);
 });

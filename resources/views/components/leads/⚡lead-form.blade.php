@@ -1145,6 +1145,8 @@ new class extends Component
                 ->where('facility_pool_unit_id', $facilityPoolUnitId)
                 ->whereDate('work_date', $workDate)
                 ->where('list_bucket', $bucket)
+                // 2026-08-10: dung_nhan_lead luôn skip.
+                ->where('dung_nhan_lead', false)
                 ->orderBy('checkin_at')
                 ->get()->pluck('user')->filter();
             $sales = $sales->concat($bucketSales);
@@ -1178,6 +1180,8 @@ new class extends Component
             ->where('facility_pool_unit_id', $facilityPoolUnitId)
             ->whereDate('work_date', $workDate)
             ->where('list_bucket', 'MKT')
+            // 2026-08-10: sale dừng nhận lead → loại tuyệt đối kể cả wrap-around.
+            ->where('dung_nhan_lead', false)
             ->orderBy('checkin_at');
 
         // Ưu tiên sale rảnh; nếu hết → wrap-around bất chấp busy (giữ nguyên round-robin state).
@@ -2837,8 +2841,9 @@ new class extends Component
                                             @php
                                                 $__busy = (bool) $__a->is_busy;
                                                 $__off  = (bool) $__a->is_off;
-                                                $__label = $__off ? 'Offlist' : ($__busy ? '🔴 Đang tiếp đón' : '🟢 Sẵn sàng');
-                                                $__cls   = $__off ? 'bg-rose-100 text-rose-700' : ($__busy ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700');
+                                                $__pause = (bool) ($__a->dung_nhan_lead ?? false);
+                                                $__label = $__off ? 'Offlist' : ($__pause ? '⏸️ Dừng nhận lead' : ($__busy ? '🔴 Đang tiếp đón' : '🟢 Sẵn sàng'));
+                                                $__cls   = $__off ? 'bg-rose-100 text-rose-700' : ($__pause ? 'bg-slate-200 text-slate-700' : ($__busy ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'));
                                                 $__bkc   = match ($__a->list_bucket) { 'A'=>'bg-blue-100 text-blue-800', 'B'=>'bg-teal-100 text-teal-800', 'C'=>'bg-slate-200 text-slate-800', 'OFF'=>'bg-rose-100 text-rose-800', default=>'bg-gold-100 text-gold-800' };
                                                 $__isNext = ! empty($cvPreview) && $cvPreview[0]?->id === $__a->user_id;
                                             @endphp
@@ -3917,10 +3922,20 @@ new class extends Component
 
             {{-- ============= Phase 6.21 — Section CHECK-IN (Phase 5) đúng field mockup ============= --}}
             <div x-show="phase === 4" x-cloak class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
-                <h2 class="font-bold text-gold-700 mb-5 flex items-center gap-2">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z"/></svg>
-                    Check-in <span class="text-sm text-ink/50 font-normal">(tạm thời là bước cuối)</span>
-                </h2>
+                <div class="flex items-center justify-between mb-5 gap-3 flex-wrap">
+                    <h2 class="font-bold text-gold-700 flex items-center gap-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z"/></svg>
+                        Check-in <span class="text-sm text-ink/50 font-normal">(tạm thời là bước cuối)</span>
+                    </h2>
+                    {{-- 2026-08-10 — Sale sau khi tạo booking bị auto-move sang phase 4. Nút này quay về phase 3 để tạo tiếp booking khác cho cùng khách. --}}
+                    @if ($lead?->exists && $lead->canRestartBooking(auth()->user()))
+                        <button type="button" wire:click="markReturning(3)"
+                                onclick="return confirm('Quay lại phase 3 (Booking) để tạo booking mới cho khách này? Lịch sử booking cũ giữ nguyên.')"
+                                class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-100 text-amber-800 border border-amber-300 hover:bg-amber-200 transition-colors">
+                            <span class="text-base leading-none">↩</span> Tạo booking khác cho khách này
+                        </button>
+                    @endif
+                </div>
                 {{-- 2026-08-05: Info booking từ BookingLog mới nhất — hiện ở đầu Check-in để lễ tân/admin thấy khách tới lịch nào. --}}
                 @if ($lead?->exists)
                     @php
