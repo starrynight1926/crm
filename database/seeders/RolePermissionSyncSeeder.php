@@ -65,7 +65,7 @@ class RolePermissionSyncSeeder extends Seeder
             'lead.update_booking', 'lead.view', 'lead.view_phone', 'lead.view_pool',
             'phase.close.new', 'phase.close.booking', 'phase.close.call', 'phase.close.checkin',
             'report.view', 'source.up.bdm', 'source.up.bod', 'source.up.wi', 'source.up.sa',
-            'ups.view',
+            'ups.view', 'ups.checkin', 'ups.override', 'ups.confirm_daily',
             // 2026-08-11: Admin cơ sở xem + chia kho re-call (không import).
             'recall.view', 'recall.assign',
         ],
