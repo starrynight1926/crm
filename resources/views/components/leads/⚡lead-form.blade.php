@@ -272,7 +272,9 @@ new class extends Component
         // Số CV = số slot user thêm. UPS list rỗng → block; wrap-around khi all busy đã có trong pickGreet.
         $poolFac = $this->trucPageFacility();
         if (! $poolFac) {
-            session()->flash('cf_error', 'Không xác định được cơ sở UPS của bạn — liên hệ Admin kiểm tra phân quyền (org_pool_map).');
+            session()->flash('cf_error', $this->isAdminLongevity()
+                ? 'Chọn "Cơ sở UPS (admin)" ở đầu khối Ghi nhận booking trước khi lưu.'
+                : 'Không xác định được cơ sở UPS của bạn — liên hệ Admin kiểm tra phân quyền (org_pool_map).');
             return;
         }
         $slotCount = max(1, count($this->newBookingConsultantIds));
@@ -1990,8 +1992,8 @@ new class extends Component
                 ? ($this->trucPageFacility()?->name)
                 : null,
             // 2026-08-10: admin@longevity — cho phép chọn cơ sở tay vì không map cơ sở qua assignment.
-            'adminFacilityChoices' => ($this->isAdminLongevity() && ! $this->lead?->exists
-                && in_array($this->sourceGroup, [Lead::SOURCE_MKT, Lead::SOURCE_MKT_BR], true))
+            //   Dùng cho cả (a) Chia tự động khi tạo lead MKT, (b) Ghi nhận booking phase 3.
+            'adminFacilityChoices' => $this->isAdminLongevity()
                 ? \App\Models\PoolUnit::where('kind', 'facility')->where('is_active', true)
                     ->orderBy('name')->get(['id', 'name'])
                 : collect(),
@@ -2859,6 +2861,19 @@ new class extends Component
                     </div>
                     <div wire:poll.5s class="border border-dashed border-slate-300 bg-slate-50 rounded p-3 space-y-2">
                         <div class="text-xs font-semibold text-ink/60">Thêm booking mới <span class="font-normal text-ink/40">— mặc định "Chờ xác nhận", bên booking cập nhật sẽ tự sync về đây</span></div>
+                        {{-- 2026-08-10: admin@longevity — chọn cơ sở UPS tay (dùng để pick CV round-robin). --}}
+                        @if ($adminFacilityChoices->isNotEmpty())
+                            <div class="bg-amber-50 border border-amber-300 rounded px-3 py-2">
+                                <label class="block text-[11px] uppercase tracking-wide text-amber-700 mb-1 font-semibold">Cơ sở UPS (chọn tay — admin)</label>
+                                <select wire:model.live="mktFacilityOverrideId" class="w-full text-sm border border-amber-300 rounded px-2 py-1.5 bg-white">
+                                    <option value="">— Chọn cơ sở UPS —</option>
+                                    @foreach ($adminFacilityChoices as $__f)
+                                        <option value="{{ $__f->id }}">{{ $__f->name }}</option>
+                                    @endforeach
+                                </select>
+                                <div class="text-[11px] text-amber-700 mt-1">Cần chọn để hệ thống pick CV từ UPS list của cơ sở này.</div>
+                            </div>
+                        @endif
                         {{-- Hàng 1: Loại | Trạng thái (lock) | Datetime --}}
                         <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
                             {{-- 2026-08-09: 3 bucket — Khám lâm sàng / Tư vấn / Dịch vụ. --}}
