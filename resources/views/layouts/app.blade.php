@@ -117,6 +117,22 @@
                     $upsTarget = $u->hasPermission('ups.view') ? 'ups.list' : 'ups.today';
                     $upsBlockedGlobal = app(\App\Services\Ups\UpsGate::class)->isBlockedFor($u);
                 @endphp
+                {{-- 2026-08-11 — Super admin: chọn "Cơ sở đang xem" tạm thời để scope widget dashboard. --}}
+                @if (\App\Support\AdminScope::isSuperAdmin())
+                    @php $__adminScopeId = \App\Support\AdminScope::currentBranchId(); @endphp
+                    <form method="POST" action="{{ route('admin.scope') }}" class="hidden md:flex items-center gap-1 mr-2">
+                        @csrf
+                        <label class="text-[11px] font-semibold text-ink/50 uppercase tracking-wide">Cơ sở:</label>
+                        <select name="org_unit_id" onchange="this.form.submit()"
+                                class="text-xs font-semibold px-2 py-1.5 rounded border {{ $__adminScopeId ? 'border-amber-400 bg-amber-50 text-amber-800' : 'border-gold-200 bg-white text-ink/70' }}">
+                            <option value="">— Toàn công ty —</option>
+                            @foreach (\App\Support\AdminScope::branchOptions() as $__b)
+                                <option value="{{ $__b->id }}" @selected($__adminScopeId === $__b->id)>{{ $__b->name }}</option>
+                            @endforeach
+                        </select>
+                    </form>
+                @endif
+
                 <a href="{{ route($upsTarget) }}" target="_blank" rel="noopener"
                    class="hidden md:inline-flex items-center gap-1.5 text-sm font-bold px-3 py-2 rounded-md whitespace-nowrap {{ $upsBlockedGlobal ? 'bg-red-600 hover:bg-red-700 text-white animate-pulse' : 'bg-gold-600 hover:bg-gold-700 text-white' }}"
                    title="{{ $upsBlockedGlobal ? 'Chưa chốt UPS hôm nay — chia số đang bị khóa' : 'UPS hôm nay (mở tab mới)' }}">

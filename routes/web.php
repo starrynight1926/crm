@@ -21,6 +21,20 @@ Route::middleware('guest')->group(function () {
 
 Route::middleware('auth')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
+
+    // 2026-08-11 — Super admin chọn "Cơ sở đang xem" tạm thời (scope các widget dashboard).
+    Route::post('/admin-scope', function (\Illuminate\Http\Request $r) {
+        abort_unless(\App\Support\AdminScope::isSuperAdmin(), 403);
+        $val = $r->input('org_unit_id');
+        if ($val === '' || $val === null) {
+            session()->forget(\App\Support\AdminScope::SESSION_KEY);
+        } else {
+            $exists = \App\Models\OrgUnit::where('id', (int) $val)->where('depth', 1)->exists();
+            abort_unless($exists, 422);
+            session([\App\Support\AdminScope::SESSION_KEY => (int) $val]);
+        }
+        return back();
+    })->name('admin.scope');
     Route::view('/dashboard', 'dashboard')->name('dashboard');
     Route::view('/settings/sessions', 'settings.sessions')->name('sessions.index');
     Route::view('/settings/password', 'settings.password')->name('settings.password');

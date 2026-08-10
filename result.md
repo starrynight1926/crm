@@ -2,6 +2,33 @@
 
 > Làm xong phase nào ghi vào đây: ngày hoàn thành, việc đã làm, việc dời lại/chưa xong, ghi chú & quyết định phát sinh. Mẫu bên dưới.
 
+## 2026-08-11 — Eleventh: AdminScope + Trực Page bỏ mkt_br + fix dropdown Sale trống ✅
+
+Nhánh `eleventh`.
+
+### Bỏ `source.up.mkt_br` khỏi Trực Page
+- [RolePermissionSyncSeeder.php:139](database/seeders/RolePermissionSyncSeeder.php:139) — Trực Page giờ chỉ up `source.up.mkt`. MKT_BR (khách quay lại do MKT tìm ra) để Sale điền tay qua form Nhập lead (Sale đã có `source.up.mkt_br`).
+- Admin cơ sở đã có sẵn `source.up.wi` — nhập tay Walk-in qua form (không auto-UPS).
+
+### AdminScope — super admin chọn "Cơ sở đang xem" tạm
+- **[App\Support\AdminScope](app/Support/AdminScope.php)** — helper mới:
+  - `isSuperAdmin()` → is_admin hoặc email admin@longevity.
+  - `currentBranchId()` / `currentBranchName()` → đọc từ session.
+  - `orgUnitIds()` → return `null` (worldwide) khi admin không chọn scope, hoặc array subtree khi đã chọn branch. User thường: return `memberOrgUnitIds()`.
+  - `branchOptions()` → OrgUnit `depth=1` (cơ sở/chi nhánh trực thuộc công ty).
+- Route `POST /admin-scope` set session `admin_scope_org_unit_id` (validate depth=1 + super admin gate).
+- Topmenu [layouts/app.blade.php](resources/views/layouts/app.blade.php) — dropdown "Cơ sở: — Toàn công ty — / HN / HCM / DN / Vận hành" chỉ hiện cho super admin; chọn xong POST → back.
+- Widget "Kho số" [⚡dashboard-overview.blade.php](resources/views/components/reports/⚡dashboard-overview.blade.php) — `poolSaleUsers` / `poolLeads` / `poolLeadsCount` / `assignFromPool` scope theo `AdminScope::orgUnitIds()`. Super admin không chọn scope → dropdown "chọn Sale" giờ hiện toàn 31 sale; chọn HN → còn 13 sale HN.
+
+### Bug fix bối cảnh
+Trước đó admin@longevity vào dashboard bấm "Chia" ở widget Kho số → dropdown "chọn Sale" trống rỗng vì `poolSaleUsers()` filter `whereHas('assignments','org_unit_id', memberOrgUnitIds())` mà admin không có assignment cấp branch/facility → subtreeIds rỗng → return `collect()`.
+
+### Không đụng
+- `Lead::isVisibleTo` core / permission model.
+- Các màn khác (`/leads`, `/distribution/pools`) vẫn theo `memberOrgUnitIds()` gốc — có thể mở rộng scope sau nếu cần.
+
+---
+
 ## 2026-08-10 — T5 (scrm) Cột `dung_nhan_lead` + Admin cơ sở edit UPS + nút quay lại phase 3 ✅
 
 Nhánh `final-01`. Đi kèm patch bên [lara-sbooking](../lara-sbooking/result.md) cùng ngày.

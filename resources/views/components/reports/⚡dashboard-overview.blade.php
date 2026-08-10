@@ -79,15 +79,20 @@ new class extends Component
     private function poolLeads()
     {
         if (! $this->canViewPool()) return collect();
-        $user = auth()->user();
-        $orgIds = $user->memberOrgUnitIds();
+        $orgIds = \App\Support\AdminScope::orgUnitIds();
 
         return Lead::query()
             ->whereNull('owner_id')
             ->where('pool_level', '!=', Lead::POOL_PERSONAL)
             ->where(function ($q) use ($orgIds) {
                 $q->where('pool_level', Lead::POOL_COMMON);
-                if ($orgIds) $q->orWhere(fn ($qq) => $qq->where('pool_level', Lead::POOL_TEAM)->whereIn('org_unit_id', $orgIds));
+                // orgIds=null (super admin toàn công ty) → không filter kho team.
+                // orgIds=[]  → user không có scope → không thấy kho team.
+                if ($orgIds === null) {
+                    $q->orWhere('pool_level', Lead::POOL_TEAM);
+                } elseif ($orgIds !== []) {
+                    $q->orWhere(fn ($qq) => $qq->where('pool_level', Lead::POOL_TEAM)->whereIn('org_unit_id', $orgIds));
+                }
             })
             ->with(['owner', 'receiver', 'importer'])
             ->orderByDesc('id')
@@ -98,12 +103,16 @@ new class extends Component
     private function poolLeadsCount(): int
     {
         if (! $this->canViewPool()) return 0;
-        $orgIds = auth()->user()->memberOrgUnitIds();
+        $orgIds = \App\Support\AdminScope::orgUnitIds();
         return Lead::query()->whereNull('owner_id')
             ->where('pool_level', '!=', Lead::POOL_PERSONAL)
             ->where(function ($q) use ($orgIds) {
                 $q->where('pool_level', Lead::POOL_COMMON);
-                if ($orgIds) $q->orWhere(fn ($qq) => $qq->where('pool_level', Lead::POOL_TEAM)->whereIn('org_unit_id', $orgIds));
+                if ($orgIds === null) {
+                    $q->orWhere('pool_level', Lead::POOL_TEAM);
+                } elseif ($orgIds !== []) {
+                    $q->orWhere(fn ($qq) => $qq->where('pool_level', Lead::POOL_TEAM)->whereIn('org_unit_id', $orgIds));
+                }
             })->count();
     }
 
@@ -111,15 +120,19 @@ new class extends Component
     private function poolSaleUsers()
     {
         if (! $this->canPullPool()) return collect();
-        $subtreeIds = auth()->user()->memberOrgUnitIds();
-        if (! $subtreeIds) return collect();
-        return User::query()
+        $subtreeIds = \App\Support\AdminScope::orgUnitIds();
+
+        $q = User::query()
             ->where('status', User::STATUS_ACTIVE)
-            ->whereHas('assignments', function ($q) use ($subtreeIds) {
-                $q->whereIn('org_unit_id', $subtreeIds)
-                    ->whereHas('role', fn ($r) => $r->where('name', 'like', '%ale%'));
-            })
-            ->orderBy('name')->get(['id', 'name', 'email']);
+            ->whereHas('assignments', function ($qq) use ($subtreeIds) {
+                $qq->whereHas('role', fn ($r) => $r->where('name', 'like', '%ale%'));
+                // Super admin toàn công ty ($subtreeIds=null) → không lọc org, thấy toàn Sale.
+                if (is_array($subtreeIds)) {
+                    $qq->whereIn('org_unit_id', $subtreeIds ?: [0]);
+                }
+            });
+
+        return $q->orderBy('name')->get(['id', 'name', 'email']);
     }
 
     /** Chia thẳng 1 lead trong kho cho user đã chọn ở dropdown. Set owner + advance phase=CALL. */
@@ -144,13 +157,17 @@ new class extends Component
             session()->flash('pool_error', 'Nhân sự không tồn tại.');
             return;
         }
-        $ok = $target->assignments()
-            ->whereIn('org_unit_id', auth()->user()->memberOrgUnitIds() ?: [0])
-            ->exists();
-        if (! $ok) {
-            session()->flash('pool_error', 'Nhân sự ngoài phạm vi của bạn.');
-            return;
+        $subtreeIds = \App\Support\AdminScope::orgUnitIds();
+        if (is_array($subtreeIds)) {
+            $ok = $target->assignments()
+                ->whereIn('org_unit_id', $subtreeIds ?: [0])
+                ->exists();
+            if (! $ok) {
+                session()->flash('pool_error', 'Nhân sự ngoài phạm vi của bạn.');
+                return;
+            }
         }
+        // subtreeIds=null (super admin toàn công ty) → bỏ qua check scope.
 
         $before = $lead->owner_id;
         $lead->update([

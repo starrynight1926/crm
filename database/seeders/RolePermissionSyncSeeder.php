@@ -135,8 +135,9 @@ class RolePermissionSyncSeeder extends Seeder
         ],
         'Trực Page' => [
             'lead.create', 'lead.import', 'lead.view', 'phase.close.new',
-            // 2026-08-09: Trực Page up được Marketing (MKT) + Marketing BR (MKT_BR).
-            'source.up.mkt', 'source.up.mkt_br',
+            // 2026-08-11: Trực Page CHỈ up MKT. MKT_BR (khách quay lại do MKT tìm ra)
+            // để chính Sale điền — Trực Page không đụng.
+            'source.up.mkt',
         ],
         'Trợ lý kinh doanh' => [
             'lead.view', 'report.view',
