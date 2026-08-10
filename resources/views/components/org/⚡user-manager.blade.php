@@ -96,7 +96,7 @@ new class extends Component
             'uname' => 'required|string|max:100',
             'uemail' => ['required', 'email', Rule::unique('users', 'email')->ignore($this->editingUserId)],
             'uphone' => 'nullable|string|max:20',
-            'upassword' => $this->editingUserId ? 'nullable|string|min:8' : 'required|string|min:8',
+            'upassword' => $this->editingUserId ? 'nullable|string' : 'required|string',
             'ujobTitle' => 'nullable|string|max:100',
             'ustatus' => 'required|in:active,locked',
         ], [], [

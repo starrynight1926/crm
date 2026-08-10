@@ -15,7 +15,7 @@ new class extends Component
     {
         $this->validate([
             'current' => 'required|string',
-            'new' => 'required|string|min:8|different:current|confirmed:confirm',
+            'new' => 'required|string|different:current|confirmed:confirm',
             'confirm' => 'required|string',
         ], [
             'new.different' => 'Mật khẩu mới phải khác mật khẩu hiện tại.',
