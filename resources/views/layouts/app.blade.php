@@ -13,6 +13,7 @@
             ['label' => 'Danh sách khách hàng', 'route' => $u->hasAnyPermission(['lead.view', 'lead.import']) ? 'leads.index' : null, 'match' => 'leads.index'],
             ['label' => 'Thêm khách hàng', 'route' => $u->hasPermission('lead.create') ? 'leads.create' : null, 'match' => 'leads.create'],
             ['label' => 'Kho lead', 'route' => $u->hasPermission('lead.view') ? 'distribution.pools' : null, 'match' => 'distribution.pools'],
+            ['label' => 'Kho re-call', 'route' => $u->hasPermission('recall.view') ? 'recall.pool' : null, 'match' => 'recall.pool'],
             ['label' => 'Duyệt Lead', 'route' => $u->hasPermission('lead.approve_source') ? 'leads.approvals' : null, 'match' => 'leads.approvals'],
         ], fn ($i) => $i['route']));
 

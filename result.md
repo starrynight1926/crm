@@ -2,6 +2,36 @@
 
 > Làm xong phase nào ghi vào đây: ngày hoàn thành, việc đã làm, việc dời lại/chưa xong, ghi chú & quyết định phát sinh. Mẫu bên dưới.
 
+## 2026-08-11 — Eleventh (T6b): Kho re-call — import xlsx + chia hàng loạt UPS MKT ✅
+
+Trực Page up danh sách khách cũ (họ tên + sdt), match phone với DB → lưu **id lead + ngày** vào `recall_entries` (không tạo lead mới, không copy dữ liệu). CM/Team Lead/Trực Page bấm "Chia hàng loạt" → pick sale round-robin **UPS bucket MKT hôm nay** (reuse `UpsDispatcher::pickMkt`) → update `Lead.owner_id`, `phase=CALL(2)`, `pipeline_phase=booking`, `source_group=mkt_br` (khách quay lại), ghi log.
+
+### Files
+- Migration [2026_08_11_100000_create_recall_entries_table.php](database/migrations/2026_08_11_100000_create_recall_entries_table.php) — bảng `recall_entries` (batch_date, lead_id, imported_by, assigned_to_user_id, assigned_by, assigned_at, facility_pool_unit_id, imported_name, imported_phone). Unique `(batch_date, lead_id)` để 1 lead / 1 ngày.
+- [RecallEntry.php](app/Models/RecallEntry.php) — model + relations `lead`/`importer`/`assignee`/`facility`.
+- [⚡recall-pool.blade.php](resources/views/components/recall/⚡recall-pool.blade.php) — Livewire component: upload xlsx (parse SpreadsheetReader), match `Lead::normalizePhone`, insert entries. Bảng liệt kê entries theo ngày batch, checkbox chọn hàng loạt, nút "Chia hàng loạt → UPS MKT". Skip list hiển thị dòng bỏ qua (số không hợp lệ / không match DB).
+- [recall/pool.blade.php](resources/views/recall/pool.blade.php) — wrapper view.
+- Route `GET /recall` (name `recall.pool`, middleware `permission:recall.view`) trong [routes/web.php](routes/web.php).
+- Nav item "Kho re-call" thêm vào menu "Khách hàng" (gate `recall.view`) trong [layouts/app.blade.php](resources/views/layouts/app.blade.php).
+
+### Permissions (mới)
+- `recall.import` (Trực Page).
+- `recall.view` (Trực Page, Admin cơ sở, CM sale, CM Tele, Team Leader).
+- `recall.assign` (như view).
+
+Cập nhật [PermissionSeeder.php](database/seeders/PermissionSeeder.php) + [RolePermissionSyncSeeder.php](database/seeders/RolePermissionSyncSeeder.php).
+
+### Không đụng
+- Không tạo lead mới trong `leads`, không copy tên/sdt từ file (chỉ lưu snapshot ở `recall_entries.imported_name/phone` để trace).
+- Không thêm bucket UPS mới — reuse bucket MKT hiện có (1 sale vừa là tele vừa tiếp đón tùy UPS bucket).
+- `AdminScope` được reuse để resolve facility cho super admin chọn branch.
+
+### QA cần chạy
+- Login `hn.page01@longevity.com.vn` → menu "Khách hàng" → "Kho re-call". Upload xlsx 2 cột (tên + sdt) — số đã tồn tại phải match, số chưa có phải hiện trong bảng "Bỏ qua".
+- Login CM/admin → cùng menu → bấm "Chia hàng loạt" — verify Lead.owner_id đã cập nhật, `entries.assigned_to_user_id` không null.
+
+---
+
 ## 2026-08-11 — Eleventh: AdminScope + Trực Page bỏ mkt_br + fix dropdown Sale trống ✅
 
 Nhánh `eleventh`.

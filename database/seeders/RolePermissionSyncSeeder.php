@@ -66,6 +66,8 @@ class RolePermissionSyncSeeder extends Seeder
             'phase.close.new', 'phase.close.booking', 'phase.close.call', 'phase.close.checkin',
             'report.view', 'source.up.bdm', 'source.up.bod', 'source.up.wi', 'source.up.sa',
             'ups.view',
+            // 2026-08-11: Admin cơ sở xem + chia kho re-call (không import).
+            'recall.view', 'recall.assign',
         ],
         'CM sale' => [
             'lead.assign_direct',
@@ -79,6 +81,8 @@ class RolePermissionSyncSeeder extends Seeder
             'payment.record', 'phase.close.booking', 'phase.close.call',
             'phase.close.new', 'report.view',
             'source.up.bdm', 'source.up.bod', 'source.up.wi', 'source.up.sa', 'source.up.mkt_br',
+            // 2026-08-11: CM sale chia kho re-call.
+            'recall.view', 'recall.assign',
         ],
         'CM Tele' => [
             'lead.assign_direct',
@@ -89,6 +93,7 @@ class RolePermissionSyncSeeder extends Seeder
             'lead.update_booking', 'lead.view', 'lead.view_phone', 'lead.view_pool',
             'payment.record', 'phase.close.call',
             'phase.close.new', 'report.view', 'source.up.ba',
+            'recall.view', 'recall.assign',
         ],
         'Team Leader' => [
             'lead.approve_source', 'lead.create', 'lead.distribute',
@@ -97,6 +102,7 @@ class RolePermissionSyncSeeder extends Seeder
             'lead.view_phone', 'lead.view_pool', 'payment.record',
             'phase.close.booking', 'phase.close.call',
             'phase.close.new', 'report.view', 'source.up.sa', 'source.up.mkt_br', 'source.up.ba',
+            'recall.view', 'recall.assign',
         ],
         'Sale' => [
             'lead.consult', 'lead.create', 'lead.update',
@@ -138,6 +144,8 @@ class RolePermissionSyncSeeder extends Seeder
             // 2026-08-11: Trực Page CHỈ up MKT. MKT_BR (khách quay lại do MKT tìm ra)
             // để chính Sale điền — Trực Page không đụng.
             'source.up.mkt',
+            // 2026-08-11: Trực Page phụ trách kho re-call (import + chia).
+            'recall.import', 'recall.view', 'recall.assign',
         ],
         'Trợ lý kinh doanh' => [
             'lead.view', 'report.view',

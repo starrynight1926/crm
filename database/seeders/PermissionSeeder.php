@@ -73,6 +73,11 @@ class PermissionSeeder extends Seeder
             'source.up.bod'    => 'Đăng nguồn: BOD',
             'source.up.wi'     => 'Đăng nguồn: WI (Walk-in)',
         ],
+        'recall' => [
+            'recall.import' => 'Import xlsx số re-call (Trực Page)',
+            'recall.view' => 'Xem kho re-call',
+            'recall.assign' => 'Chia hàng loạt kho re-call cho Sale UPS MKT',
+        ],
         'ups' => [
             'ups.view' => 'Xem bảng UPS check-in',
             'ups.checkin' => 'Bấm check-in sale đầu ngày',
