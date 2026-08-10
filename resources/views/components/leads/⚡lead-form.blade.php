@@ -87,6 +87,12 @@ new class extends Component
      */
     public string $mktMode = 'auto';
 
+    /**
+     * 2026-08-10: Admin@longevity chọn cơ sở nhận (fallback khi trucPageFacility null).
+     * Chỉ dùng khi user là admin@longevity.com.vn (không map cơ sở duy nhất qua assignment).
+     */
+    public ?int $mktFacilityOverrideId = null;
+
     /** 2026-08-05: user_id nhân sự được CM chia thẳng khi mktMode='manual' (không qua UPS). */
     public ?int $manualAssignUserId = null;
 
@@ -1092,6 +1098,12 @@ new class extends Component
      */
     private function trucPageFacility(): ?\App\Models\PoolUnit
     {
+        // 2026-08-10: admin@longevity không thuộc cơ sở nào → cho phép override tay.
+        if ($this->isAdminLongevity() && $this->mktFacilityOverrideId) {
+            return \App\Models\PoolUnit::where('kind', 'facility')->where('is_active', true)
+                ->where('id', $this->mktFacilityOverrideId)->first();
+        }
+
         $ancestorOrgIds = [];
         foreach (auth()->user()->effectiveAssignments() as $assignment) {
             foreach (array_filter(explode('/', trim((string) $assignment->orgUnit->path, '/'))) as $seg) {
@@ -1106,6 +1118,12 @@ new class extends Component
             })->get();
 
         return $facilities->count() === 1 ? $facilities->first() : null;
+    }
+
+    /** 2026-08-10: Gate cho admin master account (không map cơ sở qua assignment). */
+    private function isAdminLongevity(): bool
+    {
+        return auth()->user()?->email === 'admin@longevity.com.vn';
     }
 
     /**
@@ -1441,7 +1459,9 @@ new class extends Component
         if (! $this->lead?->exists && in_array($this->sourceGroup, [Lead::SOURCE_MKT, Lead::SOURCE_MKT_BR], true) && ! $this->personId) {
             $facility = $this->trucPageFacility();
             if (! $facility) {
-                $this->addError('mktMode', 'Tài khoản trực page không map được cơ sở duy nhất — liên hệ Admin kiểm tra org_pool_map.');
+                $this->addError('mktMode', $this->isAdminLongevity()
+                    ? 'Chọn cơ sở tiếp nhận ở panel "Chia tự động — dự kiến" trước khi Lưu.'
+                    : 'Tài khoản trực page không map được cơ sở duy nhất — liên hệ Admin kiểm tra org_pool_map.');
                 return;
             }
 
@@ -1969,6 +1989,12 @@ new class extends Component
             'mktFacilityName' => (! $this->lead?->exists && in_array($this->sourceGroup, [Lead::SOURCE_MKT, Lead::SOURCE_MKT_BR], true))
                 ? ($this->trucPageFacility()?->name)
                 : null,
+            // 2026-08-10: admin@longevity — cho phép chọn cơ sở tay vì không map cơ sở qua assignment.
+            'adminFacilityChoices' => ($this->isAdminLongevity() && ! $this->lead?->exists
+                && in_array($this->sourceGroup, [Lead::SOURCE_MKT, Lead::SOURCE_MKT_BR], true))
+                ? \App\Models\PoolUnit::where('kind', 'facility')->where('is_active', true)
+                    ->orderBy('name')->get(['id', 'name'])
+                : collect(),
             // 2026-08-05: preview sale kế trong MKT List — hiện trong banner "Tự động" để user theo dõi trước khi Lưu.
             'mktNextSale' => (! $this->lead?->exists && in_array($this->sourceGroup, [Lead::SOURCE_MKT, Lead::SOURCE_MKT_BR], true) && $this->mktMode === 'auto' && ($__f = $this->trucPageFacility()))
                 ? $this->previewMktNextSale($__f->id)
@@ -3655,6 +3681,18 @@ new class extends Component
                         @if ($__hideCascade && $mktMode === 'auto')
                             <div class="{{ $__boxCls }} border rounded-md px-3 py-3 text-sm">
                                 <div class="font-bold mb-2">⚡ Chia tự động — dự kiến:</div>
+                                {{-- 2026-08-10: admin@longevity — chọn cơ sở tay (fallback vì không map qua assignment). --}}
+                                @if ($adminFacilityChoices->isNotEmpty())
+                                    <div class="bg-white/70 rounded px-3 py-2 mb-3 border border-amber-300">
+                                        <label class="block text-[11px] uppercase tracking-wide {{ $__subCls }} mb-1">Cơ sở tiếp nhận (chọn tay — admin)</label>
+                                        <select wire:model.live="mktFacilityOverrideId" class="w-full text-sm border border-amber-300 rounded px-2 py-1.5 bg-white">
+                                            <option value="">— Chọn cơ sở —</option>
+                                            @foreach ($adminFacilityChoices as $__f)
+                                                <option value="{{ $__f->id }}">{{ $__f->name }}</option>
+                                            @endforeach
+                                        </select>
+                                    </div>
+                                @endif
                                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                     <div class="bg-white/70 rounded px-3 py-2">
                                         <div class="text-[11px] uppercase tracking-wide {{ $__subCls }}">Cơ sở tiếp nhận</div>
