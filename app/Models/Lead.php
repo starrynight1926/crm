@@ -82,9 +82,9 @@ class Lead extends Model
         self::SOURCE_MKT => 'Marketing',
         self::SOURCE_MKT_BR => 'Marketing BR',
         self::SOURCE_BDM => 'BDM',
-        self::SOURCE_BOD => 'BOD - Ban lãnh đạo giới thiệu',
-        self::SOURCE_SA => 'SA - Sale Appointment',
-        self::SOURCE_BA => 'BA - Booking Appointment',
+        self::SOURCE_BOD => 'Ban lãnh đạo giới thiệu',
+        self::SOURCE_SA => 'Sale Appointment',
+        self::SOURCE_BA => 'Booking Appointment',
         self::SOURCE_WI => 'Walk-in',
     ];
 

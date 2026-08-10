@@ -5,7 +5,7 @@
 @section('content')
     @php $upsBlocked = app(\App\Services\Ups\UpsGate::class)->isBlockedFor(auth()->user()); @endphp
 
-    <div class="max-w-7xl mx-auto px-4 pt-4">
+    <div class="pt-4">
         <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
             <h1 class="text-lg font-bold">Kho Lead — Chia số</h1>
             @if (auth()->user()->hasPermission('ups.view'))

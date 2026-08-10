@@ -2552,7 +2552,7 @@ new class extends Component
                                     @php
                                         $_code = $_sourceCodes[$key] ?? null;
                                         $_disabled = ! isset($_allowedSources[$key]);
-                                        $_text = $label . ($_code ? ' (' . $_code . ')' : '') . ($_disabled ? ' - (không có quyền)' : '');
+                                        $_text = $label . ($_disabled ? ' - (không có quyền)' : '');
                                         $_title = $_disabled ? 'Bạn không có quyền up nguồn này' : '';
                                     @endphp
                                     <option value="{{ $key }}" {{ $_disabled ? 'disabled' : '' }} title="{{ $_title }}">{{ $_text }}</option>
