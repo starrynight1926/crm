@@ -18,8 +18,6 @@ new class extends Component
 
     public string $fClassification = '';
 
-    public string $fCamp = '';
-
     public string $fNguon = '';
 
     public string $fDateFrom = '';
@@ -63,8 +61,8 @@ new class extends Component
         'page' => 'Page',
         'name' => 'Tên khách hàng',
         'phone' => 'SĐT',
-        'camp' => 'Camp',
         'nguon' => 'Nguồn',
+        'classification' => 'Phân loại',
         'region' => 'Khu vực',
         'status' => 'Trạng thái',
         'tele' => 'Tele phụ trách',
@@ -113,7 +111,7 @@ new class extends Component
 
     public function updated($property): void
     {
-        if (in_array($property, ['search', 'fClassification', 'fCamp', 'fNguon', 'fDateFrom', 'fDateTo', 'fPhase'])) {
+        if (in_array($property, ['search', 'fClassification', 'fNguon', 'fDateFrom', 'fDateTo', 'fPhase'])) {
             $this->resetPage();
             $this->reset('selected', 'selectAll');
         }
@@ -130,7 +128,6 @@ new class extends Component
             $this->visibleCols = array_values(array_diff($this->visibleCols, [$key]));
             // Reset filter khi ẩn cột (không kẹt filter cũ) — Phase 6.19
             $filterMap = [
-                'camp' => 'fCamp',
                 'nguon' => 'fNguon',
                 'classification' => 'fClassification',
                 'received_date' => ['fDateFrom', 'fDateTo'],
@@ -315,7 +312,7 @@ new class extends Component
                     ->where('path', 'like', $pool->path . '%')->pluck('id');
                 if ($descIds->isNotEmpty()) {
                     $withMkt = \App\Models\DailyAttendance::whereIn('facility_pool_unit_id', $descIds)
-                        ->whereDate('work_date', today())->where('list_bucket', 'MKT')
+                        ->whereDate('work_date', today())->where('is_mkt', true)
                         ->value('facility_pool_unit_id');
                     if ($withMkt) return (int) $withMkt;
                     return (int) $descIds->first();
@@ -520,12 +517,6 @@ new class extends Component
                     ->orWhereHas('bookingLogs', fn ($bl) => $bl->where('sbooking_booking_ma', 'like', "%{$needle}%")));
             })
             ->when($this->fClassification, fn ($q) => $q->where('classification', $this->fClassification))
-            ->when($this->fCamp, function ($q) {
-                $campIds = CustomField::where('key', 'camp')->pluck('id');
-                if ($campIds->isNotEmpty()) {
-                    $q->whereHas('customValues', fn ($cv) => $cv->whereIn('custom_field_id', $campIds)->where('value', $this->fCamp));
-                }
-            })
             ->when($this->fNguon, fn ($q) => $q->where('source_group', $this->fNguon))
             ->when($this->fDateFrom, fn ($q) => $q->where('received_date', '>=', $this->fDateFrom))
             ->when($this->fDateTo, fn ($q) => $q->where('received_date', '<=', $this->fDateTo))
@@ -673,7 +664,6 @@ new class extends Component
 
         return [
             'leads' => $leads,
-            'campOptions' => $this->coreCustomOptions('camp', $user),
             'nguonOptions' => \App\Models\CustomField::find(1)?->options ?? [],
             'exportCore' => $this->showExportModal ? $this->coreColumns() : [],
             'exportCustomFields' => $this->showExportModal ? $this->exportableCustomFields() : collect(),
@@ -727,17 +717,6 @@ new class extends Component
             <div class="min-w-[130px] flex-1">
                 <label class="block text-xs font-semibold text-ink/50 mb-1">Đến ngày</label>
                 <x-date-input field="fDateTo" class="px-2.5 py-2" />
-            </div>
-        @endif
-        @if ($this->colVisible('camp'))
-            <div class="min-w-[140px] flex-1">
-                <label class="block text-xs font-semibold text-ink/50 mb-1">Chiến dịch</label>
-                <select wire:model.live="fCamp" class="w-full border border-gold-200 rounded-md px-2.5 py-2 text-sm bg-white focus:outline-none focus:border-gold-500">
-                    <option value="">Tất cả</option>
-                    @foreach ($campOptions as $camp)
-                        <option value="{{ $camp }}">{{ $camp }}</option>
-                    @endforeach
-                </select>
             </div>
         @endif
         @if ($this->colVisible('nguon'))
@@ -863,8 +842,8 @@ new class extends Component
                     @if ($this->colVisible('page'))        <th class="px-4 py-3 font-semibold">Page</th> @endif
                     @if ($this->colVisible('name'))        <th class="px-4 py-3 font-semibold">Tên khách hàng</th> @endif
                     @if ($this->colVisible('phone'))       <th class="px-4 py-3 font-semibold">SĐT</th> @endif
-                    @if ($this->colVisible('camp'))        <th class="px-4 py-3 font-semibold">Camp</th> @endif
                     @if ($this->colVisible('nguon'))       <th class="px-4 py-3 font-semibold">Nguồn</th> @endif
+                    @if ($this->colVisible('classification'))<th class="px-4 py-3 font-semibold">Phân loại</th> @endif
                     @if ($this->colVisible('region'))      <th class="px-4 py-3 font-semibold">Khu vực</th> @endif
                     @if ($this->colVisible('status'))      <th class="px-4 py-3 font-semibold">Trạng thái</th> @endif
                     @if ($this->colVisible('tele'))        <th class="px-4 py-3 font-semibold">Tele phụ trách</th> @endif
@@ -899,15 +878,22 @@ new class extends Component
                         @if ($this->colVisible('phone'))
                             <td class="px-4 py-3 font-mono">{{ $lead->phoneFor(auth()->user()) }}</td>
                         @endif
-                        @if ($this->colVisible('camp'))
-                            <td class="px-4 py-3 text-ink/60">{{ $lead->camp ?: '—' }}</td>
-                        @endif
                         @if ($this->colVisible('nguon'))
                             <td class="px-4 py-3">
                                 @if ($lead->source_group)
                                     <span class="text-xs bg-blue-50 border border-blue-200 px-2 py-0.5 rounded">
                                         {{ \App\Models\Lead::SOURCE_GROUPS[$lead->source_group] ?? $lead->source_group }}
                                     </span>
+                                @else — @endif
+                            </td>
+                        @endif
+                        @if ($this->colVisible('classification'))
+                            <td class="px-4 py-3">
+                                @if ($lead->classification)
+                                    @php
+                                        $__clsClass = $lead->classification === 'recall' ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-slate-50 border-slate-200 text-slate-700';
+                                    @endphp
+                                    <span class="text-xs font-medium px-2 py-0.5 rounded border {{ $__clsClass }}">{{ $lead->classificationLabel() }}</span>
                                 @else — @endif
                             </td>
                         @endif

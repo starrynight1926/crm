@@ -58,6 +58,17 @@ class OrgUnit extends Model
             ->all();
     }
 
+    public function getShortNameAttribute(): string
+    {
+        return match ($this->code) {
+            'branch-hn'  => 'CS1: 59NTN',
+            'branch-hcm' => 'CS2: 207NVT',
+            'branch-dn'  => 'CS3: L23TĐN',
+            'ops-monitor' => 'Vận hành',
+            default       => $this->name,
+        };
+    }
+
     /** Scope subtree cho query builder. */
     public function scopeInSubtreeOf($query, self $node)
     {

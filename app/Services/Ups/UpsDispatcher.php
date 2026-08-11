@@ -20,7 +20,61 @@ class UpsDispatcher
      */
     public function pickMkt(int $facilityPoolUnitId, ?string $workDate = null): ?User
     {
-        return $this->pickFromBucket($facilityPoolUnitId, 'MKT', $workDate);
+        return $this->pickFromMkt($facilityPoolUnitId, $workDate);
+    }
+
+    /**
+     * Round-robin chọn sale có is_mkt=true (thay vì bucket='MKT').
+     */
+    public function pickFromMkt(int $facilityPoolUnitId, ?string $workDate = null, bool $includeBusy = false): ?User
+    {
+        $workDate ??= now()->toDateString();
+
+        return DB::transaction(function () use ($facilityPoolUnitId, $workDate, $includeBusy) {
+            $q = DailyAttendance::with('user')
+                ->where('facility_pool_unit_id', $facilityPoolUnitId)
+                ->whereDate('work_date', $workDate)
+                ->where('is_mkt', true)
+                ->where('dung_nhan_lead', false)
+                ->orderBy('checkin_at');
+            if (! $includeBusy) $q->where('is_busy', false);
+            $sales = $q->get()->pluck('user')->filter()->values();
+
+            if ($sales->isEmpty()) return null;
+
+            $bucket = 'MKT';
+            $state = DB::table('ups_rr_state')
+                ->where('facility_pool_unit_id', $facilityPoolUnitId)
+                ->where('work_date', $workDate)
+                ->where('bucket', $bucket)
+                ->lockForUpdate()
+                ->first();
+
+            $lastUserId = $state?->last_user_id;
+            $lastIdx = -1;
+            if ($lastUserId) {
+                foreach ($sales as $i => $s) {
+                    if ($s->id === $lastUserId) { $lastIdx = $i; break; }
+                }
+            }
+            $nextIdx = ($lastIdx + 1) % $sales->count();
+            $picked = $sales[$nextIdx];
+
+            DB::table('ups_rr_state')->updateOrInsert(
+                [
+                    'facility_pool_unit_id' => $facilityPoolUnitId,
+                    'work_date' => $workDate,
+                    'bucket' => $bucket,
+                ],
+                [
+                    'last_user_id' => $picked->id,
+                    'updated_at' => now(),
+                    'created_at' => $state ? $state->created_at : now(),
+                ]
+            );
+
+            return $picked;
+        });
     }
 
     /**

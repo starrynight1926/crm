@@ -117,23 +117,59 @@ new class extends Component
 
         $facility = PoolUnit::where('id', $facilityPoolUnitId)->where('kind', 'facility')->firstOrFail();
         $today = now()->toDateString();
+        $now = now();
 
-        if (DailyAttendance::where('user_id', $saleId)->whereDate('work_date', $today)->exists()) {
-            session()->flash('ups_msg', 'Sale này đã check-in hôm nay.');
+        $existing = DailyAttendance::where('user_id', $saleId)->whereDate('work_date', $today)->first();
+
+        if ($slot === 'receive') {
+            // MKT: nếu đã check-in rồi thì chỉ bật is_mkt, không tạo record mới
+            if ($existing) {
+                if ($existing->is_mkt) {
+                    session()->flash('ups_msg', 'Sale này đã có trong MKT List.');
+                } else {
+                    $existing->update(['is_mkt' => true]);
+                    session()->flash('ups_msg', $existing->user->name . ' đã được thêm vào MKT List.');
+                }
+                $this->resetPicker($facilityPoolUnitId);
+                return;
+            }
+            // Chưa check-in → tạo mới, chỉ có MKT flag, chưa có bucket tiếp đón
+            DailyAttendance::create([
+                'facility_pool_unit_id' => $facility->id,
+                'user_id' => $saleId,
+                'work_date' => $today,
+                'checkin_at' => $now,
+                'list_bucket' => null,
+                'is_mkt' => true,
+                'is_off' => false,
+            ]);
             $this->resetPicker($facilityPoolUnitId);
-
             return;
         }
 
-        $now = now();
-        // Nhận số → MKT. Tiếp đón + tier=auto → dùng resolver. Tiếp đón + tier chỉ định → dùng tier đó.
-        if ($slot === 'receive') {
-            $bucket = 'MKT';
-        } elseif ($tier === 'auto') {
-            $bucket = app(UpsBucketResolver::class)->resolve($now, $facility->id);
-        } else {
-            $bucket = $tier;
+        // Tiếp đón (greet)
+        if ($existing) {
+            if ($existing->list_bucket) {
+                session()->flash('ups_msg', 'Sale này đã check-in hôm nay (bucket ' . $existing->list_bucket . ').');
+                $this->resetPicker($facilityPoolUnitId);
+                return;
+            }
+            // Đã có record (chỉ MKT) → gán thêm bucket tiếp đón
+            $bucket = $tier === 'auto'
+                ? app(UpsBucketResolver::class)->resolve($now, $facility->id)
+                : $tier;
+            $existing->update([
+                'list_bucket' => $bucket,
+                'is_off' => $bucket === 'OFF',
+                'checkin_at' => $existing->checkin_at ?? $now,
+            ]);
+            $this->resetPicker($facilityPoolUnitId);
+            return;
         }
+
+        $bucket = $tier === 'auto'
+            ? app(UpsBucketResolver::class)->resolve($now, $facility->id)
+            : $tier;
 
         DailyAttendance::create([
             'facility_pool_unit_id' => $facility->id,
@@ -162,6 +198,17 @@ new class extends Component
         $att->update([
             'list_bucket' => $newBucket,
             'is_off' => $newBucket === 'OFF',
+            'override_by' => auth()->id(),
+            'override_at' => now(),
+        ]);
+    }
+
+    public function toggleMkt(int $attendanceId): void
+    {
+        abort_unless(auth()->user()?->hasPermission('ups.override'), 403);
+        $att = DailyAttendance::findOrFail($attendanceId);
+        $att->update([
+            'is_mkt' => ! $att->is_mkt,
             'override_by' => auth()->id(),
             'override_at' => now(),
         ]);
@@ -198,7 +245,11 @@ new class extends Component
         $today = now()->toDateString();
         $branches = $this->branchesForUser();
 
-        $checkedInIds = DailyAttendance::whereDate('work_date', $today)->pluck('user_id')->all();
+        // Chỉ loại khỏi dropdown nếu đã có bucket tiếp đón (A/B/C/OFF).
+        // Người chỉ có is_mkt vẫn hiện để gán thêm bucket.
+        $checkedInIds = DailyAttendance::whereDate('work_date', $today)
+            ->whereNotNull('list_bucket')
+            ->pluck('user_id')->all();
 
         $data = [];
         foreach ($branches as $branch) {
@@ -214,10 +265,16 @@ new class extends Component
                     ->whereDate('work_date', $today)
                     ->orderBy('checkin_at')->get();
 
+                // Bucket groups: chỉ A/B/C/OFF (bỏ MKT ra khỏi bucket)
+                $bucketGroups = $atts->filter(fn ($a) => $a->list_bucket !== null)->groupBy('list_bucket');
+                // MKT list: tất cả có is_mkt=true
+                $mktList = $atts->filter(fn ($a) => $a->is_mkt);
+
                 $facilityBlocks[] = [
                     'facility' => $facility,
                     'all' => $atts,
-                    'buckets' => $atts->groupBy('list_bucket'),
+                    'buckets' => $bucketGroups,
+                    'mktList' => $mktList,
                     'availableSales' => $sales->reject(fn ($u) => in_array($u->id, $checkedInIds, true))->values(),
                     'confirmed' => UpsDailyConfirm::isConfirmed($facility->id, $today),
                     'cutoff' => UpsConfig::cutoffFor($facility->id),
@@ -325,11 +382,13 @@ new class extends Component
                                                                 'B'   => 'bg-teal-100 text-teal-800',
                                                                 'C'   => 'bg-slate-200 text-slate-800',
                                                                 'OFF' => 'bg-rose-100 text-rose-800',
-                                                                'MKT' => 'bg-amber-100 text-amber-800',
                                                                 default => 'bg-gold-100 text-gold-800',
                                                             };
                                                         @endphp
                                                         <span class="ml-1 text-[10px] font-bold px-1.5 py-0.5 rounded {{ $chipClass }}">{{ $att->list_bucket }}</span>
+                                                    @endif
+                                                    @if ($att->is_mkt)
+                                                        <span class="ml-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">MKT</span>
                                                     @endif
                                                 </td>
                                                 <td class="border border-gold-200 px-3 py-2 text-xs text-ink/70 text-center">{{ $jobTitle }}</td>
@@ -380,7 +439,7 @@ new class extends Component
                                         + Check in
                                     </button>
                                 </div>
-                                <div class="text-[11px] text-ink/40 mt-2">Tier "Tự động": ≤ {{ substr($fb['cutoff'], 0, 5) }} → A · sau → OFF · Nhận số luôn vào MKT.</div>
+                                <div class="text-[11px] text-ink/40 mt-2">Tier "Tự động": ≤ {{ substr($fb['cutoff'], 0, 5) }} → A · sau → OFF · Nhận số → MKT (có thể ở cả 2 list).</div>
                             @endif
                         </div>
 
@@ -390,32 +449,32 @@ new class extends Component
                                 <span class="bg-gold-100 text-gold-700 px-2 py-0.5 rounded">Bảng UPS</span>
                             </div>
                             @php
-                                // Mỗi bucket: 1 gam màu duy nhất, dùng liên tục cả 3 hàng header (không xen kẽ trắng).
                                 $bucketMeta = [
                                     'A'   => ['head' => 'bg-blue-600 text-white',    'sub' => 'bg-blue-50 text-blue-900',      'cell' => 'bg-white'],
                                     'B'   => ['head' => 'bg-teal-600 text-white',    'sub' => 'bg-teal-50 text-teal-900',      'cell' => 'bg-white'],
                                     'C'   => ['head' => 'bg-slate-600 text-white',   'sub' => 'bg-slate-50 text-slate-800',    'cell' => 'bg-white'],
                                     'OFF' => ['head' => 'bg-rose-600 text-white',    'sub' => 'bg-rose-50 text-rose-900',      'cell' => 'bg-white'],
-                                    'MKT' => ['head' => 'bg-amber-500 text-white',   'sub' => 'bg-amber-50 text-amber-900',    'cell' => 'bg-white'],
                                 ];
+                                $mktMeta = ['head' => 'bg-amber-500 text-white', 'sub' => 'bg-amber-50 text-amber-900', 'cell' => 'bg-white'];
                                 $subA = [
                                     'A'   => ['title' => 'BOD / HOTLINE / MKT<br>AFF / WI / BR', 'desc' => '≥20TR · SHOW+TIỀN'],
                                     'B'   => ['title' => 'APPT / PNS<br>VOUCHER',                 'desc' => 'CÓ SHOW / CÓ TIỀN'],
                                     'C'   => ['title' => 'B BẬN',                                 'desc' => 'CHECK IN ON TIME'],
                                     'OFF' => ['title' => 'A, B, C BẬN',                           'desc' => '&gt;5p TRỄ'],
-                                    'MKT' => ['title' => 'TM TEAM (HC)',                          'desc' => 'CHECK IN ON TIME'],
                                 ];
                             @endphp
                             <div class="overflow-x-auto">
                                 <table class="w-full text-sm border-2 border-ink/10 border-collapse table-fixed" style="table-layout:fixed">
                                     <colgroup>
                                         @foreach ($buckets as $b)<col style="width:20%">@endforeach
+                                        <col style="width:20%">
                                     </colgroup>
                                     <thead>
                                         <tr>
                                             @foreach ($buckets as $b)
                                                 <th class="border border-ink/10 px-2 h-12 text-center text-base font-extrabold uppercase tracking-wider {{ $bucketMeta[$b]['head'] }}">{{ $b }} LIST</th>
                                             @endforeach
+                                            <th class="border border-ink/10 px-2 h-12 text-center text-base font-extrabold uppercase tracking-wider {{ $mktMeta['head'] }}">MKT LIST</th>
                                         </tr>
                                         <tr>
                                             @foreach ($buckets as $b)
@@ -423,6 +482,9 @@ new class extends Component
                                                     {!! $subA[$b]['title'] !!}
                                                 </th>
                                             @endforeach
+                                            <th class="border border-ink/10 px-2 h-14 align-middle text-center text-[11px] font-bold uppercase tracking-wide leading-tight break-words {{ $mktMeta['sub'] }}">
+                                                TM TEAM (HC)
+                                            </th>
                                         </tr>
                                         <tr>
                                             @foreach ($buckets as $b)
@@ -430,6 +492,9 @@ new class extends Component
                                                     {!! $subA[$b]['desc'] !!}
                                                 </th>
                                             @endforeach
+                                            <th class="border border-ink/10 px-2 h-10 align-middle text-center text-[11px] font-medium uppercase tracking-wide leading-tight break-words {{ $mktMeta['sub'] }}">
+                                                CHECK IN ON TIME
+                                            </th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -438,7 +503,12 @@ new class extends Component
                                                 <td class="border border-ink/10 px-2 py-2 text-center align-top {{ $bucketMeta[$b]['cell'] }}" style="min-height:120px;">
                                                     @forelse (($fb['buckets'][$b] ?? []) as $att)
                                                         <div class="mb-1.5 border border-ink/10 rounded px-2 py-1.5 shadow-sm bg-white">
-                                                            <div class="font-bold text-[13px] leading-tight text-ink break-words">{{ $att->user->name }}</div>
+                                                            <div class="font-bold text-[13px] leading-tight text-ink break-words">
+                                                                {{ $att->user->name }}
+                                                                @if ($att->is_mkt)
+                                                                    <span class="ml-0.5 text-[9px] font-bold px-1 py-0.5 rounded bg-amber-100 text-amber-700" title="Cũng ở MKT List">MKT</span>
+                                                                @endif
+                                                            </div>
                                                             <div class="flex items-center justify-center gap-2 mt-1">
                                                                 <span class="text-[11px] text-ink/60 font-mono">{{ optional($att->checkin_at)?->setTimezone('Asia/Ho_Chi_Minh')->format('H:i') }}</span>
                                                                 @if ($canOverride && ! $fb['confirmed'])
@@ -448,6 +518,9 @@ new class extends Component
                                                                             @if ($bb !== $b)<option value="{{ $bb }}">{{ $bb }}</option>@endif
                                                                         @endforeach
                                                                     </select>
+                                                                    <button wire:click="toggleMkt({{ $att->id }})" class="text-[10px] border border-ink/20 rounded px-1 py-0.5 bg-white hover:bg-amber-50" title="{{ $att->is_mkt ? 'Bỏ khỏi MKT' : 'Thêm vào MKT' }}">
+                                                                        {{ $att->is_mkt ? '−M' : '+M' }}
+                                                                    </button>
                                                                 @endif
                                                             </div>
                                                         </div>
@@ -456,6 +529,38 @@ new class extends Component
                                                     @endforelse
                                                 </td>
                                             @endforeach
+                                            {{-- MKT column --}}
+                                            <td class="border border-ink/10 px-2 py-2 text-center align-top {{ $mktMeta['cell'] }}" style="min-height:120px;">
+                                                @forelse ($fb['mktList'] as $att)
+                                                    <div class="mb-1.5 border border-ink/10 rounded px-2 py-1.5 shadow-sm bg-white">
+                                                        <div class="font-bold text-[13px] leading-tight text-ink break-words">
+                                                            {{ $att->user->name }}
+                                                            @if ($att->list_bucket)
+                                                                @php
+                                                                    $chipClass = match ($att->list_bucket) {
+                                                                        'A'   => 'bg-blue-100 text-blue-800',
+                                                                        'B'   => 'bg-teal-100 text-teal-800',
+                                                                        'C'   => 'bg-slate-200 text-slate-800',
+                                                                        'OFF' => 'bg-rose-100 text-rose-800',
+                                                                        default => 'bg-gold-100 text-gold-800',
+                                                                    };
+                                                                @endphp
+                                                                <span class="ml-0.5 text-[9px] font-bold px-1 py-0.5 rounded {{ $chipClass }}" title="Cũng ở {{ $att->list_bucket }} List">{{ $att->list_bucket }}</span>
+                                                            @endif
+                                                        </div>
+                                                        <div class="flex items-center justify-center gap-2 mt-1">
+                                                            <span class="text-[11px] text-ink/60 font-mono">{{ optional($att->checkin_at)?->setTimezone('Asia/Ho_Chi_Minh')->format('H:i') }}</span>
+                                                            @if ($canOverride && ! $fb['confirmed'])
+                                                                <button wire:click="toggleMkt({{ $att->id }})" class="text-[10px] border border-red-200 rounded px-1 py-0.5 bg-white hover:bg-red-50 text-red-600" title="Bỏ khỏi MKT">
+                                                                    −M
+                                                                </button>
+                                                            @endif
+                                                        </div>
+                                                    </div>
+                                                @empty
+                                                    <div class="text-[11px] text-ink/30 italic py-6">— trống —</div>
+                                                @endforelse
+                                            </td>
                                         </tr>
                                     </tbody>
                                 </table>

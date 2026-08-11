@@ -1105,6 +1105,20 @@ new class extends Component
             return \App\Models\PoolUnit::where('kind', 'facility')->where('is_active', true)
                 ->where('id', $this->mktFacilityOverrideId)->first();
         }
+        // 2026-08-11: admin chọn cơ sở trên navbar → auto-resolve facility từ AdminScope.
+        if ($this->isAdminLongevity() && ! $this->mktFacilityOverrideId) {
+            $scopeBranchId = \App\Support\AdminScope::currentBranchId();
+            if ($scopeBranchId) {
+                $scopeOrgIds = \App\Support\AdminScope::orgUnitIds() ?? [];
+                if ($scopeOrgIds) {
+                    $fac = \App\Models\PoolUnit::where('kind', 'facility')->where('is_active', true)
+                        ->whereIn('id', function ($q) use ($scopeOrgIds) {
+                            $q->select('pool_unit_id')->from('org_pool_map')->whereIn('org_unit_id', $scopeOrgIds);
+                        })->first();
+                    if ($fac) return $fac;
+                }
+            }
+        }
 
         $ancestorOrgIds = [];
         foreach (auth()->user()->effectiveAssignments() as $assignment) {
@@ -1179,7 +1193,7 @@ new class extends Component
         $baseQ = \App\Models\DailyAttendance::with('user')
             ->where('facility_pool_unit_id', $facilityPoolUnitId)
             ->whereDate('work_date', $workDate)
-            ->where('list_bucket', 'MKT')
+            ->where('is_mkt', true)
             // 2026-08-10: sale dừng nhận lead → loại tuyệt đối kể cả wrap-around.
             ->where('dung_nhan_lead', false)
             ->orderBy('checkin_at');
@@ -2009,7 +2023,7 @@ new class extends Component
                 ? \App\Models\DailyAttendance::with('user')
                     ->where('facility_pool_unit_id', $__f2->id)
                     ->whereDate('work_date', now()->toDateString())
-                    ->where('list_bucket', 'MKT')
+                    ->where('is_mkt', true)
                     ->orderBy('checkin_at')->get()
                 : collect(),
             // 2026-08-05: user list cho radio "Thủ công" — filter theo data_scope của user hiện tại (visibleOrgUnitIds).
@@ -2177,7 +2191,8 @@ new class extends Component
 
     {{-- Phase 6.21g — hiển thị tổng errors ở đầu form để user thấy dù đang ở tab nào --}}
     @if ($errors->any())
-        <div class="mb-5 bg-red-50 border border-red-300 rounded-lg px-4 py-3 text-sm text-red-800">
+        <div x-data x-init="$nextTick(() => { $el.scrollIntoView({ behavior: 'smooth', block: 'center' }) })"
+             class="mb-5 bg-red-50 border border-red-300 rounded-lg px-4 py-3 text-sm text-red-800">
             <div class="font-bold mb-1">⚠️ Không thể lưu — sửa các lỗi sau:</div>
             <ul class="list-disc pl-5 space-y-0.5 text-xs">
                 @foreach ($errors->all() as $err)
@@ -2517,7 +2532,7 @@ new class extends Component
                     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                         <div>
                             <label class="block text-sm font-medium mb-1.5">Tên khách hàng <span class="text-red-500">*</span></label>
-                            <input type="text" wire:model="name" placeholder="Nhập họ và tên" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
+                            <input type="text" wire:model="name" placeholder="Nhập họ và tên" class="w-full border rounded-md px-3 py-2.5 text-sm focus:outline-none {{ $errors->has('name') ? 'border-red-400 bg-red-50 focus:border-red-500' : 'border-gold-200 focus:border-gold-500' }}">
                             @error('name')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
                             @if ($lead?->exists && ($lead->imported_by || $lead->receiver_id))
                                 @php
@@ -2535,7 +2550,7 @@ new class extends Component
                             <input type="text" wire:model="phone" placeholder="0xxx xxx xxx"
                                 x-on:paste.stop="setTimeout(() => { let v = $event.target.value.replace(/\D+/g,''); if (v.startsWith('84') && v.length === 11) v = '0' + v.slice(2); if (v.length === 9 && !v.startsWith('0')) v = '0' + v; $event.target.value = v; $wire.set('phone', v); }, 0)"
                                 x-on:blur="let v = $event.target.value.replace(/\D+/g,''); if (v.startsWith('84') && v.length === 11) v = '0' + v.slice(2); if (v.length === 9 && !v.startsWith('0')) v = '0' + v; if (v !== $event.target.value) { $event.target.value = v; $wire.set('phone', v); }"
-                                class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-gold-500">
+                                class="w-full border rounded-md px-3 py-2.5 text-sm font-mono focus:outline-none {{ $errors->has('phone') ? 'border-red-400 bg-red-50 focus:border-red-500' : 'border-gold-200 focus:border-gold-500' }}">
                             @error('phone')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
                         </div>
                         <div>
@@ -2768,13 +2783,39 @@ new class extends Component
                     </div>
                     <div>
                         <label class="block text-xs font-medium text-ink/60 mb-1">Tele đã xử lý</label>
-                        <div class="px-3 py-2 border border-gold-200 rounded-md {{ $currentTele ? 'bg-slate-50' : 'bg-slate-50 text-ink/50 italic' }}">{{ $currentTele?->name ?? '—' }}</div>
+                        @if ($currentTele)
+                            <div class="relative" x-data="{ show: false }">
+                                <div @click="show = !show" class="px-3 py-2 border border-gold-200 rounded-md bg-slate-50 cursor-pointer hover:bg-gold-50 transition-colors">{{ $currentTele->name }}</div>
+                                <div x-show="show" x-cloak @click.outside="show = false" class="absolute z-10 mt-1 left-0 bg-white border border-gold-200 rounded-lg shadow-lg px-3 py-2 text-sm">
+                                    <div class="text-[11px] text-ink/50 mb-0.5">SĐT nhân viên</div>
+                                    @if ($currentTele->phone)
+                                        <a href="tel:{{ $currentTele->phone }}" class="font-mono font-semibold text-gold-700 hover:underline">{{ $currentTele->phone }}</a>
+                                    @else
+                                        <span class="text-ink/40 italic">Chưa có SĐT</span>
+                                    @endif
+                                </div>
+                            </div>
+                        @else
+                            <div class="px-3 py-2 border border-gold-200 rounded-md bg-slate-50 text-ink/50 italic">—</div>
+                        @endif
                     </div>
                     <div>
                         <label class="block text-xs font-medium text-ink/60 mb-1">Sale phụ trách</label>
-                        <div class="px-3 py-2 border border-gold-200 rounded-md {{ $currentSale ? 'bg-emerald-50 border-emerald-200 text-emerald-800 font-semibold' : 'bg-slate-50 text-ink/50 italic' }}">
-                            {{ $currentSale?->name ?? '— chưa phân —' }}
-                        </div>
+                        @if ($currentSale)
+                            <div class="relative" x-data="{ show: false }">
+                                <div @click="show = !show" class="px-3 py-2 border border-gold-200 rounded-md bg-emerald-50 border-emerald-200 text-emerald-800 font-semibold cursor-pointer hover:bg-emerald-100 transition-colors">{{ $currentSale->name }}</div>
+                                <div x-show="show" x-cloak @click.outside="show = false" class="absolute z-10 mt-1 left-0 bg-white border border-gold-200 rounded-lg shadow-lg px-3 py-2 text-sm">
+                                    <div class="text-[11px] text-ink/50 mb-0.5">SĐT nhân viên</div>
+                                    @if ($currentSale->phone)
+                                        <a href="tel:{{ $currentSale->phone }}" class="font-mono font-semibold text-gold-700 hover:underline">{{ $currentSale->phone }}</a>
+                                    @else
+                                        <span class="text-ink/40 italic">Chưa có SĐT</span>
+                                    @endif
+                                </div>
+                            </div>
+                        @else
+                            <div class="px-3 py-2 border border-gold-200 rounded-md bg-slate-50 text-ink/50 italic">— chưa phân —</div>
+                        @endif
                     </div>
                 </div>
 
@@ -2866,19 +2907,7 @@ new class extends Component
                     </div>
                     <div wire:poll.5s class="border border-dashed border-slate-300 bg-slate-50 rounded p-3 space-y-2">
                         <div class="text-xs font-semibold text-ink/60">Thêm booking mới <span class="font-normal text-ink/40">— mặc định "Chờ xác nhận", bên booking cập nhật sẽ tự sync về đây</span></div>
-                        {{-- 2026-08-10: admin@longevity — chọn cơ sở UPS tay (dùng để pick CV round-robin). --}}
-                        @if ($adminFacilityChoices->isNotEmpty())
-                            <div class="bg-amber-50 border border-amber-300 rounded px-3 py-2">
-                                <label class="block text-[11px] uppercase tracking-wide text-amber-700 mb-1 font-semibold">Cơ sở UPS (chọn tay — admin)</label>
-                                <select wire:model.live="mktFacilityOverrideId" class="w-full text-sm border border-amber-300 rounded px-2 py-1.5 bg-white">
-                                    <option value="">— Chọn cơ sở UPS —</option>
-                                    @foreach ($adminFacilityChoices as $__f)
-                                        <option value="{{ $__f->id }}">{{ $__f->name }}</option>
-                                    @endforeach
-                                </select>
-                                <div class="text-[11px] text-amber-700 mt-1">Cần chọn để hệ thống pick CV từ UPS list của cơ sở này.</div>
-                            </div>
-                        @endif
+                        {{-- 2026-08-11: bỏ dropdown chọn cơ sở UPS tay — admin chọn trên navbar (AdminScope) là đủ. --}}
                         {{-- Hàng 1: Loại | Trạng thái (lock) | Datetime --}}
                         <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
                             {{-- 2026-08-09: 3 bucket — Khám lâm sàng / Tư vấn / Dịch vụ. --}}
@@ -3701,18 +3730,7 @@ new class extends Component
                         @if ($__hideCascade && $mktMode === 'auto')
                             <div class="{{ $__boxCls }} border rounded-md px-3 py-3 text-sm">
                                 <div class="font-bold mb-2">⚡ Chia tự động — dự kiến:</div>
-                                {{-- 2026-08-10: admin@longevity — chọn cơ sở tay (fallback vì không map qua assignment). --}}
-                                @if ($adminFacilityChoices->isNotEmpty())
-                                    <div class="bg-white/70 rounded px-3 py-2 mb-3 border border-amber-300">
-                                        <label class="block text-[11px] uppercase tracking-wide {{ $__subCls }} mb-1">Cơ sở tiếp nhận (chọn tay — admin)</label>
-                                        <select wire:model.live="mktFacilityOverrideId" class="w-full text-sm border border-amber-300 rounded px-2 py-1.5 bg-white">
-                                            <option value="">— Chọn cơ sở —</option>
-                                            @foreach ($adminFacilityChoices as $__f)
-                                                <option value="{{ $__f->id }}">{{ $__f->name }}</option>
-                                            @endforeach
-                                        </select>
-                                    </div>
-                                @endif
+                                {{-- 2026-08-11: bỏ dropdown chọn cơ sở tay — admin chọn trên navbar (AdminScope) là đủ. --}}
                                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                     <div class="bg-white/70 rounded px-3 py-2">
                                         <div class="text-[11px] uppercase tracking-wide {{ $__subCls }}">Cơ sở tiếp nhận</div>

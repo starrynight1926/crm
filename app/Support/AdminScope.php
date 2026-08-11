@@ -60,7 +60,7 @@ class AdminScope
     {
         return OrgUnit::where('depth', 1)
             ->orderBy('position')->orderBy('name')
-            ->get(['id', 'name']);
+            ->get(['id', 'name', 'code']);
     }
 
     private static function subtreeOrgIds(int $branchId): array

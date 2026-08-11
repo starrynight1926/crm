@@ -34,6 +34,7 @@ class RolePermissionSyncSeeder extends Seeder
             'system.backup',
             'ups.checkin', 'ups.confirm_daily', 'ups.override', 'ups.view',
             'user.manage',
+            'recall.import', 'recall.view', 'recall.assign',
         ],
         'DM HCM' => [
             'contribution.set', 'field.approve', 'field.manage', 'lead.approve_source',
@@ -47,6 +48,7 @@ class RolePermissionSyncSeeder extends Seeder
             'phase.close.new', 'report.view', 'report.view_all',
             'rule.manage', 'service.manage', 'source.up.bdm', 'source.up.bod', 'source.up.wi', 'source.up.sa',
             'source.up.mkt_br', 'source.up.ba', 'source.up.mkt', 'user.manage',
+            'recall.import', 'recall.view', 'recall.assign',
         ],
         'Manager' => [
             'lead.approve_source', 'lead.assign_direct',

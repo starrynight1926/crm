@@ -13,7 +13,6 @@
             ['label' => 'Danh sách khách hàng', 'route' => $u->hasAnyPermission(['lead.view', 'lead.import']) ? 'leads.index' : null, 'match' => 'leads.index'],
             ['label' => 'Thêm khách hàng', 'route' => $u->hasPermission('lead.create') ? 'leads.create' : null, 'match' => 'leads.create'],
             ['label' => 'Kho lead', 'route' => $u->hasPermission('lead.view') ? 'distribution.pools' : null, 'match' => 'distribution.pools'],
-            ['label' => 'Kho re-call', 'route' => $u->hasPermission('recall.view') ? 'recall.pool' : null, 'match' => 'recall.pool'],
             ['label' => 'Duyệt Lead', 'route' => $u->hasPermission('lead.approve_source') ? 'leads.approvals' : null, 'match' => 'leads.approvals'],
         ], fn ($i) => $i['route']));
 
@@ -128,7 +127,7 @@
                                 class="text-xs font-semibold px-2 py-1.5 rounded border {{ $__adminScopeId ? 'border-amber-400 bg-amber-50 text-amber-800' : 'border-gold-200 bg-white text-ink/70' }}">
                             <option value="">— Toàn công ty —</option>
                             @foreach (\App\Support\AdminScope::branchOptions() as $__b)
-                                <option value="{{ $__b->id }}" @selected($__adminScopeId === $__b->id)>{{ $__b->name }}</option>
+                                <option value="{{ $__b->id }}" @selected($__adminScopeId === $__b->id)>{{ $__b->short_name }}</option>
                             @endforeach
                         </select>
                     </form>

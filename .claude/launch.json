@@ -3,7 +3,7 @@
   "configurations": [
     {
       "name": "lara-scrm",
-      "runtimeExecutable": "D:/laragon6/laragon/bin/php/php-8.5.9-Win32-vs17-x64/php.exe",
+      "runtimeExecutable": "F:/Laragon/bin/php/php-8.4.23-src/php.exe",
       "runtimeArgs": ["artisan", "serve"],
       "autoPort": true,
       "port": 8000
