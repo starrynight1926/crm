@@ -758,6 +758,21 @@ class Lead extends Model
             return true;
         }
 
+        // Sale tiếp đón (CV1 booking cho_xac_nhan|da_xac_nhan) hoặc CV1 cũ (past).
+        if ($user->hasSelfScope()) {
+            $isCvNowOrPast = $this->bookingLogs()
+                ->where(function ($q) use ($user) {
+                    $q->whereJsonContains('past_consultant_user_ids', (int) $user->id)
+                      ->orWhere(function ($q2) use ($user) {
+                          $q2->whereIn('status', ['cho_xac_nhan', 'da_xac_nhan'])
+                             ->whereHas('consultants', fn ($cq) => $cq
+                                 ->where('users.id', $user->id)
+                                 ->where('booking_log_consultants.position', 1));
+                      });
+                })->exists();
+            if ($isCvNowOrPast) return true;
+        }
+
         if ($this->org_unit_id === null) {
             // Fix 2026-08-08 (Phase 6.24 regression): lead trong Kho số → check pool_unit_id.
             if ($this->pool_unit_id && in_array((int) $this->pool_unit_id, $user->visiblePoolUnitIds(), true)) {
