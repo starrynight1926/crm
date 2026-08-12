@@ -419,7 +419,7 @@ new class extends Component
                             @if ($canCheckin && ! $fb['confirmed'])
                                 <div class="mt-3 space-y-2" x-data='{
                                         user:"", slot:"", tier:"auto",
-                                        status: @json($fb["saleStatus"]),
+                                        status: {!! json_encode($fb["saleStatus"], JSON_UNESCAPED_UNICODE) !!},
                                         inGreet(){ return !!(this.user && this.status[this.user] && this.status[this.user].greet) },
                                         inMkt(){ return !!(this.user && this.status[this.user] && this.status[this.user].mkt) },
                                     }'
