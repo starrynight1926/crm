@@ -506,9 +506,6 @@ new class extends Component
                                                         <div class="mb-1.5 border border-ink/10 rounded px-2 py-1.5 shadow-sm bg-white">
                                                             <div class="font-bold text-[13px] leading-tight text-ink break-words">
                                                                 {{ $att->user->name }}
-                                                                @if ($att->is_mkt)
-                                                                    <span class="ml-0.5 text-[9px] font-bold px-1 py-0.5 rounded bg-amber-100 text-amber-700" title="Cũng ở MKT List">MKT</span>
-                                                                @endif
                                                             </div>
                                                             <div class="flex items-center justify-center gap-2 mt-1">
                                                                 <span class="text-[11px] text-ink/60 font-mono">{{ optional($att->checkin_at)?->setTimezone('Asia/Ho_Chi_Minh')->format('H:i') }}</span>
@@ -536,18 +533,6 @@ new class extends Component
                                                     <div class="mb-1.5 border border-ink/10 rounded px-2 py-1.5 shadow-sm bg-white">
                                                         <div class="font-bold text-[13px] leading-tight text-ink break-words">
                                                             {{ $att->user->name }}
-                                                            @if ($att->list_bucket)
-                                                                @php
-                                                                    $chipClass = match ($att->list_bucket) {
-                                                                        'A'   => 'bg-blue-100 text-blue-800',
-                                                                        'B'   => 'bg-teal-100 text-teal-800',
-                                                                        'C'   => 'bg-slate-200 text-slate-800',
-                                                                        'OFF' => 'bg-rose-100 text-rose-800',
-                                                                        default => 'bg-gold-100 text-gold-800',
-                                                                    };
-                                                                @endphp
-                                                                <span class="ml-0.5 text-[9px] font-bold px-1 py-0.5 rounded {{ $chipClass }}" title="Cũng ở {{ $att->list_bucket }} List">{{ $att->list_bucket }}</span>
-                                                            @endif
                                                         </div>
                                                         <div class="flex items-center justify-center gap-2 mt-1">
                                                             <span class="text-[11px] text-ink/60 font-mono">{{ optional($att->checkin_at)?->setTimezone('Asia/Ho_Chi_Minh')->format('H:i') }}</span>
