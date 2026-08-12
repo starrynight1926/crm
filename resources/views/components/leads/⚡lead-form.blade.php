@@ -239,6 +239,34 @@ new class extends Component
         session()->flash('cf_ok', 'Đã ghi log cuộc gọi.');
     }
 
+    /**
+     * #9 (2026-08-12) — Tạo bản sao 1 booking đã có, fill sẵn toàn bộ field vào form thêm booking.
+     * User bấm nút "📋 Tạo bản sao" cạnh nút ✏️ Sửa → khỏi nhập lại từ đầu.
+     */
+    public function duplicateBookingLog(int $bookingLogId): void
+    {
+        $this->guardNotCvOnly();
+        $bl = BookingLog::with('consultants')->where('lead_id', $this->lead?->id)->findOrFail($bookingLogId);
+        $this->newBookingStatus = 'cho_xac_nhan';
+        $this->newBookingDate = '';
+        $this->newBookingTime = '';
+        $this->newBookingFacilityId = $bl->facility_id;
+        $this->newBookingRoomId = $bl->sb_phong_id;
+        $this->newBookingSbBacSiId = $bl->sb_bac_si_id;
+        $this->newBookingServiceId = $bl->service_id;
+        $this->newBookingNote = (string) ($bl->note ?? '');
+        $this->newBookingSoLieuTrinh = (string) ($bl->so_lieu_trinh ?? '');
+        $this->newBookingSoLuongLo = (string) ($bl->so_luong_lo ?? '');
+        $this->newBookingDungTichLo = (string) ($bl->dung_tich_lo ?? '');
+        $this->newBookingKetHopMedical = (bool) $bl->ket_hop_medical;
+        $this->newBookingCoTuVan = (bool) $bl->co_tu_van;
+        $this->newBookingCoKhamCls = (bool) $bl->co_kham_cls;
+        $cvIds = $bl->consultants->pluck('id')->all();
+        $this->newBookingConsultantIds = $cvIds ?: [null];
+        session()->flash('cf_ok', 'Đã sao chép booking. Chọn ngày/giờ mới rồi bấm "+ Tạo booking".');
+        $this->dispatch('scroll-to-new-booking');
+    }
+
     public function addBookingLog(): void
     {
         $this->guardNotCvOnly();
@@ -3279,6 +3307,11 @@ new class extends Component
                                                 class="text-[10px] text-blue-600 hover:text-blue-800 shrink-0"
                                                 title="{{ $bl->sbooking_booking_id ? 'Sửa + tự đồng bộ sbooking' : 'Sửa (chưa sync sbooking)' }}">
                                             ✏️ Sửa
+                                        </button>
+                                        <button type="button" wire:click="duplicateBookingLog({{ $bl->id }})"
+                                                class="text-[10px] text-emerald-700 hover:text-emerald-900 shrink-0"
+                                                title="Điền lại toàn bộ thông tin booking này vào form ở dưới để đặt lịch mới">
+                                            📋 Tạo bản sao
                                         </button>
                                     </div>
                                 @endif

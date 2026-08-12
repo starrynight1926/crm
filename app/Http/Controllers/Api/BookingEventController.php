@@ -212,12 +212,12 @@ class BookingEventController extends Controller
                                 $trangThai === 'da_duyet' => 'approved',
                                 $trangThai === 'cho_duyet' => 'synced',
                                 $trangThai === 'tu_choi' => 'rejected',
-                                $trangThaiKhach === 'huy' => 'canceled',
+                                $trangThai === 'huy', $trangThaiKhach === 'huy' => 'canceled',
                                 default => $bl->sync_status,
                             };
                             $bl->update([
                                 'sync_status' => $newSyncStatus,
-                                'sync_error' => $trangThai === 'tu_choi' ? ($data['ly_do_tu_choi'] ?? 'Sbooking từ chối') : null,
+                                'sync_error' => in_array($trangThai, ['tu_choi', 'huy'], true) ? ($data['ly_do_tu_choi'] ?? 'Sbooking đã hủy') : null,
                                 'synced_at' => now(),
                             ]);
                         }
