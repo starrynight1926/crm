@@ -343,6 +343,13 @@ class DistributionEngine
             'assigned_at' => null,
             'pool_level' => $toCommon ? Lead::POOL_COMMON : Lead::POOL_TEAM,
             'org_unit_id' => $toCommon ? null : $lead->org_unit_id,
+            // 2026-08-12: nếu lead đã tiến vào phase Sale (đã gán CV1), reset về "chờ chia"
+            //   để CM có thể chia lại từ đầu. Không reset → lead stuck vì visibility vẫn
+            //   cho CV1 cũ thấy, pipeline_status='in_care' che khỏi kho chờ.
+            'consultant_1_id' => null,
+            'consultant_2_id' => null,
+            'consultant_3_id' => null,
+            'pipeline_status' => Lead::PSTATUS_WAITING,
         ];
         if (! $toCommon && $poolUnitId) $update['pool_unit_id'] = $poolUnitId;
         if ($toCommon) $update['pool_unit_id'] = null;
