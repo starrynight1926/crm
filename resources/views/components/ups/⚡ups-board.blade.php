@@ -245,10 +245,11 @@ new class extends Component
         $today = now()->toDateString();
         $branches = $this->branchesForUser();
 
-        // Chỉ loại khỏi dropdown nếu đã có bucket tiếp đón (A/B/C/OFF).
-        // Người chỉ có is_mkt vẫn hiện để gán thêm bucket.
+        // Chỉ ẩn khỏi dropdown khi sale đã có MẶT ở CẢ Tiếp đón (list_bucket) LẪN MKT (is_mkt).
+        // Còn thiếu 1 trong 2 → vẫn hiện để BO chọn slot còn lại (dual-list).
         $checkedInIds = DailyAttendance::whereDate('work_date', $today)
             ->whereNotNull('list_bucket')
+            ->where('is_mkt', true)
             ->pluck('user_id')->all();
 
         $data = [];
