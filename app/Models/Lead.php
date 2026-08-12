@@ -17,7 +17,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
     'past_org_unit_ids',
     'facility_id', 'doctor_id', 'consultant_1_id', 'consultant_2_id', 'consultant_3_id',
     'assigned_at', 'last_care_at',
-    'birthday', 'address', 'medical_history', 'occupation', 'cccd_image_path',
+    'birthday', 'address', 'medical_history', 'occupation', 'cccd_image_path', 'cccd_number',
     'service_name',
     'potential_service',
     // Phase 6.6

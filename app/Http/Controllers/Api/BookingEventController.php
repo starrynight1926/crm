@@ -104,11 +104,30 @@ class BookingEventController extends Controller
                     // + mark sale busy + broadcast realtime để sbooking không phải F5.
                     // 2026-08-04 fix Bug U7: BỎ QUA auto-chia nếu chưa chốt UPS hôm nay ở cơ sở đó
                     // (trước đây pickGreet không check UpsDailyConfirm → chia dù chưa chốt).
-                    if ($newStatus === Lead::BOOKING_KHACH_DA_TOI && $lead->pool_unit_id) {
-                        $poolNode = \App\Models\PoolUnit::find($lead->pool_unit_id);
-                        $facility = $poolNode;
-                        while ($facility && $facility->kind !== 'facility') {
-                            $facility = $facility->parent;
+                    if ($newStatus === Lead::BOOKING_KHACH_DA_TOI) {
+                        // 2026-08-12: fallback resolve facility từ owner_id nếu pool_unit_id null
+                        //   (lead cũ trước fix assignToOwner/manualAssign vẫn có null).
+                        $facility = null;
+                        if ($lead->pool_unit_id) {
+                            $poolNode = \App\Models\PoolUnit::find($lead->pool_unit_id);
+                            $facility = $poolNode;
+                            while ($facility && $facility->kind !== 'facility') {
+                                $facility = $facility->parent;
+                            }
+                        }
+                        if (! $facility && $lead->owner_id) {
+                            $orgId = \App\Models\Assignment::where('user_id', $lead->owner_id)->value('org_unit_id');
+                            if ($orgId) {
+                                $orgUnit = \App\Models\OrgUnit::find($orgId);
+                                $ancestors = [];
+                                if ($orgUnit) {
+                                    foreach (array_filter(explode('/', trim($orgUnit->path, '/'))) as $seg) $ancestors[(int) $seg] = true;
+                                }
+                                $facility = \App\Models\PoolUnit::where('kind', 'facility')->where('is_active', true)
+                                    ->whereIn('id', function ($q) use ($ancestors) {
+                                        $q->select('pool_unit_id')->from('org_pool_map')->whereIn('org_unit_id', array_keys($ancestors));
+                                    })->first();
+                            }
                         }
                         if ($facility && \App\Models\UpsDailyConfirm::isConfirmed($facility->id, now()->toDateString())) {
                             $picked = app(\App\Services\Ups\UpsDispatcher::class)->pickGreet($facility->id);

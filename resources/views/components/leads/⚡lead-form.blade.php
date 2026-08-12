@@ -60,6 +60,7 @@ new class extends Component
     public string $address = '';
     public string $medical_history = '';
     public string $occupation = '';
+    public string $cccdNumber = '';
 
     // --- Dịch vụ ---
     public string $service_name = '';
@@ -1012,6 +1013,7 @@ new class extends Component
         $this->address = $lead->address ?? '';
         $this->medical_history = $lead->medical_history ?? '';
         $this->occupation = $lead->occupation ?? '';
+        $this->cccdNumber = $lead->cccd_number ?? '';
         $this->service_name = $lead->service_name ?? '';
         $this->treatmentRows = $lead->treatments->map(fn ($t) => [
             'performed_at' => $t->performed_at?->toDateString() ?? '',
@@ -1514,6 +1516,7 @@ new class extends Component
             'birthday' => 'nullable|date',
             'address' => 'nullable|string|max:500',
             'occupation' => 'nullable|string|max:150',
+            'cccdNumber' => 'nullable|string|max:32',
             'cccdImage' => 'nullable|image|max:5120',
             'treatmentRows' => 'array',
             'treatmentRows.*.performed_at' => 'nullable|date',
@@ -1672,6 +1675,7 @@ new class extends Component
             'address' => $this->address ?: null,
             'medical_history' => $this->medical_history ?: null,
             'occupation' => $this->occupation ?: null,
+            'cccd_number' => $this->cccdNumber ?: null,
             // #15: Ảnh CCCD — chỉ set nếu upload mới thành công (dưới)
             'cccd_image_path' => $this->cccdImage
                 ? $this->cccdImage->store('cccd', 'public')
@@ -3417,6 +3421,11 @@ new class extends Component
                     <div>
                         <label class="block text-sm font-medium mb-1.5">Địa chỉ</label>
                         <input type="text" wire:model="address" placeholder="Địa chỉ khách hàng" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-1.5">Số CCCD</label>
+                        <input type="text" wire:model="cccdNumber" placeholder="VD: 001234567890" maxlength="32" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
+                        @error('cccdNumber')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
                     </div>
                     <div>
                         <label class="block text-sm font-medium mb-1.5">Ảnh CCCD</label>

@@ -360,9 +360,29 @@ class ProcessRawLead implements ShouldQueue
     private function assignToOwner(Lead $lead, User $owner): void
     {
         $orgId = Assignment::where('user_id', $owner->id)->value('org_unit_id');
+        // 2026-08-12: set pool_unit_id (facility) theo sale để BookingEventController
+        //   auto-chia Sale Tiếp Đón khi khách "đã tới" hoạt động. Trước đây pool_unit_id
+        //   null → check $lead->pool_unit_id fail → không pick Sale Tiếp Đón.
+        $poolUnitId = null;
+        if ($orgId) {
+            $ancestors = [];
+            $orgUnit = \App\Models\OrgUnit::find($orgId);
+            if ($orgUnit) {
+                foreach (array_filter(explode('/', trim($orgUnit->path, '/'))) as $seg) {
+                    $ancestors[(int) $seg] = true;
+                }
+                $poolUnitId = \App\Models\PoolUnit::where('kind', 'facility')
+                    ->where('is_active', true)
+                    ->whereIn('id', function ($q) use ($ancestors) {
+                        $q->select('pool_unit_id')->from('org_pool_map')->whereIn('org_unit_id', array_keys($ancestors));
+                    })
+                    ->value('id');
+            }
+        }
         $lead->forceFill([
             'owner_id' => $owner->id,
             'org_unit_id' => $orgId,
+            'pool_unit_id' => $poolUnitId,
             'pool_level' => Lead::POOL_PERSONAL,
             'assigned_at' => now(),
             'last_care_at' => now(),
