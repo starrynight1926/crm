@@ -298,8 +298,8 @@ new class extends Component
         @endforeach
     </div>
 
-    {{-- 2026-08-06 (T16): Widget "Kho số" — gate lead.view_pool. Chia thẳng cho Sale trong scope cần lead.pull_pool. --}}
-    @if ($this->canViewPool())
+    {{-- 2026-08-12: Widget "Kho lead" bỏ để tránh trùng menu Khách hàng > Kho lead. Toàn bộ chức năng đã có sẵn ở /distribution/pools. --}}
+    @if (false && $this->canViewPool())
         <div class="bg-white border border-purple-200 rounded-xl shadow-card mb-6">
             <div class="px-5 py-4 border-b border-purple-100 bg-purple-50/50 flex flex-wrap items-center gap-3 justify-between">
                 <h2 class="font-bold text-lg flex items-center gap-2 text-purple-800">
