@@ -202,6 +202,19 @@ class Lead extends Model
         // booking log ở phase 4). Trước đó chỉ Team booking có read_booking mới mở được
         // → Sale bị đá về /leads/{id} show không ghi được cuộc gọi.
         if ($this->owner_id !== null && $this->owner_id === $user->id) return true;
+        // Sale tiếp đón (CV1 booking cho_xac_nhan|da_xac_nhan) hoặc CV1 cũ (past) — mở form.
+        // Form tự readonly toàn phase với past CV qua flag phaseLocked.
+        $isCvNowOrPast = $this->bookingLogs()
+            ->where(function ($q) use ($user) {
+                $q->whereJsonContains('past_consultant_user_ids', (int) $user->id)
+                  ->orWhere(function ($q2) use ($user) {
+                      $q2->whereIn('status', ['cho_xac_nhan', 'da_xac_nhan'])
+                         ->whereHas('consultants', fn ($cq) => $cq
+                             ->where('users.id', $user->id)
+                             ->where('booking_log_consultants.position', 1));
+                  });
+            })->exists();
+        if ($isCvNowOrPast) return true;
         return $this->pipeline_phase === self::PHASE_BOOKING && $user->hasPermission('lead.read_booking');
     }
 
