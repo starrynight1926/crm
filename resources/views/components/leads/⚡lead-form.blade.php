@@ -379,6 +379,18 @@ new class extends Component
             }
         }
 
+        // 2026-08-12 fix: end time = start + thoi_gian_phut của DV (không phải end của khung).
+        // Trước đây scheduled_end_at lấy end của khung → khung 1h/2h cho DV 30' → sbooking
+        // hiển thị timeline x2/x4 so với thực tế (bug user báo). Ưu tiên DV duration; fallback
+        // vẫn giữ end của khung nếu không tra được DV.
+        if ($scheduledAt && $sbDichVuId) {
+            $sbDv = \App\Models\SbService::where('sbooking_id', $sbDichVuId)->first();
+            $dvPhut = (int) ($sbDv?->thoi_gian_phut ?? 0);
+            if ($dvPhut > 0) {
+                $scheduledEndAt = \Carbon\Carbon::parse($scheduledAt)->addMinutes($dvPhut)->format('Y-m-d H:i:s');
+            }
+        }
+
         $bl = BookingLog::create([
             'lead_id'      => $this->lead->id,
             'user_id'      => $user->id,
