@@ -22,6 +22,9 @@ Route::middleware('guest')->group(function () {
 Route::middleware('auth')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
 
+    // 2026-08-12 — AI-Coop: phòng chat 3 bên (user + 2 Claude API riêng key).
+    Route::view('/ai-coop', 'ai-coop.index')->name('ai-coop');
+
     // 2026-08-11 — Super admin chọn "Cơ sở đang xem" tạm thời (scope các widget dashboard).
     Route::post('/admin-scope', function (\Illuminate\Http\Request $r) {
         abort_unless(\App\Support\AdminScope::isSuperAdmin(), 403);
