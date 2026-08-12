@@ -274,7 +274,7 @@ new class extends Component
         abort_unless(auth()->user()->hasPermission('lead.recall'), 403);
         $lead = Lead::findOrFail($leadId);
         app(DistributionEngine::class)->recall($lead, Lead::POOL_TEAM, auth()->id());
-        session()->flash('status', "Đã thu hồi {$lead->name} về kho cơ sở.");
+        session()->flash('status', "Đã thu hồi {$lead->name} về kho địa điểm.");
     }
 
     public function pullLead(int $leadId): void
@@ -566,7 +566,7 @@ new class extends Component
                                     <button wire:click="pullLead({{ $lead->id }})" class="text-xs font-semibold text-green-700 border border-green-200 hover:bg-green-50 px-3 py-1.5 rounded-md">Kéo về tôi</button>
                                 @endif
                                 @if ($tab === 'personal' && $canRecall)
-                                    <button wire:click="recall({{ $lead->id }})" wire:confirm="Thu hồi lead này về kho cơ sở?" class="text-xs font-semibold text-red-700 border border-red-200 hover:bg-red-50 px-3 py-1.5 rounded-md">Thu hồi</button>
+                                    <button wire:click="recall({{ $lead->id }})" wire:confirm="Thu hồi lead này về kho địa điểm?" class="text-xs font-semibold text-red-700 border border-red-200 hover:bg-red-50 px-3 py-1.5 rounded-md">Thu hồi</button>
                                 @endif
                                 @if ($tab === 'personal' && $canDistribute)
                                     <button wire:click="startAssign({{ $lead->id }})" class="text-xs font-semibold text-ink/60 border border-gold-200 hover:bg-gold-50 px-3 py-1.5 rounded-md">Chuyển người</button>

@@ -17,7 +17,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
     'past_org_unit_ids',
     'facility_id', 'doctor_id', 'consultant_1_id', 'consultant_2_id', 'consultant_3_id',
     'assigned_at', 'last_care_at',
-    'birthday', 'address', 'medical_history', 'occupation',
+    'birthday', 'address', 'medical_history', 'occupation', 'cccd_image_path',
     'service_name',
     'potential_service',
     // Phase 6.6
@@ -202,13 +202,13 @@ class Lead extends Model
         // booking log ở phase 4). Trước đó chỉ Team booking có read_booking mới mở được
         // → Sale bị đá về /leads/{id} show không ghi được cuộc gọi.
         if ($this->owner_id !== null && $this->owner_id === $user->id) return true;
-        // Sale tiếp đón (CV1 booking cho_xac_nhan|da_xac_nhan) hoặc CV1 cũ (past) — mở form.
+        // Sale tiếp đón (CV1 booking da_xac_nhan — sau khi Admin BO duyệt) hoặc CV1 cũ (past) — mở form.
         // Form tự readonly toàn phase với past CV qua flag phaseLocked.
         $isCvNowOrPast = $this->bookingLogs()
             ->where(function ($q) use ($user) {
                 $q->whereJsonContains('past_consultant_user_ids', (int) $user->id)
                   ->orWhere(function ($q2) use ($user) {
-                      $q2->whereIn('status', ['cho_xac_nhan', 'da_xac_nhan'])
+                      $q2->where('status', 'da_xac_nhan')
                          ->whereHas('consultants', fn ($cq) => $cq
                              ->where('users.id', $user->id)
                              ->where('booking_log_consultants.position', 1));
@@ -464,21 +464,22 @@ class Lead extends Model
     public static function todayBucketSourceOverride(User $user, ?string $date = null): ?array
     {
         $date = $date ?? now()->toDateString();
-        $bucket = DailyAttendance::query()
+        $att = DailyAttendance::query()
             ->where('user_id', $user->id)
             ->whereDate('work_date', $date)
-            ->value('list_bucket');
+            ->first(['list_bucket', 'is_mkt']);
 
-        if (! $bucket) {
-            return null;
-        }
+        if (! $att) return null;
 
-        if ($bucket === 'MKT') {
-            return [self::SOURCE_SA => true, self::SOURCE_BA => false];
-        }
+        $inMkt = (bool) $att->is_mkt || $att->list_bucket === 'MKT';
+        $inGreet = in_array($att->list_bucket, ['A', 'B', 'C', 'OFF'], true);
+        if (! $inMkt && ! $inGreet) return null;
 
-        // A / B / C / OFF → tiếp đón bucket.
-        return [self::SOURCE_SA => false, self::SOURCE_BA => true];
+        // 2026-08-12: dual-list — sale có is_mkt VÀ bucket A/B/C/OFF cùng lúc → được up cả SA lẫn BA.
+        return [
+            self::SOURCE_SA => $inMkt,
+            self::SOURCE_BA => $inGreet,
+        ];
     }
 
     public function owner(): BelongsTo
@@ -697,9 +698,9 @@ class Lead extends Model
             }
             if ($user->hasSelfScope()) {
                 $q->orWhere('owner_id', $user->id)->orWhere('receiver_id', $user->id);
-                // Sale tiếp đón (CV1 của booking chưa/đã duyệt) — thấy lead ngay từ cho_xac_nhan.
+                // Sale tiếp đón (CV1 của booking đã Admin BO duyệt = da_xac_nhan).
                 $q->orWhereHas('bookingLogs', function ($bq) use ($user) {
-                    $bq->whereIn('status', ['cho_xac_nhan', 'da_xac_nhan'])
+                    $bq->where('status', 'da_xac_nhan')
                         ->whereHas('consultants', fn ($cq) => $cq
                             ->where('users.id', $user->id)
                             ->where('booking_log_consultants.position', 1));
@@ -757,13 +758,13 @@ class Lead extends Model
             return true;
         }
 
-        // Sale tiếp đón (CV1 booking cho_xac_nhan|da_xac_nhan) hoặc CV1 cũ (past).
+        // Sale tiếp đón (CV1 booking da_xac_nhan — sau khi Admin BO duyệt) hoặc CV1 cũ (past).
         if ($user->hasSelfScope()) {
             $isCvNowOrPast = $this->bookingLogs()
                 ->where(function ($q) use ($user) {
                     $q->whereJsonContains('past_consultant_user_ids', (int) $user->id)
                       ->orWhere(function ($q2) use ($user) {
-                          $q2->whereIn('status', ['cho_xac_nhan', 'da_xac_nhan'])
+                          $q2->where('status', 'da_xac_nhan')
                              ->whereHas('consultants', fn ($cq) => $cq
                                  ->where('users.id', $user->id)
                                  ->where('booking_log_consultants.position', 1));

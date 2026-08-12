@@ -19,10 +19,16 @@ use App\Models\StaffMember;
 use App\Models\User;
 use Livewire\Attributes\On;
 use Livewire\Component;
+use Livewire\WithFileUploads;
 
 new class extends Component
 {
+    use WithFileUploads;
+
     public ?Lead $lead = null;
+
+    /** #15 — Ảnh CCCD upload tạm (Livewire TemporaryUploadedFile). */
+    public $cccdImage = null;
 
     // 2026-08-04: refresh khi có callback booking từ sbooking (script inject qua edit.blade.php + Echo).
     #[On('refresh-lead')]
@@ -1468,6 +1474,7 @@ new class extends Component
             'birthday' => 'nullable|date',
             'address' => 'nullable|string|max:500',
             'occupation' => 'nullable|string|max:150',
+            'cccdImage' => 'nullable|image|max:5120',
             'treatmentRows' => 'array',
             'treatmentRows.*.performed_at' => 'nullable|date',
             'treatmentRows.*.performing_doctor_id' => 'nullable|exists:staff_members,id',
@@ -1625,6 +1632,10 @@ new class extends Component
             'address' => $this->address ?: null,
             'medical_history' => $this->medical_history ?: null,
             'occupation' => $this->occupation ?: null,
+            // #15: Ảnh CCCD — chỉ set nếu upload mới thành công (dưới)
+            'cccd_image_path' => $this->cccdImage
+                ? $this->cccdImage->store('cccd', 'public')
+                : ($this->lead?->cccd_image_path),
             'service_name' => $this->service_name ?: null,
             'potential_service' => $this->potential_service ?: null,
             'source_group' => $this->sourceGroup,
@@ -1636,6 +1647,7 @@ new class extends Component
         } else {
             $this->createLead($attributes, $cleanCustom);
         }
+        $this->cccdImage = null;
     }
 
     private function createLead(array $attributes, array $cleanCustom): void
@@ -3360,6 +3372,20 @@ new class extends Component
                     <div>
                         <label class="block text-sm font-medium mb-1.5">Địa chỉ</label>
                         <input type="text" wire:model="address" placeholder="Địa chỉ khách hàng" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-1.5">Ảnh CCCD</label>
+                        @if ($cccdImage)
+                            <div class="text-xs text-emerald-700 mb-1">✓ Ảnh mới đã chọn (chưa lưu)</div>
+                        @elseif ($lead?->cccd_image_path)
+                            <div class="mb-2">
+                                <a href="{{ \Illuminate\Support\Facades\Storage::disk('public')->url($lead->cccd_image_path) }}" target="_blank" class="inline-block">
+                                    <img src="{{ \Illuminate\Support\Facades\Storage::disk('public')->url($lead->cccd_image_path) }}" alt="CCCD" class="max-h-32 rounded border border-gold-200">
+                                </a>
+                            </div>
+                        @endif
+                        <input type="file" wire:model="cccdImage" accept="image/*" class="w-full text-sm">
+                        @error('cccdImage')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
                     </div>
                     <div>
                         <label class="block text-sm font-medium mb-1.5">Khai thác tiền sử</label>
