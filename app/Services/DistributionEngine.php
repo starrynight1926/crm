@@ -242,8 +242,14 @@ class DistributionEngine
                 'created_at' => now(),
             ]);
 
+            // 2026-08-13: resolve pool_unit_id (facility) từ org_unit target để lead
+            //   hiện đúng tab facility trong /distribution/pools. Trước đây thiếu
+            //   pool_unit_id → filtered() dùng whereHas('poolUnit', kind=X) không match.
+            $targetPoolUnitId = $this->resolvePoolUnitIdFromOrgId((int) $target->target_id);
+
             $lead->update([
                 'org_unit_id' => $target->target_id,
+                'pool_unit_id' => $targetPoolUnitId ?: $lead->pool_unit_id,
                 'pool_level' => Lead::POOL_TEAM,
             ]);
 
@@ -376,6 +382,21 @@ class DistributionEngine
      * 2026-08-12 — Suy pool_unit_id (kind=facility) từ assignments của user qua org_pool_map.
      * Dùng khi recall lead PERSONAL về TEAM mà lead chưa có pool_unit_id. Trả null nếu không map được.
      */
+    /** 2026-08-13 — Suy pool_unit_id (facility) từ org_unit_id qua ancestors + org_pool_map. */
+    private function resolvePoolUnitIdFromOrgId(int $orgUnitId): ?int
+    {
+        $orgUnit = \App\Models\OrgUnit::find($orgUnitId);
+        if (! $orgUnit) return null;
+        $ancestors = [];
+        foreach (array_filter(explode('/', trim($orgUnit->path, '/'))) as $seg) {
+            $ancestors[(int) $seg] = true;
+        }
+        return \App\Models\PoolUnit::where('kind', 'facility')->where('is_active', true)
+            ->whereIn('id', function ($q) use ($ancestors) {
+                $q->select('pool_unit_id')->from('org_pool_map')->whereIn('org_unit_id', array_keys($ancestors));
+            })->orderBy('depth')->value('id');
+    }
+
     private function resolvePoolUnitIdFromUser(int $userId): ?int
     {
         $user = \App\Models\User::find($userId);
