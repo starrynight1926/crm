@@ -689,8 +689,8 @@ class Lead extends Model
                 $q->orWhereHas('bookingLogs', function ($bq) use ($user) {
                     $bq->whereIn('status', ['cho_xac_nhan', 'da_xac_nhan'])
                         ->whereHas('consultants', fn ($cq) => $cq
-                            ->where('user_id', $user->id)
-                            ->wherePivot('position', 1));
+                            ->where('users.id', $user->id)
+                            ->where('booking_log_consultants.position', 1));
                 });
                 // CV1 cũ (đã bị đổi sang sale khác) — vẫn thấy lead nhưng ở chế độ chỉ đọc.
                 $q->orWhereHas('bookingLogs', fn ($bq) => $bq
