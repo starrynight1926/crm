@@ -1410,18 +1410,29 @@ new class extends Component
         session()->put('go_to_booking_after_save', true);
         $prevPhase = $this->activePhase;
         $this->save();
-        // Sau khi save thành công: auto-close phase hiện tại (nếu có perm) + nhảy tab.
+        // Sau khi save thành công: auto-close tuần tự từ $lead->phase → $prevPhase + nhảy tab.
+        // 2026-08-11 fix: Tele bấm "Lưu" từ tab phase 2 khi lead vẫn ở phase 1 (Trực Page vừa tạo)
+        // → closePhase(2) throw "Chỉ chốt được phase hiện tại (đang ở phase 1)". Loop tuần tự để
+        // Tele chốt phase 1 (phase.close.new) rồi phase 2 (phase.close.call).
         if ($this->lead?->exists && ! $this->getErrorBag()->isNotEmpty()) {
             $viewer = auth()->user();
-            $closePerm = Lead::CF_PHASE_CLOSE_PERM[$prevPhase] ?? null;
-            if ($prevPhase >= 2 && $prevPhase <= 3 && $closePerm && $viewer->hasPermission($closePerm)) {
-                try {
-                    $this->lead->closePhase($prevPhase, $viewer, 'Auto-close khi bấm "Lưu thông tin"');
-                    $this->lead->refresh();
-                    $this->lead->load('phaseClosures');
-                } catch (\Throwable $e) {
-                    session()->flash('cf_error', 'Không tự chốt được phase ' . $prevPhase . ': ' . $e->getMessage());
+            if ($prevPhase >= 2 && $prevPhase <= 3) {
+                $startPhase = (int) $this->lead->phase;
+                for ($p = $startPhase; $p <= $prevPhase; $p++) {
+                    $perm = Lead::CF_PHASE_CLOSE_PERM[$p] ?? null;
+                    if ($perm && ! $viewer->hasPermission($perm)) {
+                        session()->flash('cf_error', "Thiếu quyền {$perm} để chốt phase {$p}.");
+                        break;
+                    }
+                    try {
+                        $this->lead->closePhase($p, $viewer, 'Auto-close khi bấm "Lưu thông tin"');
+                        $this->lead->refresh();
+                    } catch (\Throwable $e) {
+                        session()->flash('cf_error', 'Không tự chốt được phase ' . $p . ': ' . $e->getMessage());
+                        break;
+                    }
                 }
+                $this->lead->load('phaseClosures');
             }
             $this->activePhase = 3;
         }
