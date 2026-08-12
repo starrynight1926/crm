@@ -287,18 +287,8 @@ new class extends Component
         session()->flash('status', "Đã thu hồi {$lead->name} về kho địa điểm.");
     }
 
-    public function pullLead(int $leadId): void
-    {
-        $this->upsGuard();
-        abort_unless(auth()->user()->hasPermission('lead.pull_pool'), 403);
-        $lead = Lead::findOrFail($leadId);
-        if ($lead->pool_level === Lead::POOL_PERSONAL) {
-            session()->flash('error', 'Lead đã có người giữ.');
-            return;
-        }
-        app(DistributionEngine::class)->pull($lead, auth()->user());
-        session()->flash('status', "Đã kéo {$lead->name} về kho của bạn.");
-    }
+    // 2026-08-13: bỏ pullLead ("Kéo về tôi") theo yêu cầu — CM/DM không tự kéo lead
+    //   về owner mình, phải chia rõ ràng cho sale.
 
     // ---------- Thao tác hàng loạt ----------
 
@@ -329,6 +319,30 @@ new class extends Component
         $this->bulkMode = '';
         $this->selected = [];
         session()->flash('status', "Đã chia tay {$n} lead cho {$user->name}.");
+    }
+
+    /**
+     * 2026-08-13 — Chia tự động hàng loạt: dùng DistributionEngine::distribute
+     * cho từng lead (rule-based, chia về team hoặc sale theo rule config).
+     */
+    public function bulkAutoDistribute(): void
+    {
+        $this->upsGuard();
+        $engine = app(DistributionEngine::class);
+        $n = 0; $fail = 0;
+        foreach ($this->selectedLeads() as $lead) {
+            abort_unless($this->canDistributeLead($lead), 403);
+            try {
+                $engine->distribute($lead);
+                $lead->refresh();
+                $lead->owner_id ? $n++ : $fail++;
+            } catch (\Throwable $e) {
+                $fail++;
+            }
+        }
+        $this->bulkMode = '';
+        $this->selected = [];
+        session()->flash('status', "Chia tự động: {$n} lead đã có sale/kho, {$fail} không chia được (thiếu rule / UPS list rỗng).");
     }
 
     public function bulkPool(): void
@@ -479,6 +493,11 @@ new class extends Component
             @else
                 <button wire:click="$set('bulkMode', 'assign')" class="text-sm font-semibold text-gold-700 border border-gold-300 hover:bg-white px-4 py-1.5 rounded-md">Chia thủ công hàng loạt</button>
                 <button wire:click="$set('bulkMode', 'pool')" class="text-sm font-semibold text-gold-700 border border-gold-300 hover:bg-white px-4 py-1.5 rounded-md">Chia về kho hàng loạt</button>
+                {{-- 2026-08-13: chia tự động theo rule engine cho toàn bộ lead đã tick. --}}
+                <button wire:click="bulkAutoDistribute" wire:confirm="Chia tự động {{ count($selected) }} lead theo rule engine (rule chia số)?"
+                        class="text-sm font-semibold bg-emerald-600 text-white hover:bg-emerald-700 px-4 py-1.5 rounded-md">
+                    Chia tự động hàng loạt
+                </button>
                 <button wire:click="$set('selected', [])" class="text-sm text-ink/50">Bỏ chọn</button>
             @endif
         </div>
@@ -572,9 +591,7 @@ new class extends Component
                                     <button wire:click="startAssign({{ $lead->id }})" class="text-xs font-semibold text-ink/60 border border-gold-200 hover:bg-gold-50 px-3 py-1.5 rounded-md">Chia thủ công</button>
                                     <button wire:click="startPool({{ $lead->id }})" class="text-xs font-semibold text-ink/60 border border-gold-200 hover:bg-gold-50 px-3 py-1.5 rounded-md">Chia về kho</button>
                                 @endif
-                                @if ($tab !== 'personal' && $canPull)
-                                    <button wire:click="pullLead({{ $lead->id }})" class="text-xs font-semibold text-green-700 border border-green-200 hover:bg-green-50 px-3 py-1.5 rounded-md">Kéo về tôi</button>
-                                @endif
+                                {{-- 2026-08-13: bỏ nút "Kéo về tôi" — CM/DM phải chia rõ cho sale, không tự kéo. --}}
                                 @php
                                     // #12: lead 'Gọi lại sau' đang trong lock 1 ngày → CM/DM không được thu hồi/chia lại,
                                     // chờ ProcessLeadRecalls tự đưa về kho địa điểm.
