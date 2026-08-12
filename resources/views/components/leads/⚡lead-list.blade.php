@@ -553,7 +553,7 @@ new class extends Component
 
             $head = "[{$when}] {$who}: {$prefix}{$text}{$suffix}";
             $imgLines = array_map(function ($path) use ($when) {
-                $url = asset('storage/' . ltrim($path, '/'));
+                $url = asset('uploads/' . ltrim($path, '/'));
                 return "  📎 {$when} · {$url}";
             }, $images);
 

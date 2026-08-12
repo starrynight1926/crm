@@ -27,3 +27,5 @@ Homestead.yaml
 Thumbs.db
 public/GR DAILY REPORT 2026.xlsx
 public/Demo import*.xlsx
+/public/uploads/*
+!/public/uploads/.gitkeep

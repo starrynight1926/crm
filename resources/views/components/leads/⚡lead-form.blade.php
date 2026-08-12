@@ -3433,8 +3433,8 @@ new class extends Component
                             <div class="text-xs text-emerald-700 mb-1">✓ Ảnh mới đã chọn (chưa lưu)</div>
                         @elseif ($lead?->cccd_image_path)
                             <div class="mb-2">
-                                <a href="{{ asset('storage/' . $lead->cccd_image_path) }}" target="_blank" class="inline-block">
-                                    <img src="{{ asset('storage/' . $lead->cccd_image_path) }}" alt="CCCD" class="max-h-32 rounded border border-gold-200">
+                                <a href="{{ asset('uploads/' . $lead->cccd_image_path) }}" target="_blank" class="inline-block">
+                                    <img src="{{ asset('uploads/' . $lead->cccd_image_path) }}" alt="CCCD" class="max-h-32 rounded border border-gold-200">
                                 </a>
                             </div>
                         @endif
