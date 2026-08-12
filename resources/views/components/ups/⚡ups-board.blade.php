@@ -417,18 +417,18 @@ new class extends Component
                             </div>
 
                             @if ($canCheckin && ! $fb['confirmed'])
-                                <div class="mt-3 space-y-2" x-data="{
-                                        user:'', slot:'', tier:'auto',
-                                        status: {{ \Illuminate\Support\Js::from($fb['saleStatus']) }},
-                                        inGreet(){ return this.user && this.status[this.user]?.greet },
-                                        inMkt(){ return this.user && this.status[this.user]?.mkt },
-                                    }"
-                                    x-effect="
-                                        if (!user) { slot=''; return }
-                                        if (inGreet() && !inMkt()) slot='receive';
-                                        else if (inMkt() && !inGreet()) slot='greet';
-                                        else if ((slot==='greet' && inGreet()) || (slot==='receive' && inMkt())) slot='';
-                                    ">
+                                <div class="mt-3 space-y-2" x-data='{
+                                        user:"", slot:"", tier:"auto",
+                                        status: @json($fb["saleStatus"]),
+                                        inGreet(){ return !!(this.user && this.status[this.user] && this.status[this.user].greet) },
+                                        inMkt(){ return !!(this.user && this.status[this.user] && this.status[this.user].mkt) },
+                                    }'
+                                    x-effect='
+                                        if (!user) { slot=""; return }
+                                        if (inGreet() && !inMkt()) slot="receive";
+                                        else if (inMkt() && !inGreet()) slot="greet";
+                                        else if ((slot==="greet" && inGreet()) || (slot==="receive" && inMkt())) slot="";
+                                    '>
                                     {{-- Hàng 1: Nhân viên (full width) --}}
                                     <select x-model="user" class="w-full border border-gold-200 rounded px-3 py-2 text-sm bg-white">
                                         <option value="">1. Chọn nhân viên…</option>
