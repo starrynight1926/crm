@@ -30,7 +30,7 @@ class BookingEventController extends Controller
     public function __invoke(Request $request, string $code)
     {
         $data = $request->validate([
-            'type'         => ['required', 'in:status,comment,edit,delete'],
+            'type'         => ['required', 'in:status,comment,edit,delete,validation_error'],
             'booking_ma'   => ['nullable', 'string', 'max:40'],
             'sbooking_booking_id' => ['nullable', 'integer'],
             'trang_thai_khach' => ['nullable', 'string', 'max:20'],
@@ -38,6 +38,7 @@ class BookingEventController extends Controller
             'comment'      => ['nullable', 'string', 'max:2000'],
             'summary'      => ['nullable', 'string', 'max:500'], // mô tả edit (VD "Đổi giờ 09:00 → 10:30")
             'ly_do_tu_choi' => ['nullable', 'string', 'max:1000'],
+            'validation_error' => ['nullable', 'string', 'max:1000'],
         ]);
 
         $lead = Lead::where('code', $code)->firstOrFail();
@@ -219,6 +220,26 @@ class BookingEventController extends Controller
                                 'sync_error' => $trangThai === 'tu_choi' ? ($data['ly_do_tu_choi'] ?? 'Sbooking từ chối') : null,
                                 'synced_at' => now(),
                             ]);
+                        }
+                    }
+                    break;
+
+                case 'validation_error':
+                    // Admin sbooking bấm Duyệt nhưng capacity/KTV check chặn → mark BookingLog failed
+                    // để user SCRM thấy lỗi ngay trên card booking, tự sửa (đổi bác sĩ/khung giờ).
+                    if (! empty($data['sbooking_booking_id'])) {
+                        $bl = BookingLog::where('sbooking_booking_id', $data['sbooking_booking_id'])
+                            ->where('lead_id', $lead->id)->first();
+                        if ($bl) {
+                            $bl->update([
+                                'sync_status' => 'failed',
+                                'sync_error' => $data['validation_error'] ?? 'Sbooking từ chối duyệt (không rõ lý do).',
+                                'synced_at' => now(),
+                            ]);
+                            LeadStatusLog::record($lead, 'note',
+                                null,
+                                'Booking ' . ($bookingMa ?: '?') . ' — Sbooking từ chối duyệt: ' . ($data['validation_error'] ?? ''),
+                                $actorId);
                         }
                     }
                     break;
