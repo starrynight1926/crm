@@ -268,7 +268,17 @@ new class extends Component
         }
 
         LeadStatusLog::record($this->lead, 'classification', $this->lead->classification, $value, auth()->id());
-        $this->lead->update(['classification' => $value, 'last_care_at' => now()]);
+        $update = ['classification' => $value, 'last_care_at' => now()];
+        // #12 (2026-08-12) — 'Gọi lại sau': lead về kho cá nhân của tele/sale hiện tại,
+        // lock 1 ngày trước khi ProcessLeadRecalls đưa về kho địa điểm (POOL_TEAM).
+        if ($value === 'goi_lai_sau') {
+            $teleId = $this->lead->owner_id ?? $this->lead->receiver_id ?? auth()->id();
+            $update['owner_id'] = $teleId;
+            $update['pool_level'] = Lead::POOL_PERSONAL;
+            $update['recall_at'] = now()->addDay();
+            $update['is_permanent_assignment'] = false;
+        }
+        $this->lead->update($update);
         AuditLog::record('update', $this->lead, ['classification' => $value]);
         $this->lead->refresh();
 

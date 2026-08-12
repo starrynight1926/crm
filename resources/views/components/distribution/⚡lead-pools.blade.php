@@ -208,7 +208,13 @@ new class extends Component
 
     public function startAssign(int $leadId): void
     {
-        abort_unless($this->canDistributeLead(Lead::findOrFail($leadId)), 403);
+        $lead = Lead::findOrFail($leadId);
+        abort_unless($this->canDistributeLead($lead), 403);
+        // #12: lead 'Gọi lại sau' đang khoá 1 ngày → chờ tự về địa điểm, không cho chia lại.
+        if ($lead->classification === 'goi_lai_sau' && $lead->recall_at && $lead->recall_at->isFuture()) {
+            session()->flash('error', 'Lead "Gọi lại sau" đang khoá cho tele/sale đến ' . $lead->recall_at->format('H:i d/m') . '. Chờ tự về kho địa điểm.');
+            return;
+        }
         $this->assigningLeadId = $leadId;
         $this->poolingLeadId = null;
         $this->assignUserId = '';
@@ -273,6 +279,10 @@ new class extends Component
     {
         abort_unless(auth()->user()->hasPermission('lead.recall'), 403);
         $lead = Lead::findOrFail($leadId);
+        if ($lead->classification === 'goi_lai_sau' && $lead->recall_at && $lead->recall_at->isFuture()) {
+            session()->flash('error', 'Lead "Gọi lại sau" đang khoá đến ' . $lead->recall_at->format('H:i d/m') . ', không thu hồi được.');
+            return;
+        }
         app(DistributionEngine::class)->recall($lead, Lead::POOL_TEAM, auth()->id());
         session()->flash('status', "Đã thu hồi {$lead->name} về kho địa điểm.");
     }
@@ -565,11 +575,20 @@ new class extends Component
                                 @if ($tab !== 'personal' && $canPull)
                                     <button wire:click="pullLead({{ $lead->id }})" class="text-xs font-semibold text-green-700 border border-green-200 hover:bg-green-50 px-3 py-1.5 rounded-md">Kéo về tôi</button>
                                 @endif
-                                @if ($tab === 'personal' && $canRecall)
+                                @php
+                                    // #12: lead 'Gọi lại sau' đang trong lock 1 ngày → CM/DM không được thu hồi/chia lại,
+                                    // chờ ProcessLeadRecalls tự đưa về kho địa điểm.
+                                    $_goiLaiLocked = $lead->classification === 'goi_lai_sau'
+                                        && $lead->recall_at && $lead->recall_at->isFuture();
+                                @endphp
+                                @if ($tab === 'personal' && $canRecall && ! $_goiLaiLocked)
                                     <button wire:click="recall({{ $lead->id }})" wire:confirm="Thu hồi lead này về kho địa điểm?" class="text-xs font-semibold text-red-700 border border-red-200 hover:bg-red-50 px-3 py-1.5 rounded-md">Thu hồi</button>
                                 @endif
-                                @if ($tab === 'personal' && $canDistribute)
+                                @if ($tab === 'personal' && $canDistribute && ! $_goiLaiLocked)
                                     <button wire:click="startAssign({{ $lead->id }})" class="text-xs font-semibold text-ink/60 border border-gold-200 hover:bg-gold-50 px-3 py-1.5 rounded-md">Chuyển người</button>
+                                @endif
+                                @if ($_goiLaiLocked)
+                                    <span class="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded" title="Lead 'Gọi lại sau' khoá trong tay tele/sale đến {{ $lead->recall_at->format('d/m H:i') }}">🔒 Khoá đến {{ $lead->recall_at->format('H:i d/m') }}</span>
                                 @endif
                             @endif
                         </td>
