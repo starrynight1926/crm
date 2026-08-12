@@ -439,10 +439,20 @@ class DistributionEngine
             'created_at' => now(),
         ]);
 
+        // 2026-08-12: sync org_unit_id + pool_unit_id theo sale để CM/Team Leader
+        // (SCOPE_TEAM, subtree bao gồm team của sale) thấy được lead trong kho cá nhân.
+        // Trước đây chỉ update owner_id → lead giữ org_unit_id cũ (có thể null nếu
+        // trước chia thuộc kho công ty) → visibleTo scope không match cho CM.
+        $saleOrgId = \App\Models\Assignment::where('user_id', $user->id)
+            ->orderBy('created_at')->value('org_unit_id');
+        $salePoolUnitId = $this->resolvePoolUnitIdFromUser($user->id);
+
         $lead->update([
             'owner_id' => $user->id,
             'pool_level' => Lead::POOL_PERSONAL,
             'assigned_at' => now(),
+            'org_unit_id' => $saleOrgId ?: $lead->org_unit_id,
+            'pool_unit_id' => $salePoolUnitId ?: $lead->pool_unit_id,
             // Chuyển từ WAITING → IN_CARE khi đã có owner: badge hiển thị đúng
             // trạng thái "Đang chăm sóc" thay vì "Chờ CM chia".
             'pipeline_status' => $lead->pipeline_status === Lead::PSTATUS_WAITING

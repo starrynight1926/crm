@@ -170,10 +170,15 @@ new class extends Component
         // subtreeIds=null (super admin toàn công ty) → bỏ qua check scope.
 
         $before = $lead->owner_id;
+        // 2026-08-12: sync org_unit_id theo sale nhận để CM/Team Leader thấy lead
+        // trong kho cá nhân (visibleTo subtree cần match org_unit_id).
+        $saleOrgId = \App\Models\Assignment::where('user_id', $target->id)
+            ->orderBy('created_at')->value('org_unit_id');
         $lead->update([
             'owner_id'        => $target->id,
             'assigned_at'     => now(),
             'pool_level'      => Lead::POOL_PERSONAL,
+            'org_unit_id'     => $saleOrgId ?: $lead->org_unit_id,
             'pipeline_status' => Lead::PSTATUS_IN_CARE,
             'phase'           => max((int) $lead->phase, Lead::CF_PHASE_CALL),
         ]);
