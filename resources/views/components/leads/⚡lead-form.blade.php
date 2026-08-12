@@ -209,11 +209,23 @@ new class extends Component
             'newCallStatus' => 'required|in:' . implode(',', array_keys(CallLog::STATUSES)),
             'newCallNote'   => 'nullable|string|max:1000',
         ]);
+        $note = $this->newCallNote ?: null;
+        $dup = CallLog::where('lead_id', $this->lead->id)
+            ->where('user_id', $user->id)
+            ->where('status', $this->newCallStatus)
+            ->where(fn ($q) => $note === null ? $q->whereNull('note') : $q->where('note', $note))
+            ->where('called_at', '>=', now()->subSeconds(3))
+            ->exists();
+        if ($dup) {
+            $this->newCallNote = '';
+            session()->flash('cf_ok', 'Đã bỏ qua ghi trùng cuộc gọi.');
+            return;
+        }
         CallLog::create([
             'lead_id'   => $this->lead->id,
             'user_id'   => $user->id,
             'status'    => $this->newCallStatus,
-            'note'      => $this->newCallNote ?: null,
+            'note'      => $note,
             'called_at' => now(),
         ]);
         $this->newCallNote = '';
@@ -364,7 +376,7 @@ new class extends Component
             $syncData[(int) $uid] = ['position' => $i + 1];
         }
         if ($syncData) {
-            $bl->consultants()->sync($syncData);
+            $bl->syncConsultantsTracked($syncData);
         }
         BookingLog::syncLeadBookingStatus($this->lead->id);
         // Nếu booking đã duyệt + có CV1 + lead chưa có Sale → handoff CV1 thành Sale phụ trách.
@@ -1581,8 +1593,13 @@ new class extends Component
             'insight' => $this->insight ?: null,
             'link' => $this->link ?: null,
             'region' => $this->region ?: null,
-            'status_1' => $this->status_1 ?: null,
-            'status_2' => $this->status_2 ?: null,
+            // Trực Page không được ghi Kết quả — giữ nguyên giá trị cũ nếu là Trực Page.
+            'status_1' => auth()->user()->hasRole('Trực Page') && $this->lead
+                ? $this->lead->status_1
+                : ($this->status_1 ?: null),
+            'status_2' => auth()->user()->hasRole('Trực Page') && $this->lead
+                ? $this->lead->status_2
+                : ($this->status_2 ?: null),
             'note' => $this->note ?: null,
             'classification' => $this->classification,
             'booking_status' => $this->bookingStatus,
@@ -1938,6 +1955,11 @@ new class extends Component
             }
         } else {
             for ($p = 1; $p <= 5; $p++) $phaseLocked[$p] = false;
+        }
+
+        // Sale cũ (CV1 đã bị đổi khỏi booking) → toàn bộ form chỉ đọc.
+        if ($this->lead?->exists && $this->lead->isPastConsultantFor($u)) {
+            for ($p = 1; $p <= 7; $p++) $phaseLocked[$p] = true;
         }
 
         $users = $this->assignableUsers();
@@ -3406,16 +3428,33 @@ new class extends Component
                     @if ($phaseLocked[3] ?? false)<span class="ml-2 text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-500 font-normal">Chỉ đọc (không có quyền)</span>@endif
                 </h2>
 
+                @php
+                    $_isTrucPage = auth()->user()->hasRole('Trực Page');
+                    $_lockResult = ($phaseLocked[3] ?? false) || $_isTrucPage;
+                @endphp
                 <fieldset @if ($phaseLocked[3] ?? false) disabled @endif class="space-y-4 border-0 p-0 m-0">
                     <div>
-                        <label class="block text-sm font-medium mb-1.5">Ghi nhận tình trạng lần 1</label>
-                        <input type="text" wire:model="status_1" placeholder="VD: Đã liên hệ" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
+                        <label class="block text-sm font-medium mb-1.5">Phân loại</label>
+                        <select wire:model="classification" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-gold-500">
+                            @foreach (\App\Models\Lead::CLASSIFICATIONS as $key => $label)
+                                <option value="{{ $key }}">{{ $label }}</option>
+                            @endforeach
+                        </select>
                     </div>
                     <div>
-                        <label class="block text-sm font-medium mb-1.5">Ghi nhận tình trạng lần 2</label>
-                        <input type="text" wire:model="status_2" placeholder="VD: Đã tư vấn" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
+                        <label class="block text-sm font-medium mb-1.5">
+                            Ghi nhận tình trạng lần 1
+                            @if ($_isTrucPage)<span class="ml-1 text-[10px] text-slate-400">(chỉ Tele sale ghi)</span>@endif
+                        </label>
+                        <input type="text" wire:model="status_1" @disabled($_lockResult) placeholder="VD: Đã liên hệ" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500 disabled:bg-slate-50 disabled:text-slate-500">
                     </div>
-                    {{-- PHÂN LOẠI KẾT QUẢ đã bỏ khỏi Ghi nhận tình trạng — 2026-08-02. Field vẫn còn trong DB (classification), giữ default. --}}
+                    <div>
+                        <label class="block text-sm font-medium mb-1.5">
+                            Ghi nhận tình trạng lần 2
+                            @if ($_isTrucPage)<span class="ml-1 text-[10px] text-slate-400">(chỉ Tele sale ghi)</span>@endif
+                        </label>
+                        <input type="text" wire:model="status_2" @disabled($_lockResult) placeholder="VD: Đã tư vấn" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500 disabled:bg-slate-50 disabled:text-slate-500">
+                    </div>
                     {{-- TRẠNG THÁI ĐẶT LỊCH đã move sang Phase 4 (Booking) --}}
 
                     {{-- Panel Phân phối & Nguồn đã move sang tab Phase 2 (Chia số) — Phase 6.21g --}}
@@ -3930,7 +3969,10 @@ new class extends Component
                             </select>
                             <input wire:model="newCallNote" placeholder="Ghi chú cuộc gọi..." class="col-span-2 border border-slate-300 rounded px-2 py-1.5 text-sm">
                         </div>
-                        <button type="button" wire:click="addCallLog" class="text-sm bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-4 py-1.5 rounded">+ Ghi cuộc gọi</button>
+                        <button type="button" wire:click="addCallLog" wire:loading.attr="disabled" wire:target="addCallLog" class="text-sm bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-4 py-1.5 rounded disabled:opacity-50 disabled:cursor-not-allowed">
+                            <span wire:loading.remove wire:target="addCallLog">+ Ghi cuộc gọi</span>
+                            <span wire:loading wire:target="addCallLog">Đang ghi…</span>
+                        </button>
                     </div>
                 @else
                     <p class="text-xs text-ink/40 italic">Bấm "Lưu thông tin khách hàng" để tạo lead trước, rồi mới ghi được cuộc gọi.</p>

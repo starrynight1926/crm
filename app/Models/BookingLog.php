@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
     'so_lieu_trinh', 'so_luong_lo', 'dung_tich_lo', 'ket_hop_medical',
     'co_tu_van', 'co_kham_cls',
     'sbooking_booking_id', 'sbooking_booking_ma', 'sync_status', 'sync_error', 'synced_at',
+    'past_consultant_user_ids',
 ])]
 class BookingLog extends Model
 {
@@ -34,7 +35,29 @@ class BookingLog extends Model
         'ket_hop_medical' => 'boolean',
         'co_tu_van' => 'boolean',
         'co_kham_cls' => 'boolean',
+        'past_consultant_user_ids' => 'array',
     ];
+
+    /**
+     * Sync consultants + track past CV1 khi bị thay: user cũ vẫn thấy lead (readonly).
+     * $syncData: [user_id => ['position' => N], ...]
+     */
+    public function syncConsultantsTracked(array $syncData): void
+    {
+        $oldCv1Id = $this->consultants()->wherePivot('position', 1)->value('users.id');
+        $newCv1Id = null;
+        foreach ($syncData as $uid => $meta) {
+            if (($meta['position'] ?? null) === 1) { $newCv1Id = (int) $uid; break; }
+        }
+        $this->consultants()->sync($syncData);
+        if ($oldCv1Id && $newCv1Id && (int) $oldCv1Id !== (int) $newCv1Id) {
+            $past = $this->past_consultant_user_ids ?? [];
+            if (! in_array((int) $oldCv1Id, $past, true)) {
+                $past[] = (int) $oldCv1Id;
+                $this->update(['past_consultant_user_ids' => $past]);
+            }
+        }
+    }
 
     public function lead(): BelongsTo
     {

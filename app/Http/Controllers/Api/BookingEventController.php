@@ -286,7 +286,7 @@ class BookingEventController extends Controller
                             if (array_key_exists('sale_id', $ch) && $ch['sale_id']) {
                                 $scrmUser = \App\Models\User::where('sbooking_user_id', $ch['sale_id'])->first();
                                 if ($scrmUser) {
-                                    $bl->consultants()->sync([$scrmUser->id => ['position' => 1]]);
+                                    $bl->syncConsultantsTracked([$scrmUser->id => ['position' => 1]]);
                                 }
                             }
                         }

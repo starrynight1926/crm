@@ -64,11 +64,23 @@ new class extends Component
             'newCallStatus' => 'required|in:' . implode(',', array_keys(CallLog::STATUSES)),
             'newCallNote'   => 'nullable|string|max:1000',
         ]);
+        $note = $this->newCallNote ?: null;
+        $dup = CallLog::where('lead_id', $this->lead->id)
+            ->where('user_id', $user->id)
+            ->where('status', $this->newCallStatus)
+            ->where(fn ($q) => $note === null ? $q->whereNull('note') : $q->where('note', $note))
+            ->where('called_at', '>=', now()->subSeconds(3))
+            ->exists();
+        if ($dup) {
+            $this->newCallNote = '';
+            session()->flash('cf_ok', 'Đã bỏ qua ghi trùng cuộc gọi.');
+            return;
+        }
         CallLog::create([
             'lead_id'   => $this->lead->id,
             'user_id'   => $user->id,
             'status'    => $this->newCallStatus,
-            'note'      => $this->newCallNote ?: null,
+            'note'      => $note,
             'called_at' => now(),
         ]);
         $this->newCallNote = '';
@@ -379,7 +391,10 @@ new class extends Component
                             </select>
                             <input wire:model="newCallNote" placeholder="Ghi chú cuộc gọi..." class="col-span-2 border border-slate-300 rounded px-2 py-1.5 text-sm">
                         </div>
-                        <button wire:click="addCallLog" class="text-sm bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-4 py-1.5 rounded">+ Ghi cuộc gọi</button>
+                        <button wire:click="addCallLog" wire:loading.attr="disabled" wire:target="addCallLog" class="text-sm bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-4 py-1.5 rounded disabled:opacity-50 disabled:cursor-not-allowed">
+                            <span wire:loading.remove wire:target="addCallLog">+ Ghi cuộc gọi</span>
+                            <span wire:loading wire:target="addCallLog">Đang ghi…</span>
+                        </button>
                     </div>
                 @else
                     <p class="text-xs text-ink/40 italic">Bạn không có quyền ghi log gọi cho lead này (cần là owner, QL Sale, hoặc Admin vận hành).</p>

@@ -685,6 +685,16 @@ class Lead extends Model
             }
             if ($user->hasSelfScope()) {
                 $q->orWhere('owner_id', $user->id)->orWhere('receiver_id', $user->id);
+                // Sale tiếp đón (CV1 của booking chưa/đã duyệt) — thấy lead ngay từ cho_xac_nhan.
+                $q->orWhereHas('bookingLogs', function ($bq) use ($user) {
+                    $bq->whereIn('status', ['cho_xac_nhan', 'da_xac_nhan'])
+                        ->whereHas('consultants', fn ($cq) => $cq
+                            ->where('user_id', $user->id)
+                            ->wherePivot('position', 1));
+                });
+                // CV1 cũ (đã bị đổi sang sale khác) — vẫn thấy lead nhưng ở chế độ chỉ đọc.
+                $q->orWhereHas('bookingLogs', fn ($bq) => $bq
+                    ->whereJsonContains('past_consultant_user_ids', (int) $user->id));
             }
             // Người nhập lead: luôn thấy được data mình đã up, kể cả sau khi engine
             // chia số cho sale khác (dùng để "trực page" theo dõi + chia lại nếu cần).
@@ -710,6 +720,17 @@ class Lead extends Model
             $user->memberOrgUnitIds() ?: [],
         )));
         return array_intersect($past, $userOrgs) !== [];
+    }
+
+    /**
+     * User là CV1 cũ (đã bị đổi sang sale khác) của bất kỳ booking nào của lead này?
+     * Dùng để force readonly: sale cũ vẫn thấy lead nhưng không sửa được.
+     */
+    public function isPastConsultantFor(User $user): bool
+    {
+        return $this->bookingLogs()
+            ->whereJsonContains('past_consultant_user_ids', (int) $user->id)
+            ->exists();
     }
 
     /** Lead này có nằm trong scope của user không (dùng cho chi tiết / mask SĐT). */

@@ -153,7 +153,7 @@ class ReconcileBookingsFromSbooking extends Command
                 $current = $bl->consultants()->wherePivot('position', 1)->pluck('users.id')->first();
                 if ($current !== $localUser->id) {
                     if (! $this->option('dry-run')) {
-                        $bl->consultants()->sync([$localUser->id => ['position' => 1]]);
+                        $bl->syncConsultantsTracked([$localUser->id => ['position' => 1]]);
                     }
                     $stats['cv_synced']++;
                 }
