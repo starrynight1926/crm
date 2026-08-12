@@ -2,6 +2,14 @@
 
 > Làm xong phase nào ghi vào đây: ngày hoàn thành, việc đã làm, việc dời lại/chưa xong, ghi chú & quyết định phát sinh. Mẫu bên dưới.
 
+## 2026-08-11 — Fix: Tele bấm "Lưu" phase 2 khi lead vẫn ở phase 1 → chốt tuần tự ✅
+
+Bug: Tele mở lead do Trực Page vừa tạo (phase=1), bấm "Lưu thông tin" từ tab phase 2 → `saveAndGoToBooking` gọi `closePhase(2)` → Lead::closePhase throw "Chỉ chốt được phase hiện tại (đang ở phase 1)". User thấy flash "Không tự chốt được phase 2: ...".
+
+Fix [⚡lead-form.blade.php:1388](resources/views/components/leads/⚡lead-form.blade.php:1388): thay call trực tiếp `closePhase($prevPhase)` bằng loop từ `$lead->phase` lên `$prevPhase`, check perm từng phase. Với Tele: chốt phase 1 (perm `phase.close.new`) → refresh → chốt phase 2 (perm `phase.close.call`). Cả 2 perm đã có sẵn ở role Team Tele/Sale.
+
+---
+
 ## 2026-08-11 — Eleventh (T6b): Kho re-call — import xlsx + chia hàng loạt UPS MKT ✅
 
 Trực Page up danh sách khách cũ (họ tên + sdt), match phone với DB → lưu **id lead + ngày** vào `recall_entries` (không tạo lead mới, không copy dữ liệu). CM/Team Lead/Trực Page bấm "Chia hàng loạt" → pick sale round-robin **UPS bucket MKT hôm nay** (reuse `UpsDispatcher::pickMkt`) → update `Lead.owner_id`, `phase=CALL(2)`, `pipeline_phase=booking`, `source_group=mkt_br` (khách quay lại), ghi log.
