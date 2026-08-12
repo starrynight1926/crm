@@ -2667,7 +2667,7 @@ new class extends Component
                                 @endif
                             </label>
                             @if ($field->field_type === 'select' || ($field->field_type === 'code' && $ck === 'select'))
-                                <select wire:model="custom.{{ $field->id }}" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-gold-500">
+                                <select wire:model.live="custom.{{ $field->id }}" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-gold-500">
                                     <option value="">— chọn —</option>
                                     @foreach ($field->options ?? [] as $option)
 <?php $ol = $field->optionLabel($option); ?>
@@ -2676,17 +2676,17 @@ new class extends Component
                                 </select>
                             @elseif ($field->field_type === 'tick')
                                 <label class="inline-flex items-center gap-2 text-sm cursor-pointer select-none">
-                                    <input type="checkbox" wire:model="custom.{{ $field->id }}" class="rounded border-gold-300 text-gold-600 focus:ring-gold-500 w-5 h-5">
+                                    <input type="checkbox" wire:model.live="custom.{{ $field->id }}" class="rounded border-gold-300 text-gold-600 focus:ring-gold-500 w-5 h-5">
                                     Có
                                 </label>
                             @elseif ($field->field_type === 'date')
                                 <x-date-input field="custom.{{ $field->id }}" />
                             @elseif ($field->field_type === 'number')
-                                <input type="number" step="any" wire:model="custom.{{ $field->id }}" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
+                                <input type="number" step="any" wire:model.live="custom.{{ $field->id }}" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
                             @elseif ($field->field_type === 'email')
-                                <input type="email" wire:model="custom.{{ $field->id }}" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
+                                <input type="email" wire:model.live="custom.{{ $field->id }}" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
                             @else
-                                <input type="text" wire:model="custom.{{ $field->id }}" @if($field->field_type==='code') style="text-transform:uppercase" @endif class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
+                                <input type="text" wire:model.live="custom.{{ $field->id }}" @if($field->field_type==='code') style="text-transform:uppercase" @endif class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
                             @endif
                             @error('custom.' . $field->id)<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
                         </div>
@@ -2723,7 +2723,7 @@ new class extends Component
                             @endif
                         </label>
                         @if ($field->field_type === 'select' || ($field->field_type === 'code' && $ck2 === 'select'))
-                            <select wire:model="custom.{{ $field->id }}" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-gold-500">
+                            <select wire:model.live="custom.{{ $field->id }}" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-gold-500">
                                 <option value="">— chọn —</option>
                                 @foreach ($field->options ?? [] as $option)
 <?php $ol2 = $field->optionLabel($option); ?>
@@ -2732,17 +2732,17 @@ new class extends Component
                             </select>
                         @elseif ($field->field_type === 'tick')
                             <label class="inline-flex items-center gap-2 text-sm cursor-pointer select-none">
-                                <input type="checkbox" wire:model="custom.{{ $field->id }}" class="rounded border-gold-300 text-gold-600 focus:ring-gold-500 w-5 h-5">
+                                <input type="checkbox" wire:model.live="custom.{{ $field->id }}" class="rounded border-gold-300 text-gold-600 focus:ring-gold-500 w-5 h-5">
                                 Có
                             </label>
                         @elseif ($field->field_type === 'date')
                             <x-date-input field="custom.{{ $field->id }}" />
                         @elseif ($field->field_type === 'number')
-                            <input type="number" step="any" wire:model="custom.{{ $field->id }}" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
+                            <input type="number" step="any" wire:model.live="custom.{{ $field->id }}" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
                         @elseif ($field->field_type === 'email')
-                            <input type="email" wire:model="custom.{{ $field->id }}" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
+                            <input type="email" wire:model.live="custom.{{ $field->id }}" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
                         @else
-                            <input type="text" wire:model="custom.{{ $field->id }}" @if($field->field_type==='code') style="text-transform:uppercase" @endif class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
+                            <input type="text" wire:model.live="custom.{{ $field->id }}" @if($field->field_type==='code') style="text-transform:uppercase" @endif class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
                         @endif
                         @error('custom.' . $field->id)<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
                     </div>
