@@ -514,7 +514,9 @@ class Lead extends Model
             return ['importer' => $importer, 'booking' => null, 'sale' => null];
         }
 
-        $sale = $this->pipeline_phase === self::PHASE_SALE ? $this->owner : null;
+        // 2026-08-11 fix: pipeline_phase=booking + có consultant_1 (CV1) → sale slot
+        // hiển thị CV1 booking (đúng comment "sale = owner khi pipeline=sale HOẶC CV1 booking").
+        $sale = $this->pipeline_phase === self::PHASE_SALE ? $this->owner : $this->consultant1;
         if ($this->pipeline_phase === self::PHASE_BOOKING) {
             $booking = $this->owner;
         } elseif ($this->pipeline_phase === self::PHASE_SALE) {

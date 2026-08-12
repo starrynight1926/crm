@@ -2,6 +2,38 @@
 
 > Làm xong phase nào ghi vào đây: ngày hoàn thành, việc đã làm, việc dời lại/chưa xong, ghi chú & quyết định phát sinh. Mẫu bên dưới.
 
+## 2026-08-11 — Twelfth: bỏ required Phân loại/Kết quả, ẩn Ghi nhận tình trạng, move Link → custom field, fix Sale tiếp đón, booking cho_duyet ✅
+
+Nhánh `twelfth`.
+
+### T1 — Bỏ required "Phân loại" + "Kết quả"
+- [TeamHoiCustomFieldSeeder.php](database/seeders/TeamHoiCustomFieldSeeder.php): `phan_loai` + `ket_qua` `required=true` → `false`.
+- [⚡lead-form.blade.php:1426](resources/views/components/leads/⚡lead-form.blade.php:1426): validation `classification` từ `required` → `nullable`.
+
+### T2 — Ẩn section "Ghi nhận tình trạng" (phase 2)
+- [⚡lead-form.blade.php](resources/views/components/leads/⚡lead-form.blade.php): xoá block chứa 3 field (Phân loại core `classification`, Ghi nhận tình trạng 1 `status_1`, Ghi nhận tình trạng 2 `status_2`). Field vẫn còn trong DB (default 'new' / nullable) để không vỡ save/query. **Chú ý**: "Phân loại" ẩn ở đây là core field `classification` — khác custom field `phan_loai` (Trường bổ sung) vẫn giữ nguyên.
+
+### T3 — Move field "Link" từ phase 2 → phase 1 (Trường bổ sung, custom field)
+- [⚡lead-form.blade.php](resources/views/components/leads/⚡lead-form.blade.php): xoá input Link ra khỏi section INSIGHT phase 2.
+- [TeamHoiCustomFieldSeeder.php](database/seeders/TeamHoiCustomFieldSeeder.php): thêm custom field cấp công ty `link` (type=text, import_code=Link, position=3, không required).
+- Cột core `leads.link` giữ nguyên trong DB (backward compat), nhưng không còn UI phase 2 và không import qua target `link` nữa.
+
+### T4 — Sửa mẫu import + docs
+- [⚡lead-import.blade.php](resources/views/components/leads/⚡lead-import.blade.php): bỏ target `link` + dòng "Link" trong bảng docs (Link giờ đến qua custom field cột "Trường bổ sung").
+- [guide.blade.php](resources/views/guide.blade.php): cập nhật hướng dẫn — Phân loại + Kết quả không còn bắt buộc; rule thu hồi 1 ngày còn `PAGE + Camp`, rule 3 ngày chỉ khuyến khích.
+
+### T5 — Fix "Sale tiếp đón" không hiện tên trong list lead
+- [Lead.php:517](app/Models/Lead.php:517): `handlerTrio()` gán `$sale = pipeline_phase===sale ? owner : consultant1`. Trước đó chỉ set khi pipeline=sale → cột "Sale tiếp đón" ở [⚡lead-list.blade.php](resources/views/components/leads/⚡lead-list.blade.php) toàn "—" cho lead đang phase booking dù đã có CV1.
+
+### Bonus — Booking mới tạo phải là "Chờ duyệt" (bên sbooking)
+- [BookingApiController.php](app/Http/Controllers/Api/BookingApiController.php) (sbooking): bỏ nhánh auto-duyệt `phong_kham`. Booking do CRM push luôn `trang_thai='cho_duyet'`, `da_duyet=false`. Admin bên booking phải chủ động duyệt.
+
+### QA
+- `migrate:fresh --seed` cả 2 bên OK.
+- Custom fields cấp công ty: `phan_loai (req=no)`, `ket_qua (req=no)`, `link (req=no)`, `page`, `camp` — verified tinker.
+
+---
+
 ## 2026-08-11 — Eleventh (T6b): Kho re-call — import xlsx + chia hàng loạt UPS MKT ✅
 
 Trực Page up danh sách khách cũ (họ tên + sdt), match phone với DB → lưu **id lead + ngày** vào `recall_entries` (không tạo lead mới, không copy dữ liệu). CM/Team Lead/Trực Page bấm "Chia hàng loạt" → pick sale round-robin **UPS bucket MKT hôm nay** (reuse `UpsDispatcher::pickMkt`) → update `Lead.owner_id`, `phase=CALL(2)`, `pipeline_phase=booking`, `source_group=mkt_br` (khách quay lại), ghi log.

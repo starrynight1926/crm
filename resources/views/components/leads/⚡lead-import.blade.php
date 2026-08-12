@@ -130,7 +130,7 @@ new class extends Component
         // 2026-08-05: cột "Phương thức chia" cho trực page. Giá trị = "Tự động" hoặc tên kho ở sheet 2.
         'distribution'     => 'Phương thức chia',
         'insight'          => 'Ghi chú insight khách',
-        'link'             => 'Link',
+        // 2026-08-11: Link move sang custom field (Trường bổ sung, cấp công ty).
         'birthday'         => 'Ngày sinh',
         'occupation'       => 'Nghề nghiệp',
         'address'          => 'Địa chỉ',
@@ -564,7 +564,7 @@ new class extends Component
             ['Nhóm nguồn',              'CÓ',    'Mọi nguồn',                'Mã nguồn — xem sheet "7 nguồn". Chỉ được up nguồn nằm trong quyền của mày (Trực Page = MKT; QL Sale/Admin cơ sở = BDM/BOD/WI; Sale = MKT_BR/SA; Tele = BA). Up sai nguồn → dòng bị fail.'],
             ['Phương thức chia',        'không', 'CHỈ MKT',                  'Chỉ có tác dụng khi Nhóm nguồn = MKT. Giá trị: "Tự động" (chia từ UPS list) hoặc tên kho ở sheet "Danh mục kho". Nguồn khác điền vô sẽ bị BỎ QUA — lead luôn vào kho chung chờ CM chia.'],
             ['Ghi chú insight khách',   'không', 'Mọi nguồn',                'Text tự do — insight ban đầu về khách.'],
-            ['Link',                    'không', 'Mọi nguồn',                'URL nguồn (fanpage, comment, form, …).'],
+            // 2026-08-11: Link đã move sang cột "Trường bổ sung" (custom field cấp công ty).
             ['Ngày sinh',               'không', 'Mọi nguồn',                'DD-MM-YYYY. VD: 25-12-1990.'],
             ['Nghề nghiệp',             'không', 'Mọi nguồn',                'Text tự do.'],
             ['Địa chỉ',                 'không', 'Mọi nguồn',                'Text tự do.'],

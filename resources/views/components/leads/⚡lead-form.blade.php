@@ -1449,7 +1449,8 @@ new class extends Component
             'name' => 'required|string|max:150',
             'phone' => 'required|string',
             'received_date' => 'required|date',
-            'classification' => 'required|in:' . implode(',', array_keys(Lead::CLASSIFICATIONS)),
+            // 2026-08-11: bỏ required — Phân loại (classification core) không còn bắt buộc, default 'new'.
+            'classification' => 'nullable|in:' . implode(',', array_keys(Lead::CLASSIFICATIONS)),
             'bookingStatus' => 'required|in:' . implode(',', array_keys(Lead::BOOKING_STATUSES)),
             'sourceGroup' => 'required|in:' . implode(',', array_keys($allowedSources)),
             'link' => 'nullable|string|max:500',
@@ -3333,11 +3334,7 @@ new class extends Component
                         <label class="block text-sm font-medium mb-1.5">Ghi chú insight khách</label>
                         <textarea wire:model="insight" rows="2" placeholder="Ghi chú insight khách hàng..." class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500"></textarea>
                     </div>
-                    <div>
-                        <label class="block text-sm font-medium mb-1.5">Link</label>
-                        <input type="text" wire:model="link" placeholder="https://facebook.com/..." class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500">
-                        @error('link')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
-                    </div>
+                    {{-- 2026-08-11: field "Link" đã move sang phase 1 dưới dạng custom field (cấp công ty, key=link). --}}
                     <div class="grid grid-cols-2 gap-4">
                         <div>
                             <label class="block text-sm font-medium mb-1.5">Ngày sinh</label>
@@ -3420,46 +3417,8 @@ new class extends Component
                 </div>
             </div>
 
-            {{-- Ghi nhận tình trạng — Phase 3 (Gọi điện) — order 2 (giữa) --}}
-            <div x-show="phase === 2" x-cloak class="order-2 bg-white border border-gold-200 rounded-xl shadow-card p-6 @if ($phaseLocked[3] ?? false) opacity-70 @endif">
-                <h2 class="font-bold text-gold-700 mb-5 flex items-center gap-2">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                    Ghi nhận tình trạng
-                    @if ($phaseLocked[3] ?? false)<span class="ml-2 text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-500 font-normal">Chỉ đọc (không có quyền)</span>@endif
-                </h2>
-
-                @php
-                    $_isTrucPage = auth()->user()->hasRole('Trực Page');
-                    $_lockResult = ($phaseLocked[3] ?? false) || $_isTrucPage;
-                @endphp
-                <fieldset @if ($phaseLocked[3] ?? false) disabled @endif class="space-y-4 border-0 p-0 m-0">
-                    <div>
-                        <label class="block text-sm font-medium mb-1.5">Phân loại</label>
-                        <select wire:model="classification" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-gold-500">
-                            @foreach (\App\Models\Lead::CLASSIFICATIONS as $key => $label)
-                                <option value="{{ $key }}">{{ $label }}</option>
-                            @endforeach
-                        </select>
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium mb-1.5">
-                            Ghi nhận tình trạng lần 1
-                            @if ($_isTrucPage)<span class="ml-1 text-[10px] text-slate-400">(chỉ Tele sale ghi)</span>@endif
-                        </label>
-                        <input type="text" wire:model="status_1" @disabled($_lockResult) placeholder="VD: Đã liên hệ" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500 disabled:bg-slate-50 disabled:text-slate-500">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium mb-1.5">
-                            Ghi nhận tình trạng lần 2
-                            @if ($_isTrucPage)<span class="ml-1 text-[10px] text-slate-400">(chỉ Tele sale ghi)</span>@endif
-                        </label>
-                        <input type="text" wire:model="status_2" @disabled($_lockResult) placeholder="VD: Đã tư vấn" class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500 disabled:bg-slate-50 disabled:text-slate-500">
-                    </div>
-                    {{-- TRẠNG THÁI ĐẶT LỊCH đã move sang Phase 4 (Booking) --}}
-
-                    {{-- Panel Phân phối & Nguồn đã move sang tab Phase 2 (Chia số) — Phase 6.21g --}}
-                </fieldset>
-            </div>
+            {{-- 2026-08-11: Section "Ghi nhận tình trạng" phase 2 đã ẩn theo yêu cầu (Phân loại + tình trạng 1 + tình trạng 2).
+                 Field vẫn còn trong DB (classification default 'new', status_1/2 nullable) để không vỡ save/query. --}}
 
             {{-- DV tiềm năng + UPSELL — Phase 6 (Bán hàng) --}}
             <div x-show="phase === 5" x-cloak class="bg-white border border-gold-200 rounded-xl shadow-card p-6">

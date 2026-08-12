@@ -28,7 +28,7 @@ class TeamHoiCustomFieldSeeder extends Seeder
                 'label' => 'Phân loại',
                 'field_type' => 'select',
                 'options' => ['Quan tâm', 'Tìm hiểu', 'Không nhu cầu', 'KLLD', 'Tài chính yếu', 'Gọi lại sau', 'Nét', 'Tham khảo', 'Bệnh nặng, sai tệp'],
-                'required' => true, // 2026-08-10: bắt buộc
+                'required' => false, // 2026-08-11: bỏ bắt buộc theo yêu cầu Tele
                 'position' => 1,    // 2026-08-10: cho lên đầu
             ],
             [
@@ -37,8 +37,18 @@ class TeamHoiCustomFieldSeeder extends Seeder
                 'label' => 'Kết quả',
                 'field_type' => 'select',
                 'options' => ['Missed', 'Follow', 'Booking', 'Show', 'Close'],
-                'required' => true, // 2026-08-10: bắt buộc
+                'required' => false, // 2026-08-11: bỏ bắt buộc theo yêu cầu Tele
                 'position' => 2,    // 2026-08-10: cho lên đầu
+            ],
+            // 2026-08-11: Link move từ phase 2 (Gọi điện, core field) → phase 1 (Trường bổ sung, custom field).
+            [
+                'key' => 'link',
+                'import_code' => 'Link',
+                'label' => 'Link',
+                'field_type' => 'text',
+                'options' => null,
+                'required' => false,
+                'position' => 3,
             ],
         ];
         foreach ($companyFields as $f) {

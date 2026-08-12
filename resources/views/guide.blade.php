@@ -45,7 +45,7 @@
             'summary' => 'Up lead MKT / MKT BR',
             'intro' => 'Nhập lead nguồn Marketing / Marketing BR. Hệ thống tự chia Tele sale theo UPS list.',
             'steps' => [
-                ['Thêm mới', 'Bấm <strong>+ Thêm mới lead</strong>. Nhập <strong>Họ tên · SĐT · Nhóm nguồn · Phân loại · Kết quả</strong>. Bấm <strong>Lưu</strong>.'],
+                ['Thêm mới', 'Bấm <strong>+ Thêm mới lead</strong>. Nhập <strong>Họ tên · SĐT · Nhóm nguồn</strong> (Phân loại · Kết quả không còn bắt buộc). Bấm <strong>Lưu</strong>.'],
                 ['Hệ thống tự chia', 'Sau khi lưu, hệ thống tự chia lead cho 1 Tele sale theo <strong>UPS list hôm nay</strong> (bucket MKT của cơ sở đã chọn). Không cần thao tác gì thêm.'],
             ],
         ],
@@ -171,8 +171,8 @@
         <div class="bg-amber-50 border border-amber-300 rounded-lg p-5 text-sm text-ink/85 space-y-2">
             <p>Mặc định lead chia cho Tele sale sẽ <strong>auto thu hồi</strong> nếu không update đúng SLA:</p>
             <ul class="list-disc list-inside ml-2 space-y-1">
-                <li>Sau <strong>1 ngày</strong>: Tele sale phải cập nhật đủ <strong>3 cột đầu</strong> (<em>PAGE, Camp, Phân loại</em>). Không → hệ thống tự thu hồi lead về kho team.</li>
-                <li>Sau <strong>3 ngày</strong>: Tele sale phải cập nhật đủ <strong>5 cột</strong> (thêm <em>Kết quả, S.I.C</em>). Không → thu hồi.</li>
+                <li>Sau <strong>1 ngày</strong>: Tele sale phải cập nhật đủ <strong>PAGE, Camp</strong>. Không → hệ thống tự thu hồi lead về kho team. (Phân loại + Kết quả không còn bắt buộc từ 2026-08-11.)</li>
+                <li>Sau <strong>3 ngày</strong>: khuyến khích cập nhật <em>Phân loại, Kết quả, S.I.C</em> để báo cáo funnel chuẩn (không còn gate thu hồi).</li>
             </ul>
             <p class="text-xs text-ink/60 mt-2">Nếu <strong>CM/Team Leader tick "Không thu hồi"</strong> khi chia → lead đó không áp dụng quy định trên.</p>
         </div>
