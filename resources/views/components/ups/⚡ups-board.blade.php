@@ -417,11 +417,13 @@ new class extends Component
                             </div>
 
                             @if ($canCheckin && ! $fb['confirmed'])
-                                <div class="mt-3 space-y-2" x-data='{
+                                <div class="mt-3 space-y-2"
+                                    data-status='{!! json_encode($fb["saleStatus"], JSON_UNESCAPED_UNICODE) !!}'
+                                    x-data='{
                                         user:"", slot:"", tier:"auto",
-                                        status: {!! json_encode($fb["saleStatus"], JSON_UNESCAPED_UNICODE) !!},
-                                        inGreet(){ return !!(this.user && this.status[this.user] && this.status[this.user].greet) },
-                                        inMkt(){ return !!(this.user && this.status[this.user] && this.status[this.user].mkt) },
+                                        st(){ try { return JSON.parse(this.$root.dataset.status || "{}") } catch(e) { return {} } },
+                                        inGreet(){ const s=this.st(); return !!(this.user && s[this.user] && s[this.user].greet) },
+                                        inMkt(){ const s=this.st(); return !!(this.user && s[this.user] && s[this.user].mkt) },
                                     }'
                                     x-effect='
                                         if (!user) { slot=""; return }
