@@ -553,7 +553,7 @@ new class extends Component
 
             $head = "[{$when}] {$who}: {$prefix}{$text}{$suffix}";
             $imgLines = array_map(function ($path) use ($when) {
-                $url = url(\Illuminate\Support\Facades\Storage::disk('public')->url($path));
+                $url = asset('storage/' . ltrim($path, '/'));
                 return "  📎 {$when} · {$url}";
             }, $images);
 

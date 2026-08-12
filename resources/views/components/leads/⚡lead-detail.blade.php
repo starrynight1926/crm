@@ -948,7 +948,7 @@ new class extends Component
                                 @if (! empty($log->images))
                                     <div class="flex flex-wrap gap-2 mt-2" x-data="{ lightbox: null }">
                                         @foreach ($log->images as $idx => $path)
-                                            @php $url = \Illuminate\Support\Facades\Storage::disk('public')->url($path); @endphp
+                                            @php $url = asset('storage/' . ltrim($path, '/')); @endphp
                                             <img src="{{ $url }}" alt="Ảnh {{ $idx + 1 }}"
                                                  class="w-12 h-12 object-cover rounded border border-gold-200 cursor-pointer hover:ring-2 hover:ring-gold-400"
                                                  @click="lightbox = '{{ $url }}'">
