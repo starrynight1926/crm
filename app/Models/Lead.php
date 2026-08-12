@@ -514,17 +514,14 @@ class Lead extends Model
             return ['importer' => $importer, 'booking' => null, 'sale' => null];
         }
 
-        // 2026-08-11 fix: pipeline_phase=booking + có consultant_1 (CV1) → sale slot
-        // hiển thị CV1 booking (đúng comment "sale = owner khi pipeline=sale HOẶC CV1 booking").
-        $sale = $this->pipeline_phase === self::PHASE_SALE ? $this->owner : $this->consultant1;
-        if ($this->pipeline_phase === self::PHASE_BOOKING) {
-            $booking = $this->owner;
-        } elseif ($this->pipeline_phase === self::PHASE_SALE) {
-            // Sale nhận trực tiếp: không qua booking.
-            $booking = $this->isDirectSaleSource() ? null : $this->receiver;
-        } else {
-            $booking = null;
-        }
+        // 2026-08-11 fix v2: 1 user vừa Tele vừa Sale tùy UPS bucket → không thể phân biệt
+        // theo pipeline_phase. Slot Sale = CV1 nếu đã tạo booking, else owner (Sale UPS-assigned
+        // vẫn hiện tên trong cột "Sale tiếp đón" ngay khi chia).
+        // Slot Tele = receiver (nếu khác owner) — người bàn giao trước, hoặc null nếu owner nhận trực tiếp.
+        $sale = $this->consultant1 ?? $this->owner;
+        $booking = ($this->receiver_id && $this->receiver_id !== $this->owner_id)
+            ? $this->receiver
+            : null;
         return ['importer' => $importer, 'booking' => $booking, 'sale' => $sale];
     }
 
