@@ -308,12 +308,24 @@ class DistributionEngine
 
     // ---------- Thao tác ngoài luồng tự động ----------
 
-    /** Thu hồi lead khỏi sale: về kho team hoặc kho chung. $actorId null = hệ thống (SLA). */
+    /** Thu hồi lead khỏi sale: về kho cơ sở (facility) hoặc kho chung. $actorId null = hệ thống (SLA). */
     public function recall(Lead $lead, string $recallTo = Lead::POOL_TEAM, ?int $actorId = null): void
     {
-        $toCommon = $recallTo === Lead::POOL_COMMON || $lead->org_unit_id === null;
         $prevOwnerId = $lead->owner_id;
         $orgUnitId = $lead->org_unit_id;
+
+        // 2026-08-12: nếu recall về TEAM, cần bảo đảm lead có pool_unit_id (Phase 6.24 dùng
+        // pool_unit_id để phân tab facility/branch/department). Ưu tiên pool_unit_id sẵn có;
+        // fallback suy từ owner cũ (org_pool_map). Không suy được → fallback về POOL_COMMON.
+        $poolUnitId = null;
+        if ($recallTo === Lead::POOL_TEAM) {
+            $poolUnitId = $lead->pool_unit_id;
+            if (! $poolUnitId && $prevOwnerId) {
+                $poolUnitId = $this->resolvePoolUnitIdFromUser($prevOwnerId);
+            }
+        }
+        $toCommon = $recallTo === Lead::POOL_COMMON
+            || ($recallTo === Lead::POOL_TEAM && ! $poolUnitId && $lead->org_unit_id === null);
 
         LeadDistributionLog::create([
             'lead_id' => $lead->id,
@@ -326,12 +338,15 @@ class DistributionEngine
             'created_at' => now(),
         ]);
 
-        $lead->update([
+        $update = [
             'owner_id' => null,
             'assigned_at' => null,
             'pool_level' => $toCommon ? Lead::POOL_COMMON : Lead::POOL_TEAM,
             'org_unit_id' => $toCommon ? null : $lead->org_unit_id,
-        ]);
+        ];
+        if (! $toCommon && $poolUnitId) $update['pool_unit_id'] = $poolUnitId;
+        if ($toCommon) $update['pool_unit_id'] = null;
+        $lead->update($update);
 
         $payload = [
             'tieu_de'    => 'Lead bị thu hồi về kho',
@@ -348,6 +363,31 @@ class DistributionEngine
             'owner_id'    => $prevOwnerId,
             'org_unit_id' => $orgUnitId,
         ]);
+    }
+
+    /**
+     * 2026-08-12 — Suy pool_unit_id (kind=facility) từ assignments của user qua org_pool_map.
+     * Dùng khi recall lead PERSONAL về TEAM mà lead chưa có pool_unit_id. Trả null nếu không map được.
+     */
+    private function resolvePoolUnitIdFromUser(int $userId): ?int
+    {
+        $user = \App\Models\User::find($userId);
+        if (! $user) return null;
+        $ancestorOrgIds = [];
+        foreach ($user->effectiveAssignments() as $assignment) {
+            foreach (array_filter(explode('/', trim((string) $assignment->orgUnit?->path, '/'))) as $seg) {
+                $ancestorOrgIds[(int) $seg] = true;
+            }
+        }
+        if ($ancestorOrgIds === []) return null;
+        $poolUnit = \App\Models\PoolUnit::where('kind', 'facility')
+            ->where('is_active', true)
+            ->whereIn('id', function ($q) use ($ancestorOrgIds) {
+                $q->select('pool_unit_id')->from('org_pool_map')->whereIn('org_unit_id', array_keys($ancestorOrgIds));
+            })
+            ->orderBy('depth')
+            ->first();
+        return $poolUnit?->id;
     }
 
     /**
