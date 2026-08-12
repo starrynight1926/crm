@@ -271,11 +271,21 @@ new class extends Component
                 // MKT list: tất cả có is_mkt=true
                 $mktList = $atts->filter(fn ($a) => $a->is_mkt);
 
+                // Trạng thái từng sale hôm nay: [user_id => ['greet'=>bool, 'mkt'=>bool]]
+                $saleStatus = [];
+                foreach ($atts as $a) {
+                    $saleStatus[$a->user_id] = [
+                        'greet' => $a->list_bucket !== null,
+                        'mkt'   => (bool) $a->is_mkt,
+                    ];
+                }
+
                 $facilityBlocks[] = [
                     'facility' => $facility,
                     'all' => $atts,
                     'buckets' => $bucketGroups,
                     'mktList' => $mktList,
+                    'saleStatus' => $saleStatus,
                     'availableSales' => $sales->reject(fn ($u) => in_array($u->id, $checkedInIds, true))->values(),
                     'confirmed' => UpsDailyConfirm::isConfirmed($facility->id, $today),
                     'cutoff' => UpsConfig::cutoffFor($facility->id),
@@ -407,7 +417,18 @@ new class extends Component
                             </div>
 
                             @if ($canCheckin && ! $fb['confirmed'])
-                                <div class="mt-3 space-y-2" x-data="{ user:'', slot:'', tier:'auto' }">
+                                <div class="mt-3 space-y-2" x-data="{
+                                        user:'', slot:'', tier:'auto',
+                                        status: {{ \Illuminate\Support\Js::from($fb['saleStatus']) }},
+                                        inGreet(){ return this.user && this.status[this.user]?.greet },
+                                        inMkt(){ return this.user && this.status[this.user]?.mkt },
+                                    }"
+                                    x-effect="
+                                        if (!user) { slot=''; return }
+                                        if (inGreet() && !inMkt()) slot='receive';
+                                        else if (inMkt() && !inGreet()) slot='greet';
+                                        else if ((slot==='greet' && inGreet()) || (slot==='receive' && inMkt())) slot='';
+                                    ">
                                     {{-- Hàng 1: Nhân viên (full width) --}}
                                     <select x-model="user" class="w-full border border-gold-200 rounded px-3 py-2 text-sm bg-white">
                                         <option value="">1. Chọn nhân viên…</option>
@@ -420,8 +441,8 @@ new class extends Component
                                     <div class="grid grid-cols-2 gap-2">
                                         <select x-model="slot" :disabled="!user" class="w-full border border-gold-200 rounded px-3 py-2 text-sm bg-white disabled:opacity-50 disabled:cursor-not-allowed">
                                             <option value="">2. Vị trí…</option>
-                                            <option value="greet">Tiếp đón</option>
-                                            <option value="receive">Nhận số (MKT)</option>
+                                            <option value="greet" :disabled="inGreet()" x-text="'Tiếp đón' + (inGreet() ? ' — đã có' : '')"></option>
+                                            <option value="receive" :disabled="inMkt()" x-text="'Nhận số (MKT)' + (inMkt() ? ' — đã có' : '')"></option>
                                         </select>
                                         <select x-model="tier" :disabled="slot !== 'greet'" class="w-full border border-gold-200 rounded px-3 py-2 text-sm bg-white disabled:opacity-50 disabled:cursor-not-allowed">
                                             <option value="auto">3. Tier: Tự động</option>
