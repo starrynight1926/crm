@@ -83,8 +83,8 @@ class RealCmStaffSeeder extends Seeder
             ['tbt@longevity.com.vn', 'Trần Thị Bích Trâm', $roleCmHcm, OrgUnit::firstWhere('code','team-ashley-sale'), Assignment::SCOPE_TEAM, [], 'Clinic Manager'],
             ['nmt@longevity.com.vn', 'Nguyễn Thị Minh Thư', $roleCmHcm, OrgUnit::firstWhere('code','team-ashley-sale'), Assignment::SCOPE_TEAM, [], 'Trợ lý kinh doanh Clinic Manager (Assistant CM HCM)'],
             ['hbtl@longevity.com.vn', 'Huỳnh Bùi Thanh Lan', $roleCmHcm, OrgUnit::firstWhere('code','team-ashley-sale'), Assignment::SCOPE_TEAM, [], 'Clinic Manager'],
-            // Trợ lý kinh doanh: scope custom toàn công ty — view-only mọi lead theo doc Phase 6.6.
-            ['lpt@longevity.com.vn', 'Lê Thị Phương Tự', $roleAssistant, OrgUnit::firstWhere('code','company'), Assignment::SCOPE_CUSTOM, [OrgUnit::firstWhere('code','company')?->id], 'Trợ lý kinh doanh'],
+            // 2026-08-13: Lê Thị Phương Tự chuyển thành HC Team Sale Ashley (HCM).
+            ['lpt@longevity.com.vn', 'Lê Thị Phương Tự', $roleSale, OrgUnit::firstWhere('code','team-ashley-sale'), Assignment::SCOPE_SELF, [], 'HC'],
 
             // === HCM — Chuyên viên Team Ms.Ashley ===
             // 2026-07-16: SHC/HC sale HCM nằm trong Team Sale (con của Team Ashley).
@@ -115,6 +115,13 @@ class RealCmStaffSeeder extends Seeder
                 continue;
             }
 
+            // 2026-08-13: LPT chuyển từ Assistant → Sale HC. Xoá assignment Assistant cũ nếu còn.
+            if ($email === 'lpt@longevity.com.vn' && $roleAssistant) {
+                Assignment::where('user_id', $user->id)
+                    ->where('role_id', $roleAssistant->id)
+                    ->delete();
+            }
+
             // Nếu user đã có assignment role này (có thể ở org cũ) → migrate về org/scope đúng
             $assignment = Assignment::where('user_id', $user->id)
                 ->where('role_id', $role->id)
@@ -133,6 +140,10 @@ class RealCmStaffSeeder extends Seeder
                 ]);
             }
             $assignment->scopeNodes()->sync(array_filter($scopeNodes));
+
+            // Reset password theo cơ sở (assignment đã có → resolve chuẩn).
+            $user->password = \App\Support\DefaultPassword::forUser($user->fresh());
+            $user->saveQuietly();
         }
 
         // Xóa 2 user demo cũ không dùng nữa (giữ cmdn cho Đà Nẵng chưa có nhân sự thật)

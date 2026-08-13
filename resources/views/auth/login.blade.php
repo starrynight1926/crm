@@ -2,6 +2,10 @@
 
 @section('title', 'Đăng nhập hệ thống')
 
+@php
+    $bookingUrl = rtrim(\App\Models\AppSetting::get('booking_url', (string) config('services.booking.url')), '/');
+@endphp
+
 @section('content')
     <div class="flex flex-col items-center mb-8">
         <div class="w-14 h-14 rounded-lg border border-gold-300 bg-gold-50 flex items-center justify-center mb-4">
@@ -72,6 +76,20 @@
                 <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25"/>
             </svg>
             Hướng dẫn sử dụng
+        </a>
+
+        <div class="flex items-center gap-3 my-5 text-[10px] uppercase tracking-widest text-ink/40">
+            <span class="flex-1 h-px bg-gold-100"></span>
+            <span>hoặc</span>
+            <span class="flex-1 h-px bg-gold-100"></span>
+        </div>
+
+        <a href="{{ $bookingUrl }}/login"
+           class="w-full flex items-center justify-center gap-2 border border-gold-300 text-gold-700 hover:bg-gold-50 font-semibold py-3 rounded-md transition-colors">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5"/>
+            </svg>
+            Chuyển sang Booking App
         </a>
 
         <div class="border-t border-gold-100 mt-8 pt-5 text-center text-sm text-ink/60">

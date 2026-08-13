@@ -210,8 +210,14 @@
             {{ $slot ?? '' }}
         </main>
 
-        <footer class="py-6 text-center text-xs tracking-widest text-gold-400 uppercase border-t border-gold-100">
-            Longevity Data Source · Quản lý dữ liệu khách hàng
+        <footer class="py-6 flex items-center justify-center gap-3 text-xs tracking-widest text-gold-400 uppercase border-t border-gold-100">
+            <span>Longevity Data Source · Quản lý dữ liệu khách hàng</span>
+            @php $__latestVer = \App\Support\Changelog::latest(); @endphp
+            @if ($__latestVer)
+                <a href="{{ route('changelog') }}" class="px-2 py-0.5 rounded-md bg-gold-50 border border-gold-200 text-gold-700 hover:bg-gold-100 normal-case tracking-normal font-semibold" title="Xem changelog">
+                    {{ $__latestVer['version'] }}
+                </a>
+            @endif
         </footer>
 
         {{-- Toast realtime (Reverb) --}}
