@@ -68,6 +68,9 @@ Route::middleware('auth')->group(function () {
     // UPS check-in đầu ngày (Phase 6.22)
     Route::view('/ups-list', 'ups.index')->middleware('permission:ups.view')->name('ups.list');
     Route::view('/ups-today', 'ups.today')->name('ups.today'); // read-only, cho mọi user có scope
+    // B3 (2026-08-14): sale toggle "Không tiếp nhận" / "Tiếp tục nhận" từ avatar dropdown.
+    Route::post('/me/receive-toggle', [\App\Http\Controllers\MeStatusController::class, 'toggleReceive'])
+        ->name('me.receive-toggle');
 
     Route::view('/services', 'services.catalog')->middleware('permission:service.manage')->name('services.catalog');
     Route::view('/payments', 'services.payments')->middleware('permission:payment.record')->name('payments.index');

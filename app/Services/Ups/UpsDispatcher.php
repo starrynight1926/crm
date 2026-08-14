@@ -37,9 +37,9 @@ class UpsDispatcher
                 ->where('facility_pool_unit_id', $facilityPoolUnitId)
                 ->whereDate('work_date', $workDate)
                 ->where('list_bucket', '!=', 'OFF')
+                // B3 (2026-08-14): is_busy = "đang tiếp đón" thông tin, không skip.
                 ->where('dung_nhan_lead', false)
                 ->orderBy('checkin_at');
-            if (! $includeBusy) $q->where('is_busy', false);
             $sales = $q->get()->pluck('user')->filter()->values();
 
             if ($sales->isEmpty()) return null;
@@ -126,9 +126,10 @@ class UpsDispatcher
                 ->whereDate('work_date', $workDate)
                 ->where('list_bucket', $bucket)
                 // 2026-08-10: dung_nhan_lead luôn loại khỏi vòng chia, kể cả wrap-around.
+                // B3 (2026-08-14): is_busy = "đang tiếp đón" (informational), KHÔNG chặn nhận lead nữa.
+                //   Chỉ dung_nhan_lead mới skip. $includeBusy giữ lại cho backward-compat nhưng no-op.
                 ->where('dung_nhan_lead', false)
                 ->orderBy('checkin_at');
-            if (! $includeBusy) $q->where('is_busy', false);
             $sales = $q->get()->pluck('user')->filter()->values();
 
             if ($sales->isEmpty()) return null;

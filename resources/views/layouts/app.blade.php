@@ -146,10 +146,38 @@
                         {{ auth()->user()->initials() }}
                     </button>
                     <div x-show="open" @click.outside="open = false" x-cloak
-                         class="absolute right-4 md:right-6 top-14 w-56 bg-white border border-gold-200 rounded-lg shadow-card py-1 text-sm">
-                        <div class="px-4 py-2 border-b border-gold-100 lg:hidden">
-                            <div class="font-semibold truncate">{{ auth()->user()->name }}</div>
-                            <div class="text-xs text-ink/50 truncate">{{ auth()->user()->email }}</div>
+                         class="absolute right-4 md:right-6 top-14 w-64 bg-white border border-gold-200 rounded-lg shadow-card py-1 text-sm">
+                        <div class="px-4 py-2 border-b border-gold-100">
+                            <div class="font-semibold truncate lg:hidden">{{ auth()->user()->name }}</div>
+                            <div class="text-xs text-ink/50 truncate lg:hidden mb-1">{{ auth()->user()->email }}</div>
+                            @php
+                                // B3 (2026-08-14) — Trạng thái 2 chiều:
+                                //   Chiều 1 (auto): is_busy → 'Đang tiếp đón' | else 'Đang chờ'
+                                //   Chiều 2 (manual): dung_nhan_lead → '· Không nhận lead'
+                                $__att = \App\Models\DailyAttendance::where('user_id', auth()->id())
+                                    ->whereDate('work_date', now()->toDateString())->first();
+                                $__hasAtt = (bool) $__att;
+                                $__busy = $__hasAtt && $__att->is_busy;
+                                $__paused = $__hasAtt && $__att->dung_nhan_lead;
+                                $__base = $__busy ? 'Đang tiếp đón' : 'Đang chờ';
+                                $__label = $__base . ($__paused ? ' · Không nhận lead' : '');
+                                $__borderCls = $__paused
+                                    ? 'border-red-400 bg-red-50 text-red-800'
+                                    : ($__busy ? 'border-amber-400 bg-amber-50 text-amber-800' : 'border-emerald-400 bg-emerald-50 text-emerald-800');
+                            @endphp
+                            @if ($__hasAtt)
+                                <div class="text-[11px] font-semibold px-2 py-1 rounded border {{ $__borderCls }}">{{ $__label }}</div>
+                                <form method="POST" action="{{ route('me.receive-toggle') }}" class="mt-1.5"
+                                      x-data @submit="if(!confirm('{{ $__paused ? 'Tiếp tục nhận lead từ UPS?' : 'Tạm ngừng nhận lead? Admin/UPS sẽ SKIP bạn khi chia số.' }}')) $event.preventDefault()">
+                                    @csrf
+                                    <button type="submit"
+                                            class="w-full text-[11px] font-semibold px-2 py-1 rounded border {{ $__paused ? 'border-emerald-300 bg-white text-emerald-700 hover:bg-emerald-50' : 'border-red-300 bg-white text-red-700 hover:bg-red-50' }}">
+                                        {{ $__paused ? 'Tiếp tục nhận' : 'Không tiếp nhận' }}
+                                    </button>
+                                </form>
+                            @else
+                                <div class="text-[11px] text-ink/40 italic">Chưa check-in UPS hôm nay</div>
+                            @endif
                         </div>
                         @php
                             // Ẩn "Cài đặt" nếu user không có bất kỳ quyền quản trị nào
