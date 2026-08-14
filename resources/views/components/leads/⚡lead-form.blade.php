@@ -1250,11 +1250,12 @@ new class extends Component
     {
         $workDate = now()->toDateString();
 
+        // 2026-08-14: UPS đã chốt → mọi sale check-in đều là ứng viên chia MKT
+        //   (loại bucket OFF & dung_nhan_lead). Bỏ điều kiện is_mkt tick tay.
         $baseQ = \App\Models\DailyAttendance::with('user')
             ->where('facility_pool_unit_id', $facilityPoolUnitId)
             ->whereDate('work_date', $workDate)
-            ->where('is_mkt', true)
-            // 2026-08-10: sale dừng nhận lead → loại tuyệt đối kể cả wrap-around.
+            ->where('list_bucket', '!=', 'OFF')
             ->where('dung_nhan_lead', false)
             ->orderBy('checkin_at');
 
@@ -2113,7 +2114,7 @@ new class extends Component
                 ? \App\Models\DailyAttendance::with('user')
                     ->where('facility_pool_unit_id', $__f2->id)
                     ->whereDate('work_date', now()->toDateString())
-                    ->where('is_mkt', true)
+                    ->where('list_bucket', '!=', 'OFF')
                     ->orderBy('checkin_at')->get()
                 : collect(),
             // 2026-08-05: user list cho radio "Thủ công" — filter theo data_scope của user hiện tại (visibleOrgUnitIds).

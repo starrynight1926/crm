@@ -24,7 +24,9 @@ class UpsDispatcher
     }
 
     /**
-     * Round-robin chọn sale có is_mkt=true (thay vì bucket='MKT').
+     * Round-robin chọn sale từ UPS List hôm nay của cơ sở.
+     * 2026-08-14: UPS đã chốt → mọi sale check-in đều là ứng viên chia MKT
+     * (loại 'OFF' và sale tự dừng nhận lead). Không cần tick +M riêng nữa.
      */
     public function pickFromMkt(int $facilityPoolUnitId, ?string $workDate = null, bool $includeBusy = false): ?User
     {
@@ -34,7 +36,7 @@ class UpsDispatcher
             $q = DailyAttendance::with('user')
                 ->where('facility_pool_unit_id', $facilityPoolUnitId)
                 ->whereDate('work_date', $workDate)
-                ->where('is_mkt', true)
+                ->where('list_bucket', '!=', 'OFF')
                 ->where('dung_nhan_lead', false)
                 ->orderBy('checkin_at');
             if (! $includeBusy) $q->where('is_busy', false);
