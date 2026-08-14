@@ -758,6 +758,9 @@ class Lead extends Model
             // Người nhập lead: luôn thấy được data mình đã up, kể cả sau khi engine
             // chia số cho sale khác (dùng để "trực page" theo dõi + chia lại nếu cần).
             $q->orWhere('imported_by', $user->id);
+            // B1c (2026-08-14): past owner — user từng được giao lead này (kể cả đã bị thu hồi)
+            // vẫn nhìn thấy lead để tiếp tục ghi cuộc gọi / tạo booking.
+            $q->orWhereHas('ownershipHistory', fn ($hq) => $hq->where('user_id', $user->id));
             if ($orgIds === [] && $memberOrgIds === [] && ! $user->hasSelfScope()) {
                 // whereRaw('1=0') cũ chặn hết — giờ vẫn phải OR nhánh imported_by ở trên,
                 // nên không cần chặn cứng nữa. Nếu user không import gì → nhánh imported_by
@@ -801,6 +804,11 @@ class Lead extends Model
         }
 
         if ($user->hasSelfScope() && ($this->owner_id === $user->id || $this->receiver_id === $user->id)) {
+            return true;
+        }
+
+        // B1c (2026-08-14): past owner (từng được giao lead này) vẫn nhìn thấy để ghi call/booking.
+        if ($user->hasSelfScope() && $this->hasHistoricalOwnership($user)) {
             return true;
         }
 
@@ -1007,15 +1015,14 @@ class Lead extends Model
         return $st === 'open' || $st === 'current';
     }
 
-    /** User có được ghi call_log không (owner + QL Sale + Admin ops). */
+    /** User có được ghi call_log không (owner hiện tại + past owner + QL Sale + Admin ops).
+     *  B1c (2026-08-14): past owner (từng được giao) vẫn được ghi cuộc gọi ngay cả sau khi bị thu hồi. */
     public function canLogCall(User $user): bool
     {
         if (! $this->isVisibleTo($user)) return false;
         if ($user->hasPermission('phase.rollback')) return true;
-        // CHỈ owner đang giữ (không tính receiver_id — receiver là lịch sử bàn giao).
-        // Fix 2026-08-01: Trực Page có receiver_id = user vẫn pass isOwnedBy → sửa
-        // sang so trực tiếp owner_id.
-        return $this->owner_id !== null && $this->owner_id === $user->id;
+        if ($this->owner_id !== null && $this->owner_id === $user->id) return true;
+        return $this->hasHistoricalOwnership($user);
     }
 
     /**
@@ -1031,16 +1038,17 @@ class Lead extends Model
             || $user->hasPermission('phase.close.checkin');
     }
 
-    /** User có được ghi booking_log không. */
+    /** User có được ghi booking_log không.
+     *  B1c (2026-08-14): past owner cũng được tạo booking — sale bị thu hồi vẫn có thể đặt lịch,
+     *  ownership sẽ transfer về người tạo booking (B1d/B6). */
     public function canLogBooking(User $user): bool
     {
         if (! $this->isVisibleTo($user)) return false;
         if ($user->hasPermission('phase.rollback')) return true;
-        // 2026-08-02: đồng bộ với canRestartBooking — Admin cơ sở (phase.close.checkin)
-        // cũng ghi được booking_log để khởi động đặt lịch mới, không cần là owner.
         if ($user->hasPermission('phase.close.checkin') && $user->hasPermission('lead.book_action')) return true;
-        return $this->owner_id !== null && $this->owner_id === $user->id
-            && $user->hasPermission('lead.book_action');
+        if (! $user->hasPermission('lead.book_action')) return false;
+        if ($this->owner_id !== null && $this->owner_id === $user->id) return true;
+        return $this->hasHistoricalOwnership($user);
     }
 
     /**
