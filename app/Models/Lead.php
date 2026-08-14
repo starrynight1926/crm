@@ -427,6 +427,40 @@ class Lead extends Model
                 $lead->past_org_unit_ids = $past;
             }
         });
+
+        // B1b (2026-08-14) — Ghi lịch sử ownership tự động.
+        // Không xâm nhập vào từng service đổi owner_id — hook Eloquent event là đủ.
+        static::updated(function (Lead $lead) {
+            if (! $lead->wasChanged('owner_id')) {
+                return;
+            }
+            $prev = $lead->getOriginal('owner_id');
+            $new = $lead->owner_id;
+
+            if ($prev) {
+                LeadOwnershipHistory::where('lead_id', $lead->id)
+                    ->where('user_id', $prev)
+                    ->whereNull('released_at')
+                    ->update(['released_at' => now(), 'updated_at' => now()]);
+            }
+            if ($new) {
+                LeadOwnershipHistory::create([
+                    'lead_id' => $lead->id,
+                    'user_id' => $new,
+                    'assigned_at' => now(),
+                ]);
+            }
+        });
+
+        static::created(function (Lead $lead) {
+            if ($lead->owner_id) {
+                LeadOwnershipHistory::create([
+                    'lead_id' => $lead->id,
+                    'user_id' => $lead->owner_id,
+                    'assigned_at' => now(),
+                ]);
+            }
+        });
     }
 
     /** Danh sách nguồn user hiện tại được phép chọn khi tạo lead. */
