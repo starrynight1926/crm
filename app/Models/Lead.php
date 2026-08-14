@@ -102,14 +102,23 @@ class Lead extends Model
         self::SOURCE_HL => 'HL',
     ];
 
-    // B4 (2026-08-14) — Phân loại luồng ownership theo nguồn.
-    //   UPS-based: hệ thống chia sale theo UPS list (round-robin).
-    //   Self-owned: ai tạo lead = sale phụ trách luôn, không qua UPS.
+    // B4 rev 2026-08-14 (per ma trận vai trò) — 3 luồng ownership:
+    //   UPS-based:   hệ thống tự chia sale theo UPS list (round-robin).
+    //   CM-assigned: CM (Chuyên môn) nhập & chia tay cho tư vấn viên cụ thể (KHÔNG qua UPS).
+    //   Self-owned:  ai tạo lead = sale phụ trách luôn.
     public const SOURCES_UPS_BASED = [
-        self::SOURCE_MKT, self::SOURCE_BDM, self::SOURCE_BOD, self::SOURCE_WI,
+        self::SOURCE_MKT, self::SOURCE_WI,
+    ];
+    public const SOURCES_CM_ASSIGNED = [
+        self::SOURCE_BDM, self::SOURCE_BOD,
     ];
     public const SOURCES_SELF_OWNED = [
         self::SOURCE_MKT_BR, self::SOURCE_SA, self::SOURCE_BA, self::SOURCE_HL,
+    ];
+
+    // Cột "Nguyên tắc chia lại số" trong ma trận — SA & BOD không thu hồi tự động.
+    public const SOURCES_NO_RECALL = [
+        self::SOURCE_SA, self::SOURCE_BOD,
     ];
 
     public static function isUpsBasedSource(?string $source): bool
@@ -117,9 +126,19 @@ class Lead extends Model
         return in_array($source, self::SOURCES_UPS_BASED, true);
     }
 
+    public static function isCmAssignedSource(?string $source): bool
+    {
+        return in_array($source, self::SOURCES_CM_ASSIGNED, true);
+    }
+
     public static function isSelfOwnedSource(?string $source): bool
     {
         return in_array($source, self::SOURCES_SELF_OWNED, true);
+    }
+
+    public static function isRecallableSource(?string $source): bool
+    {
+        return ! in_array($source, self::SOURCES_NO_RECALL, true);
     }
 
     public function sourceGroupCode(): string

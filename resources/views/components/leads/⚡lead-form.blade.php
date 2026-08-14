@@ -1870,7 +1870,7 @@ new class extends Component
         // Fallback: nguồn "sale nhận trực tiếp" mà user không có perm distribute
         // (VD Sale up WI hoặc BOD/SA/BA chưa auto-set personId) → auto về kho team của user thao tác, chờ CM team chia.
         // Khớp với hint text "Bước tiếp theo: chia về kho team, chờ CM team sale chia."
-        if (in_array($this->sourceGroup, [Lead::SOURCE_WI, Lead::SOURCE_BOD, Lead::SOURCE_SA, Lead::SOURCE_BA], true)
+        if (in_array($this->sourceGroup, [Lead::SOURCE_WI, Lead::SOURCE_BOD, Lead::SOURCE_SA, Lead::SOURCE_BA, Lead::SOURCE_BDM, Lead::SOURCE_HL], true)
             && ! auth()->user()->hasPermission('lead.distribute')) {
             $userTeamOrg = $this->userOrgId(auth()->id());
             if ($userTeamOrg) {
@@ -2671,16 +2671,20 @@ new class extends Component
                             @error('sourceGroup')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
                             @php
                                 $nextStep = null;
-                                if (in_array($sourceGroup, [\App\Models\Lead::SOURCE_BOD, \App\Models\Lead::SOURCE_SA, \App\Models\Lead::SOURCE_BA], true)) {
+                                // 2026-08-14 update per ma trận vai trò:
+                                //   MKT / WI       → UPS auto chia.
+                                //   BDM / BOD      → CM (Chuyên môn) chia tay cho Tư vấn viên (không qua UPS).
+                                //   MKT_BR/SA/BA/HL → self-owned (người nhập = sale luôn).
+                                if (\App\Models\Lead::isSelfOwnedSource($sourceGroup)) {
                                     $nextStep = ! auth()->user()->hasPermission('lead.distribute')
                                         ? 'Lead sẽ tự động chia cho BẠN (' . auth()->user()->name . '). Không qua duyệt — nhập xong là xong.'
                                         : 'Chuyển sang tab "2. Chia số" để chọn sale nhận (bắt buộc, không qua duyệt).';
                                 } elseif ($sourceGroup === \App\Models\Lead::SOURCE_WI) {
                                     $nextStep = 'Lead sẽ về kho team → chờ CM team sale chia cho nhân viên.';
-                                } elseif (in_array($sourceGroup, [\App\Models\Lead::SOURCE_MKT, \App\Models\Lead::SOURCE_MKT_BR], true)) {
-                                    $nextStep = 'Hệ thống tự chia Tele sale theo MKT List UPS hôm nay.';
-                                } elseif ($sourceGroup === \App\Models\Lead::SOURCE_BDM) {
-                                    $nextStep = 'Lead vào kho Booking, chờ CM chia cho Tele sale.';
+                                } elseif ($sourceGroup === \App\Models\Lead::SOURCE_MKT) {
+                                    $nextStep = 'Hệ thống tự chia Tele sale theo UPS list hôm nay.';
+                                } elseif (\App\Models\Lead::isCmAssignedSource($sourceGroup)) {
+                                    $nextStep = 'Lead vào kho, chờ CM chia tay cho Tư vấn viên cụ thể (không qua UPS).';
                                 }
                             @endphp
                             @if ($nextStep)
