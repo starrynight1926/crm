@@ -45,6 +45,16 @@
                 ['label'=>'Dịch vụ','desc'=>'Danh mục dịch vụ, phase & mẫu % đóng góp.','route'=>'services.catalog','perm'=>'service.manage','icon'=>'box'],
             ],
         ],
+        'ops' => [
+            'label' => 'Vận hành',
+            'desc' => 'Quy tắc vận hành, rule chia số & các kết nối bên ngoài (Booking, nguồn Ads).',
+            'modules' => [
+                ['label'=>'Quy tắc vận hành','desc'=>'Cấu hình rule vận hành hằng ngày (UPS, khóa chia số, ngưỡng cảnh báo…).','route'=>'ops.rules','perm'=>'ops.manage','icon'=>'shield'],
+                ['label'=>'Rule chia số','desc'=>'Cấu hình logic chia số theo cơ sở/nguồn/loại lead.','route'=>'distribution.rules','perm'=>'rule.manage','icon'=>'shield'],
+                ['label'=>'Kết nối Booking','desc'=>'Cấu hình endpoint/API kết nối hệ thống Booking.','route'=>'settings.booking-connection','perm'=>'connection.manage','icon'=>'plug'],
+                ['label'=>'Kết nối nguồn Ads','desc'=>'Kết nối các nguồn quảng cáo để tự động kéo lead về.','route'=>'sources.index','perm'=>'connection.manage','icon'=>'plug'],
+            ],
+        ],
         'system' => [
             'label' => 'Hệ thống',
             'desc' => 'Thông báo, sao lưu, log hệ thống.',

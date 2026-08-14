@@ -22,19 +22,14 @@
             ['label' => 'UPS check-in (BO)', 'route' => $u->hasPermission('ups.view') ? 'ups.list' : null, 'match' => 'ups.list'],
         ], fn ($i) => $i['route']));
 
-        // KHU 1 — Kinh doanh
-        $bizChildren = array_values(array_filter([
+        // KHU 1 — Báo cáo & Kinh doanh (2026-08-14: gộp "Kinh doanh" vào "Báo cáo" cho gọn)
+        $reportChildren = array_values(array_filter([
+            ['label' => 'Trung tâm báo cáo', 'route' => $u->hasAnyPermission(['report.view', 'report.view_all']) ? 'reports.index' : null, 'match' => 'reports.index'],
             ['label' => 'Dịch vụ', 'route' => $u->hasPermission('service.manage') ? 'services.catalog' : null, 'match' => 'services.*'],
             ['label' => 'Thu tiền', 'route' => $u->hasPermission('payment.record') ? 'payments.index' : null, 'match' => 'payments.*'],
         ], fn ($i) => $i['route']));
 
-        // KHU 2 — Quản trị vận hành (chỉ cấp có quyền cấu hình mới thấy)
-        $mgmtChildren = array_values(array_filter([
-            ['label' => 'Quy tắc vận hành', 'route' => $u->hasPermission('ops.manage') ? 'ops.rules' : null, 'match' => 'ops.*'],
-            ['label' => 'Rule chia số', 'route' => $u->hasPermission('rule.manage') ? 'distribution.rules' : null, 'match' => 'distribution.rules'],
-            ['label' => 'Kết nối Booking', 'route' => $u->hasPermission('connection.manage') ? 'settings.booking-connection' : null, 'match' => 'settings.booking-connection'],
-            ['label' => 'Kết nối nguồn Ads', 'route' => $u->hasPermission('connection.manage') ? 'sources.index' : null, 'match' => 'sources.*'],
-        ], fn ($i) => $i['route']));
+        // 2026-08-14: "Quản trị" đã chuyển vào /settings (tab Vận hành) — bỏ khỏi nav top.
 
         // KHU 3 — Thiết lập (Admin) — link vào /settings tab-hóa
         $setupChildren = array_values(array_filter([
@@ -47,9 +42,7 @@
             ['label' => 'Dashboard', 'route' => 'dashboard', 'match' => 'dashboard'],
             !empty($customerChildren) ? ['label' => 'Khách hàng', 'match' => 'leads.*', 'children' => $customerChildren] : null,
             !empty($distChildren) ? ['label' => 'UPS list', 'match' => 'ups.*', 'children' => $distChildren] : null,
-            !empty($bizChildren) ? ['label' => 'Kinh doanh', 'match' => 'services.*|payments.*', 'children' => $bizChildren] : null,
-            $u->hasAnyPermission(['report.view', 'report.view_all']) ? ['label' => 'Báo cáo', 'route' => 'reports.index', 'match' => 'reports.*'] : null,
-            !empty($mgmtChildren) ? ['label' => 'Quản trị', 'match' => 'ops.*|distribution.rules|settings.booking-connection|sources.*', 'children' => $mgmtChildren] : null,
+            !empty($reportChildren) ? ['label' => 'Báo cáo', 'match' => 'reports.*|services.*|payments.*', 'children' => $reportChildren] : null,
             // 2026-08-08: "Thiết lập" đã có trong avatar dropdown → bỏ khỏi nav để tránh trùng.
         ]));
 
