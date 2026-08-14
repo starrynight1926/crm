@@ -234,11 +234,46 @@ class BookingEventController extends Controller
                                 $trangThai === 'huy', $trangThaiKhach === 'huy' => 'canceled',
                                 default => $bl->sync_status,
                             };
-                            $bl->update([
+                            // B5a (2026-08-14) — Admin sbooking đổi giờ/note/sale lúc duyệt →
+                            //   nhận về datasource để đồng bộ 2 chiều.
+                            $update = [
                                 'sync_status' => $newSyncStatus,
                                 'sync_error' => in_array($trangThai, ['tu_choi', 'huy'], true) ? ($data['ly_do_tu_choi'] ?? 'Sbooking đã hủy') : null,
                                 'synced_at' => now(),
-                            ]);
+                            ];
+                            if (! empty($data['scheduled_at'])) {
+                                $update['scheduled_at'] = $data['scheduled_at'];
+                            }
+                            if (! empty($data['scheduled_end_at'])) {
+                                $update['scheduled_end_at'] = $data['scheduled_end_at'];
+                            }
+                            if (array_key_exists('note', $data)) {
+                                $update['note'] = $data['note'];
+                            }
+                            if ($trangThai === 'da_duyet' && ! $bl->wasChanged() && ! empty($data['status'])) {
+                                $update['status'] = $data['status'];
+                            }
+                            if ($trangThai === 'da_duyet') {
+                                $update['status'] = BookingLog::STATUS_DA_XAC_NHAN;
+                            }
+                            $bl->update($update);
+
+                            // Sale tiếp đón (CV1) — nếu admin sbooking đổi.
+                            if (! empty($data['cv1_user_id'])) {
+                                $newCv = (int) $data['cv1_user_id'];
+                                $bl->consultants()->syncWithoutDetaching([
+                                    $newCv => ['position' => 1],
+                                ]);
+                                // Đảm bảo chỉ 1 CV1: xóa CV1 cũ nếu khác.
+                                $bl->consultants()
+                                    ->wherePivot('position', 1)
+                                    ->where('users.id', '!=', $newCv)
+                                    ->newPivotStatement()
+                                    ->where('booking_log_id', $bl->id)
+                                    ->where('position', 1)
+                                    ->where('user_id', '!=', $newCv)
+                                    ->delete();
+                            }
                         }
                     }
                     break;
