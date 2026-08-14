@@ -72,6 +72,7 @@ class PermissionSeeder extends Seeder
             'source.up.bdm'    => 'Đăng nguồn: BDM',
             'source.up.bod'    => 'Đăng nguồn: BOD',
             'source.up.wi'     => 'Đăng nguồn: WI (Walk-in)',
+            'source.up.hl'     => 'Đăng nguồn: HL (Hotline)',
         ],
         'recall' => [
             'recall.import' => 'Import xlsx số re-call (Trực Page)',

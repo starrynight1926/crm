@@ -77,6 +77,7 @@ class Lead extends Model
     public const SOURCE_SA = 'sa';
     public const SOURCE_BA = 'ba';
     public const SOURCE_WI = 'wi';
+    public const SOURCE_HL = 'hl'; // B4 (2026-08-14): Hotline — ai tạo lead = tele + tiếp đón.
 
     public const SOURCE_GROUPS = [
         self::SOURCE_MKT => 'Marketing',
@@ -86,6 +87,7 @@ class Lead extends Model
         self::SOURCE_SA => 'Sale Appointment',
         self::SOURCE_BA => 'Booking Appointment',
         self::SOURCE_WI => 'Walk-in',
+        self::SOURCE_HL => 'Hotline',
     ];
 
     // Mã nối vào mã KH theo nhóm nguồn: KH-{id}-{SOURCE_CODE}-...
@@ -97,7 +99,28 @@ class Lead extends Model
         self::SOURCE_SA => 'SA',
         self::SOURCE_BA => 'BA',
         self::SOURCE_WI => 'WI',
+        self::SOURCE_HL => 'HL',
     ];
+
+    // B4 (2026-08-14) — Phân loại luồng ownership theo nguồn.
+    //   UPS-based: hệ thống chia sale theo UPS list (round-robin).
+    //   Self-owned: ai tạo lead = sale phụ trách luôn, không qua UPS.
+    public const SOURCES_UPS_BASED = [
+        self::SOURCE_MKT, self::SOURCE_BDM, self::SOURCE_BOD, self::SOURCE_WI,
+    ];
+    public const SOURCES_SELF_OWNED = [
+        self::SOURCE_MKT_BR, self::SOURCE_SA, self::SOURCE_BA, self::SOURCE_HL,
+    ];
+
+    public static function isUpsBasedSource(?string $source): bool
+    {
+        return in_array($source, self::SOURCES_UPS_BASED, true);
+    }
+
+    public static function isSelfOwnedSource(?string $source): bool
+    {
+        return in_array($source, self::SOURCES_SELF_OWNED, true);
+    }
 
     public function sourceGroupCode(): string
     {
@@ -114,6 +137,7 @@ class Lead extends Model
         self::SOURCE_BDM    => 'source.up.bdm',
         self::SOURCE_BOD    => 'source.up.bod',
         self::SOURCE_WI     => 'source.up.wi',
+        self::SOURCE_HL     => 'source.up.hl',
     ];
 
     // Phase 6.8 — Trục lifecycle: phase (giai đoạn) + status (trạng thái trong giai đoạn)
