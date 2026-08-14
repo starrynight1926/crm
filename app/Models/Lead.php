@@ -22,7 +22,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
     'potential_service',
     // Phase 6.6
     'source_group', 'approval_status', 'approval_by', 'approved_at',
-    'overdue_marked_at', 'recall_at', 'is_permanent_assignment', 'skip_recall',
+    'overdue_marked_at', 'recall_at', 'mkt_recall_at', 'is_permanent_assignment', 'skip_recall',
     'booking_status', 'booking_ma', 'booked_at',
     // Phase 6.8
     'pipeline_phase', 'pipeline_status',
@@ -400,6 +400,7 @@ class Lead extends Model
             'approved_at' => 'datetime',
             'overdue_marked_at' => 'datetime',
             'recall_at' => 'datetime',
+            'mkt_recall_at' => 'datetime',
             'is_permanent_assignment' => 'boolean',
             'booked_at' => 'datetime',
             'past_org_unit_ids' => 'array',
@@ -459,8 +460,54 @@ class Lead extends Model
                     'user_id' => $lead->owner_id,
                     'assigned_at' => now(),
                 ]);
+                $lead->bumpMktRecallOnAssign();
             }
         });
+
+        // B1d (2026-08-14) — MKT recall: khi lead nguồn MKT được gán/hủy owner
+        // thì set/clear mkt_recall_at tương ứng.
+        static::updated(function (Lead $lead) {
+            if (! $lead->wasChanged('owner_id')) return;
+            if ($lead->source_group !== self::SOURCE_MKT) return;
+            if ($lead->owner_id === null) {
+                $lead->newQuery()->whereKey($lead->id)->update(['mkt_recall_at' => null]);
+            } else {
+                $lead->bumpMktRecallOnAssign();
+            }
+        });
+    }
+
+    // ---------- B1d: MKT recall helpers ----------
+
+    /** Vừa gán sale MKT → deadline 1 ngày để ghi cuộc gọi.
+     *  Không rút ngắn nếu đã có deadline xa hơn (VD ownership transfer sau khi tạo booking). */
+    public function bumpMktRecallOnAssign(): void
+    {
+        if ($this->source_group !== self::SOURCE_MKT) return;
+        $target = now()->addDay();
+        if (! $this->mkt_recall_at || $this->mkt_recall_at->lt($target)) {
+            $this->newQuery()->whereKey($this->id)->update(['mkt_recall_at' => $target]);
+        }
+    }
+
+    /** Vừa ghi cuộc gọi → deadline 3 ngày để tiến triển phân loại/kết quả. */
+    public function bumpMktRecallOnCall(): void
+    {
+        if ($this->source_group !== self::SOURCE_MKT || $this->owner_id === null) return;
+        $target = now()->addDays(3);
+        if (! $this->mkt_recall_at || $this->mkt_recall_at->lt($target)) {
+            $this->newQuery()->whereKey($this->id)->update(['mkt_recall_at' => $target]);
+        }
+    }
+
+    /** Vừa tạo booking → deadline 30 ngày để lịch tiến triển. */
+    public function bumpMktRecallOnBooking(): void
+    {
+        if ($this->source_group !== self::SOURCE_MKT || $this->owner_id === null) return;
+        $target = now()->addDays(30);
+        if (! $this->mkt_recall_at || $this->mkt_recall_at->lt($target)) {
+            $this->newQuery()->whereKey($this->id)->update(['mkt_recall_at' => $target]);
+        }
     }
 
     /** Danh sách nguồn user hiện tại được phép chọn khi tạo lead. */

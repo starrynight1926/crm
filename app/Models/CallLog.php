@@ -37,4 +37,12 @@ class CallLog extends Model
     {
         return self::STATUSES[$this->status] ?? $this->status;
     }
+
+    protected static function booted(): void
+    {
+        // B1d (2026-08-14) — ghi cuộc gọi mới cho lead MKT → gia hạn recall lên 3 ngày.
+        static::created(function (CallLog $log) {
+            $log->lead?->bumpMktRecallOnCall();
+        });
+    }
 }

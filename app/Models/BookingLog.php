@@ -117,6 +117,29 @@ class BookingLog extends Model
 
             app(\App\Services\Ups\UpsDispatcher::class)->markFree($cv1->id);
         });
+
+        // B1d (2026-08-14) — tạo booking mới cho lead MKT → gia hạn recall lên 30 ngày.
+        static::created(function (self $log) {
+            $log->lead?->bumpMktRecallOnBooking();
+        });
+
+        // B6 (2026-08-14) — Ownership transfer khi tạo booking:
+        // Áp dụng cho nguồn MKT, BA, BDM, BOD, WI (per spec 2026-08-14).
+        // Sale bị thu hồi nhưng vẫn tạo booking → ownership chuyển về người tạo.
+        static::created(function (self $log) {
+            $lead = $log->lead;
+            if (! $lead || ! $log->user_id) return;
+            if (! in_array($lead->source_group, [
+                Lead::SOURCE_MKT, Lead::SOURCE_BA,
+                Lead::SOURCE_BDM, Lead::SOURCE_BOD, Lead::SOURCE_WI,
+            ], true)) return;
+            if ($lead->owner_id === $log->user_id) return;
+            $lead->update([
+                'owner_id' => $log->user_id,
+                'pool_level' => Lead::POOL_PERSONAL,
+                'assigned_at' => now(),
+            ]);
+        });
     }
 
     /**
