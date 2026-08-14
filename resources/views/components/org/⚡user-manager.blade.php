@@ -212,7 +212,7 @@ new class extends Component
             })
             ->when($this->filterRole, fn ($q) => $q->whereHas('assignments', fn ($qq) => $qq->where('role_id', $this->filterRole)))
             ->orderBy('name')
-            ->paginate(10);
+            ->paginate(30);
 
         $allOrgUnits = OrgUnit::orderBy('path')->get();
         $allRoles = Role::orderBy('name')->get();
