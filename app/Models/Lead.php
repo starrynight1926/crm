@@ -487,6 +487,18 @@ class Lead extends Model
         return $this->belongsTo(User::class, 'owner_id');
     }
 
+    // B1a (2026-08-14) — Lịch sử ownership. Sale từng được giao lead này
+    // vẫn được phép ghi cuộc gọi / tạo booking kể cả sau khi bị thu hồi.
+    public function ownershipHistory(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(LeadOwnershipHistory::class);
+    }
+
+    public function hasHistoricalOwnership(User $user): bool
+    {
+        return $this->ownershipHistory()->where('user_id', $user->id)->exists();
+    }
+
     public function receiver(): BelongsTo
     {
         return $this->belongsTo(User::class, 'receiver_id');
