@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Models\BookingLog;
 use App\Models\Lead;
 use App\Models\LeadStatusLog;
+use App\Services\SbookingClient;
 use Illuminate\Console\Command;
 
 /**
@@ -23,7 +24,7 @@ class AutoCancelLateBookings extends Command
 
     protected $description = 'Hủy booking khi khách trễ quá 15 phút mà chưa được báo tới.';
 
-    public function handle(): int
+    public function handle(SbookingClient $sb): int
     {
         $deadline = now()->subMinutes(15);
         $cancelled = 0;
@@ -33,7 +34,7 @@ class AutoCancelLateBookings extends Command
             ->whereNotIn('sync_status', ['checkedin', 'done', 'canceled'])
             ->whereNotNull('scheduled_at')
             ->where('scheduled_at', '<=', $deadline)
-            ->chunkById(100, function ($logs) use (&$cancelled) {
+            ->chunkById(100, function ($logs) use (&$cancelled, $sb) {
                 foreach ($logs as $bl) {
                     $bl->update([
                         'status' => BookingLog::STATUS_HUY_DOI_LICH,
@@ -52,6 +53,12 @@ class AutoCancelLateBookings extends Command
                         'Auto-hủy booking ' . ($bl->sbooking_booking_ma ?: '#'.$bl->id) . ' — khách trễ quá 15 phút.',
                         null
                     );
+
+                    // Push canceled status sang sbooking để đồng bộ 2 chiều.
+                    if ($bl->sbooking_booking_id) {
+                        try { $sb->pushBookingUpdate($bl); } catch (\Throwable $e) { /* log silently */ }
+                    }
+
                     $cancelled++;
                 }
             });
