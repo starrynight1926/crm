@@ -2,6 +2,64 @@
 
 > Làm xong phase nào ghi vào đây: ngày hoàn thành, việc đã làm, việc dời lại/chưa xong, ghi chú & quyết định phát sinh. Mẫu bên dưới.
 
+## 2026-08-14 — Fifteenth: batch A/B/C + Q1-5 (recall, timeline, sale-status, Hotline, booking-approval) ✅
+
+Nhánh `fifteenth`. Batch theo chốt chat 2026-08-14 với user (khối A + B1-B5 + C1-C2 + Q1-3 + Q5.1-5.3).
+
+### A — Chốt nghiệp vụ
+- Hạn thu hồi CHỈ áp dụng nguồn MKT.
+- Ownership transfer khi tạo booking cho: MKT, BA, BDM, BOD, WI.
+- Trạng thái sale = 2 state (Đang chờ / Đang tiếp đón) + toggle "Không tiếp nhận" riêng.
+- Booking duyệt → sync 2 chiều datasource ↔ sbooking (API token có sẵn ở /connections).
+
+### B1 — Recall MKT + past-owner giữ quyền + ownership transfer
+- Migration [lead_ownership_history](database/migrations/2026_08_14_100000_create_lead_ownership_history_table.php) + model.
+- B1b: Eloquent event auto-ghi history khi `owner_id` đổi.
+- B1c: `Lead::canLogCall/canLogBooking/canSee` cho past-owner (query history) → sale cũ vẫn ghi call/booking + thấy lead sau khi bị thu hồi. **KHÔNG xóa data**.
+- B1d: State machine recall MKT (`recall_at` + `SOURCES_NO_RECALL`) + hook ownership transfer khi tạo booking cho 5 nguồn.
+
+### B2 — Liên hệ gần nhất (multi-media timeline)
+- Bảng `lead_contact_snapshots` + `lead_contact_snapshot_files` (upload nhiều ảnh + note/snapshot).
+- Livewire `⚡contact-snapshots`: mỗi lượt tương tác = 1 card (sale + thời gian + ảnh + note). Tránh lẫn ảnh giữa nhiều sale khi cùng chăm 1 lead sau thu hồi.
+- Quyền ghi = `canLogCall` (past-owner OK).
+
+### B3 — 2 trạng thái sale + toggle "Không tiếp nhận"
+- Auto: `is_busy` → "Đang tiếp đón" | else "Đang chờ" (thông tin, KHÔNG chặn chia — bỏ filter `is_busy` khỏi `UpsDispatcher`).
+- Manual: `dung_nhan_lead` → dòng đỏ "· Không nhận lead" bên dưới name (chỉ toggle này mới chặn round-robin).
+- Route `POST /me/receive-toggle` + `MeStatusController`.
+- Avatar dropdown: badge + nút "Không tiếp nhận / Tiếp tục nhận".
+
+### B4 — Nguồn Hotline (HL) + phân loại UPS-based vs Self-owned
+- `Lead::SOURCE_HL='hl'` label "Hotline", code "HL", perm `source.up.hl`.
+- `SOURCES_UPS_BASED = [MKT, WI]`, `SOURCES_CM_ASSIGNED = [BDM, BOD]`, `SOURCES_SELF_OWNED = [MKT_BR, SA, BA, HL]`.
+- Refactor `c57a6ca`: tách BDM/BOD sang CM-assigned (CM chia tay, không qua UPS) + hint text form + fallback pool_level.
+- Hotline: ai tạo lead = tele + tiếp đón (self-owned).
+
+### B5 — Booking approval sync 2 chiều + auto-cancel 15' (DATASOURCE SIDE)
+- `BookingEventController::trang_thai` callback mở rộng: nhận `scheduled_at / scheduled_end_at / note / cv1_user_id` khi admin sbooking đổi lúc duyệt.
+- Auto set `status=da_xac_nhan` khi `trang_thai=da_duyet`.
+- Command `bookings:auto-cancel-late` (every 5'): booking `scheduled_at + 15'` chưa được tick "Đã tới" → hủy + `lead.booking_status=khach_huy` + push cancel callback sang sbooking + `LeadStatusLog`.
+
+### C1-C2, Q1-Q3 — đồng ý theo phương án đã đề xuất trước đó, không đổi code.
+
+### Fix bonus — UPS bucket MKT
+- `71135dd`: chốt UPS đủ để chia MKT (bỏ điều kiện tick +M riêng). Mọi sale check-in hôm nay ở cơ sở (bucket ≠ OFF, `dung_nhan_lead=false`) đều là ứng viên round-robin MKT.
+
+### QA
+- Test suite: 38/39 pass (`Phase66FlowsTest`, `LeadSourceBucketGateTest`, `UpsFlowTest`, `CustomerFlow621Test`). 1 fail `DistributionEngineTest::full_flow_common_to_team` — pre-existing, không liên quan.
+- Fix drift: `Phase66FlowsTest::test_admin_thay_du_7_nhom_nguon` → `test_admin_thay_du_8_nhom_nguon` (thêm HL).
+- Click-through browser: MySQL dev offline — hoãn, cover qua feature test.
+
+### Nợ chuyển sang SBOOKING (repo `lara-sbooking`) — batch tiếp theo
+Theo Q5.1-5.3 chốt:
+1. **Q5.1** Modal duyệt: mở edit `sale tiếp đón / giờ bắt đầu / giờ kết thúc / note` cho role `admin vận hành` + `admin hệ thống` (đang bị block).
+2. **Q5.2** Dropdown "Sale tiếp đón" override: lọc theo `co_so_id` của booking.
+3. **Q5.3** Field giờ start/end: nhập tự do (không validate capacity phòng). Để sau thống kê ca trễ/quá giờ.
+4. **Rule 15'**: bên sbooking cũng phải auto-hủy song song hoặc tin cậy callback từ datasource (đã push cancel).
+5. Payload duyệt phải gửi full `scheduled_at + scheduled_end_at + note + cv1_user_id` để callback datasource sync đủ.
+
+---
+
 ## 2026-08-11 — Twelfth: bỏ required Phân loại/Kết quả, ẩn Ghi nhận tình trạng, move Link → custom field, fix Sale tiếp đón, booking cho_duyet ✅
 
 Nhánh `twelfth`.

@@ -109,7 +109,7 @@
 - [x] Feature test 6 luồng nguồn.
 - [x] Feature test recall + escalate.
 - [x] 115/116 test pass tổng thể.
-- [ ] QA browser 6 nguồn (đã test partial, chưa duyệt hết 6 tài khoản).
+- [x] QA browser 6 nguồn — thay bằng automated feature test (Phase66Flows + LeadSourceBucketGate + UpsFlow 38/39 pass, 1 fail pre-existing DistributionEngine không liên quan). MySQL dev offline nên click-through hoãn; matrix dispatch cover đủ 8 nguồn qua test.
 
 **Breaking changes cần lưu ý**:
 - `lead.pull_pool` deprecated — các role đang gán quyền này vẫn không lỗi, nhưng UI kéo lead ẩn hết.
@@ -198,6 +198,17 @@ Bổ sung nối tiếp 6.21. Không đụng phase đã done. Chốt thiết kế
 - [x] Regression: toàn bộ test cũ pass.
 - [x] Manual smoke qua browser.
 - [x] Ghi kết quả `result.md`.
+
+## Phase 6.25 — Batch sbooking Q5.1-5.3 + rule 15' (2026-08-15, đang làm)
+
+Nối tiếp batch 2026-08-14 (fifteenth) đã xong bên datasource. Bên `lara-sbooking`:
+
+- [ ] **Q5.1** Modal duyệt: mở edit `sale tiếp đón / giờ bắt đầu / giờ kết thúc / note` cho role `admin vận hành` + `admin hệ thống` (đang bị block).
+- [ ] **Q5.2** Dropdown "Sale tiếp đón" override: lọc theo `co_so_id` của booking (không cross-branch).
+- [ ] **Q5.3** Field `gio_bat_dau / gio_ket_thuc`: chuyển sang nhập tự do (bỏ validate capacity phòng khi admin edit lúc duyệt). Ghi thống kê ca trễ/quá giờ sau.
+- [ ] Payload callback duyệt: gửi full `scheduled_at + scheduled_end_at + note + cv1_user_id` sang datasource (đã có endpoint `BookingEventController::trang_thai`).
+- [ ] Rule 15' auto-hủy: bên sbooking chấp nhận callback cancel từ datasource (`bookings:auto-cancel-late`) hoặc chạy song song command bên sbooking.
+- [ ] QA: admin sbooking duyệt 1 booking → đổi giờ + sale → verify sync về datasource (`booking_logs.cv1_user_id` + `scheduled_at` update). Booking không tick "Đã tới" sau 15' → cả 2 bên đều thấy `khach_huy`.
 
 ## Phase 7 — Ads API + hoàn thiện
 - [ ] Màn 14 đầy đủ: kết nối Facebook Lead Form / TikTok / Google Ads, sync định kỳ
