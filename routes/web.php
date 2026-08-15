@@ -23,6 +23,11 @@ Route::middleware('guest')->group(function () {
 Route::middleware('auth')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
 
+    // Dev tool 2026-08-15 — Impersonate + quick-login panel.
+    Route::post('/impersonate/{user}', [\App\Http\Controllers\ImpersonateController::class, 'start'])->name('impersonate.start');
+    Route::post('/impersonate-leave', [\App\Http\Controllers\ImpersonateController::class, 'leave'])->name('impersonate.leave');
+    Route::get('/dev/quick-login', [\App\Http\Controllers\ImpersonateController::class, 'quickLogin'])->name('dev.quick-login');
+
     // 2026-08-12 — AI-Coop: phòng chat 3 bên (user + 2 Claude API riêng key).
     Route::view('/ai-coop', 'ai-coop.index')->name('ai-coop');
 

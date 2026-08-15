@@ -186,6 +186,9 @@
                         @if (auth()->user()->hasAnyPermission($adminPerms))
                             <a href="{{ route('settings.index') }}" class="block px-4 py-2 hover:bg-gold-50">Cài đặt</a>
                         @endif
+                        @if (app()->environment('local') && auth()->user()->hasPermission('user.manage'))
+                            <a href="{{ route('dev.quick-login') }}" class="block px-4 py-2 hover:bg-red-50 text-red-700 font-semibold">🚀 Quick Login (dev)</a>
+                        @endif
                         <a href="{{ route('settings.password') }}" class="block px-4 py-2 hover:bg-gold-50">Đổi mật khẩu</a>
                         <a href="{{ route('sessions.index') }}" class="block px-4 py-2 hover:bg-gold-50">Quản lý phiên đăng nhập</a>
                         @if (auth()->user()->hasPermission('connection.manage'))
@@ -225,6 +228,16 @@
                 @endforeach
             </div>
         </header>
+
+        @if (session('impersonate_original_id'))
+            <div class="bg-red-600 text-white text-sm px-4 py-2 flex items-center justify-between gap-3">
+                <span>🎭 Đang giả lập <strong>{{ auth()->user()->name }}</strong> ({{ auth()->user()->email }}) — original: {{ session('impersonate_original_name') }}</span>
+                <form method="POST" action="{{ route('impersonate.leave') }}" class="inline">
+                    @csrf
+                    <button class="px-3 py-1 rounded bg-white text-red-700 hover:bg-red-50 text-xs font-semibold">← Về Admin</button>
+                </form>
+            </div>
+        @endif
 
         <main class="flex-1 max-w-screen-2xl w-full mx-auto px-4 md:px-6 py-6 md:py-8">
             @yield('content')
