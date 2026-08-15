@@ -2,6 +2,44 @@
 
 > Làm xong phase nào ghi vào đây: ngày hoàn thành, việc đã làm, việc dời lại/chưa xong, ghi chú & quyết định phát sinh. Mẫu bên dưới.
 
+## 2026-08-15 — E2E HTTP push cancel sbooking + fix enum 'huy' ✅
+
+Script `scratchpad/qa_push_cancel.php` full HTTP flow:
+1. Setup token match 2 bên (env `BOOKING_API_TOKEN=SCRM_API_TOKEN=qatoken12345`).
+2. Seed 1 booking bên sbooking (`trang_thai=da_duyet`).
+3. Datasource gọi `Http::withToken()->put('.../api/bookings/{id}', ['trang_thai'=>'huy', 'ly_do_huy'=>'...'])`.
+4. Verify sbooking row cập nhật `trang_thai=huy` + `ly_do_tu_choi` chứa "Auto-hủy 15': ...".
+
+### Bug tìm được qua E2E — enum thiếu 'huy'
+Middleware auth PASS, controller validate PASS, nhưng UPDATE fail 500: `Data truncated for column 'trang_thai'`. Enum `booking.trang_thai` chỉ có (`cho_duyet`, `da_duyet`, `da_xong`, `tu_choi`) — thiếu `huy`.
+
+Fix: migration `2026_08_15_100000_add_huy_to_booking_trang_thai.php` bên `lara-sbooking` (commit `7c7e811`) — ALTER TABLE thêm `'huy'`. Down migration chuyển `huy→tu_choi` trước rollback.
+
+Sau fix: **200 OK, DB verify PASS** cả 2 field.
+
+### Setup token — chuyển sang env
+Trước dùng AppSetting encrypted → phức tạp cross-app (encrypt key khác nhau). Chuyển sang env-based:
+- Datasource `.env`: `BOOKING_API_TOKEN=qatoken12345` + `BOOKING_API_URL=http://127.0.0.1:8001/api`
+- Sbooking `.env`: `SCRM_API_TOKEN=qatoken12345`
+- Prod: user thay bằng token thật + xoá `app_settings.scrm_api_token` để env fallback kick in.
+
+---
+
+## 2026-08-15 — Revert WI UPS + BA note (user clarification) ✅
+
+User bổ sung mid-turn:
+- **WI**: khách tự tới, KHÔNG chia leads/gọi điện, chỉ nhập liệu + check-in. Ngược với B4 khai báo `SOURCES_UPS_BASED=[MKT, WI]`.
+- **BA**: người nhập data = leader Team Tele (informational — role Team Leader đã có `source.up.ba` trong seeder, không cần đổi).
+
+Fix (commit `74e4535`):
+- `⚡lead-form.blade.php` line 1554: bỏ WI khỏi `$upsAutoSources` (revert commit `baf0af2`).
+- `Lead::SOURCES_UPS_BASED = [MKT]` (bỏ WI).
+- QA expectation WI: `owner=null, pool=common`. Admin cơ sở check-in sau qua UI phase 5.
+
+QA rerun: **21/21 vẫn PASS** với spec đúng.
+
+---
+
 ## 2026-08-15 — QA E2E 21 case FULL PASS + WI fix + HL seed + rule 15' cancel ✅
 
 Sau vòng QA đầu (15/21), fix lần lượt 3 gap → **21/21 PASS**.
