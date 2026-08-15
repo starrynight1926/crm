@@ -114,7 +114,8 @@ class RolePermissionSyncSeeder extends Seeder
             'lead.view', 'payment.record', 'phase.close.booking',
             // 2026-08-09: thêm source.up.tele — Sale bucket MKT hôm nay được up BA (gate bởi UPS bucket).
             'phase.close.call', 'phase.close.new', 'report.view', 'source.up.sa',
-            'source.up.mkt_br', 'source.up.ba',
+            // 2026-08-15: source.up.hl — Sale trực hotline nhận lead trực tiếp (self-owned).
+            'source.up.mkt_br', 'source.up.ba', 'source.up.hl',
         ],
         'Team sale' => [
             'lead.consult', 'lead.update', 'lead.update_sale',
@@ -123,7 +124,7 @@ class RolePermissionSyncSeeder extends Seeder
             'lead.view', 'lead.view_phone', 'payment.record', 'phase.close.booking',
             'phase.close.call', 'phase.close.new',
             // 2026-08-09: thêm source.up.tele — Sale bucket MKT hôm nay được up BA (gate bởi UPS bucket).
-            'report.view', 'source.up.sa', 'source.up.mkt_br', 'source.up.ba',
+            'report.view', 'source.up.sa', 'source.up.mkt_br', 'source.up.ba', 'source.up.hl',
         ],
         'Team sale ĐN' => [
             // 2026-08-07: Team Linda ĐN — xuyên suốt tele+booking+sale. Thêm book_action để tự
@@ -134,7 +135,7 @@ class RolePermissionSyncSeeder extends Seeder
             'lead.view_phone', 'payment.record', 'phase.close.booking',
             'phase.close.call', 'phase.close.new',
             // 2026-08-09: thêm source.up.tele — Sale bucket MKT hôm nay được up BA (gate bởi UPS bucket).
-            'report.view', 'source.up.sa', 'source.up.mkt_br', 'source.up.ba',
+            'report.view', 'source.up.sa', 'source.up.mkt_br', 'source.up.ba', 'source.up.hl',
         ],
         'Team Tele' => [
             'lead.create', 'lead.read_booking', 'lead.update',

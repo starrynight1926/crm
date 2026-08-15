@@ -52,7 +52,8 @@ $actorMap = [
     // SA cần sale check-in bucket MKT (rule 2026-08-09) — dùng sale đầu (isMkt=true).
     'SA'     => ['HN'=>'hn.sale03@longevity.com.vn',  'DN'=>'dn.sale01@longevity.com.vn',  'HCM'=>'hcm.sale01@longevity.com.vn'],
     'MKT_BR' => ['HN'=>'hn.sale04@longevity.com.vn',  'DN'=>'dn.sale02@longevity.com.vn',  'HCM'=>'hcm.sale02@longevity.com.vn'],
-    'HL'     => ['HN'=>'admin@longevity.com.vn',      'DN'=>'admin@longevity.com.vn',      'HCM'=>'admin@longevity.com.vn'],
+    // HL: sale trực hotline → self-owned. Dùng sale bucket A (sale thứ 2) để không đụng SA.
+    'HL'     => ['HN'=>'hn.sale05@longevity.com.vn',  'DN'=>'dn.sale03@longevity.com.vn',  'HCM'=>'hcm.sale03@longevity.com.vn'],
 ];
 $sourceMap = ['MKT'=>Lead::SOURCE_MKT,'WI'=>Lead::SOURCE_WI,'BDM'=>Lead::SOURCE_BDM,
               'BOD'=>Lead::SOURCE_BOD,'SA'=>Lead::SOURCE_SA,'MKT_BR'=>Lead::SOURCE_MKT_BR,
