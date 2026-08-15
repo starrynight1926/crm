@@ -1532,10 +1532,12 @@ new class extends Component
             'upsellRows.*.amount.required' => 'Nhập số tiền cho dòng upsell.',
         ], ['name' => 'tên khách hàng', 'phone' => 'SĐT', 'received_date' => 'ngày', 'sourceGroup' => 'nhóm nguồn']);
 
-        // Nhóm 2 (BOD/SA/BA) — sale nhận trực tiếp, không qua duyệt.
-        // Sale nhân viên không có quyền chia số → tự động nhận lead do chính họ up.
-        if (in_array($this->sourceGroup, [Lead::SOURCE_BOD, Lead::SOURCE_SA, Lead::SOURCE_BA], true) && ! $this->personId) {
-            if (! auth()->user()->hasPermission('lead.distribute')) {
+        // B4 (2026-08-14) refactor — Self-owned sources = SELF_OWNED const (MKT_BR/SA/BA/HL).
+        // BOD đã chuyển sang CM-assigned (CM chia tay), không còn ở nhóm này.
+        // HL (Hotline): luôn auto-set owner=creator ("ai tạo lead = tele + tiếp đón"), bất kể distribute perm.
+        // MKT_BR / SA / BA: sale nhân viên không có distribute → auto-self; user có distribute (admin) phải chọn.
+        if (Lead::isSelfOwnedSource($this->sourceGroup) && ! $this->personId) {
+            if ($this->sourceGroup === Lead::SOURCE_HL || ! auth()->user()->hasPermission('lead.distribute')) {
                 $this->personId = auth()->id();
             } else {
                 $this->addError('personId', 'Nguồn ' . (Lead::SOURCE_GROUPS[$this->sourceGroup] ?? '') . ': bắt buộc chọn sale nhận.');
