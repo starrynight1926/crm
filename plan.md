@@ -79,48 +79,45 @@
 
 **Kết quả**: đủ 5 bộ báo cáo trong scope.
 
-## Phase 6.6 — Luồng vận hành lead 6 nguồn + recall/escalate (2026-07-15, bổ sung sau chốt thiết kế với user)
+## Phase 6.6 — Luồng vận hành lead 6 nguồn + recall/escalate ✅ (2026-07-15 → 2026-07-27, xem result.md block "Kết thúc Phase 6.6")
 
 > Bối cảnh: user cung cấp sơ đồ luồng 6 nhóm nguồn (Marketing / Data lạnh / BDM / Bạn giới thiệu / CTV / Khách tự đến), yêu cầu restructure cơ chế thu hồi + tạo trang Quy tắc vận hành + bỏ cơ chế NV tự kéo lead. Chi tiết trong `scope.md` 6.3 + 7.6 và `ERD.md` B2-B3.
 
 ### 6.6.a — Data & permission (nền)
-- [ ] Migration: `leads` thêm `source_group`, `approval_status`, `approval_by`, `approved_at`, `overdue_marked_at`, `recall_at`, `is_permanent_assignment`; enum `pool_level` mở rộng.
-- [ ] Migration mới: `recall_policies` (per org_unit) + `system_settings` (key-value).
-- [ ] Migration: `lead_distribution_logs` thêm `reason`, mở rộng enum action `escalate`/`approve`/`reject`.
-- [ ] Seed permission mới: `lead.distribute_team`, `lead.distribute_ctv`, `lead.recall`, `lead.approve_source`, `ops.manage`. **Deprecate** `lead.pull_pool` (đánh cờ `is_deprecated`, không xóa).
-- [ ] Seed 3 role hệ thống: `CM Hà Nội`, `CM Đà Nẵng`, `CM HCM` — gán `lead.distribute_ctv`.
-- [ ] `RecallPolicyResolver::for($orgUnit)` + unit test cascade (phòng cha override team con).
+- [x] Migration: `leads` thêm `source_group`, `approval_status`, `approval_by`, `approved_at`, `overdue_marked_at`, `recall_at`, `is_permanent_assignment`; enum `pool_level` mở rộng.
+- [x] Migration mới: `recall_policies` (per org_unit) + `system_settings` (key-value).
+- [x] Migration: `lead_distribution_logs` thêm `reason`, mở rộng enum action `escalate`/`approve`/`reject`.
+- [x] Seed permission mới: `lead.distribute_team`, `lead.distribute_ctv`, `lead.recall`, `lead.approve_source`, `ops.manage`. (Không deprecate `lead.pull_pool` — user giữ.)
+- [x] Seed role CM khu vực (đã có `Manager` + Admin cơ sở HN/HCM/DN thay thế).
+- [x] `RecallPolicyResolver::for($orgUnit)` + unit test cascade.
 
 ### 6.6.b — Luồng nghiệp vụ
-- [ ] Form thêm lead (Màn 8): chọn `source_group` — lọc theo permission người thao tác (NV thường chỉ thấy 2 nhóm 4+6; QL booking thấy thêm 1-3; role có `distribute_ctv` thấy nhóm 5).
-- [ ] Nhóm 4 "Bạn giới thiệu": người up chọn sale nhận ngay → tạo lead ở kho cá nhân sale đó, không qua duyệt.
-- [ ] Nhóm 6 "Khách tự đến": lead vào kho CM cơ sở với `approval_status = pending`; màn duyệt cho CM có `lead.approve_source`.
-- [ ] Nhóm 5 "CTV": form chia cho sale khu vực (giới hạn theo scope role CM khu vực).
-- [ ] Form chia số: nếu người chia có `lead.recall` → hiện radio "Thu hồi sau XX ngày (mặc định từ recall_policies) / Chia vĩnh viễn". "Chia vĩnh viễn" ẩn khi `allow_permanent_assignment = false` ở cấp áp dụng.
-- [ ] Job `leads:process-recalls` (scheduler daily): quét `recall_at <= now()` → thu hồi về pool team CM + log. Job `leads:process-escalates`: quét pool team quá `escalate_after_days` → chuyển lên kho CM cấp cha + log.
-- [ ] Job `leads:mark-overdue-booking` (daily): lead ở kho booking từ chối quá X ngày → set `overdue_marked_at` (không xóa).
-- [ ] **Bỏ UI kéo lead** khỏi Màn 12 (kho lead): ẩn nút "Kéo về tôi". Kho team chỉ hiện với người có `lead.distribute_team`.
+- [x] Form thêm lead: chọn `source_group` — lọc theo permission người thao tác.
+- [x] Nhóm 4 "Bạn giới thiệu" chọn sale nhận ngay (kho cá nhân).
+- [x] Nhóm 6 "Khách tự đến": `approval_status = pending`; màn duyệt `lead.approve_source`.
+- [x] Nhóm 5 "CTV": chia cho sale khu vực.
+- [x] Form chia số: modal recall / permanent assignment.
+- [x] Job `leads:process-recalls` (hourly), `leads:process-escalates` (daily), `leads:mark-overdue-booking` (daily).
+- [x] Bỏ UI kéo lead khỏi Màn 12.
 
-### 6.6.c — Màn Quy tắc vận hành (mới)
-- [ ] Route `/ops/rules`, permission `ops.manage`. 3 tab:
-  - **Phân bổ**: bảng ai có `distribute_team`/`distribute_ctv`/`approve_source`/`recall` (kèm scope) — chỉ đọc, giám sát.
-  - **Thời gian recall/escalate**: cây org, click node → form set `recall_after_days`, `escalate_after_days`, `allow_permanent_assignment`. Chỉ báo rõ node con nào đang bị cấp cha ghi đè.
-  - **Overdue booking**: danh sách lead `overdue_marked_at IS NOT NULL`.
-- [ ] Nav "Quy tắc vận hành" theo permission `ops.manage`.
+### 6.6.c — Màn Quy tắc vận hành ✅
+- [x] Route `/ops/rules`, permission `ops.manage`. 3 tab (Phân bổ / Recall-escalate / Overdue booking).
+- [x] Nav "Quy tắc VH".
 
 ### 6.6.d — Test & QA
-- [ ] Unit test `RecallPolicyResolver` (10+ case cascade).
-- [ ] Feature test 6 luồng nguồn: mỗi luồng 1 case tạo lead → xác nhận đi đúng kho / duyệt / assignee.
-- [ ] Feature test recall + escalate: giả `recall_at = now() - 1h`, chạy job, assert lead về pool team; tiếp tục assert escalate lên cha.
-- [ ] QA browser: tạo lead 6 nguồn từ 6 tài khoản khác nhau (NV thường, QL booking, CM khu vực...), verify UI form + luồng.
-- [ ] QA trang Quy tắc vận hành: set phòng ban → team override bị vô hiệu; set team khi phòng ban chưa set → team dùng cấu hình riêng.
-- [ ] Regression: 88+ test cũ vẫn pass.
+- [x] Unit test `RecallPolicyResolver`.
+- [x] Feature test 6 luồng nguồn.
+- [x] Feature test recall + escalate.
+- [x] 115/116 test pass tổng thể.
+- [ ] QA browser 6 nguồn (đã test partial, chưa duyệt hết 6 tài khoản).
 
 **Breaking changes cần lưu ý**:
 - `lead.pull_pool` deprecated — các role đang gán quyền này vẫn không lỗi, nhưng UI kéo lead ẩn hết.
 - Lead cũ (trước phase này) có `source_group = null` — cần backfill dựa vào `type_code`/nguồn (nếu còn dữ liệu), hoặc mặc định `marketing`.
 
-## Phase 6.7 — Auto-route lead theo source_group + kho booking per-team (2026-07-16, chưa làm)
+## Phase 6.7 — Auto-route lead theo source_group + kho booking per-team (2026-07-16, ĐÃ THAY THẾ)
+
+> Phase này đã bị **thay thế** bởi Phase 6.22 (UPS check-in + pool_units) + hàng loạt patch T5..T16 (2026-08-04..11): UpsDispatcher + auto-route mkt/mkt_br/bdm/bod/sa/ba/wi + booking sync 2 chiều với sbooking. Không còn nợ mục nào.
 
 > Sau khi test tay 6 luồng (result.md), lộ gap: form Livewire chỉ đặt `pool_level=common, org_unit_id=null` cho mọi nguồn (trừ nhóm 4). Cần logic auto-route theo `source_group` để các luồng 1-3, 5, 6 chảy đúng kho như bảng nghiệp vụ user.
 
@@ -133,49 +130,25 @@
 - [ ] Fix nhỏ: hiện `Team trực page` + `CM booking` đều thấy đủ 3 nhóm marketing/data_cold/bdm do gộp permission `lead.distribute_team`. Nếu muốn strict (Team trực page chỉ Marketing) thì tách permission `lead.source.marketing/data_cold/bdm`.
 - [ ] Test lại 6 luồng end-to-end sau khi có auto-route.
 
-## Phase 6.21 — Customer Flow 7 phase & UI 7 tab-phase (2026-07-30)
+## Phase 6.21 — Customer Flow 7 phase & UI 7 tab-phase ✅ (2026-07-30, xem result.md block 6.21a→6.21h)
 
 > Bối cảnh: user chốt mô hình Customer Flow 7 phase = lifecycle của khách (thay 2-phase cũ ở lớp UI + perm chốt). Design doc: `docs/design/customer_flow_30-07-2026.md`. Mockup: `docs/mockups/customer_flow_30-07-2026.html`. Chi tiết nghiệp vụ + Q&A: xem `result.md` block 2026-07-30. Tương ứng scope.md §8.0.2, ERD.md B2 (bảng mới `lead_phase_closures` / `call_logs` / `booking_logs`).
 
-### 6.21.a — Data model
-- [ ] Migration `2026_07_30_100000_phase_6_21_customer_flow.php`: thêm `leads.phase` (tinyint 1..7 default 1), `leads.is_first_visit` (bool default true), tạo 3 bảng `lead_phase_closures` / `call_logs` / `booking_logs`, backfill `phase` cho lead cũ theo rule ở design §7.
-- [ ] Model mới: `LeadPhaseClosure`, `CallLog`, `BookingLog` với relationship `belongsTo(Lead)` + `belongsTo(User)`.
-
-### 6.21.b — Business logic (Lead model)
-- [ ] Constants `PHASE_1..7` + `PHASE_LABELS` + `START_PHASE_BY_SOURCE`.
-- [ ] Methods: `startPhase()`, `openFrom()`, `phaseState($idx)`, `canEdit($idx, $user)`, `canLogCall($user)`, `canLogBooking($user)`, `bulkSave($user)`, `closePhase($idx, $user)`, `rollbackTo($idx, $user)`, `markReturning($user)`.
-- [ ] Sync 1 chiều `booking_status` khi thêm `booking_log` status `da_xac_nhan`.
-
-### 6.21.c — Permission
-- [ ] `PermissionSeeder`: thêm 5 perm `phase.close.{new,distribute,call,booking,checkin}` + `phase.rollback`.
-- [ ] Role "Admin vận hành" — kiểm tra có sẵn không (grep). Nếu chưa: tạo role `admin-ops` label "Admin vận hành", gán 5+1 perm trên + `ops.manage`.
-- [ ] Gán 5 perm chốt phase cho các role mặc định theo bảng design §5 (Trực Page / Tele / QL Sale / Sale / Lễ tân).
-
-### 6.21.d — UI
-- [ ] Component mới `resources/views/components/leads/⚡customer-flow-bar.blade.php` — arrow-breadcrumb 7 phase, prop `$lead` + `$activePhase`.
-- [ ] Rewrite `⚡lead-form.blade.php` từ dòng ~984-1573: đổi `x-data="{ tab: 'status' }"` sang `x-data="{ phase: <startTab> }"`, thay 5 tab cũ (status/staff/treatment/upsell/insight) bằng 7 tab-phase; wrap từng section theo `x-show="phase === N"`.
-- [ ] Action bar footer: 3 nút mutually exclusive `Lưu chốt N phase` / `Kết thúc phase X` / `⤺ Lùi phase` — wire vào methods `saveBulk` / `closePhase` / `rollbackTo`.
-- [ ] Nút "Khởi động lần thăm khám mới" trên header trang chi tiết (hiện khi phase=5 + closure phase 5 done + có perm `phase.rollback` hoặc `phase.close.checkin`).
-
-### 6.21.e — Test & QA
-- [ ] `tests/Feature/CustomerFlowTest.php` — 10 case ở design §12.
-- [ ] Regression: `php artisan test` — 117 test cũ phải pass.
-- [ ] Manual smoke qua browser: tạo lead 7 nguồn từ 7 tài khoản, verify UI mở/đóng phase đúng + nút Lưu/Kết thúc/Lùi hoạt động + `is_first_visit` flow.
-- [ ] Ghi kết quả vào `result.md`.
+Toàn bộ 6.21.a→6.21.h done. Rewrite lead-form 7 tab-phase, `lead_phase_closures` / `call_logs` / `booking_logs`, 5 perm phase.close.*, component `⚡customer-flow-bar`, action bar Lưu/Kết thúc/Lùi, nút "Khởi động lần thăm khám mới". Test + QA browser đều xong.
 
 **Breaking changes cần lưu ý**:
 - Trang chi tiết KH đổi hoàn toàn UI (6 → 7 tab). Người dùng cũ cần training lại.
 - 41 lead hiện có sẽ được backfill `phase` mặc định = 3 (chăm sóc) trừ khi khớp rule chi tiết ở design §7. Sai mapping có thể phải chỉnh tay.
 - `pipeline_phase` + `pipeline_status` giữ nguyên cho compat — chưa deprecate ở phase này.
 
-## Phase 6.22 — Cây Kho số, Role BO (Lễ Tân) & UPS check-in (2026-08-03, chưa làm)
+## Phase 6.22 — Cây Kho số, Role BO (Lễ Tân) & UPS check-in ✅ (2026-08-03, xem result.md)
 
 Bổ sung nối tiếp 6.21. Không đụng phase đã done. Chốt thiết kế đã có ở chat 2026-08-03.
 
 ### 6.22.a — Data & seed
-- [ ] Bảng mới `pool_units` (cây Kho số, đệ quy) — `id, parent_id, name, code, kind (company|branch|facility|department), sort, is_active`. Cột `code` unique để làm khớp với `org_units`.
-- [ ] Bảng cầu `org_pool_map(org_unit_id, pool_unit_id)` — 1 org node có thể map nhiều pool node (mặc định 1-1 theo `code` khớp).
-- [ ] Seed cây Kho số **Longevity Medical** (giữ `org_units` cũ nguyên cho phần nhân sự):
+- [x] Bảng mới `pool_units` (cây Kho số, đệ quy) — `id, parent_id, name, code, kind (company|branch|facility|department), sort, is_active`. Cột `code` unique để làm khớp với `org_units`.
+- [x] Bảng cầu `org_pool_map(org_unit_id, pool_unit_id)` — 1 org node có thể map nhiều pool node (mặc định 1-1 theo `code` khớp).
+- [x] Seed cây Kho số **Longevity Medical** (giữ `org_units` cũ nguyên cho phần nhân sự):
   ```
   Longevity Medical
   ├─ Hà Nội
@@ -187,44 +160,44 @@ Bổ sung nối tiếp 6.21. Không đụng phase đã done. Chốt thiết kế
      ├─ CS1: 207 Nguyễn Văn Thủ └─ Phòng Kinh Doanh
      └─ CS2: 137 Nguyễn Chí Thanh (chưa hoạt động, không có phòng KD)
   ```
-- [ ] Bảng `daily_attendance(id, facility_pool_unit_id, user_id, work_date, checkin_at, list_bucket, is_off, override_by, override_at, unique(user_id, work_date))`.
-- [ ] Bảng `ups_daily_confirm(facility_pool_unit_id, work_date, confirmed_by, confirmed_at, unique(facility_pool_unit_id, work_date))`.
-- [ ] Bảng `ups_config(facility_pool_unit_id, cutoff_time)` — default `08:35:00`.
+- [x] Bảng `daily_attendance(id, facility_pool_unit_id, user_id, work_date, checkin_at, list_bucket, is_off, override_by, override_at, unique(user_id, work_date))`.
+- [x] Bảng `ups_daily_confirm(facility_pool_unit_id, work_date, confirmed_by, confirmed_at, unique(facility_pool_unit_id, work_date))`.
+- [x] Bảng `ups_config(facility_pool_unit_id, cutoff_time)` — default `08:35:00`.
 
 ### 6.22.b — Permission & role
-- [ ] 4 permission mới: `ups.view`, `ups.checkin`, `ups.override`, `ups.confirm_daily`.
-- [ ] Role seed `BO (Lễ Tân)` — gắn 4 perm trên + `lead.distribute_sale` scope=chi nhánh.
-- [ ] Seed **3 tài khoản BO**, 1/chi nhánh (HN/ĐN/HCM).
+- [x] 4 permission mới: `ups.view`, `ups.checkin`, `ups.override`, `ups.confirm_daily`.
+- [x] Role seed `BO (Lễ Tân)` — gắn 4 perm trên + `lead.distribute_sale` scope=chi nhánh.
+- [x] Seed **3 tài khoản BO**, 1/chi nhánh (HN/ĐN/HCM).
 
 ### 6.22.c — Business logic
-- [ ] Bucket resolver khi BO check-in:
+- [x] Bucket resolver khi BO check-in:
   - `checkin_at <= cutoff` (mặc định 08:35) → `A`
   - `checkin_at >= 08:36` → `OFF`
   - Cột B/C/MKT: chưa có logic tier — BO điền tay override.
   - Tier engine để dạng function stub, mở rộng sau.
-- [ ] Guard: chỉ role có `ups.override` mới sửa được `list_bucket`/`is_off` sau khi đã set.
+- [x] Guard: chỉ role có `ups.override` mới sửa được `list_bucket`/`is_off` sau khi đã set.
 
 ### 6.22.d — UI
-- [ ] Màn UPS mới `/ups`: mỗi cơ sở 1 bảng (theo mockup HTML 2026-08-03).
+- [x] Màn UPS mới `/ups`: mỗi cơ sở 1 bảng (theo mockup HTML 2026-08-03).
   - 2 nhóm cột:
     - **Sale tiếp đón**: A / B / C / OFF LIST
     - **Sale nhận số**: MKT LIST
   - Đồng hồ live tick giây góc phải.
   - Nút **"Chốt UPS hôm nay"** (perm `ups.confirm_daily`).
-- [ ] Phase 1 (Thêm lead & Chia số): button **"Check UPS System"** góc trên.
+- [x] Phase 1 (Thêm lead & Chia số): button **"Check UPS System"** góc trên.
   - Chưa chốt UPS hôm nay → banner đỏ "UPS chưa được chốt, liên hệ bộ phận BO để xác nhận." + **block chia số** (disable nút chia, API trả 403 nếu bypass).
 
 ### 6.22.e — Migration data
-- [ ] Không xóa `org_units`. Lead + rule chia vẫn dùng `org_unit_id` cho tới khi tao viết migrate riêng.
-- [ ] Bước 1 (phase này): tạo pool + mapping, chưa cắt đường cũ. Bước 2 (phase sau khi user duyệt mapping): switch reference sang `pool_unit_id`.
+- [x] Không xóa `org_units`. Lead + rule chia vẫn dùng `org_unit_id` cho tới khi tao viết migrate riêng.
+- [x] Bước 1 (phase này): tạo pool + mapping, chưa cắt đường cũ. Bước 2 (phase sau khi user duyệt mapping): switch reference sang `pool_unit_id`.
 
 ### 6.22.f — Test & QA
-- [ ] Unit: bucket resolver (5 case: trước cutoff / đúng cutoff / sau cutoff / null / override).
-- [ ] Feature: BO check-in flow, override, chốt UPS, block chia khi chưa chốt.
-- [ ] Data scope: BO chi nhánh HN không thấy CS ở ĐN/HCM.
-- [ ] Regression: toàn bộ test cũ pass.
-- [ ] Manual smoke qua browser.
-- [ ] Ghi kết quả `result.md`.
+- [x] Unit: bucket resolver (5 case: trước cutoff / đúng cutoff / sau cutoff / null / override).
+- [x] Feature: BO check-in flow, override, chốt UPS, block chia khi chưa chốt.
+- [x] Data scope: BO chi nhánh HN không thấy CS ở ĐN/HCM.
+- [x] Regression: toàn bộ test cũ pass.
+- [x] Manual smoke qua browser.
+- [x] Ghi kết quả `result.md`.
 
 ## Phase 7 — Ads API + hoàn thiện
 - [ ] Màn 14 đầy đủ: kết nối Facebook Lead Form / TikTok / Google Ads, sync định kỳ
