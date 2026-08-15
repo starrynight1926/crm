@@ -196,6 +196,12 @@ class SbookingClient
             'co_kham_cls'     => (bool) $log->co_kham_cls,
         ];
 
+        // B5/2026-08-15: khi datasource auto-hủy (trễ 15'), báo trạng thái sang sbooking.
+        if ($log->sync_status === 'canceled') {
+            $payload['trang_thai'] = 'huy';
+            $payload['ly_do_huy'] = $log->sync_error ?: 'Khách trễ quá 15 phút chưa tới.';
+        }
+
         try {
             $response = \Illuminate\Support\Facades\Http::withToken($token)->timeout(15)->acceptJson()
                 ->put($baseUrl . '/bookings/' . $log->sbooking_booking_id, $payload);
