@@ -199,16 +199,14 @@ Bổ sung nối tiếp 6.21. Không đụng phase đã done. Chốt thiết kế
 - [x] Manual smoke qua browser.
 - [x] Ghi kết quả `result.md`.
 
-## Phase 6.25 — Batch sbooking Q5.1-5.3 + rule 15' (2026-08-15, đang làm)
+## Phase 6.25 — Batch sbooking Q5.1-5.3 + rule 15' ✅ (2026-08-15)
 
-Nối tiếp batch 2026-08-14 (fifteenth) đã xong bên datasource. Bên `lara-sbooking`:
-
-- [ ] **Q5.1** Modal duyệt: mở edit `sale tiếp đón / giờ bắt đầu / giờ kết thúc / note` cho role `admin vận hành` + `admin hệ thống` (đang bị block).
-- [ ] **Q5.2** Dropdown "Sale tiếp đón" override: lọc theo `co_so_id` của booking (không cross-branch).
-- [ ] **Q5.3** Field `gio_bat_dau / gio_ket_thuc`: chuyển sang nhập tự do (bỏ validate capacity phòng khi admin edit lúc duyệt). Ghi thống kê ca trễ/quá giờ sau.
-- [ ] Payload callback duyệt: gửi full `scheduled_at + scheduled_end_at + note + cv1_user_id` sang datasource (đã có endpoint `BookingEventController::trang_thai`).
-- [ ] Rule 15' auto-hủy: bên sbooking chấp nhận callback cancel từ datasource (`bookings:auto-cancel-late`) hoặc chạy song song command bên sbooking.
-- [ ] QA: admin sbooking duyệt 1 booking → đổi giờ + sale → verify sync về datasource (`booking_logs.cv1_user_id` + `scheduled_at` update). Booking không tick "Đã tới" sau 15' → cả 2 bên đều thấy `khach_huy`.
+- [x] **Q5.1** Modal duyệt edit sale/giờ/note cho admin — sbooking commit `ef3080b` (B5c).
+- [x] **Q5.2** Dropdown "Sale tiếp đón" filter theo `co_so_id` — cùng commit + route `/api/sales-in-cosolow`.
+- [x] **Q5.3** Field giờ nhập tự do (bỏ capacity validate khi admin edit).
+- [x] Payload callback: `CrmPushService::pushStatus` gửi `scheduled_at/scheduled_end_at/note/cv1_user_id` sang datasource.
+- [x] Rule 15' auto-hủy sync 2 chiều: datasource `pushBookingUpdate` gửi `trang_thai=huy + ly_do_huy` (commit `805db67`); sbooking `update()` accept + map sang `ly_do_tu_choi` (commit `daf8eb2`).
+- [ ] QA browser end-to-end: MySQL dev cần chạy. Kiểm chứng: admin sbooking duyệt → sync về datasource; auto-cancel 15' → cả 2 bên thấy `khach_huy`/`trang_thai=huy`.
 
 ## Phase 7 — Ads API + hoàn thiện
 - [ ] Màn 14 đầy đủ: kết nối Facebook Lead Form / TikTok / Google Ads, sync định kỳ

@@ -2,6 +2,19 @@
 
 > Làm xong phase nào ghi vào đây: ngày hoàn thành, việc đã làm, việc dời lại/chưa xong, ghi chú & quyết định phát sinh. Mẫu bên dưới.
 
+## 2026-08-15 — Phase 6.25: batch sbooking Q5.1-5.3 + rule 15' auto-hủy sync 2 chiều ✅
+
+Nối tiếp batch 2026-08-14. Bên `lara-sbooking`:
+
+- **Q5.1/5.2/5.3** đã có ở commit `ef3080b` (B5c) hôm qua: modal duyệt edit sale/giờ/note cho admin vận hành + admin hệ thống, sale dropdown filter `co_so_id` (route `/api/sales-in-cosolow`), field giờ nhập tự do bỏ capacity validate.
+- **Rule 15' sync**: trước hôm nay datasource `AutoCancelLateBookings` chỉ update local + gọi `pushBookingUpdate` — nhưng payload không có `trang_thai` → sbooking không biết đã hủy → data lệch.
+  - Datasource commit `805db67`: `SbookingClient::pushBookingUpdate` thêm `trang_thai=huy + ly_do_huy` khi `log.sync_status=canceled`.
+  - Sbooking commit `daf8eb2`: `BookingApiController::update` accept optional `trang_thai=huy + ly_do_huy` (whitelist), map `ly_do_huy` → `ly_do_tu_choi` prefix "Auto-hủy 15': ".
+
+Nợ QA browser end-to-end (chờ MySQL dev online): admin sbooking duyệt → verify sync về datasource; scheduler trigger auto-cancel → verify cả 2 bên `khach_huy`/`trang_thai=huy`.
+
+---
+
 ## 2026-08-14 — Fifteenth: batch A/B/C + Q1-5 (recall, timeline, sale-status, Hotline, booking-approval) ✅
 
 Nhánh `fifteenth`. Batch theo chốt chat 2026-08-14 với user (khối A + B1-B5 + C1-C2 + Q1-3 + Q5.1-5.3).
