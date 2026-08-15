@@ -106,8 +106,10 @@ class Lead extends Model
     //   UPS-based:   hệ thống tự chia sale theo UPS list (round-robin).
     //   CM-assigned: CM (Chuyên môn) nhập & chia tay cho tư vấn viên cụ thể (KHÔNG qua UPS).
     //   Self-owned:  ai tạo lead = sale phụ trách luôn.
+    // 2026-08-15: WI removed — khách tự tới, không chia leads, chỉ nhập liệu + check-in.
+    // UPS-based hiện chỉ MKT (Marketing) qua Trực Page/Admin cơ sở up.
     public const SOURCES_UPS_BASED = [
-        self::SOURCE_MKT, self::SOURCE_WI,
+        self::SOURCE_MKT,
     ];
     public const SOURCES_CM_ASSIGNED = [
         self::SOURCE_BDM, self::SOURCE_BOD,

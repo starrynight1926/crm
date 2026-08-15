@@ -92,9 +92,14 @@ foreach (['MKT','WI','BDM','BOD','SA','MKT_BR','HL'] as $sg) {
 
             // Assert per source classification
             $expect = '';
-            if (in_array($sg, ['MKT','WI'])) {
+            if ($sg === 'MKT') {
                 $expect = 'UPS→owner set';
                 $ok = $lead->owner_id !== null;
+            } elseif ($sg === 'WI') {
+                // 2026-08-15: WI = khách tự tới, không chia, chỉ nhập + check-in.
+                // Owner để null, phase check-in do Admin cơ sở làm sau.
+                $expect = 'WI no-auto owner=null pool=common';
+                $ok = $lead->owner_id === null && $lead->pool_level === Lead::POOL_COMMON;
             } elseif ($sg === 'BDM') {
                 $expect = 'CM-assigned no auto-owner';
                 $ok = $lead->owner_id === null && in_array($lead->pool_level, [Lead::POOL_TEAM, Lead::POOL_COMMON]);

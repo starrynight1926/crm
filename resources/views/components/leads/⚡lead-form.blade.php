@@ -1553,23 +1553,19 @@ new class extends Component
         //   auto → chia ngay từ MKT List UPS (round-robin theo cơ sở trực page).
         //   pool → thả kho, cấp kho theo quyền (distribute_company > distribute_branch > mặc định cơ sở).
         $mktAutoAssigned = false;
-        // B4 (2026-08-14): WI cũng UPS-based nhưng semantic = tiếp đón (pickGreet bucket A/B/C),
-        // không phải MKT bucket. Admin cơ sở up WI → resolve facility qua trucPageFacility (dùng chung).
-        $upsAutoSources = [Lead::SOURCE_MKT, Lead::SOURCE_MKT_BR, Lead::SOURCE_WI];
-        if (! $this->lead?->exists && in_array($this->sourceGroup, $upsAutoSources, true) && ! $this->personId) {
+        // 2026-08-15 revert: WI KHÔNG qua UPS auto (khách tự tới, chỉ nhập liệu + check-in,
+        // không gọi điện, không chia). WI đi thẳng pool_common để Admin cơ sở check-in sau.
+        if (! $this->lead?->exists && in_array($this->sourceGroup, [Lead::SOURCE_MKT, Lead::SOURCE_MKT_BR], true) && ! $this->personId) {
             $facility = $this->trucPageFacility();
             if (! $facility) {
                 $this->addError('mktMode', $this->isAdminLongevity()
                     ? 'Chọn cơ sở tiếp nhận ở panel "Chia tự động — dự kiến" trước khi Lưu.'
-                    : 'Tài khoản không map được cơ sở duy nhất — liên hệ Admin kiểm tra org_pool_map.');
+                    : 'Tài khoản trực page không map được cơ sở duy nhất — liên hệ Admin kiểm tra org_pool_map.');
                 return;
             }
 
             if ($this->mktMode === 'auto') {
-                $dispatcher = app(\App\Services\Ups\UpsDispatcher::class);
-                $picked = $this->sourceGroup === Lead::SOURCE_WI
-                    ? $dispatcher->pickGreet($facility->id)
-                    : $dispatcher->pickMkt($facility->id);
+                $picked = app(\App\Services\Ups\UpsDispatcher::class)->pickMkt($facility->id);
                 if (! $picked) {
                     $this->addError('mktMode', 'Chưa có Sale nào trong MKT List UPS hôm nay ở cơ sở "'.$facility->name.'". Chuyển "Chia về kho" hoặc liên hệ BO chốt UPS.');
                     return;
