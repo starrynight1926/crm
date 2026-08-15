@@ -2,6 +2,56 @@
 
 > Làm xong phase nào ghi vào đây: ngày hoàn thành, việc đã làm, việc dời lại/chưa xong, ghi chú & quyết định phát sinh. Mẫu bên dưới.
 
+## 2026-08-15 — QA E2E 21 case FULL PASS + WI fix + HL seed + rule 15' cancel ✅
+
+Sau vòng QA đầu (15/21), fix lần lượt 3 gap → **21/21 PASS**.
+
+### Vòng 2 — Fix WI (commit `baf0af2`)
+`⚡lead-form.blade.php` line 1554 chỉ auto-UPS cho [MKT, MKT_BR]. Thêm WI vào — reuse `trucPageFacility()` (đã resolve OK cho Admin cơ sở qua `org_pool_map` HN/DN/HCM). WI dùng `pickGreet` (bucket A/B/C tiếp đón), khác MKT dùng `pickMkt`.
+
+### Vòng 3 — Fix HL seeder (commit `ab5dfe5`)
+Perm `source.up.hl` chỉ có ở `PermissionSeeder`, không role nào attach. Gán cho 3 role Sale (Sale / Team sale / Team sale ĐN). Trực Page/BO không cần — HL yêu cầu owner=creator là sale trực hotline.
+
+### Vòng 4 — E2E rule 15' auto-cancel (script `scratchpad/qa_cancel15.php`)
+Tạo BookingLog scheduled 20' trước, run `bookings:auto-cancel-late`:
+- ✅ `BookingLog.status` → `huy_doi_lich`
+- ✅ `BookingLog.sync_status` → `canceled`
+- ✅ `BookingLog.sync_error` → "Auto-hủy: khách trễ quá 15 phút chưa tới."
+- ✅ `Lead.booking_status` → `khach_huy`
+- ✅ `LeadStatusLog` note "Auto-hủy booking BKG-QA-93 — khách trễ quá 15 phút."
+- ✅ `SbookingClient::pushBookingUpdate` có branch push `trang_thai=huy` khi `sync_status=canceled`
+
+### Kết quả cuối
+
+| Nguồn | HN | DN | HCM |
+|-------|:-:|:-:|:-:|
+| MKT   | ✅ | ✅ | ✅ |
+| WI    | ✅ | ✅ | ✅ |
+| BDM   | ✅ | ✅ | ✅ |
+| BOD   | ✅ | ✅ | ✅ |
+| SA    | ✅ | ✅ | ✅ |
+| MKT_BR| ✅ | ✅ | ✅ |
+| HL    | ✅ | ✅ | ✅ |
+
+**21/21 PASS** + rule 15' cancel end-to-end (local side) PASS. Push sang sbooking đã verify code path; test HTTP thực sự cần booking sống 2 bên (làm khi có QA thật).
+
+### Sbooking side (Phase 6.25) — tất cả pieces in place ✅
+- `SbookingClient::pushBookingUpdate` push `trang_thai=huy + ly_do_huy` khi `sync_status=canceled`.
+- `BookingApiController::update` accept `trang_thai=in:huy` + `ly_do_huy` + map → `ly_do_tu_choi` prefix "Auto-hủy 15': ".
+- `BookingController::duyet` accept `gio_thuc_hien / gio_ket_thuc / tiep_don_user_id / ghi_chu` (Q5.1).
+- `AutoCancelLateBookings` command + scheduled `everyFiveMinutes()` trong `routes/console.php`.
+
+### Bug đã fix trong session
+
+`⚡lead-form.blade.php` line 1537 drift so với B4 refactor (commit `aa072e5`):
+- BOD → CM-assigned, không còn "yêu cầu chọn sale nhận".
+- HL luôn auto-set owner=creator, bất kể distribute perm.
+- MKT_BR → self-owned trước khi rơi vào UPS branch.
+
+Refactor: dùng `Lead::isSelfOwnedSource()` const-driven — không drift lần sau.
+
+---
+
 ## 2026-08-15 — QA E2E 21 case (7 nguồn × 3 cơ sở) + fix B4 drift ✅
 
 Script `scratchpad/qa21.php` chạy end-to-end 21 case với DB thật + Livewire dispatch, seed UPS check-in cho 3 facility trước (HN/DN/HCM, mỗi facility 3 sale: 1 bucket MKT + 2 bucket A).
