@@ -2,6 +2,45 @@
 
 > Làm xong phase nào ghi vào đây: ngày hoàn thành, việc đã làm, việc dời lại/chưa xong, ghi chú & quyết định phát sinh. Mẫu bên dưới.
 
+## 2026-08-15 — QA E2E 21 case (7 nguồn × 3 cơ sở) + fix B4 drift ✅
+
+Script `scratchpad/qa21.php` chạy end-to-end 21 case với DB thật + Livewire dispatch, seed UPS check-in cho 3 facility trước (HN/DN/HCM, mỗi facility 3 sale: 1 bucket MKT + 2 bucket A).
+
+### Kết quả cuối: 15/21 PASS (đúng logic mong đợi)
+
+| Nguồn | HN | DN | HCM | Ghi chú |
+|-------|----|----|-----|---------|
+| MKT   | ✅ | ✅ | ✅ | UPS round-robin → sale bucket MKT (owner=28/12/39) |
+| WI    | ❌ | ❌ | ❌ | **Design gap**: WI khai báo UPS-based (SOURCES_UPS_BASED=[MKT,WI]) nhưng `save()` line 1554 chỉ auto-UPS cho MKT/MKT_BR. Admin cơ sở up WI → fallback pool_common. Cần impl riêng cho Admin cơ sở resolve facility. |
+| BDM   | ✅ | ✅ | ✅ | CM-assigned no auto-owner → pool_common chờ CM chia tay |
+| BOD   | ✅ | ✅ | ✅ | CM chỉ định personId=sale → owner=27/11/38 pool=personal |
+| SA    | ✅ | ✅ | ✅ | Sale bucket MKT self-owned (rule 2026-08-09) |
+| MKT_BR| ✅ | ✅ | ✅ | Self-owned owner=creator sau fix B4 drift |
+| HL    | ❌ | ❌ | ❌ | **Seeder gap**: chỉ Admin có `source.up.hl` per RolePermissionSyncSeeder. Admin không phải Sale role → `assignableUserIds` reject "Không thể chia cho nhân sự này". Cần seed HL cho Sale/Team Tele. |
+
+### Bug thật fix trong session này (commit `aa072e5`)
+
+`⚡lead-form.blade.php` line 1537 drift so với B4 refactor (2026-08-14) — dùng lại hardcode `[BOD, SA, BA]` cũ:
+
+1. **BOD kẹt** ở nhánh "yêu cầu chọn sale nhận" trong khi B4 đã chuyển BOD → CM-assigned (không tự nhận).
+2. **HL không auto-owner** dù self-owned per spec ("ai tạo lead = tele + tiếp đón").
+3. **MKT_BR bị UPS-picked** ở line 1554 thay vì self-owned.
+
+Fix: dùng `Lead::isSelfOwnedSource()` const-driven check. HL bypass distribute perm check (luôn auto-set owner=creator).
+
+### Sbooking side (Phase 6.25) — verify tất cả pieces in place ✅
+- `SbookingClient::pushBookingUpdate`: push `trang_thai=huy` + `ly_do_huy` khi `sync_status=canceled` ✅
+- `BookingApiController::update`: accept `trang_thai=in:huy` + `ly_do_huy` + map → `ly_do_tu_choi` prefix "Auto-hủy 15': " ✅
+- Modal duyệt `BookingController::duyet` accept `gio_thuc_hien / gio_ket_thuc / tiep_don_user_id / ghi_chu` (Q5.1) ✅
+- `AutoCancelLateBookings` command + scheduled `everyFiveMinutes()` trong `routes/console.php` ✅
+
+### Nợ chuyển sang batch sau
+- **WI Admin cơ sở up**: impl UPS auto-assign cho Admin cơ sở (resolve facility từ assignment thay vì `trucPageFacility()`).
+- **HL seeder**: quyết định seed `source.up.hl` cho role nào ngoài Admin. Nếu HL là "hotline chung", có thể để chỉ Admin/BO up.
+- **QA browser end-to-end auto-cancel 15'**: cần chờ có booking thật + trigger scheduler. Script hôm nay verify config, chưa trigger flow thật.
+
+---
+
 ## 2026-08-15 — Phase 6.25: batch sbooking Q5.1-5.3 + rule 15' auto-hủy sync 2 chiều ✅
 
 Nối tiếp batch 2026-08-14. Bên `lara-sbooking`:
