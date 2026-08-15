@@ -44,10 +44,11 @@ class Phase66FlowsTest extends TestCase
         ]);
     }
 
-    public function test_admin_thay_du_7_nhom_nguon(): void
+    public function test_admin_thay_du_8_nhom_nguon(): void
     {
+        // 2026-08-14: thêm HL (Hotline) → 8 nhóm.
         $sources = Lead::allowedSourceGroupsFor($this->admin);
-        $this->assertCount(7, $sources);
+        $this->assertCount(8, $sources);
     }
 
     public function test_nv_thuong_khong_co_source_perm_thi_khong_thay_nguon_nao(): void
