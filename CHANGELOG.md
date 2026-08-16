@@ -2,6 +2,10 @@
 
 Format: mỗi lần chốt tạo 1 block `## vX.Y.Z — YYYY-MM-DD` + bullets. Mới nhất ở trên cùng.
 
+## v0.15.1 — 2026-08-16
+
+- **Integration**: booking push sang sbooking giờ luôn ở trạng thái `cho_duyet` (bên sbooking bỏ auto-duyệt cho `phong_kham` — thống nhất 1 gate duyệt). Cập nhật `plan-integration-sbooking.md`.
+
 ## v0.14.0 — 2026-08-13
 
 - Thêm bộ **Changelog / Version** (trang `/changelog` + chip version ở footer).
