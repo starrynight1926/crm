@@ -7,6 +7,8 @@ use Illuminate\Support\Facades\Route;
 
 Route::middleware(AuthByApiToken::class)->group(function () {
     Route::post('/leads/{code}/booking-event', BookingEventController::class);
+    // 2026-08-18: Sale tiếp đón bấm "Đã xong" bên sbooking → close phase 5 + sync classification.
+    Route::post('/booking-event/checkin-done', [BookingEventController::class, 'checkinDone']);
     Route::post('/ups/busy',     [UpsAttendanceController::class, 'busy']);
     Route::post('/ups/complete', [UpsAttendanceController::class, 'complete']);
     Route::post('/ups/pause',    [UpsAttendanceController::class, 'pause']);

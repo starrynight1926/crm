@@ -451,4 +451,75 @@ class BookingEventController extends Controller
             'org_unit_id' => $lead->org_unit_id,
         ]);
     }
+
+    /**
+     * 2026-08-18 — Sale tiếp đón bấm "Đã xong" bên sbooking → close phase 4 (Check-in)
+     * + đồng bộ classification/checkin_status/checkin_result về lead.
+     *
+     * Auth: AuthByApiToken middleware (Bearer = user.api_token).
+     * Payload: crm_khach_ma, ma_booking, tinh_trang_checkin, ket_qua_sau_checkin,
+     *          phan_loai, hoan_tat_at, hoan_tat_by_email.
+     */
+    public function checkinDone(Request $request)
+    {
+        $data = $request->validate([
+            'crm_khach_ma'         => ['required', 'string', 'max:60'],
+            'ma_booking'           => ['nullable', 'string', 'max:40'],
+            'tinh_trang_checkin'   => ['required', 'in:checkin,doi_lich,huy_lich'],
+            'ket_qua_sau_checkin'  => ['nullable', 'in:tham_kham,tu_van,mua_hang,khong_mua,hoan_thanh,huy_lich_tao_moi'],
+            'phan_loai'            => ['required', 'in:follow,booking,close'],
+            'hoan_tat_at'          => ['nullable', 'date'],
+            'hoan_tat_by_email'    => ['nullable', 'email'],
+        ]);
+
+        $lead = Lead::where('code', $data['crm_khach_ma'])->first();
+        if (! $lead) {
+            return response()->json(['ok' => false, 'reason' => 'Lead not found for crm_khach_ma'], 404);
+        }
+
+        $actor = auth()->user();
+        $actorId = $actor?->id;
+
+        DB::transaction(function () use ($lead, $data, $actor, $actorId) {
+            $before = [
+                'checkin_status' => $lead->checkin_status,
+                'checkin_result' => $lead->checkin_result,
+                'classification' => $lead->classification,
+            ];
+            $lead->update([
+                'checkin_status' => $data['tinh_trang_checkin'],
+                'checkin_result' => $data['ket_qua_sau_checkin'] ?? null,
+                'classification' => $data['phan_loai'],
+                'last_care_at'   => now(),
+            ]);
+
+            LeadStatusLog::record($lead, 'checkin_status', $before['checkin_status'], $data['tinh_trang_checkin'], $actorId);
+            LeadStatusLog::record($lead, 'checkin_result', $before['checkin_result'], $data['ket_qua_sau_checkin'] ?? null, $actorId);
+            LeadStatusLog::record($lead, 'classification', $before['classification'], $data['phan_loai'], $actorId);
+            LeadStatusLog::record($lead, 'note', null,
+                'Sbooking checkin-done: ' . ($data['ma_booking'] ?? '?')
+                . ' · ' . (Lead::CHECKIN_STATUSES[$data['tinh_trang_checkin']] ?? '?')
+                . ($data['ket_qua_sau_checkin'] ? ' · ' . (Lead::CHECKIN_RESULTS[$data['ket_qua_sau_checkin']] ?? '?') : '')
+                . ($data['hoan_tat_by_email'] ? ' · by ' . $data['hoan_tat_by_email'] : ''),
+                $actorId);
+
+            // Auto-close Phase 4 (Check-in) nếu lead đang ở phase 4 và chưa closed.
+            if ((int) $lead->phase === Lead::CF_PHASE_CHECKIN && $actor) {
+                $alreadyClosed = LeadPhaseClosure::where('lead_id', $lead->id)
+                    ->where('phase', Lead::CF_PHASE_CHECKIN)->exists();
+                if (! $alreadyClosed) {
+                    try {
+                        $lead->closePhase(Lead::CF_PHASE_CHECKIN, $actor,
+                            'Auto-close từ sbooking (Sale tiếp đón bấm Đã xong).');
+                    } catch (\Throwable $e) {
+                        \Illuminate\Support\Facades\Log::warning('checkinDone closePhase 4 fail: ' . $e->getMessage(), ['lead' => $lead->id]);
+                    }
+                }
+            }
+
+            AuditLog::record('checkin_done_push', $lead, $data + ['actor_email' => $actor?->email]);
+        });
+
+        return response()->json(['ok' => true, 'lead_code' => $lead->code, 'phase' => $lead->fresh()->phase]);
+    }
 }

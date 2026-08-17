@@ -28,6 +28,8 @@ use Illuminate\Database\Eloquent\SoftDeletes;
     'pipeline_phase', 'pipeline_status',
     // Phase 6.21 — Customer Flow 7 phase (2026-07-30)
     'phase', 'is_first_visit',
+    // 2026-08-18 — nhận state Phase 5 từ sbooking callback (Sale tiếp đón bấm "Đã xong")
+    'checkin_status', 'checkin_result',
 ])]
 class Lead extends Model
 {
@@ -65,6 +67,21 @@ class Lead extends Model
         'booking' => 'Booking',
         'show' => 'Show',
         'close' => 'Close',
+    ];
+
+    // 2026-08-18 — Phase 5 (Checkin) state — nhận từ sbooking callback, mirror Booking::TINH_TRANG_CHECKIN.
+    public const CHECKIN_STATUSES = [
+        'checkin'  => 'Checkin',
+        'doi_lich' => 'Đổi lịch',
+        'huy_lich' => 'Hủy lịch',
+    ];
+    public const CHECKIN_RESULTS = [
+        'tham_kham'         => 'Thăm khám',
+        'tu_van'            => 'Tư vấn',
+        'mua_hang'          => 'Mua hàng',
+        'khong_mua'         => 'Không mua',
+        'hoan_thanh'        => 'Đã hoàn thành',
+        'huy_lich_tao_moi'  => 'Hủy lịch - Tạo mới',
     ];
 
     public const POOL_COMMON = 'common';

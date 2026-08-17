@@ -4068,15 +4068,46 @@ new class extends Component
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z"/></svg>
                         Check-in <span class="text-sm text-ink/50 font-normal">(tạm thời là bước cuối)</span>
                     </h2>
-                    {{-- 2026-08-10 — Sale sau khi tạo booking bị auto-move sang phase 4. Nút này quay về phase 3 để tạo tiếp booking khác cho cùng khách. --}}
-                    @if ($lead?->exists && $lead->canRestartBooking(auth()->user()))
-                        <button type="button" wire:click="markReturning(3)"
-                                onclick="return confirm('Quay lại phase 3 (Booking) để tạo booking mới cho khách này? Lịch sử booking cũ giữ nguyên.')"
-                                class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-100 text-amber-800 border border-amber-300 hover:bg-amber-200 transition-colors">
-                            <span class="text-base leading-none">↩</span> Tạo booking khác cho khách này
-                        </button>
-                    @endif
+                    <div class="flex flex-wrap gap-2">
+                        {{-- 2026-08-18 — Sau khi sbooking push "Đã xong" và Phase 4 đóng, cho phép quay Phase 2 (Gọi điện) tạo cuộc gọi mới. --}}
+                        @if ($lead?->exists && $lead->canRestartCall(auth()->user()))
+                            <button type="button" wire:click="markReturning(2)"
+                                    onclick="return confirm('Quay lại Phase 2 (Gọi điện) để tạo cuộc gọi mới cho khách này? Lịch sử call cũ giữ nguyên.')"
+                                    class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-sky-100 text-sky-800 border border-sky-300 hover:bg-sky-200 transition-colors">
+                                <span class="text-base leading-none">📞</span> Tạo cuộc gọi mới
+                            </button>
+                        @endif
+                        {{-- 2026-08-10 — Sale sau khi tạo booking bị auto-move sang phase 4. Nút này quay về phase 3 để tạo tiếp booking khác cho cùng khách. --}}
+                        @if ($lead?->exists && $lead->canRestartBooking(auth()->user()))
+                            <button type="button" wire:click="markReturning(3)"
+                                    onclick="return confirm('Quay lại Phase 3 (Booking) để tạo booking mới cho khách này? Lịch sử booking cũ giữ nguyên.')"
+                                    class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-100 text-amber-800 border border-amber-300 hover:bg-amber-200 transition-colors">
+                                <span class="text-base leading-none">📅</span> Tạo booking mới
+                            </button>
+                        @endif
+                    </div>
                 </div>
+
+                {{-- 2026-08-18 — Summary checkin sau khi sbooking push "Đã xong": show 3 field cho lead nhìn nhanh. --}}
+                @if ($lead?->exists && $lead->checkin_status)
+                    <div class="mb-4 p-3 rounded-lg border border-emerald-200 bg-emerald-50">
+                        <div class="text-xs font-bold text-emerald-800 mb-2">✓ Kết quả checkin (sync từ Sbooking)</div>
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                            <div>
+                                <div class="text-ink/50 mb-0.5">Tình trạng checkin</div>
+                                <div class="font-semibold text-ink">{{ \App\Models\Lead::CHECKIN_STATUSES[$lead->checkin_status] ?? $lead->checkin_status }}</div>
+                            </div>
+                            <div>
+                                <div class="text-ink/50 mb-0.5">Kết quả sau checkin</div>
+                                <div class="font-semibold text-ink">{{ $lead->checkin_result ? (\App\Models\Lead::CHECKIN_RESULTS[$lead->checkin_result] ?? $lead->checkin_result) : '—' }}</div>
+                            </div>
+                            <div>
+                                <div class="text-ink/50 mb-0.5">Phân loại</div>
+                                <div class="font-semibold text-ink">{{ $lead->classification ? (\App\Models\Lead::CLASSIFICATIONS[$lead->classification] ?? $lead->classification) : '—' }}</div>
+                            </div>
+                        </div>
+                    </div>
+                @endif
                 {{-- 2026-08-05: Info booking từ BookingLog mới nhất — hiện ở đầu Check-in để lễ tân/admin thấy khách tới lịch nào. --}}
                 @if ($lead?->exists)
                     @php
