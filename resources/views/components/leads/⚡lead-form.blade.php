@@ -1166,7 +1166,9 @@ new class extends Component
                 ->where('id', $this->mktFacilityOverrideId)->first();
         }
         // 2026-08-11: admin chọn cơ sở trên navbar → auto-resolve facility từ AdminScope.
-        if ($this->isAdminLongevity() && ! $this->mktFacilityOverrideId) {
+        // 2026-08-17: mở rộng cho mọi super admin (is_admin=true), không chỉ admin@longevity.
+        // Trước bug: super admin khác đổi cơ sở HN vẫn thấy UPS list ĐN vì facility rơi về nhánh assignment (null).
+        if (\App\Support\AdminScope::isSuperAdmin() && ! $this->mktFacilityOverrideId) {
             $scopeBranchId = \App\Support\AdminScope::currentBranchId();
             if ($scopeBranchId) {
                 $scopeOrgIds = \App\Support\AdminScope::orgUnitIds() ?? [];
@@ -1465,7 +1467,8 @@ new class extends Component
         // Tele chốt phase 1 (phase.close.new) rồi phase 2 (phase.close.call).
         if ($this->lead?->exists && ! $this->getErrorBag()->isNotEmpty()) {
             $viewer = auth()->user();
-            if ($prevPhase >= 2 && $prevPhase <= 3) {
+            // 2026-08-17: mở rộng range 1..3 — Trực Page save = auto-close phase 1, khỏi bấm nút "Kết thúc phase 1" riêng.
+            if ($prevPhase >= 1 && $prevPhase <= 3) {
                 $startPhase = (int) $this->lead->phase;
                 for ($p = $startPhase; $p <= $prevPhase; $p++) {
                     $perm = Lead::CF_PHASE_CLOSE_PERM[$p] ?? null;
@@ -1941,6 +1944,17 @@ new class extends Component
     private function assignableUsers()
     {
         $visibleOrgIds = auth()->user()->visibleOrgUnitIds();
+
+        // 2026-08-17: super admin chọn cơ sở trên navbar (AdminScope) → thu hẹp
+        // danh sách nhân sự theo subtree của cơ sở đó. Trước bug: admin chuyển
+        // sang 59NTN vẫn thấy full sale các cơ sở khác. Chỉ áp dụng cho super
+        // admin — user thường đã tự scope qua visibleOrgUnitIds() rồi.
+        if (\App\Support\AdminScope::isSuperAdmin()) {
+            $scopeOrgIds = \App\Support\AdminScope::orgUnitIds();
+            if ($scopeOrgIds !== null) {
+                $visibleOrgIds = $scopeOrgIds;
+            }
+        }
 
         // Fix 2026-08-01: filter theo phase của lead — không được chia lead phase
         // Booking cho Sale hoặc phase Sale cho Tele. Cũng KHÔNG show CM (Tele/Sale),
@@ -3773,9 +3787,17 @@ new class extends Component
                                      class="absolute right-0 mt-2 w-[calc(100vw-2rem)] sm:w-80 max-w-sm bg-white border border-gold-200 rounded-lg shadow-xl z-30 max-h-96 overflow-auto">
                                     @php
                                         $__today = now()->toDateString();
-                                        $__atts = \App\Models\DailyAttendance::with('user')
-                                            ->whereDate('work_date', $__today)
-                                            ->orderBy('list_bucket')->orderBy('checkin_at')->get();
+                                        // 2026-08-17: lọc theo cơ sở admin đang chọn trên navbar (AdminScope).
+                                        // Trước bug: popup show 9 sale toàn hệ thống dù đã chọn 207NVT.
+                                        $__scopeOrgIds = \App\Support\AdminScope::orgUnitIds();
+                                        $__attsQ = \App\Models\DailyAttendance::with('user')
+                                            ->whereDate('work_date', $__today);
+                                        if ($__scopeOrgIds !== null) {
+                                            $__attsQ->whereIn('facility_pool_unit_id', function ($q) use ($__scopeOrgIds) {
+                                                $q->select('pool_unit_id')->from('org_pool_map')->whereIn('org_unit_id', $__scopeOrgIds);
+                                            });
+                                        }
+                                        $__atts = $__attsQ->orderBy('list_bucket')->orderBy('checkin_at')->get();
                                     @endphp
                                     <div class="px-3 py-2 border-b border-gold-100 bg-gold-50 flex items-center justify-between">
                                         <div class="text-xs font-bold text-gold-800">UPS hôm nay · {{ $__atts->count() }} sale check-in</div>
