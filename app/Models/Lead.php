@@ -45,6 +45,8 @@ class Lead extends Model
     ];
 
     // Phân loại kết quả — thứ tự theo funnel trong scope.md mục 4
+    // 2026-08-17: bổ sung theo bảng "Nguyên tắc chia lại số" — 'khong_quan_tam', 'sai_tep' (Phân loại)
+    // và 'sai_so' (Kết quả). Tele gọi xong tick Phân loại + Kết quả từ list này.
     public const CLASSIFICATIONS = [
         'new' => 'Mới',
         'lead' => 'Lead',
@@ -52,11 +54,14 @@ class Lead extends Model
         'net' => 'Nét',
         'tai_chinh_yeu' => 'Tài chính yếu',
         'quan_tam' => 'Quan tâm',
+        'khong_quan_tam' => 'Không quan tâm',
         'tham_khao' => 'Tham khảo',
         'tim_hieu' => 'Tìm hiểu',
         'goi_lai_sau' => 'Gọi lại sau',
+        'sai_tep' => 'Sai tệp',
         'klld' => 'KLLD',
         'missed' => 'Missed',
+        'sai_so' => 'Sai số',
         'booking' => 'Booking',
         'show' => 'Show',
         'close' => 'Close',
