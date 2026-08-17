@@ -1220,13 +1220,15 @@ class Lead extends Model
             ['lead_id' => $this->id, 'phase' => $idx],
             ['closed_by' => $user->id, 'closed_at' => now(), 'note' => $note]
         );
-        // Tính phase kế tiếp = phase nhỏ nhất trong 1..5 chưa closed; nếu đã closed hết → min(startPhase+1, 5).
+        // Tính phase kế tiếp = phase nhỏ nhất trong 1..4 chưa closed; nếu đã closed hết → giữ ở 4
+        // (phase cuối cùng có build). 2026-08-18 fix: trước fallback về min(startPhase+1, 4) =>
+        // MKT startPhase=1 nhảy về phase 2 sau khi đóng phase 4 (Checkin), rất kỳ khi checkin xong.
         $closed = $this->phaseClosures()->pluck('phase')->all();
         $nextPhase = null;
         for ($p = 1; $p <= 4; $p++) {
             if (! in_array($p, $closed, true)) { $nextPhase = $p; break; }
         }
-        $this->update(['phase' => $nextPhase ?: min($this->startPhase() + 1, 4)]);
+        $this->update(['phase' => $nextPhase ?: 4]);
     }
 
     /** Lùi phase (Admin vận hành only). Xóa closure từ $idx trở đi, set phase = $idx. */
