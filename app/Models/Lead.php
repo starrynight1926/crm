@@ -579,9 +579,11 @@ class Lead extends Model
     }
 
     /**
-     * Rule 2026-08-09: SA / BA cho user Sale chịu chi phối bởi UPS bucket hôm nay.
-     *  - Bucket MKT (Tele hôm nay) → up được SA, KHÔNG up BA.
-     *  - Bucket A/B/C/OFF (Tiếp đón hôm nay) → up được BA, KHÔNG up SA.
+     * Rule 2026-08-09 (fix 2026-08-17): SA / BA cho user Sale chịu chi phối bởi UPS bucket hôm nay.
+     *  - Bucket MKT (Tele hôm nay) → up được BA, KHÔNG up SA.
+     *    (Theo scope.md line 214: BA = "Tele tự tạo + tự gọi, chuyển Sale ở phase 4".)
+     *  - Bucket A/B/C/OFF (Tiếp đón hôm nay) → up được SA, KHÔNG up BA.
+     *    (Theo scope.md line 215: SA = "QL Sale tự tạo + tự chia, chuyển Tele ở phase 3".)
      *  - Không có attendance hôm nay → không override (fallback perm mặc định).
      * Admin có `lead.source_all` bypass hoàn toàn (check trước khi gọi hàm này).
      *
@@ -602,9 +604,10 @@ class Lead extends Model
         if (! $inMkt && ! $inGreet) return null;
 
         // 2026-08-12: dual-list — sale có is_mkt VÀ bucket A/B/C/OFF cùng lúc → được up cả SA lẫn BA.
+        // 2026-08-17 fix: đảo lại theo scope.md — BA cho MKT (Tele), SA cho A/B/C/OFF (Sale tiếp đón).
         return [
-            self::SOURCE_SA => $inMkt,
-            self::SOURCE_BA => $inGreet,
+            self::SOURCE_SA => $inGreet,
+            self::SOURCE_BA => $inMkt,
         ];
     }
 
