@@ -2753,8 +2753,8 @@ new class extends Component
                     </div>
                     {{-- PAGE + Camp + Nguồn QC giờ là custom field phòng Marketing (Trường bổ sung); Link move sang tab Insight --}}
                     <div>
-                        <label class="block text-sm font-medium mb-1.5">NOTE</label>
-                        <textarea wire:model="note" rows="2" placeholder="Ghi chú thêm..." class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500"></textarea>
+                        <label class="block text-sm font-medium mb-1.5">GHI CHÚ CHO TELE</label>
+                        <textarea wire:model="note" rows="2" placeholder="Ghi chú cho Tele khi gọi khách..." class="w-full border border-gold-200 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:border-gold-500"></textarea>
                     </div>
                 </div>
             </div>
@@ -4088,8 +4088,8 @@ new class extends Component
                             <input wire:model="newCallNote" placeholder="Ghi chú cuộc gọi..." class="col-span-2 border border-slate-300 rounded px-2 py-1.5 text-sm">
                         </div>
                         <button type="button" wire:click="addCallLog" wire:loading.attr="disabled" wire:target="addCallLog" class="text-sm bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-4 py-1.5 rounded disabled:opacity-50 disabled:cursor-not-allowed">
-                            <span wire:loading.remove wire:target="addCallLog">+ Ghi cuộc gọi</span>
-                            <span wire:loading wire:target="addCallLog">Đang ghi…</span>
+                            <span wire:loading.remove wire:target="addCallLog">+ Lưu cuộc gọi</span>
+                            <span wire:loading wire:target="addCallLog">Đang lưu…</span>
                         </button>
                     </div>
                 @else
