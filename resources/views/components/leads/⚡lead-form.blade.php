@@ -284,6 +284,10 @@ new class extends Component
             'newBookingType'          => 'required|in:kham_ls,tu_van,dich_vu',
             'newBookingStatus'        => 'required|in:' . implode(',', array_keys(BookingLog::STATUSES)),
             'newBookingScheduledAt'   => 'nullable|date',
+            // 2026-08-18: bắt buộc ngày + khung giờ để tránh push sbooking mất khung giờ.
+            // Trước cả 2 optional → user submit trống → scheduled_at=null → sbooking booking không có gio_thuc_hien.
+            'newBookingDate'          => 'required|date',
+            'newBookingTime'          => 'required|string',
             'newBookingFacilityId'    => 'required|exists:facilities,id',
             'newBookingRoomId'        => 'required|exists:sb_rooms,sbooking_id',
             'newBookingSbBacSiId'     => 'nullable|exists:sb_bac_si,sbooking_id',
@@ -302,6 +306,8 @@ new class extends Component
             'newBookingType.required' => 'Chọn loại booking (Khám lâm sàng / Tư vấn / Dịch vụ).',
             'newBookingFacilityId.required' => 'Chọn cơ sở — booking phải gắn cơ sở để đẩy sang sbooking.',
             'newBookingRoomId.required' => 'Chọn phòng — sbooking cần phòng để check capacity.',
+            'newBookingDate.required' => 'Chọn ngày đặt — không được để trống, sbooking cần ngày để hiện lịch.',
+            'newBookingTime.required' => 'Chọn khung giờ — không được để trống, sbooking cần khung giờ để check slot.',
         ]);
         // Phase C1.b 2026-08-01 rev: chặn cứng nếu cơ sở (hoặc cha nó) chưa map sbooking. Không cho ghi log local.
         $facilityForCheck = \App\Models\Facility::find($this->newBookingFacilityId);
