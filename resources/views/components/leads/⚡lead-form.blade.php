@@ -1709,11 +1709,12 @@ new class extends Component
             $this->addError('personId', 'Không thể chia cho nhân sự này.');
             return;
         }
-        // 2026-08-07: skip check pool scope khi trực page dùng mode=pool (mktPoolTarget đã lock theo perm).
-        //   Lý do: poolTarget bây giờ mang pool_unit_id (cây Kho số) còn visibleOrgUnitIds() trả org_unit_id
-        //   (cây tổ chức) — ID 2 bảng khác nhau, so sánh trực tiếp luôn miss → Trực Page bấm Lưu bị silent fail.
+        // 2026-08-07: poolTarget mang pool_unit_id (cây Kho số) — visibleOrgUnitIds() trả org_unit_id (cây tổ chức),
+        //   2 bảng khác nhau, so sánh trực tiếp luôn miss → silent fail cho mọi nguồn.
+        // 2026-08-19 fix: đổi sang visiblePoolUnitIds() cho khớp ID space → admin cơ sở (BOD/BDM/WI) chia được
+        //   vào pool_unit trong scope. Trước đây tick skip cho MKT nên MKT không dính; các nguồn khác dính chưởng.
         if (! ($mktPoolAssigned ?? false) && ! $this->personId && str_starts_with($this->poolTarget, 'org:')
-            && ! in_array((int) substr($this->poolTarget, 4), auth()->user()->visibleOrgUnitIds(), true)) {
+            && ! in_array((int) substr($this->poolTarget, 4), auth()->user()->visiblePoolUnitIds(), true)) {
             $this->addError('poolTarget', 'Phòng/team không nằm trong phạm vi của bạn.');
             return;
         }
