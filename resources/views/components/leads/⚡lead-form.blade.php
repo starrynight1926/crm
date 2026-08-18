@@ -4128,8 +4128,10 @@ new class extends Component
                                     </span>
                                 </label>
                             </div>
-                            <div x-data="{ open: false }" @click.outside="open = false" @if ($mktMode === 'pool') style="display:none" @endif>
-                                <label class="block text-sm font-medium mb-1.5">NHÂN VIÊN PHỤ TRÁCH</label>
+                            {{-- 2026-08-19: default open=true — dropdown 7 người trong scope hiện luôn khi
+                                 chưa chọn ai, khỏi bắt user phải click ô search mới thấy list. --}}
+                            <div x-data="{ open: {{ $selectedPerson ? 'false' : 'true' }} }" @click.outside="open = false" @if ($mktMode === 'pool') style="display:none" @endif>
+                                <label class="block text-sm font-medium mb-1.5">NHÂN VIÊN PHỤ TRÁCH <span class="text-xs font-normal text-ink/50">(gõ tên hoặc chọn trong danh sách bên dưới)</span></label>
                                 @if ($selectedPerson)
                                     <div class="flex items-center justify-between gap-2 border border-gold-300 bg-gold-50 rounded-md px-3 py-2.5">
                                         <span class="text-sm font-semibold text-gold-800">{{ $selectedPerson->name }}</span>
