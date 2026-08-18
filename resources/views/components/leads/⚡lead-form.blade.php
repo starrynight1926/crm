@@ -1794,7 +1794,11 @@ new class extends Component
     private function createLead(array $attributes, array $cleanCustom): void
     {
         $user = auth()->user();
-        $attributes['receiver_id'] = $user->id;
+        // 2026-08-19 fix: KHÔNG set receiver_id = creator ở đây. Semantic của receiver_id
+        //   là "Tele/Booker phụ trách" (xem ProcessRawLead:86) — chỉ được điền khi CM chia
+        //   cho 1 Tele cụ thể. Trước đây gán = creator ở createLead làm dashboard hiển thị
+        //   "Admin Cơ sở Đà Nẵng" ở cột "Tele phụ trách" cho lead còn nằm trong kho → sai
+        //   nghĩa (creator ≠ tele). imported_by dưới đã ghi creator riêng cho scope visibility.
         // Người tạo lead (dù nhập tay hay import Excel) đều được coi là "người nhập"
         // để có scope xem lại data sau khi engine chia cho sale khác (giống flow
         // trực page import Excel — thuộc [[imported-by-scope]]).

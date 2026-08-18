@@ -448,7 +448,13 @@ new class extends Component
                         {{-- 2026-08-05: mọi user click → /edit (form 7 phase). Route gate canOpenEditForm sẽ tự chặn nếu không có quyền. --}}
                         @php
                             $rowHref = route('leads.edit', $lead);
-                            $teleCare = $lead->pipeline_phase === \App\Models\Lead::PHASE_BOOKING ? $lead->owner?->name : $lead->receiver?->name;
+                            // 2026-08-19: tele phụ trách = owner (phase booking) hoặc receiver (phase khác).
+                            //   Bỏ qua receiver nếu = imported_by (dữ liệu cũ lỡ set creator vào receiver_id
+                            //   khi tạo lead) và chưa có owner — lead thực chất còn trong kho, chưa có tele.
+                            $__teleUser = $lead->pipeline_phase === \App\Models\Lead::PHASE_BOOKING
+                                ? $lead->owner
+                                : ($lead->receiver_id && $lead->receiver_id !== $lead->imported_by ? $lead->receiver : null);
+                            $teleCare = $__teleUser?->name;
                             $saleCare = $lead->pipeline_phase === \App\Models\Lead::PHASE_SALE ? $lead->owner?->name : null;
                         @endphp
                         <tr class="hover:bg-gold-50/40 cursor-pointer" onclick="window.location='{{ $rowHref }}'">
