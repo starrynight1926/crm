@@ -110,6 +110,7 @@ class UpsAttendanceController extends Controller
         $data = $request->validate([
             'sale_user_id' => ['nullable', 'integer'],
             'sale_email'   => ['nullable', 'email'],
+            'sale_name'    => ['nullable', 'string', 'max:150'],
             'work_date'    => ['nullable', 'date'],
         ]);
 
@@ -120,8 +121,13 @@ class UpsAttendanceController extends Controller
         if (! $user && ! empty($data['sale_email'])) {
             $user = User::firstWhere('email', $data['sale_email']);
         }
+        // 2026-08-18: fallback match name khi email 2 project không trùng
+        // (sbooking dùng short username email `lthu@...`, CRM dùng `dn.sale02@...`).
+        if (! $user && ! empty($data['sale_name'])) {
+            $user = User::firstWhere('name', $data['sale_name']);
+        }
         if (! $user) {
-            return [null, null, null, response()->json(['ok' => false, 'reason' => 'Không tìm thấy sale (email: ' . ($data['sale_email'] ?? '?') . ').'], 404)];
+            return [null, null, null, response()->json(['ok' => false, 'reason' => 'Không tìm thấy sale (email: ' . ($data['sale_email'] ?? '?') . ', name: ' . ($data['sale_name'] ?? '?') . ').'], 404)];
         }
 
         $workDate = $data['work_date'] ?? now()->toDateString();
