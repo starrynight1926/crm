@@ -1050,9 +1050,12 @@ class Lead extends Model
 
     public const CF_START_PHASE_BY_SOURCE = [
         self::SOURCE_MKT    => 1,
-        self::SOURCE_MKT_BR => 3, // trước là 4 (Booking)
-        self::SOURCE_BA     => 2, // trước là 3 (Call)
-        self::SOURCE_SA     => 1, // trước là 2 (Distribute) → gộp về 1
+        // 2026-08-18: SA/BA/MKT_BR đều là "Sale/Tele tự tạo + tự làm A→Z tới Booking"
+        // → cả 3 đều bulk-open 1..3 (Tạo mới+Chia · Gọi · Booking) cho một phát điền + lưu.
+        // Trước: SA=1 (chỉ phase 1 sáng), BA=2 (1,2 sáng), MKT_BR=3 — không nhất quán.
+        self::SOURCE_MKT_BR => 3,
+        self::SOURCE_BA     => 3,
+        self::SOURCE_SA     => 3,
         self::SOURCE_BDM    => 1,
         self::SOURCE_BOD    => 1,
         self::SOURCE_WI     => 1,
