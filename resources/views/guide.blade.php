@@ -148,17 +148,17 @@
         </h2>
         <div class="bg-white border border-gold-200 rounded-xl shadow-sm p-3">
             <button type="button" @click="zoom = true" class="block w-full">
-                <img src="{{ asset('images/flow.jpg') }}" alt="Sơ đồ luồng hệ thống Data Source"
+                <img src="{{ asset('images/flow-details.png') }}" alt="Sơ đồ luồng hệ thống Data Source"
                      class="w-full h-auto rounded-lg cursor-zoom-in hover:opacity-95 transition"
                      onerror="this.style.display='none'; this.nextElementSibling.style.display='block'">
-                <div style="display:none" class="text-center text-ink/40 text-sm py-8">(Chưa có sơ đồ luồng — cần tạo ảnh <code>public/images/flow.jpg</code>)</div>
+                <div style="display:none" class="text-center text-ink/40 text-sm py-8">(Chưa có sơ đồ luồng — cần tạo ảnh <code>public/images/flow-details.png</code>)</div>
             </button>
             <p class="text-xs text-ink/50 mt-2 text-center">Nhấn vào ảnh để xem full-size</p>
         </div>
 
         <div x-show="zoom" x-cloak @click="zoom = false" @keydown.escape.window="zoom = false"
              class="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 cursor-zoom-out">
-            <img src="{{ asset('images/flow.jpg') }}" alt="Sơ đồ luồng" class="max-w-full max-h-full rounded-lg shadow-2xl">
+            <img src="{{ asset('images/flow-details.png') }}" alt="Sơ đồ luồng" class="max-w-full max-h-full rounded-lg shadow-2xl">
         </div>
     </section>
 
