@@ -80,6 +80,13 @@ class SbookingClient
         // Với SA/BA/MKT_BR: owner = creator, snapshot cũng OK (banner sbooking check nguon để phân biệt).
         $owner = $lead->owner_id ? \App\Models\User::find($lead->owner_id) : null;
 
+        // 2026-08-19 — nguoi_tao_id = creator thực sự của lead (imported_by), không phải CV1.
+        // Trước đây push CV1.sbooking_user_id — với self-owned (SA/BA/MKT_BR) CV1=creator nên trùng,
+        // nhưng nếu creator không có sbooking_user_id map → null → banner "Người nhập lead: —" trống,
+        // modal Duyệt không lock được dropdown sale tiếp đón.
+        $creator = $lead->imported_by ? \App\Models\User::find($lead->imported_by) : null;
+        $creatorSbookingId = $creator?->sbooking_user_id ? (int) $creator->sbooking_user_id : null;
+
         $payload = [
             'so_dien_thoai' => $lead->phone,
             'ho_ten'        => $lead->name ?: 'Khách CRM',
@@ -111,7 +118,9 @@ class SbookingClient
             'tiep_don_user_id'   => $sbookingSaleId,
             // 2026-08-18: nguoi_tao_id = sale gốc (creator) — sbooking modal Duyệt lock dropdown khi source
             // ∈ SA/BA/MKT_BR (check theo `nguon` field). Trước để trống → admin không thấy creator → không lock.
-            'nguoi_tao_id'       => $sbookingSaleId,
+            // 2026-08-19 fix: dùng imported_by (creator thực) thay CV1 để MKT_BR/SA/BA luôn có creator id
+            //   dù CV1 mapping hụt hoặc lead được reassign consultant.
+            'nguoi_tao_id'       => $creatorSbookingId ?: $sbookingSaleId,
             // 2026-08-18: Tele phụ trách phase 2 SCRM — sbooking modal Duyệt hiện info "Tele: X" cho nguồn MKT/BDM/BOD/Walk-in.
             'tele_owner_id'      => $owner?->id,
             'tele_owner_name'    => $owner?->name,

@@ -325,7 +325,8 @@ new class extends Component
         // Số CV = số slot user thêm. UPS list rỗng → block; wrap-around khi all busy đã có trong pickGreet.
         // 2026-08-18: SA/BA/MKT_BR — CV chính = owner (creator), KHÔNG auto UPS.
         //   Rule "người tạo = tele + tiếp đón". Slot 2+ (nếu user thêm) mới auto UPS làm hỗ trợ.
-        $isSelfOwnedSrc = in_array($this->lead->source_group, [Lead::SOURCE_SA, Lead::SOURCE_BA, Lead::SOURCE_MKT_BR], true);
+        // 2026-08-19: dùng helper thay hard-list để tránh drift — bao gồm HL (Hotline: người nhập = sale).
+        $isSelfOwnedSrc = Lead::isSelfOwnedSource($this->lead->source_group);
         $slotCount = max(1, count($this->newBookingConsultantIds));
         $pickedCvIds = [];
 
@@ -420,12 +421,48 @@ new class extends Component
         // Trước đây scheduled_end_at lấy end của khung → khung 1h/2h cho DV 30' → sbooking
         // hiển thị timeline x2/x4 so với thực tế (bug user báo). Ưu tiên DV duration; fallback
         // vẫn giữ end của khung nếu không tra được DV.
+        // 2026-08-19 fix: nếu DV dài hơn khung → BLOCK + báo lỗi (trước đây silent cap ẩn bug,
+        //   trước nữa lại để end tràn khung — cả 2 đều sai; đúng UX là bắt user chọn khung đủ dài).
         if ($scheduledAt && $sbDichVuId) {
             $sbDv = \App\Models\SbService::where('sbooking_id', $sbDichVuId)->first();
             $dvPhut = (int) ($sbDv?->thoi_gian_phut ?? 0);
             if ($dvPhut > 0) {
-                $scheduledEndAt = \Carbon\Carbon::parse($scheduledAt)->addMinutes($dvPhut)->format('Y-m-d H:i:s');
+                $dvEnd = \Carbon\Carbon::parse($scheduledAt)->addMinutes($dvPhut)->format('Y-m-d H:i:s');
+                if ($scheduledEndAt && $dvEnd > $scheduledEndAt) {
+                    $khungPhut = \Carbon\Carbon::parse($scheduledAt)->diffInMinutes(\Carbon\Carbon::parse($scheduledEndAt));
+                    $this->addError('newBookingTime',
+                        "Khung giờ đã chọn chỉ {$khungPhut} phút — không đủ cho dịch vụ \"{$sbDv->ten}\" (cần {$dvPhut} phút). Chọn khung giờ dài hơn hoặc đổi dịch vụ.");
+                    return;
+                }
+                $scheduledEndAt = $dvEnd;
             }
+        }
+
+        // 2026-08-19 — preflight check với sbooking TRƯỚC khi tạo BookingLog (chống lỗi
+        //   "BS trùng lịch" / "phòng full" chỉ hiện sau khi sync fail). Fail → block ngay.
+        try {
+            $pfToken = config('services.booking.api_token');
+            $pfBase  = rtrim(config('services.booking.api_url') ?: '', '/');
+            if ($pfToken && $pfBase && $this->newBookingSbBacSiId && $sbDichVuId && $sbKhungGioId) {
+                $pfResp = \Illuminate\Support\Facades\Http::withToken($pfToken)->timeout(8)->acceptJson()
+                    ->post($pfBase . '/bookings/preflight', [
+                        'co_so_id'      => $sbCoSoResolved,
+                        'ngay_dat'      => $this->newBookingDate,
+                        'gio_thuc_hien' => $scheduledAt ? substr($scheduledAt, 11, 8) : null,
+                        'gio_ket_thuc'  => $scheduledEndAt ? substr($scheduledEndAt, 11, 8) : null,
+                        'dich_vu_id'    => $sbDichVuId,
+                        'bac_si_id'     => $this->newBookingSbBacSiId,
+                        'phong_id'      => $this->newBookingRoomId,
+                        'khung_gio_id'  => $sbKhungGioId,
+                    ]);
+                if (! $pfResp->successful()) {
+                    $msg = $pfResp->json('message') ?: 'Sbooking từ chối booking (mã ' . $pfResp->status() . ').';
+                    $this->addError('newBookingTime', $msg);
+                    return;
+                }
+            }
+        } catch (\Throwable $e) {
+            // Preflight network fail → cho phép tạo local, sync sẽ báo sau (không block bởi lỗi hạ tầng).
         }
 
         $bl = BookingLog::create([
@@ -2772,14 +2809,14 @@ new class extends Component
                                 //   MKT_BR/SA/BA/HL → self-owned (người nhập = sale luôn).
                                 if (\App\Models\Lead::isSelfOwnedSource($sourceGroup)) {
                                     $nextStep = ! auth()->user()->hasPermission('lead.distribute')
-                                        ? 'Lead sẽ tự động chia cho BẠN (' . auth()->user()->name . '). Không qua duyệt — nhập xong là xong.'
-                                        : 'Chuyển sang tab "2. Chia số" để chọn sale nhận (bắt buộc, không qua duyệt).';
+                                        ? 'Lead sẽ tự động chia cho bạn (' . auth()->user()->name . ').'
+                                        : 'Chuyển sang tab "2. Chia số" để chỉ định sale phụ trách.';
                                 } elseif ($sourceGroup === \App\Models\Lead::SOURCE_WI) {
-                                    $nextStep = 'Lead sẽ về kho team → chờ CM team sale chia cho nhân viên.';
+                                    $nextStep = 'Lead vào kho team, chờ CM sale phân công cho nhân viên phụ trách.';
                                 } elseif ($sourceGroup === \App\Models\Lead::SOURCE_MKT) {
-                                    $nextStep = 'Hệ thống tự chia Tele sale theo UPS list hôm nay.';
+                                    $nextStep = 'Hệ thống tự động chia Tele sale theo UPS list trong ngày.';
                                 } elseif (\App\Models\Lead::isCmAssignedSource($sourceGroup)) {
-                                    $nextStep = 'Lead vào kho, chờ CM chia tay cho Tư vấn viên cụ thể (không qua UPS).';
+                                    $nextStep = 'Lead vào kho, chờ CM phân công cho Tư vấn viên phụ trách.';
                                 }
                             @endphp
                             @if ($nextStep)
@@ -3221,7 +3258,7 @@ new class extends Component
                                         @foreach ($__svcOptions as $s)
                                             @php $__soon = stripos((string) $s->ten, '(sắp triển khai)') !== false; @endphp
                                             <option value="{{ $s->sbooking_id ?? $s->id }}" @disabled($__soon)>
-                                                {{ $s->ten }}@if($s->thoi_gian_phut) ({{ $s->thoi_gian_phut }}') @endif
+                                                {{ $s->ten }}@if($s->thoi_gian_phut) · {{ $s->thoi_gian_phut }} phút @endif
                                             </option>
                                         @endforeach
                                         @if ($__svcOptions->isEmpty())
@@ -3235,14 +3272,26 @@ new class extends Component
                             {{-- Cột 3: Thời gian — Khung giờ --}}
                             <div class="space-y-2">
                                 <div class="text-[11px] uppercase tracking-wider font-semibold text-ink/50">Thời gian</div>
+                                @php
+                                    // 2026-08-19: hiện số phút của khung + đánh dấu khung ngắn hơn DV đang chọn.
+                                    $__dvPhutSelected = 0;
+                                    if ($newBookingServiceId) {
+                                        $__dvPhutSelected = (int) (\App\Models\SbService::where('sbooking_id', $newBookingServiceId)->value('thoi_gian_phut') ?? 0);
+                                    }
+                                    $__toMin = fn ($t) => $t ? ((int) substr($t, 0, 2) * 60 + (int) substr($t, 3, 2)) : 0;
+                                @endphp
                                 <select wire:model.live="newBookingTime"
                                         @if(! $hasSlots) disabled @endif
                                         class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm {{ $hasSlots ? '' : 'bg-slate-100 text-ink/40' }}"
                                         title="{{ $slotHint }}">
                                     <option value="">— Khung giờ —</option>
                                     @foreach ($availableSlots as $slot)
-                                        <option value="{{ ($slot['id'] ?? '') . '|' . ($slot['gio_bat_dau'] ?? '') . '|' . ($slot['gio_ket_thuc'] ?? '') }}" @if(($slot['full'] ?? false)) disabled @endif>
-                                            {{ $slot['label'] ?? ($slot['gio_bat_dau'] ?? '') }}{{ ($slot['full'] ?? false) ? ' (đầy)' : '' }}
+                                        @php
+                                            $__slotPhut = max(0, $__toMin($slot['gio_ket_thuc'] ?? '') - $__toMin($slot['gio_bat_dau'] ?? ''));
+                                            $__shortForDv = $__dvPhutSelected > 0 && $__slotPhut > 0 && $__slotPhut < $__dvPhutSelected;
+                                        @endphp
+                                        <option value="{{ ($slot['id'] ?? '') . '|' . ($slot['gio_bat_dau'] ?? '') . '|' . ($slot['gio_ket_thuc'] ?? '') }}" @if(($slot['full'] ?? false) || $__shortForDv) disabled @endif>
+                                            {{ $slot['label'] ?? ($slot['gio_bat_dau'] ?? '') }}@if($__slotPhut) · {{ $__slotPhut }} phút @endif{{ ($slot['full'] ?? false) ? ' (đầy)' : '' }}@if($__shortForDv) ⚠️ ngắn hơn DV ({{ $__dvPhutSelected }}') @endif
                                         </option>
                                     @endforeach
                                 </select>
@@ -3250,7 +3299,18 @@ new class extends Component
                             </div>
                         </div>
                         {{-- 2026-08-05: CV auto lấy từ UPS Sale list (bucket A→B→C→OFF) của cơ sở booking.
-                             Không chọn tay. + Thêm CV → tăng slot, tự pick sale kế tiếp. --}}
+                             Không chọn tay. + Thêm CV → tăng slot, tự pick sale kế tiếp.
+                             2026-08-19: nguồn self-owned (SA/BA/MKT_BR/HL) — sale = người nhập lead,
+                               không cần UPS auto, hiển thị dòng cố định thay vì block chia UPS. --}}
+                        @if (\App\Models\Lead::isSelfOwnedSource($sourceGroup))
+                            <div class="space-y-1.5">
+                                <div class="text-xs font-semibold text-ink/60">Nhân viên tiếp đón</div>
+                                <div class="flex-1 border border-amber-300 bg-amber-50 rounded px-3 py-1.5 text-sm text-amber-900">
+                                    ✓ {{ auth()->user()->name }}
+                                    <span class="text-[10px] text-amber-700">(sale gốc — theo nguồn tự nhập)</span>
+                                </div>
+                            </div>
+                        @else
                         <div class="space-y-1.5">
                             <div class="text-xs font-semibold text-ink/60">
                                 Nhân viên tiếp đón (⚡ auto UPS)
@@ -3279,6 +3339,7 @@ new class extends Component
                                 <button type="button" wire:click="addBookingConsultantSlot" class="text-xs font-semibold text-gold-700 hover:text-gold-800">+ Thêm nhân viên tiếp đón (kế tiếp trong UPS)</button>
                             @endif
                         </div>
+                        @endif
                         {{-- 2026-08-09: 3 tick option 1 hàng ngang (bỏ Số liệu trình + Dung tích lọ — Số lượng đã gộp lên cột 2). --}}
                         <div class="flex flex-wrap items-center gap-6 pt-3 border-t border-slate-200">
                             <label class="inline-flex items-center gap-2 text-sm cursor-pointer select-none">
@@ -3874,7 +3935,18 @@ new class extends Component
                                                 $q->select('pool_unit_id')->from('org_pool_map')->whereIn('org_unit_id', $__scopeOrgIds);
                                             });
                                         }
-                                        $__atts = $__attsQ->orderBy('list_bucket')->orderBy('checkin_at')->get();
+                                        // 2026-08-19: MKT có list_bucket=NULL → MySQL sort NULL trước A → popup sai thứ tự.
+                                        // Ép order: A → B → C → OFF → MKT (NULL + is_mkt), rồi checkin_at asc.
+                                        $__atts = $__attsQ
+                                            ->orderByRaw("CASE
+                                                WHEN list_bucket = 'A' THEN 1
+                                                WHEN list_bucket = 'B' THEN 2
+                                                WHEN list_bucket = 'C' THEN 3
+                                                WHEN list_bucket = 'OFF' THEN 4
+                                                ELSE 5
+                                            END")
+                                            ->orderBy('checkin_at')
+                                            ->get();
                                     @endphp
                                     <div class="px-3 py-2 border-b border-gold-100 bg-gold-50 flex items-center justify-between">
                                         <div class="text-xs font-bold text-gold-800">UPS hôm nay · {{ $__atts->count() }} sale check-in</div>
@@ -3890,14 +3962,16 @@ new class extends Component
                                                     $__off  = (bool) $__a->is_off;
                                                     $__label = $__off ? 'Offlist' : ($__busy ? 'Đang tiếp đón' : 'Đang chờ');
                                                     $__cls   = $__off ? 'bg-rose-100 text-rose-700' : ($__busy ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700');
-                                                    $__bkc   = match ($__a->list_bucket) { 'A'=>'bg-blue-100 text-blue-800', 'B'=>'bg-teal-100 text-teal-800', 'C'=>'bg-slate-200 text-slate-800', 'OFF'=>'bg-rose-100 text-rose-800', 'MKT'=>'bg-amber-100 text-amber-800', default=>'bg-gold-100 text-gold-800' };
+                                                    // 2026-08-19: MKT có list_bucket=NULL → dùng is_mkt để hiện nhãn "MKT".
+                                                    $__bkLabel = $__a->list_bucket ?: ($__a->is_mkt ? 'MKT' : '—');
+                                                    $__bkc   = match ($__bkLabel) { 'A'=>'bg-blue-100 text-blue-800', 'B'=>'bg-teal-100 text-teal-800', 'C'=>'bg-slate-200 text-slate-800', 'OFF'=>'bg-rose-100 text-rose-800', 'MKT'=>'bg-amber-100 text-amber-800', default=>'bg-gold-100 text-gold-800' };
                                                 @endphp
                                                 <li class="px-3 py-2 flex items-center gap-2 hover:bg-gold-50/40">
                                                     <div class="flex-1 min-w-0">
                                                         <div class="text-sm font-semibold text-ink truncate">{{ $__a->user?->name ?? 'Sale #'.$__a->user_id }}</div>
                                                         <div class="text-[11px] text-ink/50">Check-in {{ optional($__a->checkin_at)?->setTimezone('Asia/Ho_Chi_Minh')->format('H:i') }}</div>
                                                     </div>
-                                                    <span class="text-[10px] font-bold px-1.5 py-0.5 rounded {{ $__bkc }}">{{ $__a->list_bucket }}</span>
+                                                    <span class="text-[10px] font-bold px-1.5 py-0.5 rounded {{ $__bkc }}">{{ $__bkLabel }}</span>
                                                     <span class="text-[11px] font-semibold px-2 py-0.5 rounded {{ $__cls }} whitespace-nowrap">{{ $__label }}</span>
                                                 </li>
                                             @endforeach

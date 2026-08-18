@@ -35,6 +35,7 @@ class RolePermissionSyncSeeder extends Seeder
             'ups.checkin', 'ups.confirm_daily', 'ups.override', 'ups.view',
             'user.manage',
             'recall.import', 'recall.view', 'recall.assign',
+            'lead.view_self_owned',
         ],
         'DM HCM' => [
             'contribution.set', 'field.approve', 'field.manage', 'lead.approve_source',
@@ -49,6 +50,7 @@ class RolePermissionSyncSeeder extends Seeder
             'rule.manage', 'service.manage', 'source.up.bdm', 'source.up.bod', 'source.up.wi', 'source.up.sa',
             'source.up.mkt_br', 'source.up.ba', 'source.up.mkt', 'user.manage',
             'recall.import', 'recall.view', 'recall.assign',
+            'lead.view_self_owned',
         ],
         'Manager' => [
             'lead.approve_source', 'lead.assign_direct',
@@ -59,6 +61,7 @@ class RolePermissionSyncSeeder extends Seeder
             'lead.view_pool', 'phase.close.booking', 'phase.close.call',
             'phase.close.checkin', 'phase.close.new',
             'report.view', 'source.up.sa', 'source.up.mkt_br',
+            'lead.view_self_owned',
         ],
         'Admin cơ sở' => [
             'lead.book_action', 'lead.create', 'lead.delete', 'lead.distribute',
@@ -85,6 +88,7 @@ class RolePermissionSyncSeeder extends Seeder
             'source.up.bdm', 'source.up.bod', 'source.up.wi', 'source.up.sa', 'source.up.mkt_br',
             // 2026-08-11: CM sale chia kho re-call.
             'recall.view', 'recall.assign',
+            'lead.view_self_owned',
         ],
         'CM Tele' => [
             'lead.assign_direct',
@@ -96,6 +100,7 @@ class RolePermissionSyncSeeder extends Seeder
             'payment.record', 'phase.close.call',
             'phase.close.new', 'report.view', 'source.up.ba',
             'recall.view', 'recall.assign',
+            'lead.view_self_owned',
         ],
         'Team Leader' => [
             'lead.approve_source', 'lead.create', 'lead.distribute',
@@ -105,6 +110,8 @@ class RolePermissionSyncSeeder extends Seeder
             'phase.close.booking', 'phase.close.call',
             'phase.close.new', 'report.view', 'source.up.sa', 'source.up.mkt_br', 'source.up.ba',
             'recall.view', 'recall.assign',
+            // 2026-08-19: TL thấy lead self-owned (MKT_BR/SA/BA/HL) của team mình.
+            'lead.view_self_owned',
         ],
         'Sale' => [
             'lead.consult', 'lead.create', 'lead.update',
@@ -116,6 +123,9 @@ class RolePermissionSyncSeeder extends Seeder
             'phase.close.call', 'phase.close.new', 'report.view', 'source.up.sa',
             // 2026-08-15: source.up.hl — Sale trực hotline nhận lead trực tiếp (self-owned).
             'source.up.mkt_br', 'source.up.ba', 'source.up.hl',
+            // 2026-08-19: Sale thấy lead self-owned của chính mình (creator/owner đã có nhánh riêng,
+            // perm này cho phép thấy trong scope org nếu là cùng team).
+            'lead.view_self_owned',
         ],
         'Team sale' => [
             'lead.consult', 'lead.update', 'lead.update_sale',

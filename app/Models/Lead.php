@@ -105,7 +105,7 @@ class Lead extends Model
         self::SOURCE_MKT => 'Marketing',
         self::SOURCE_MKT_BR => 'Marketing BR',
         self::SOURCE_BDM => 'BDM',
-        self::SOURCE_BOD => 'Ban lãnh đạo giới thiệu',
+        self::SOURCE_BOD => 'BOD',
         self::SOURCE_SA => 'Sale Appointment',
         self::SOURCE_BA => 'Booking Appointment',
         self::SOURCE_WI => 'Walk-in',
@@ -831,6 +831,24 @@ class Lead extends Model
      */
     public function scopeVisibleTo(Builder $query, User $user): Builder
     {
+        // 2026-08-19 — Gate nguồn self-owned (MKT_BR/SA/BA/HL): user KHÔNG có perm
+        //   `lead.view_self_owned` → chỉ được nhìn lead self-owned khi là creator/owner/
+        //   receiver/past-handler; các nhánh org_unit thông thường bị loại. Áp dụng ngoài
+        //   nhánh chính để không lộ qua whereIn(org_unit_id).
+        $canSeeSelfOwned = $user->hasPermission('lead.view_self_owned');
+        $selfOwnedSources = self::SOURCES_SELF_OWNED;
+        if (! $canSeeSelfOwned) {
+            $query->where(function (Builder $gate) use ($user, $selfOwnedSources) {
+                $gate->whereNotIn('source_group', $selfOwnedSources)
+                    ->orWhere(function (Builder $own) use ($user) {
+                        $own->where('imported_by', $user->id)
+                            ->orWhere('owner_id', $user->id)
+                            ->orWhere('receiver_id', $user->id)
+                            ->orWhereHas('ownershipHistory', fn ($hq) => $hq->where('user_id', $user->id));
+                    });
+            });
+        }
+
         return $query->where(function (Builder $q) use ($user) {
             $orgIds = $user->visibleOrgUnitIds();
             $memberOrgIds = $user->memberOrgUnitIds();
@@ -1058,7 +1076,10 @@ class Lead extends Model
         self::SOURCE_SA     => 3,
         self::SOURCE_BDM    => 1,
         self::SOURCE_BOD    => 1,
-        self::SOURCE_WI     => 1,
+        // 2026-08-19: WI (Walk-in) — khách tự đến quầy, KHÔNG cần Tele gọi. Người nhập
+        //   (lễ tân / admin cơ sở) tạo booking luôn → Admin duyệt gắn sale tiếp đón.
+        //   Bulk-open 1..3 giống SA/BA để 1 lần lưu chốt cả 3 phase, phase 2 auto-close rỗng.
+        self::SOURCE_WI     => 3,
     ];
 
     // ---- Relations ----

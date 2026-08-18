@@ -210,9 +210,9 @@ Màn dành cho **Admin hệ thống** (permission `ops.manage`), quản lý toà
 | Source | start_phase | Ghi chú |
 |--------|-------------|---------|
 | MKT | 1 | Trực Page nhập, đi full 5 phase tuần tự |
-| MKT_BR | 4 | Sale tự tạo + tự làm A→Z (phase 1-4 mở thông, lưu 1 phát chốt cả cụm) |
-| BA | 3 | Tele tự tạo + tự gọi, chuyển Sale ở phase 4 |
-| SA / BDM / BOD / Walk-in | 2 | QL Sale tự tạo + tự chia, chuyển Tele ở phase 3 |
+| MKT_BR / SA / BA / HL | 3 | Sale/Tele tự tạo + tự làm A→Z tới Booking (phase 1-3 mở thông, lưu 1 phát chốt cả cụm) |
+| BDM / BOD | 1 | QL Sale nhập, CM chia tay cho Tư vấn viên, đi full phase 1→2→3 |
+| Walk-in | 3 | Khách tự đến quầy — lễ tân/admin nhập lead + tạo booking, phase 2 Gọi auto-close rỗng, phase 3 Booking → Admin duyệt gắn sale tiếp đón |
 
 **Luật vận hành**:
 
