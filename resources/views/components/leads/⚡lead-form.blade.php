@@ -323,23 +323,46 @@ new class extends Component
         }
         // 2026-08-05: CV auto lấy từ UPS Sale list (pickGreet round-robin bucket A→B→C→OFF).
         // Số CV = số slot user thêm. UPS list rỗng → block; wrap-around khi all busy đã có trong pickGreet.
-        $poolFac = $this->trucPageFacility();
-        if (! $poolFac) {
-            session()->flash('cf_error', $this->isAdminLongevity()
-                ? 'Chọn "Cơ sở UPS (admin)" ở đầu khối Ghi nhận booking trước khi lưu.'
-                : 'Không xác định được cơ sở UPS của bạn — liên hệ Admin kiểm tra phân quyền (org_pool_map).');
-            return;
-        }
+        // 2026-08-18: SA/BA/MKT_BR — CV chính = owner (creator), KHÔNG auto UPS.
+        //   Rule "người tạo = tele + tiếp đón". Slot 2+ (nếu user thêm) mới auto UPS làm hỗ trợ.
+        $isSelfOwnedSrc = in_array($this->lead->source_group, [Lead::SOURCE_SA, Lead::SOURCE_BA, Lead::SOURCE_MKT_BR], true);
         $slotCount = max(1, count($this->newBookingConsultantIds));
-        $ups = app(\App\Services\Ups\UpsDispatcher::class);
         $pickedCvIds = [];
-        for ($i = 0; $i < $slotCount; $i++) {
-            $picked = $ups->pickGreet($poolFac->id);
-            if (! $picked) {
-                session()->flash('cf_error', 'Chưa có UPS list Sale hôm nay ở cơ sở "'.$poolFac->name.'" — không tạo được booking. Liên hệ Admin BO chốt UPS list trước.');
+
+        if ($isSelfOwnedSrc && $this->lead->owner_id) {
+            // Slot 1 = owner (creator). Slot 2+ vẫn auto UPS (nếu user thêm slot).
+            $pickedCvIds[] = (int) $this->lead->owner_id;
+            $remaining = $slotCount - 1;
+            if ($remaining > 0) {
+                $poolFac = $this->trucPageFacility();
+                if ($poolFac) {
+                    $ups = app(\App\Services\Ups\UpsDispatcher::class);
+                    for ($i = 0; $i < $remaining; $i++) {
+                        $picked = $ups->pickGreet($poolFac->id);
+                        if ($picked && ! in_array($picked->id, $pickedCvIds, true)) {
+                            $pickedCvIds[] = $picked->id;
+                        }
+                    }
+                }
+                // Nếu UPS không có sale hỗ trợ → chỉ có mỗi owner, không block.
+            }
+        } else {
+            $poolFac = $this->trucPageFacility();
+            if (! $poolFac) {
+                session()->flash('cf_error', $this->isAdminLongevity()
+                    ? 'Chọn "Cơ sở UPS (admin)" ở đầu khối Ghi nhận booking trước khi lưu.'
+                    : 'Không xác định được cơ sở UPS của bạn — liên hệ Admin kiểm tra phân quyền (org_pool_map).');
                 return;
             }
-            $pickedCvIds[] = $picked->id;
+            $ups = app(\App\Services\Ups\UpsDispatcher::class);
+            for ($i = 0; $i < $slotCount; $i++) {
+                $picked = $ups->pickGreet($poolFac->id);
+                if (! $picked) {
+                    session()->flash('cf_error', 'Chưa có UPS list Sale hôm nay ở cơ sở "'.$poolFac->name.'" — không tạo được booking. Liên hệ Admin BO chốt UPS list trước.');
+                    return;
+                }
+                $pickedCvIds[] = $picked->id;
+            }
         }
         $this->newBookingConsultantIds = $pickedCvIds;
         // Combine date + time thành scheduled_at + parse end time + khung_gio_id.

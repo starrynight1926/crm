@@ -105,6 +105,9 @@ class SbookingClient
             // Phase 6.25.C fix — gán CV1 làm sale + tiep_don_user để bên sbooking hiện nút "Đang tiếp đón".
             'sale_id'            => $sbookingSaleId,
             'tiep_don_user_id'   => $sbookingSaleId,
+            // 2026-08-18: nguoi_tao_id = sale gốc (creator) — sbooking modal Duyệt lock dropdown khi source
+            // ∈ SA/BA/MKT_BR (check theo `nguon` field). Trước để trống → admin không thấy creator → không lock.
+            'nguoi_tao_id'       => $sbookingSaleId,
         ];
 
         try {
