@@ -1467,26 +1467,46 @@ new class extends Component
         // Tele chốt phase 1 (phase.close.new) rồi phase 2 (phase.close.call).
         if ($this->lead?->exists && ! $this->getErrorBag()->isNotEmpty()) {
             $viewer = auth()->user();
-            // 2026-08-17: mở rộng range 1..3 — Trực Page save = auto-close phase 1, khỏi bấm nút "Kết thúc phase 1" riêng.
-            if ($prevPhase >= 1 && $prevPhase <= 3) {
-                $startPhase = (int) $this->lead->phase;
-                for ($p = $startPhase; $p <= $prevPhase; $p++) {
-                    $perm = Lead::CF_PHASE_CLOSE_PERM[$p] ?? null;
+            $lead = $this->lead;
+            // 2026-08-18: 2 nhánh — bulk mode vs sequential.
+            if ($lead->isBulkOpen() && $lead->startPhase() > 1) {
+                // Bulk (SA/BA/MKT_BR): chỉ close phase user vừa điền (prevPhase) nếu chưa closed.
+                if ($prevPhase >= $lead->openFrom() && $prevPhase <= $lead->startPhase()
+                    && ! $lead->phaseClosures->contains('phase', $prevPhase)) {
+                    $perm = Lead::CF_PHASE_CLOSE_PERM[$prevPhase] ?? null;
                     if ($perm && ! $viewer->hasPermission($perm)) {
-                        session()->flash('cf_error', "Thiếu quyền {$perm} để chốt phase {$p}.");
-                        break;
-                    }
-                    try {
-                        $this->lead->closePhase($p, $viewer, 'Auto-close khi bấm "Lưu thông tin"');
-                        $this->lead->refresh();
-                    } catch (\Throwable $e) {
-                        session()->flash('cf_error', 'Không tự chốt được phase ' . $p . ': ' . $e->getMessage());
-                        break;
+                        session()->flash('cf_error', "Thiếu quyền {$perm} để chốt phase {$prevPhase}.");
+                    } else {
+                        try {
+                            $lead->closePhase($prevPhase, $viewer, 'Auto-close khi bấm "Lưu thông tin"');
+                            $lead->refresh();
+                        } catch (\Throwable $e) {
+                            session()->flash('cf_error', 'Không tự chốt được phase ' . $prevPhase . ': ' . $e->getMessage());
+                        }
                     }
                 }
-                $this->lead->load('phaseClosures');
+            } else {
+                // 2026-08-17: sequential — MKT Trực Page save = auto-close phase 1..prevPhase tuần tự.
+                if ($prevPhase >= 1 && $prevPhase <= 3) {
+                    $startPhase = (int) $lead->phase;
+                    for ($p = $startPhase; $p <= $prevPhase; $p++) {
+                        $perm = Lead::CF_PHASE_CLOSE_PERM[$p] ?? null;
+                        if ($perm && ! $viewer->hasPermission($perm)) {
+                            session()->flash('cf_error', "Thiếu quyền {$perm} để chốt phase {$p}.");
+                            break;
+                        }
+                        try {
+                            $lead->closePhase($p, $viewer, 'Auto-close khi bấm "Lưu thông tin"');
+                            $lead->refresh();
+                        } catch (\Throwable $e) {
+                            session()->flash('cf_error', 'Không tự chốt được phase ' . $p . ': ' . $e->getMessage());
+                            break;
+                        }
+                    }
+                }
             }
-            $this->activePhase = 3;
+            $lead->load('phaseClosures');
+            $this->activePhase = $this->nextPhaseAfterSave($prevPhase, $lead);
         }
         session()->forget('go_to_booking_after_save');
     }
@@ -1746,10 +1766,12 @@ new class extends Component
         // 2026-08-05 fix: mọi user tạo lead xong đều mở edit lead vừa tạo (không lùi về /create).
         // Session flag go_to_booking_after_save chỉ nhảy phase 3 nếu user CÓ quyền đặt booking
         // (Sale/Admin). Trực page (chỉ up lead) → giữ phase mặc định (1), không đá vào Booking tab.
+        // 2026-08-18 fix: với bulk mode (SA/BA/MKT_BR startPhase>1) không jump thẳng 3 —
+        // advance từng tab (activePhase+1, cap startPhase) để user điền tuần tự 1→2→3.
         $params = ['lead' => $lead];
         if (session('go_to_booking_after_save')) {
             if ($user->hasPermission('lead.book_action')) {
-                $params['phase'] = 3;
+                $params['phase'] = $this->nextPhaseAfterSave($this->activePhase, $lead);
             }
             session()->forget('go_to_booking_after_save');
         }
@@ -1760,6 +1782,20 @@ new class extends Component
         } else {
             $this->redirectRoute('leads.create');
         }
+    }
+
+    /**
+     * 2026-08-18 — Tính tab kế tiếp sau khi user bấm "Lưu thông tin khách hàng".
+     *   - Bulk mode (SA/BA/MKT_BR): advance tuần tự từng tab trong [openFrom..startPhase].
+     *   - Sequential (MKT thuần): jump thẳng Booking (phase 3) như trước.
+     */
+    private function nextPhaseAfterSave(int $prevPhase, Lead $lead): int
+    {
+        if ($lead->isBulkOpen() && $lead->startPhase() > 1) {
+            $prev = max($prevPhase, $lead->openFrom());
+            return min($prev + 1, $lead->startPhase());
+        }
+        return 3;
     }
 
     private function updateLead(array $attributes, array $cleanCustom): void
@@ -1816,10 +1852,11 @@ new class extends Component
         // Phase 6.21g — ở lại form edit thay vì nhảy sang trang chi tiết.
         // 2026-08-09 fix: honor session flag "go_to_booking_after_save" như createLead — click "Lưu thông tin"
         // ở phase 2 (Gọi điện) phải nhảy sang phase 3 (Booking) nếu user có quyền đặt booking.
+        // 2026-08-18: dùng nextPhaseAfterSave để bulk mode advance từng tab, không jump thẳng 3.
         $params = ['lead' => $lead];
         if (session('go_to_booking_after_save')) {
             if ($user->hasPermission('lead.book_action')) {
-                $params['phase'] = 3;
+                $params['phase'] = $this->nextPhaseAfterSave($this->activePhase, $lead);
             }
             session()->forget('go_to_booking_after_save');
         }
