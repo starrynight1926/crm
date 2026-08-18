@@ -4041,14 +4041,19 @@ new class extends Component
                 </h2>
                 @if ($lead?->exists)
                     @php
-                        // Tele đang phụ trách: owner khi phase Booking. Sau khi handoff sang Sale
-                        // (phase=sale), tele cũ = closer phase 3.
-                        $_tele = $lead->pipeline_phase === \App\Models\Lead::PHASE_BOOKING
-                            ? $lead->owner
-                            : null;
-                        if (! $_tele) {
-                            $_teleId = $lead->phaseClosures->firstWhere('phase', 3)?->closed_by;
-                            $_tele = $_teleId ? \App\Models\User::find($_teleId) : null;
+                        // Tele đang phụ trách:
+                        //   - 2026-08-18: SA/BA/MKT_BR — creator = tele luôn (rule tự-tạo tự-làm A→Z).
+                        //   - Còn lại: owner khi phase Booking, hoặc closer phase 3 sau khi handoff Sale.
+                        if (in_array($lead->source_group, [\App\Models\Lead::SOURCE_SA, \App\Models\Lead::SOURCE_BA, \App\Models\Lead::SOURCE_MKT_BR], true)) {
+                            $_tele = $lead->owner ?? ($lead->imported_by ? \App\Models\User::find($lead->imported_by) : null);
+                        } else {
+                            $_tele = $lead->pipeline_phase === \App\Models\Lead::PHASE_BOOKING
+                                ? $lead->owner
+                                : null;
+                            if (! $_tele) {
+                                $_teleId = $lead->phaseClosures->firstWhere('phase', 3)?->closed_by;
+                                $_tele = $_teleId ? \App\Models\User::find($_teleId) : null;
+                            }
                         }
                     @endphp
                     <div class="mb-4 p-3 bg-slate-50 border border-gold-200 rounded-md text-sm">
