@@ -1041,6 +1041,13 @@ new class extends Component
                 if ($lead->owner_id === auth()->id() && $this->activePhase < 2 && $lead->canLogCall(auth()->user())) {
                     $this->activePhase = 2;
                 }
+                // 2026-08-19: lead còn trong kho (chưa có owner) + user có perm chia → default về
+                //   Phase 1 (Tạo mới & Chia số) để CM mở lead là thấy ngay panel chia.
+                //   Trước đây phase 1 đóng → activePhase = lead->phase (VD 2/3), Chia số ẩn (x-show=1),
+                //   CM không biết phải click tab 1 để chia.
+                if ($lead->owner_id === null && auth()->user()->hasPermission('lead.distribute')) {
+                    $this->activePhase = 1;
+                }
             }
             $this->isFirstVisit = (bool) $lead->is_first_visit;
         } else {
