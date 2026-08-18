@@ -2064,9 +2064,14 @@ new class extends Component
             for ($p = 1; $p <= 5; $p++) {
                 // 2026-08-02: phase 2 (Chia số) — user có quyền chia thì luôn edit được
                 // kể cả đã close (để chia lại nếu chia nhầm).
+                // 2026-08-18: owner + sale phụ (past owner) + admin/rollback được TẠO TIẾP
+                // call_log / booking_log dù phase đã closed — không rollback phase, chỉ append record.
+                //   canLogCall / canLogBooking đã check owner + historicalOwnership + rollback perm.
                 $lockedByClosure = in_array($p, $closedPhases, true)
                     && ! $canRollback
-                    && ! ($p === 2 && $canDistributeHere);
+                    && ! ($p === 2 && $canDistributeHere)
+                    && ! ($p === 3 && $canLogCallHere)     // phase Gọi điện: owner/sale phụ tạo tiếp
+                    && ! ($p === 4 && $canLogBookingHere); // phase Booking: owner/sale phụ tạo tiếp
                 $lockedByPerm = ($p === 3 && ! $canLogCallHere)
                     || ($p === 4 && ! $canLogBookingHere)
                     || ($p === 5 && ! $canCheckinHere);
