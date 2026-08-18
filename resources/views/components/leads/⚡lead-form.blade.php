@@ -1556,16 +1556,11 @@ new class extends Component
         ], ['name' => 'tên khách hàng', 'phone' => 'SĐT', 'received_date' => 'ngày', 'sourceGroup' => 'nhóm nguồn']);
 
         // B4 (2026-08-14) refactor — Self-owned sources = SELF_OWNED const (MKT_BR/SA/BA/HL).
-        // BOD đã chuyển sang CM-assigned (CM chia tay), không còn ở nhóm này.
-        // HL (Hotline): luôn auto-set owner=creator ("ai tạo lead = tele + tiếp đón"), bất kể distribute perm.
-        // MKT_BR / SA / BA: sale nhân viên không có distribute → auto-self; user có distribute (admin) phải chọn.
+        // 2026-08-18: đồng nhất cả 4 self-owned nguồn → LUÔN auto owner=creator, không phụ thuộc distribute perm.
+        //   Rule CM Sales: "SA/BA/MKT_BR — người tạo = owner + tele + tiếp đón". Admin tạo hộ = admin sở hữu.
+        //   Muốn chuyển cho sale khác → dùng flow "Sale hỗ trợ" ở modal Duyệt sbooking (không đổi owner gốc).
         if (Lead::isSelfOwnedSource($this->sourceGroup) && ! $this->personId) {
-            if ($this->sourceGroup === Lead::SOURCE_HL || ! auth()->user()->hasPermission('lead.distribute')) {
-                $this->personId = auth()->id();
-            } else {
-                $this->addError('personId', 'Nguồn ' . (Lead::SOURCE_GROUPS[$this->sourceGroup] ?? '') . ': bắt buộc chọn sale nhận.');
-                return;
-            }
+            $this->personId = auth()->id();
         }
 
         // Phase 6.25 — Auto-assign MKT từ MKT List UPS: chỉ chạy khi tạo mới, nguồn MKT, chưa chọn sale tay.
@@ -1578,7 +1573,7 @@ new class extends Component
         $mktAutoAssigned = false;
         // 2026-08-15 revert: WI KHÔNG qua UPS auto (khách tự tới, chỉ nhập liệu + check-in,
         // không gọi điện, không chia). WI đi thẳng pool_common để Admin cơ sở check-in sau.
-        if (! $this->lead?->exists && in_array($this->sourceGroup, [Lead::SOURCE_MKT, Lead::SOURCE_MKT_BR], true) && ! $this->personId) {
+        if (! $this->lead?->exists && in_array($this->sourceGroup, [Lead::SOURCE_MKT], true) && ! $this->personId) {
             $facility = $this->trucPageFacility();
             if (! $facility) {
                 $this->addError('mktMode', $this->isAdminLongevity()
@@ -2149,10 +2144,10 @@ new class extends Component
                 : CustomField::applicableTo($this->targetOrgUnit()),
             'facilities' => $facilities,
             // 2026-08-05: label kho đích cho radio "Chia về kho" (khi trực page up MKT).
-            'mktPoolTargetLabel' => (! $this->lead?->exists && in_array($this->sourceGroup, [Lead::SOURCE_MKT, Lead::SOURCE_MKT_BR], true))
+            'mktPoolTargetLabel' => (! $this->lead?->exists && in_array($this->sourceGroup, [Lead::SOURCE_MKT], true))
                 ? ($this->mktPoolTarget()?->name)
                 : null,
-            'mktFacilityName' => (! $this->lead?->exists && in_array($this->sourceGroup, [Lead::SOURCE_MKT, Lead::SOURCE_MKT_BR], true))
+            'mktFacilityName' => (! $this->lead?->exists && in_array($this->sourceGroup, [Lead::SOURCE_MKT], true))
                 ? ($this->trucPageFacility()?->name)
                 : null,
             // 2026-08-10: admin@longevity — cho phép chọn cơ sở tay vì không map cơ sở qua assignment.
@@ -2162,10 +2157,10 @@ new class extends Component
                     ->orderBy('name')->get(['id', 'name'])
                 : collect(),
             // 2026-08-05: preview sale kế trong MKT List — hiện trong banner "Tự động" để user theo dõi trước khi Lưu.
-            'mktNextSale' => (! $this->lead?->exists && in_array($this->sourceGroup, [Lead::SOURCE_MKT, Lead::SOURCE_MKT_BR], true) && $this->mktMode === 'auto' && ($__f = $this->trucPageFacility()))
+            'mktNextSale' => (! $this->lead?->exists && in_array($this->sourceGroup, [Lead::SOURCE_MKT], true) && $this->mktMode === 'auto' && ($__f = $this->trucPageFacility()))
                 ? $this->previewMktNextSale($__f->id)
                 : null,
-            'mktListToday' => (! $this->lead?->exists && in_array($this->sourceGroup, [Lead::SOURCE_MKT, Lead::SOURCE_MKT_BR], true) && ($__f2 = $this->trucPageFacility()))
+            'mktListToday' => (! $this->lead?->exists && in_array($this->sourceGroup, [Lead::SOURCE_MKT], true) && ($__f2 = $this->trucPageFacility()))
                 ? \App\Models\DailyAttendance::with('user')
                     ->where('facility_pool_unit_id', $__f2->id)
                     ->whereDate('work_date', now()->toDateString())
@@ -2175,7 +2170,7 @@ new class extends Component
             // 2026-08-05: user list cho radio "Thủ công" — filter theo data_scope của user hiện tại (visibleOrgUnitIds).
             //   Chỉ trả về khi user có perm lead.assign_direct. Giới hạn active + status active.
             'manualAssignableUsers' => (auth()->user()->hasPermission('lead.assign_direct')
-                && in_array($this->sourceGroup, [Lead::SOURCE_MKT, Lead::SOURCE_MKT_BR], true) && ! $this->lead?->exists)
+                && in_array($this->sourceGroup, [Lead::SOURCE_MKT], true) && ! $this->lead?->exists)
                 ? \App\Models\User::whereHas('assignments', fn ($q) => $q->whereIn('org_unit_id', auth()->user()->visibleOrgUnitIds() ?: [0]))
                     ->where('status', \App\Models\User::STATUS_ACTIVE)
                     ->orderBy('name')->get()
@@ -3751,7 +3746,7 @@ new class extends Component
 
                 {{-- 2026-08-05: nguồn MKT — radio Cách chia (hiện cho MỌI user, kể cả trực page không có perm distribute).
                      Option 'manual' chỉ hiện khi user có perm lead.assign_direct (CM sale/CM Tele/DM HCM/Manager/Admin). --}}
-                @if (in_array($sourceGroup, [\App\Models\Lead::SOURCE_MKT, \App\Models\Lead::SOURCE_MKT_BR], true) && ! $lead?->exists)
+                @if (in_array($sourceGroup, [\App\Models\Lead::SOURCE_MKT], true) && ! $lead?->exists)
                     @php $__canAssignDirect = auth()->user()->hasPermission('lead.assign_direct'); @endphp
                     <div class="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-md">
                         <label class="block text-sm font-bold text-amber-900 mb-2">🎯 Cách chia lead (nguồn Marketing) <span class="text-red-500">*</span></label>
@@ -3803,7 +3798,7 @@ new class extends Component
 
                 {{-- 2026-08-05: Form Phân phối — hiện cho user có perm chia HOẶC Trực Page up MKT
                      (Trực Page cần xem Check UPS + preview sale khi chọn Tự động, dù không có lead.distribute). --}}
-                @if ($canDistribute || (in_array($sourceGroup, [\App\Models\Lead::SOURCE_MKT, \App\Models\Lead::SOURCE_MKT_BR], true) && ! $lead?->exists))
+                @if ($canDistribute || (in_array($sourceGroup, [\App\Models\Lead::SOURCE_MKT], true) && ! $lead?->exists))
                     <div class="border-t border-gold-200 pt-5">
                         @php $upsBlockedHere = app(\App\Services\Ups\UpsGate::class)->isBlockedFor(auth()->user()); @endphp
                         <div class="flex items-center justify-between flex-wrap gap-2 mb-4">
@@ -3875,7 +3870,7 @@ new class extends Component
                         {{-- 2026-08-05: nguồn MKT create → chỉ hiện cascade+nhân viên khi mode=pool.
                              Auto dùng UPS list, manual dùng dropdown ở card. --}}
                         @php
-                            $__isMktCreate = (in_array($sourceGroup, [\App\Models\Lead::SOURCE_MKT, \App\Models\Lead::SOURCE_MKT_BR], true) && ! $lead?->exists);
+                            $__isMktCreate = (in_array($sourceGroup, [\App\Models\Lead::SOURCE_MKT], true) && ! $lead?->exists);
                             $__hideCascade = $__isMktCreate && $mktMode !== 'pool';
                             $__nextSaleObj = $mktNextSale['sale'] ?? null;
                             $__rotated = $mktNextSale['rotated'] ?? false;
@@ -4026,7 +4021,7 @@ new class extends Component
                         <p class="text-xs text-ink/50 mt-4 italic">Chọn xong bấm "Lưu thông tin" ở footer — hệ thống lưu lead + chia số ở phase 1 và chuyển sang phase 3 (Booking thăm khám).</p>
                         @endif {{-- close @if ($canDistribute) inner cascade+person section --}}
                     </div>
-                @elseif (! (in_array($sourceGroup, [\App\Models\Lead::SOURCE_MKT, \App\Models\Lead::SOURCE_MKT_BR], true) && ! $lead?->exists))
+                @elseif (! (in_array($sourceGroup, [\App\Models\Lead::SOURCE_MKT], true) && ! $lead?->exists))
                     <div class="border-t border-gold-200 pt-4 text-sm text-ink/60 italic">
                         Bạn không có quyền chia số. Người có quyền (CM cơ sở / CM team / Admin) sẽ chia lead này.
                     </div>
