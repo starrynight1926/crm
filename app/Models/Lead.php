@@ -672,18 +672,27 @@ class Lead extends Model
     {
         $importer = $this->importer;
 
-        // Chưa chia (kho chung + null owner) → không show booking/sale từ data cũ
-        // (receiver_id có thể còn giá trị residual sau khi thu hồi).
-        if ($this->owner_id === null && $this->pool_level === self::POOL_COMMON) {
-            return ['importer' => $importer, 'booking' => null, 'sale' => null];
+        // Chưa chia (còn trong kho, chưa có owner) → không show booking/sale từ data cũ.
+        // 2026-08-19: mở rộng cho MỌI pool_level (team + common), không chỉ common — trước
+        //   đây kho team + owner=null vẫn rơi vào nhánh dưới, receiver_id lỡ ghi = creator
+        //   (bug đã fix ở createLead) làm cột "Tele phụ trách" hiện tên người nhập lead.
+        // Ngoại lệ: nếu receiver_id === imported_by và owner=null → chắc chắn là data cũ pollute,
+        //   không phải tele thật; luôn coi là "chưa chia".
+        if ($this->owner_id === null) {
+            $polluted = $this->receiver_id && $this->receiver_id === $this->imported_by;
+            if ($this->pool_level !== self::POOL_PERSONAL || $polluted) {
+                return ['importer' => $importer, 'booking' => null, 'sale' => null];
+            }
         }
 
         // 2026-08-11 fix v2: 1 user vừa Tele vừa Sale tùy UPS bucket → không thể phân biệt
         // theo pipeline_phase. Slot Sale = CV1 nếu đã tạo booking, else owner (Sale UPS-assigned
         // vẫn hiện tên trong cột "Sale tiếp đón" ngay khi chia).
-        // Slot Tele = receiver (nếu khác owner) — người bàn giao trước, hoặc null nếu owner nhận trực tiếp.
+        // Slot Tele = receiver (nếu khác owner VÀ khác imported_by) — người bàn giao trước.
         $sale = $this->consultant1 ?? $this->owner;
-        $booking = ($this->receiver_id && $this->receiver_id !== $this->owner_id)
+        $booking = ($this->receiver_id
+                && $this->receiver_id !== $this->owner_id
+                && $this->receiver_id !== $this->imported_by)
             ? $this->receiver
             : null;
         return ['importer' => $importer, 'booking' => $booking, 'sale' => $sale];
