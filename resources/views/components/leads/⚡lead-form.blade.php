@@ -2449,30 +2449,34 @@ new class extends Component
                         // 2026-08-02: nguồn tự-up (BA/SA) — người tạo lead đóng luôn vai Tele.
                         //   - BA (Booking Appointment): Booker up + kiêm Tele.
                         //   - SA (Sale Appointment): Sale up + kiêm Tele + Sale.
-                        if (! $teleUserId && in_array($lead->source_group, [\App\Models\Lead::SOURCE_BA, \App\Models\Lead::SOURCE_SA], true)) {
+                        // 2026-08-18: mở rộng thêm MKT_BR — creator kiêm Tele.
+                        if (! $teleUserId && in_array($lead->source_group, [\App\Models\Lead::SOURCE_BA, \App\Models\Lead::SOURCE_SA, \App\Models\Lead::SOURCE_MKT_BR], true)) {
                             $teleUserId = $lead->imported_by ?: $lead->receiver_id;
                         }
                         $teleName = $teleUserId ? \App\Models\User::find($teleUserId)?->name : null;
-                        // 2026-08-09: Sale phụ trách tư vấn = CV1 của booking mới nhất (theo priority):
-                        //   1. booking_log.consultants position=1 (chuyên viên tư vấn được gán khi tạo booking)
-                        //   2. booking_log.sale_id / consultant_1_id (fallback nếu chưa có consultants pivot)
-                        //   3. phase 4 closed_by
-                        //   4. owner nếu lead ở pipeline sale
+                        // Sale phụ trách tư vấn:
+                        //   2026-08-18 override: SA/BA/MKT_BR → creator = TV (rule owner + tele + tiếp đón).
+                        //     Sale hỗ trợ (nếu admin thêm) nằm ở consultants slot 2, KHÔNG override slot chính.
+                        //   Nguồn khác priority cũ:
+                        //     1. booking_log.consultants position=1
+                        //     2. phase 4 closed_by
+                        //     3. owner nếu lead ở pipeline sale
                         $svUserId = null;
-                        $__latestBooking = $lead->bookingLogs()->latest('id')->first();
-                        if ($__latestBooking) {
-                            $__cv1 = $__latestBooking->consultants()->wherePivot('position', 1)->first();
-                            $svUserId = $__cv1?->id;
-                        }
-                        if (! $svUserId) {
-                            $svUserId = $lead->phaseClosures->firstWhere('phase', 4)?->closed_by;
-                        }
-                        if (! $svUserId && ($lead->pipeline_phase === 'sale' || (int) $lead->phase >= 4)) {
-                            $svUserId = $lead->owner_id;
-                        }
-                        // 2026-08-02: nguồn SA (Sale Appointment) — Sale up trực tiếp, đóng luôn vai Sale phụ trách.
-                        if (! $svUserId && $lead->source_group === \App\Models\Lead::SOURCE_SA) {
-                            $svUserId = $lead->imported_by ?: $lead->receiver_id;
+                        $__selfOwnedSrc = in_array($lead->source_group, [\App\Models\Lead::SOURCE_SA, \App\Models\Lead::SOURCE_BA, \App\Models\Lead::SOURCE_MKT_BR], true);
+                        if ($__selfOwnedSrc) {
+                            $svUserId = $lead->owner_id ?: ($lead->imported_by ?: $lead->receiver_id);
+                        } else {
+                            $__latestBooking = $lead->bookingLogs()->latest('id')->first();
+                            if ($__latestBooking) {
+                                $__cv1 = $__latestBooking->consultants()->wherePivot('position', 1)->first();
+                                $svUserId = $__cv1?->id;
+                            }
+                            if (! $svUserId) {
+                                $svUserId = $lead->phaseClosures->firstWhere('phase', 4)?->closed_by;
+                            }
+                            if (! $svUserId && ($lead->pipeline_phase === 'sale' || (int) $lead->phase >= 4)) {
+                                $svUserId = $lead->owner_id;
+                            }
                         }
                         $svName = $svUserId ? \App\Models\User::find($svUserId)?->name : null;
                     @endphp
