@@ -2560,3 +2560,35 @@ User đọc kỹ "Quy tắc PKD Update.docx" và chỉ ra job `RecallByColumnUpd
 - Edit render OK, giá trị `so_luong` preserved.
 - SCRM tests: RecallPolicyResolverTest 8/8 + Phase66FlowsTest 10/10 pass.
 - Sbooking suite: 108 test fail vì `BacSi::phongs()` undefined — issue **pre-existing** (không phải do patch này, không có model BacSi::phongs() relation trong code). Chưa fix.
+
+## 2026-08-18 — Booking mai/kia: Admin chọn tay Sale tiếp đón + banner nguồn/tele phụ trách
+
+### Bối cảnh
+- Modal Duyệt sbooking hiện chỉ hiện banner nguồn/creator cho SA/BA/MKT_BR. Với MKT/BDM/BOD/Walk-in không có info → admin duyệt mù.
+- `/api/sales-in-cosolow` gọi `SCRM /api/ups/sales-today` — chỉ trả sale UPS **hôm nay**. Booking mai/kia vẫn lấy list hôm nay → sai người (sale mai nghỉ vẫn hiện, sale mai đi làm chưa check-in thì mất).
+- Tele phụ trách phase 2 SCRM (`lead.owner_id` sau CM chia) chưa được snapshot sang booking → admin không biết ai đang care.
+
+### Sbooking (lara-sbooking)
+- **Migration `2026_08_18_160000_add_tele_owner_snapshot_to_booking`**: thêm `bookings.tele_owner_id` (unsigned bigint, no FK — user thuộc SCRM) + `tele_owner_name` (150). Snapshot lúc push, không phụ thuộc SCRM online.
+- **`Booking.php` fillable**: thêm 2 field mới.
+- **`BookingApiController::store` + `update`**: nhận + lưu `tele_owner_id/name` từ payload SCRM.
+- **`routes/web.php` `/api/sales-in-cosolow`**: nhận `?ngay_dat=YYYY-MM-DD`. Nếu `> today` → bỏ qua UPS, trả `User::where('co_so_id',X)->whereRaw('LOWER(chuc_danh) LIKE %sale%')`. Nếu = today → giữ nguyên (UPS list).
+- **`_approve_modal.blade.php`**: banner hiện cho MỌI source (amber cho SELF_OWNED SA/BA/MKT_BR, blue cho còn lại). Hiện 2 dòng: Người tạo + Tele phụ trách. `openApprove` nhận thêm `opts.ngay_dat` + `opts.tele_owner_name`, truyền `ngay_dat` vào `loadSales`.
+- **`bookings.blade.php` + `show.blade.php`**: `openApprove(...)` truyền thêm `tele_owner_name` + `ngay_dat`.
+
+### SCRM (lara-scrm)
+- **`SbookingClient::pushBooking`** payload thêm `tele_owner_id = lead.owner->id` + `tele_owner_name = lead.owner->name`. Resolve `$owner = User::find($lead->owner_id)` trước khi build payload.
+- **`SbookingClient::pushBookingUpdate`**: cũng gửi 2 field (khi CM đổi owner sau tạo). Resolve `$lead = $log->lead; $owner = ...`.
+
+### Verify
+- `php artisan migrate` OK. `Schema::getColumnListing('booking')` có 2 cột mới.
+- Fillable smoke: `new Booking([tele_owner_id/name])->tele_owner_id` = 999. OK.
+- `php -l` cả 5 file sửa: no syntax errors.
+- Route `api.sales-in-cosolow` still registered.
+- Chưa QA browser E2E tay (cần start MAMP + login) — user QA giúp: tạo lead MKT có owner phase 2 = tele X, book ngày mai → mở modal duyệt bên sbooking → verify banner "MKT · Người tạo: Y · Tele phụ trách: X" + dropdown Sale tiếp đón trả full sale cơ sở (không phụ thuộc UPS).
+
+### Không đụng
+- `/api/ups/sales-today` SCRM giữ nguyên — sbooking đã tự chuyển sang list all khi `ngay_dat > today`, không gọi endpoint này.
+- Rule auto-chia UPS khi khách `da_toi` — giữ nguyên (chưa chốt UPS → không chia, lead về pool team).
+- SCRM CM view chia tele phase 2 — đã có sẵn ở `⚡lead-form.blade.php:3813-3840` (radio Auto/Manual + `manualAssignUserId`).
+- Không mark busy khi Admin duyệt (đúng ý: busy chỉ khi sale tự tick quá tải).

@@ -76,6 +76,10 @@ class SbookingClient
             $sbookingSaleId = (int) $cv1->sbooking_user_id;
         }
 
+        // 2026-08-18 — Tele phụ trách phase 2 = lead.owner sau khi CM chia (nhóm MKT/BDM/BOD/Walk-in).
+        // Với SA/BA/MKT_BR: owner = creator, snapshot cũng OK (banner sbooking check nguon để phân biệt).
+        $owner = $lead->owner_id ? \App\Models\User::find($lead->owner_id) : null;
+
         $payload = [
             'so_dien_thoai' => $lead->phone,
             'ho_ten'        => $lead->name ?: 'Khách CRM',
@@ -108,6 +112,9 @@ class SbookingClient
             // 2026-08-18: nguoi_tao_id = sale gốc (creator) — sbooking modal Duyệt lock dropdown khi source
             // ∈ SA/BA/MKT_BR (check theo `nguon` field). Trước để trống → admin không thấy creator → không lock.
             'nguoi_tao_id'       => $sbookingSaleId,
+            // 2026-08-18: Tele phụ trách phase 2 SCRM — sbooking modal Duyệt hiện info "Tele: X" cho nguồn MKT/BDM/BOD/Walk-in.
+            'tele_owner_id'      => $owner?->id,
+            'tele_owner_name'    => $owner?->name,
         ];
 
         try {
@@ -181,9 +188,15 @@ class SbookingClient
             $sbookingDichVuId = SbService::where('ten', $log->service->name)->where('active', true)->value('sbooking_id');
         }
 
+        // 2026-08-18 — sync Tele phụ trách phase 2 khi CM đổi owner (lead re-assign).
+        $lead = $log->lead;
+        $owner = $lead && $lead->owner_id ? \App\Models\User::find($lead->owner_id) : null;
+
         $payload = [
             'ghi_chu'         => $log->note,
             'sale_id'         => $saleId,
+            'tele_owner_id'   => $owner?->id,
+            'tele_owner_name' => $owner?->name,
             'ngay_dat'        => $log->scheduled_at?->format('Y-m-d'),
             'gio_thuc_hien'   => $log->scheduled_at?->format('H:i:s'),
             'dich_vu_id'      => $sbookingDichVuId,
