@@ -2161,7 +2161,10 @@ new class extends Component
                 //   canLogCall / canLogBooking đã check owner + historicalOwnership + rollback perm.
                 $lockedByClosure = in_array($p, $closedPhases, true)
                     && ! $canRollback
-                    && ! ($p === 2 && $canDistributeHere)
+                    // 2026-08-19: chia số giờ nằm trong Phase 1 (Tạo mới & Chia số) — unlock p=1
+                    //   cho user có perm distribute để chia lại lead trong kho dù phase 1 đã đóng.
+                    //   Giữ p=2 để tương thích env cũ vẫn còn tách chia riêng.
+                    && ! (($p === 1 || $p === 2) && $canDistributeHere)
                     && ! ($p === 3 && $canLogCallHere)     // phase Gọi điện: owner/sale phụ tạo tiếp
                     && ! ($p === 4 && $canLogBookingHere); // phase Booking: owner/sale phụ tạo tiếp
                 $lockedByPerm = ($p === 3 && ! $canLogCallHere)
