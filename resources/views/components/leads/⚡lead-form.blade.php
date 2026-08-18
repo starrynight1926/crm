@@ -2083,9 +2083,16 @@ new class extends Component
         // Không được chia cho Admin / CM / TL (họ quản lý chia, không nhận lead).
         $saleRoles = ['Sale', 'Team sale', 'Team sale ĐN', 'Team Tele'];
         if ($this->lead?->exists) {
-            $allowRoles = $this->lead->pipeline_phase === Lead::PHASE_BOOKING
-                ? ['Team Tele']
-                : ['Sale', 'Team sale', 'Team sale ĐN'];
+            // 2026-08-19: lead còn trong kho (owner=null) → cho CM chọn cả Tele lẫn Sale
+            //   để linh hoạt theo nguồn (BDM/BOD/MKT_BR → chia tele trước; SA/BA → chia sale).
+            //   Đã chia rồi (owner != null) → giữ ràng buộc theo pipeline_phase như cũ.
+            if ($this->lead->owner_id === null) {
+                $allowRoles = $saleRoles;
+            } else {
+                $allowRoles = $this->lead->pipeline_phase === Lead::PHASE_BOOKING
+                    ? ['Team Tele']
+                    : ['Sale', 'Team sale', 'Team sale ĐN'];
+            }
         } else {
             $allowRoles = $saleRoles;
         }
