@@ -16,6 +16,57 @@ use Illuminate\Http\Request;
  */
 class UpsAttendanceController extends Controller
 {
+    /**
+     * 2026-08-18 — Sbooking gọi khi mở modal "Duyệt" để pick Sale tiếp đón.
+     * Trả list sale đang check-in UPS hôm nay ở facility tương ứng sbooking_co_so_id,
+     * scope bucket = A/B/C/OFF (Sale tiếp đón, khác MKT là Tele).
+     *
+     * Query: ?sbooking_co_so_id=X (số hoặc slug tương ứng Facility.sbooking_co_so_id)
+     * Response: { data: [{ email, name, list_bucket, is_busy }] }
+     */
+    public function salesToday(Request $request)
+    {
+        $sbCoSoId = (int) $request->query('sbooking_co_so_id');
+        if (! $sbCoSoId) return response()->json(['data' => []]);
+
+        // Facility datasource ↔ sbooking_co_so_id
+        $facility = \App\Models\Facility::where('sbooking_co_so_id', $sbCoSoId)
+            ->whereNull('parent_id')->first();
+        if (! $facility) return response()->json(['data' => [], 'reason' => 'Facility chưa map sbooking_co_so_id']);
+
+        // Match Facility → OrgUnit branch (depth=1) theo name tokens (VD "Đà Nẵng").
+        // Rồi org_pool_map lấy tất cả facility_pool_unit_id thuộc branch đó (1 branch có thể có nhiều cơ sở/địa chỉ).
+        $branch = \App\Models\OrgUnit::where('depth', 1)
+            ->where('name', 'like', '%' . $facility->name . '%')->first();
+        if (! $branch) return response()->json(['data' => [], 'reason' => 'Không tìm được OrgUnit branch theo Facility.name']);
+
+        $orgIds = \App\Models\OrgUnit::where('path', 'like', $branch->path . '%')->pluck('id');
+        $poolUnitIds = \Illuminate\Support\Facades\DB::table('org_pool_map')
+            ->whereIn('org_unit_id', $orgIds)
+            ->join('pool_units', 'pool_units.id', '=', 'org_pool_map.pool_unit_id')
+            ->where('pool_units.kind', 'facility')->where('pool_units.is_active', true)
+            ->pluck('pool_units.id')->unique()->all();
+
+        if (empty($poolUnitIds)) return response()->json(['data' => [], 'reason' => 'Branch chưa map pool_unit facility']);
+
+        $atts = DailyAttendance::with('user')
+            ->whereIn('facility_pool_unit_id', $poolUnitIds)
+            ->whereDate('work_date', now()->toDateString())
+            ->whereIn('list_bucket', ['A', 'B', 'C', 'OFF'])
+            ->where('dung_nhan_lead', false)
+            ->orderBy('list_bucket')->orderBy('checkin_at')
+            ->get();
+
+        $data = $atts->map(fn ($a) => [
+            'email'       => $a->user?->email,
+            'name'        => $a->user?->name,
+            'list_bucket' => $a->list_bucket,
+            'is_busy'     => (bool) $a->is_busy,
+        ])->filter(fn ($r) => ! empty($r['email']))->values();
+
+        return response()->json(['data' => $data, 'pool_unit_ids' => $poolUnitIds]);
+    }
+
     public function busy(Request $request)
     {
         return $this->toggle($request, true);
