@@ -345,6 +345,8 @@ new class extends Component
         // Combine date + time thành scheduled_at + parse end time + khung_gio_id.
         // 2026-08-03 fix bug #2: newBookingTime từ dropdown mã hoá "kg_id|start|end" (start/end HH:mm).
         // Legacy fallback: "HH:mm" hoặc "HH:mm-HH:mm" (không có kg_id).
+        // 2026-08-18: fix parse — scheduled_end_at PHẢI kèm date prefix (trước chỉ "HH:mm:00" invalid),
+        //   và HARD-GUARD: có newBookingTime mà scheduledAt null → throw error, không silent BL với null.
         $scheduledAt = null;
         $scheduledEndAt = null;
         $sbKhungGioId = null;
@@ -354,16 +356,21 @@ new class extends Component
                 [$kgId, $start, $end] = explode('|', $tm);
                 $sbKhungGioId = ((int) $kgId) ?: null;
                 if ($start) $scheduledAt = $this->newBookingDate . ' ' . $start . ':00';
-                if ($end)   $scheduledEndAt = $end . ':00';
+                if ($end)   $scheduledEndAt = $this->newBookingDate . ' ' . $end . ':00';
             } elseif (str_contains($tm, '-')) {
                 [$start, $end] = array_map('trim', explode('-', $tm, 2));
                 $scheduledAt = $this->newBookingDate . ' ' . $start . ':00';
-                $scheduledEndAt = strlen($end) === 5 ? $end . ':00' : $end;
+                $scheduledEndAt = $this->newBookingDate . ' ' . (strlen($end) === 5 ? $end . ':00' : $end);
             } else {
                 $scheduledAt = $this->newBookingDate . ' ' . $tm . ':00';
             }
         } elseif ($this->newBookingScheduledAt) {
             $scheduledAt = $this->newBookingScheduledAt;
+        }
+        // 2026-08-18 hard-guard: user chọn khung giờ nhưng parse thất bại → dừng lại.
+        if ($this->newBookingTime && ! $scheduledAt) {
+            $this->addError('newBookingTime', 'Không parse được khung giờ (value="' . $this->newBookingTime . '") — chọn lại khung giờ khác.');
+            return;
         }
         // 2026-08-03 fix bug #3: dropdown value = sb_services.sbooking_id (ưu tiên).
         // TRƯỚC ĐÂY check Service::find() trước → collision id (VD services.id=114 khác sb_services.sbooking_id=114) làm lưu sai service_id + mất sb_dich_vu_id.
