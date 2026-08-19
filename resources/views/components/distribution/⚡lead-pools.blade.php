@@ -419,13 +419,19 @@ new class extends Component
             'visibleTabs' => $this->visibleTabs(),
             'teamOptions' => \App\Models\PoolUnit::where('is_active', true)->where('depth', '>', 0)->orderBy('path')->get(),
             'poolOrgs' => $this->poolOrgs(),
-            'assignableUsers' => User::where('status', 'active')
-                // Chỉ user "nhận lead": role có lead.update NHƯNG không có quyền chia số
-                // → loại Team nhập lead (up lead), CM booking/sale, TL, DM, Admin, Manager (họ chia số, không nhận).
-                ->whereHas('assignments.role.permissions', fn ($q) => $q->where('key', 'lead.update'))
-                ->whereDoesntHave('assignments.role.permissions', fn ($q) => $q->whereIn('key', ['lead.distribute', 'lead.distribute_tele', 'lead.distribute_sale']))
-                ->orderBy('name')
-                ->get(),
+            'assignableUsers' => (function () use ($user) {
+                // 2026-08-19: siết scope — CM/TL/DM cơ sở chỉ chia được cho nhân sự trong
+                //   phạm vi org của mình. Trước đây trả full list nationwide → CM ĐN thấy sale HN/HCM.
+                //   Super admin (visibleOrgIds rỗng do scope tất cả) → không filter, thấy toàn công ty.
+                $visibleOrgIds = $user->visibleOrgUnitIds();
+                return User::where('status', 'active')
+                    ->whereHas('assignments.role.permissions', fn ($q) => $q->where('key', 'lead.update'))
+                    ->whereDoesntHave('assignments.role.permissions', fn ($q) => $q->whereIn('key', ['lead.distribute', 'lead.distribute_tele', 'lead.distribute_sale']))
+                    ->when($visibleOrgIds !== [], fn ($q) => $q->whereHas('assignments', fn ($qq) => $qq
+                        ->effective()->whereIn('org_unit_id', $visibleOrgIds)))
+                    ->orderBy('name')
+                    ->get();
+            })(),
             'canDistribute' => $user->hasAnyPermission(['lead.distribute', 'lead.distribute_to_team', 'lead.distribute_to_sale']),
             'canRecall' => $user->hasPermission('lead.recall'),
             'canPull' => $user->hasPermission('lead.pull_pool'),
