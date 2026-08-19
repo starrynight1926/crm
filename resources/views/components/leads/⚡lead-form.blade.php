@@ -425,13 +425,27 @@ new class extends Component
         //   trước nữa lại để end tràn khung — cả 2 đều sai; đúng UX là bắt user chọn khung đủ dài).
         if ($scheduledAt && $sbDichVuId) {
             $sbDv = \App\Models\SbService::where('sbooking_id', $sbDichVuId)->first();
-            $dvPhut = (int) ($sbDv?->thoi_gian_phut ?? 0);
+            // 2026-08-19: phút cần = phụ thuộc BS + loại DV, mirror bccPhutCanCuaBookingBS bên sbooking.
+            //   tu_van  → bs.phut_tu_van  (default 30)
+            //   kham_ls → bs.phut_kham_ls (default 5)
+            //   khác    → dv.thoi_gian_phut
+            //   Trước đây chỉ dùng dv.thoi_gian_phut → miss case tu_van/kham_ls → không block →
+            //   sbooking chỉ báo lúc Duyệt "BS cần X phút nhưng khung Y phút".
+            $sbBs = $this->newBookingSbBacSiId
+                ? \App\Models\SbBacSi::where('sbooking_id', $this->newBookingSbBacSiId)->first()
+                : null;
+            $dvPhut = match ($sbDv?->thuoc_nhom) {
+                'tu_van'  => (int) ($sbBs?->phut_tu_van ?? 30),
+                'kham_ls' => (int) ($sbBs?->phut_kham_ls ?? 5),
+                default   => (int) ($sbDv?->thoi_gian_phut ?? 0),
+            };
             if ($dvPhut > 0) {
                 $dvEnd = \Carbon\Carbon::parse($scheduledAt)->addMinutes($dvPhut)->format('Y-m-d H:i:s');
                 if ($scheduledEndAt && $dvEnd > $scheduledEndAt) {
                     $khungPhut = \Carbon\Carbon::parse($scheduledAt)->diffInMinutes(\Carbon\Carbon::parse($scheduledEndAt));
+                    $noiCan = $sbBs ? "bác sĩ \"{$sbBs->ten}\"" : "dịch vụ \"{$sbDv->ten}\"";
                     $this->addError('newBookingTime',
-                        "Khung giờ đã chọn chỉ {$khungPhut} phút — không đủ cho dịch vụ \"{$sbDv->ten}\" (cần {$dvPhut} phút). Chọn khung giờ dài hơn hoặc đổi dịch vụ.");
+                        "Khung giờ đã chọn chỉ {$khungPhut} phút — không đủ cho {$noiCan} (cần {$dvPhut} phút). Chọn khung giờ dài hơn, đổi bác sĩ hoặc đổi dịch vụ.");
                     return;
                 }
                 $scheduledEndAt = $dvEnd;
