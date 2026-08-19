@@ -422,7 +422,13 @@ new class extends Component
         return $logs->map(function ($bl) use ($syncLabels) {
             $ma = $bl->sbooking_booking_ma ?: ($bl->sbooking_booking_id ? '#' . $bl->sbooking_booking_id : 'chưa gửi');
             $when = $bl->scheduled_at?->format('d/m/Y H:i') ?? 'chưa đặt';
-            $type = $bl->type === 'tham_kham' ? '🩺 Thăm khám' : ($bl->type === 'dich_vu' ? '💆 Dịch vụ' : '-');
+            // 2026-08-19 Phase B: 3 loại.
+            $type = match ($bl->type) {
+                'kham_ls', 'tham_kham' => '🩺 Khám LS',
+                'tu_van'               => '💬 Tư vấn',
+                'dich_vu'              => '💆 Dịch vụ',
+                default                => '-',
+            };
             $fac = $bl->facility ? (($bl->facility->parent?->name ? $bl->facility->parent->name . ' › ' : '') . $bl->facility->name) : '-';
             $bs = $bl->doctor?->name ?: '-';
             $dv = $bl->service?->name ?: '-';

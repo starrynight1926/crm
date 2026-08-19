@@ -100,8 +100,13 @@ class SbookingClient
             'bac_si_id'     => $log->sb_bac_si_id,
             // 2026-08-03 fix bug #2: gửi khung_gio_id để sbooking chốt slot khớp form scrm.
             'khung_gio_id'  => $log->sb_khung_gio_id,
-            // Map scrm booking_logs.type (tham_kham/dich_vu) → sbooking enum (phong_kham/dich_vu).
-            'loai_dat_lich' => $log->type === 'dich_vu' ? 'dich_vu' : 'phong_kham',
+            // 2026-08-19 Phase B: map 3 loại — kham_ls/tu_van/dich_vu.
+            //   Legacy 'tham_kham' (booking_logs cũ trước Phase B) → 'kham_ls'.
+            'loai_dat_lich' => match ($log->type) {
+                'dich_vu' => 'dich_vu',
+                'tu_van'  => 'tu_van',
+                default   => 'kham_ls', // 'kham_ls' hoặc 'tham_kham' legacy
+            },
             // Phase C1.b rev 2026-08-01: nguon = source_group scrm (mkt/mkt_br/bdm/bod/sa/ba/wi), fallback 'SCRM'.
             'nguon'         => $lead->source_group ?: 'SCRM',
             'crm_khach_ma'  => $lead->code,

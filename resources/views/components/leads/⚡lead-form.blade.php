@@ -482,9 +482,13 @@ new class extends Component
         $bl = BookingLog::create([
             'lead_id'      => $this->lead->id,
             'user_id'      => $user->id,
-            // 2026-08-09: booking_logs.type vẫn giữ enum cũ (tham_kham|dich_vu) để tương thích sbooking.
-            //   Bucket UI 'kham_ls' + 'tu_van' đều map về 'tham_kham' (loai_dat_lich=phong_kham bên sbooking).
-            'type'         => $this->newBookingType === 'dich_vu' ? 'dich_vu' : 'tham_kham',
+            // 2026-08-19 Phase B: track 3 loại riêng (kham_ls / tu_van / dich_vu) — sbooking đã tách.
+            //   Legacy value 'tham_kham' vẫn hỗ trợ đọc (booking cũ), nhưng save mới dùng 'kham_ls'.
+            'type'         => match ($this->newBookingType) {
+                'dich_vu' => 'dich_vu',
+                'tu_van'  => 'tu_van',
+                default   => 'kham_ls', // kham_ls hoặc unset
+            },
             'status'       => $this->newBookingStatus,
             'scheduled_at' => $scheduledAt,
             'scheduled_end_at' => $scheduledEndAt,
@@ -981,7 +985,12 @@ new class extends Component
             $attrs = [
                 'lead_id' => $this->lead->id,
                 'user_id' => auth()->id(),
-                'type' => ($b['loai_dat_lich'] ?? 'phong_kham') === 'dich_vu' ? 'dich_vu' : 'tham_kham',
+                // 2026-08-19 Phase B: 3 loại — kham_ls/tu_van/dich_vu. Legacy 'phong_kham' → 'kham_ls'.
+                'type' => match ($b['loai_dat_lich'] ?? '') {
+                    'dich_vu' => 'dich_vu',
+                    'tu_van'  => 'tu_van',
+                    default   => 'kham_ls', // kham_ls hoặc phong_kham legacy
+                },
                 'status' => \App\Models\BookingLog::STATUS_CHO_XAC_NHAN,
                 'scheduled_at' => $scheduledAt,
                 'sb_phong_id' => $b['phong_id'] ?? null,
@@ -3476,8 +3485,13 @@ new class extends Component
                                     'huy_doi_lich' => 'bg-red-100 text-red-700',
                                     default => 'bg-amber-100 text-amber-700 ring-1 ring-amber-300',
                                 };
-                                $tb = $bl->type === 'tham_kham' ? 'bg-sky-100 text-sky-700' : ($bl->type === 'dich_vu' ? 'bg-fuchsia-100 text-fuchsia-700' : 'bg-slate-100 text-slate-500');
-                                $tlabel = $bl->type === 'tham_kham' ? '🩺 Thăm khám' : ($bl->type === 'dich_vu' ? '💆 Dịch vụ' : 'Chưa gán loại');
+                                // 2026-08-19 Phase B: 3 loại — kham_ls/tu_van/dich_vu; legacy 'tham_kham' fallback.
+                                [$tlabel, $tb] = match ($bl->type) {
+                                    'kham_ls', 'tham_kham' => ['🩺 Khám LS',  'bg-sky-100 text-sky-700'],
+                                    'tu_van'               => ['💬 Tư vấn',   'bg-indigo-100 text-indigo-700'],
+                                    'dich_vu'              => ['💆 Dịch vụ',  'bg-fuchsia-100 text-fuchsia-700'],
+                                    default                => ['Chưa gán loại', 'bg-slate-100 text-slate-500'],
+                                };
                                 $facLabel = $bl->facility ? (($bl->facility->parent?->name ? $bl->facility->parent->name . ' › ' : '') . $bl->facility->name) : '—';
                             @endphp
                             <div class="p-3 space-y-1.5">
