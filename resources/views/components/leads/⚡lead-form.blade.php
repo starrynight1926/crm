@@ -2081,7 +2081,11 @@ new class extends Component
         //     (mở rộng khi có role sale mới — bổ sung vào mảng $allowRoles).
         // 2026-08-05 fix: cả tạo mới lẫn update — chia số chỉ cho sale/tele.
         // Không được chia cho Admin / CM / TL (họ quản lý chia, không nhận lead).
-        $saleRoles = ['Sale', 'Team sale', 'Team sale ĐN', 'Team Tele'];
+        // 2026-08-19: exception cho ĐN — Kim Phấn (CM sale) + Bông (Team Leader kiêm CM sale)
+        //   trực tiếp nhận khách, cần xuất hiện trong dropdown như 1 sale bình thường.
+        //   Thêm 'CM sale' + 'Team Leader' vào allowRoles → mọi user có role này (kể cả HN/HCM)
+        //   đều tag được. Nếu cần lọc riêng theo cơ sở thì đã có visibleOrgIds ở trên.
+        $saleRoles = ['Sale', 'Team sale', 'Team sale ĐN', 'Team Tele', 'CM sale', 'Team Leader'];
         if ($this->lead?->exists) {
             // 2026-08-19: lead còn trong kho (owner=null) → cho CM chọn cả Tele lẫn Sale
             //   để linh hoạt theo nguồn (BDM/BOD/MKT_BR → chia tele trước; SA/BA → chia sale).
@@ -2089,9 +2093,10 @@ new class extends Component
             if ($this->lead->owner_id === null) {
                 $allowRoles = $saleRoles;
             } else {
+                // 2026-08-19: cùng lý do — CM sale + Team Leader (Bông/Phấn) cũng nhận lead trực tiếp.
                 $allowRoles = $this->lead->pipeline_phase === Lead::PHASE_BOOKING
-                    ? ['Team Tele']
-                    : ['Sale', 'Team sale', 'Team sale ĐN'];
+                    ? ['Team Tele', 'CM sale', 'Team Leader']
+                    : ['Sale', 'Team sale', 'Team sale ĐN', 'CM sale', 'Team Leader'];
             }
         } else {
             $allowRoles = $saleRoles;
