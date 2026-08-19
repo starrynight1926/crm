@@ -2097,14 +2097,19 @@ new class extends Component
             $allowRoles = $saleRoles;
         }
 
+        // 2026-08-19: cho phép user (kể cả CM/TL/DM) tự tag chính mình dù role không nằm
+        //   trong $allowRoles. Kim Phấn / Bông là CM/TL nên trước đây bị lọc — giờ tự tạo
+        //   lead phase 1 có thể chọn chính họ. Các user khác vẫn phải khớp role.
         return User::where('status', User::STATUS_ACTIVE)
             ->where(fn ($q) => $q
-                ->whereHas('assignments', fn ($qq) => $qq->effective()->when(
-                    $visibleOrgIds !== [],
-                    fn ($qqq) => $qqq->whereIn('org_unit_id', $visibleOrgIds)
-                ))
+                ->where(fn ($sub) => $sub
+                    ->whereHas('assignments', fn ($qq) => $qq->effective()->when(
+                        $visibleOrgIds !== [],
+                        fn ($qqq) => $qqq->whereIn('org_unit_id', $visibleOrgIds)
+                    ))
+                    ->when($allowRoles, fn ($rq) => $rq->whereHas('assignments.role', fn ($qq) => $qq->whereIn('name', $allowRoles)))
+                )
                 ->orWhere('id', auth()->id()))
-            ->when($allowRoles, fn ($q) => $q->whereHas('assignments.role', fn ($qq) => $qq->whereIn('name', $allowRoles)))
             ->orderBy('name')
             ->get();
     }
