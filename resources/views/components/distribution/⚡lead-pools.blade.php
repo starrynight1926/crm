@@ -17,12 +17,16 @@ new class extends Component
     // company | branch | facility | department | personal
     public string $tab = 'company';
 
+    // 2026-08-19: label khớp cascade "Công ty → Địa điểm → Cơ sở → Phòng ban".
+    //   DB kind: branch=Địa điểm, facility=Cơ sở, department=Phòng ban.
+    //   Trước đây label lệch 1 cấp: branch→"Chi nhánh", facility→"địa điểm", department→"cơ sở"
+    //   khiến lead pool_unit=facility (CS Lô 2 & 3) hiện ở tab "Kho địa điểm" gây nhầm lẫn.
     public const TAB_KINDS = [
-        'company'    => ['label' => 'Kho công ty',   'pool_level' => Lead::POOL_COMMON,   'pool_kind' => null],
-        'branch'     => ['label' => 'Kho Chi nhánh', 'pool_level' => Lead::POOL_TEAM,     'pool_kind' => 'branch'],
-        'facility'   => ['label' => 'Kho địa điểm',  'pool_level' => Lead::POOL_TEAM,     'pool_kind' => 'facility'],
-        'department' => ['label' => 'Kho cơ sở',     'pool_level' => Lead::POOL_TEAM,     'pool_kind' => 'department'],
-        'personal'   => ['label' => 'Kho cá nhân',   'pool_level' => Lead::POOL_PERSONAL, 'pool_kind' => null],
+        'company'    => ['label' => 'Kho công ty',    'pool_level' => Lead::POOL_COMMON,   'pool_kind' => null],
+        'branch'     => ['label' => 'Kho Địa điểm',   'pool_level' => Lead::POOL_TEAM,     'pool_kind' => 'branch'],
+        'facility'   => ['label' => 'Kho Cơ sở',      'pool_level' => Lead::POOL_TEAM,     'pool_kind' => 'facility'],
+        'department' => ['label' => 'Kho Phòng ban',  'pool_level' => Lead::POOL_TEAM,     'pool_kind' => 'department'],
+        'personal'   => ['label' => 'Kho cá nhân',    'pool_level' => Lead::POOL_PERSONAL, 'pool_kind' => null],
     ];
 
     public string $fOrgUnit = '';
@@ -436,7 +440,7 @@ new class extends Component
 <div>
     <div class="mb-6">
         <h1 class="text-3xl font-bold mb-1">Quản lý Kho Lead tập trung</h1>
-        <p class="text-sm text-ink/60">5 cấp kho: Công ty → Chi nhánh → Địa điểm → Cơ sở → Cá nhân. Sale cá nhân chỉ thấy kho của mình.</p>
+        <p class="text-sm text-ink/60">5 cấp kho: Công ty → Địa điểm → Cơ sở → Phòng ban → Cá nhân. Sale cá nhân chỉ thấy kho của mình.</p>
     </div>
 
     @if (session('status'))
