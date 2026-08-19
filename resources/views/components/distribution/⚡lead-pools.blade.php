@@ -651,9 +651,10 @@ new class extends Component
                                 @error('poolOrgId')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
                             @else
                                 @if ($tab !== 'personal' && $canDistribute && $this->canDistributeLead($lead))
-                                    <button wire:click="autoDistribute({{ $lead->id }})" class="text-xs font-semibold text-gold-700 border border-gold-300 hover:bg-gold-50 px-3 py-1.5 rounded-md" title="Chạy engine theo rule">Chia tự động</button>
+                                    {{-- 2026-08-19: thứ tự đồng bộ với bulk (thanh trên): Thủ công → Về kho → Tự động. --}}
                                     <button wire:click="startAssign({{ $lead->id }})" class="text-xs font-semibold text-ink/60 border border-gold-200 hover:bg-gold-50 px-3 py-1.5 rounded-md">Chia thủ công</button>
                                     <button wire:click="startPool({{ $lead->id }})" class="text-xs font-semibold text-ink/60 border border-gold-200 hover:bg-gold-50 px-3 py-1.5 rounded-md">Chia về kho</button>
+                                    <button wire:click="autoDistribute({{ $lead->id }})" class="text-xs font-semibold text-gold-700 border border-gold-300 hover:bg-gold-50 px-3 py-1.5 rounded-md" title="Chạy engine theo rule">Chia tự động</button>
                                 @endif
                                 {{-- 2026-08-13: bỏ nút "Kéo về tôi" — CM/DM phải chia rõ cho sale, không tự kéo. --}}
                                 @php
