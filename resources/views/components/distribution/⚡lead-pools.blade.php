@@ -62,6 +62,10 @@ new class extends Component
 
     public string $bulkOrgId = '';
 
+    // 2026-08-19: recall mode cho bulk assign — đồng bộ với confirmAssign per-lead.
+    public string $bulkRecallMode = 'default'; // default | custom | permanent
+    public ?int $bulkRecallDays = null;
+
     // Popup chi tiết
     public ?int $detailLeadId = null;
 
@@ -338,14 +342,30 @@ new class extends Component
 
         $user = User::findOrFail((int) $this->bulkUserId);
         $engine = app(DistributionEngine::class);
+        $canRecall = auth()->user()->hasPermission('lead.recall');
         $n = 0;
         foreach ($this->selectedLeads() as $lead) {
             abort_unless($this->canDistributeLead($lead), 403);
             $engine->manualAssign($lead, $user, auth()->id());
+            // 2026-08-19: áp recall mode cho từng lead — mirror confirmAssign per-lead.
+            if ($canRecall) {
+                $fresh = $lead->refresh();
+                $policyOrg = $fresh->org_unit_id ? \App\Models\OrgUnit::find($fresh->org_unit_id) : null;
+                $policy = $policyOrg ? \App\Services\RecallPolicyResolver::for($policyOrg) : null;
+                if ($this->bulkRecallMode === 'permanent' && ($policy === null || $policy['allow_permanent_assignment'])) {
+                    $fresh->update(['is_permanent_assignment' => true, 'recall_at' => null]);
+                } elseif ($this->bulkRecallMode === 'custom' && $this->bulkRecallDays > 0) {
+                    $fresh->update(['is_permanent_assignment' => false, 'recall_at' => now()->addDays($this->bulkRecallDays)]);
+                } elseif ($policy && $policy['recall_after_days']) {
+                    $fresh->update(['is_permanent_assignment' => false, 'recall_at' => now()->addDays($policy['recall_after_days'])]);
+                }
+            }
             $n++;
         }
         $this->bulkMode = '';
         $this->selected = [];
+        $this->bulkRecallMode = 'default';
+        $this->bulkRecallDays = null;
         session()->flash('status', "Đã chia tay {$n} lead cho {$user->name}.");
     }
 
@@ -497,12 +517,22 @@ new class extends Component
             <span class="text-sm font-semibold text-gold-800">Đã chọn {{ count($selected) }} lead</span>
             <div class="flex-1"></div>
             @if ($bulkMode === 'assign')
-                <select wire:model="bulkUserId" class="border border-gold-200 rounded-md px-2.5 py-1.5 text-sm bg-white">
+                <select wire:model="bulkUserId" class="border border-gold-200 rounded-md px-2 py-1.5 text-xs bg-white focus:outline-none focus:border-gold-500">
                     <option value="">— chọn sale —</option>
                     @foreach ($assignableUsers as $u)<option value="{{ $u->id }}">{{ $u->name }}</option>@endforeach
                 </select>
-                <button wire:click="bulkAssign" class="text-sm font-semibold bg-gold-600 text-white px-4 py-1.5 rounded-md">Xác nhận chia tay</button>
-                <button wire:click="$set('bulkMode', '')" class="text-sm text-ink/50">Hủy</button>
+                @if (auth()->user()->hasPermission('lead.recall'))
+                    <select wire:model.live="bulkRecallMode" class="border border-gold-200 rounded-md px-2 py-1.5 text-xs bg-white">
+                        <option value="default">Mặc định (theo Quy tắc)</option>
+                        <option value="custom">Thu hồi sau X ngày…</option>
+                        <option value="permanent">Chia vĩnh viễn</option>
+                    </select>
+                    @if ($bulkRecallMode === 'custom')
+                        <input type="number" min="1" wire:model="bulkRecallDays" placeholder="ngày" class="w-20 border border-gold-200 rounded-md px-2 py-1.5 text-xs">
+                    @endif
+                @endif
+                <button wire:click="bulkAssign" class="text-xs font-semibold bg-gold-600 text-white px-3 py-1.5 rounded-md">OK</button>
+                <button wire:click="$set('bulkMode', '')" class="text-xs text-ink/50">Hủy</button>
                 @error('bulkUserId')<p class="w-full text-xs text-red-600">{{ $message }}</p>@enderror
             @elseif ($bulkMode === 'pool')
                 <select wire:model="bulkOrgId" class="border border-gold-200 rounded-md px-2.5 py-1.5 text-sm bg-white">
