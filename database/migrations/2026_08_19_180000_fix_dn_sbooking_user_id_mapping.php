@@ -1,59 +1,76 @@
 <?php
 
 use Illuminate\Database\Migrations\Migration;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 
 /**
  * 2026-08-19 — Fix mapping scrm.users.sbooking_user_id cho team Đà Nẵng.
  *
  * Sự cố: admin sbooking bấm Duyệt booking → 422 "Sale không thuộc cơ sở
- *   của booking này". Root cause: SCRM push booking với tiep_don_user_id =
- *   sbooking_user_id sai (trỏ user co_so=1 HN thay vì co_so=3 DN).
- *
- *   Cụ thể:
+ *   của booking này". Root cause:
  *   - Kim Phấn (SCRM #9) sbooking_user_id = 19 (là user dupe cũ ở HN,
- *     giờ đã rename dn.cms01_legacy). Đúng phải là 47.
- *   - Các user DN còn lại (Bông + 7 sale) — sbooking_user_id NULL, chưa
- *     bao giờ map.
+ *     đã rename dn.cms01_legacy bên sbooking). Đúng phải trỏ tới user DN.
+ *   - Các user DN còn lại (Bông + 7 sale) — sbooking_user_id NULL, chưa map.
  *
- * Migration: đọc bảng users bên sbooking (qua raw query, cross-DB),
- *   match theo name+co_so_id=3, update scrm.users.sbooking_user_id.
- *   Idempotent: chỉ update nếu khác giá trị hiện tại.
+ * Cách tiếp cận (portable, không dùng cross-DB — cross-DB fail nếu DB user
+ * không có SELECT trên sbooking schema):
+ *   1. Chạy `sb:sync-users` → refresh bảng mirror sb_users qua HTTP API.
+ *   2. Cho các DN user cần fix: NULL-out scrm.users.sbooking_user_id để
+ *      auto-map trong sb:sync-users điền lại từ sb_users (match qua
+ *      email local-part == sb_users.username).
+ *   3. Chạy `sb:sync-users` lần nữa để auto-map.
  */
 return new class extends Migration
 {
+    private const DN_USER_EMAILS = [
+        'dn.cms01@longevity.com.vn',   // Kim Phấn
+        'dn.tl01@longevity.com.vn',    // Bông
+        'dn.sale01@longevity.com.vn',  // Ánh Nhung
+        'dn.sale02@longevity.com.vn',  // Hoàng Uyên
+        'dn.sale03@longevity.com.vn',  // Kim Hiếu
+        'dn.sale04@longevity.com.vn',  // Sử Trung Kiên
+        'dn.sale05@longevity.com.vn',  // Tường Vy
+        'dn.sale06@longevity.com.vn',  // An Hoà
+        'dn.sale07@longevity.com.vn',  // Mỹ Hạnh
+    ];
+
     public function up(): void
     {
-        $sbookingDb = env('SBOOKING_DB_NAME', 'lara-sbooking');
-        $mapped = [];
-        $skipped = [];
-
-        // Lấy danh sách user ĐN bên sbooking (co_so_id=3) — chỉ non-legacy.
-        $sbUsers = DB::select("SELECT id, name FROM `{$sbookingDb}`.users WHERE co_so_id = 3 AND username NOT LIKE '%_legacy'");
-        $byName = [];
-        foreach ($sbUsers as $r) $byName[trim($r->name)] = (int) $r->id;
-
-        // Match theo name; update mapping bên SCRM.
-        foreach (DB::table('users')->get(['id', 'name', 'sbooking_user_id']) as $u) {
-            $target = $byName[trim((string) $u->name)] ?? null;
-            if (! $target) continue;
-            if ((int) $u->sbooking_user_id === $target) continue;
-
-            DB::table('users')->where('id', $u->id)->update([
-                'sbooking_user_id' => $target,
-                'updated_at' => now(),
-            ]);
-            $mapped[] = "  {$u->name} (SCRM #{$u->id}): sbooking_user_id " . ($u->sbooking_user_id ?? 'NULL') . " → {$target}";
+        // Step 1: refresh sb_users mirror (không fatal nếu API fail).
+        try {
+            Artisan::call('sb:sync-users');
+            if (app()->runningInConsole()) echo "  → sb:sync-users pre-refresh OK\n";
+        } catch (\Throwable $e) {
+            if (app()->runningInConsole()) echo "  ! sb:sync-users pre-refresh fail: {$e->getMessage()} (tiếp tục)\n";
         }
 
+        // Step 2: clear mapping sai của DN user để auto-map fill lại đúng.
+        $cleared = DB::table('users')
+            ->whereIn('email', self::DN_USER_EMAILS)
+            ->update(['sbooking_user_id' => null, 'updated_at' => now()]);
+        if (app()->runningInConsole()) echo "  → cleared sbooking_user_id cho {$cleared} DN user\n";
+
+        // Step 3: chạy lại để auto-map (SyncUsersFromSbooking chỉ map khi NULL).
+        try {
+            Artisan::call('sb:sync-users');
+            $out = Artisan::output();
+            if (app()->runningInConsole()) echo "  → sb:sync-users re-map: " . trim($out) . "\n";
+        } catch (\Throwable $e) {
+            if (app()->runningInConsole()) echo "  ! sb:sync-users re-map fail: {$e->getMessage()}\n";
+        }
+
+        // Step 4: dump kết quả.
         if (app()->runningInConsole()) {
-            echo "  → Fix DN sbooking mapping: " . count($mapped) . " user updated\n";
-            foreach ($mapped as $m) echo $m . "\n";
+            foreach (self::DN_USER_EMAILS as $email) {
+                $u = DB::table('users')->where('email', $email)->first(['id', 'name', 'sbooking_user_id']);
+                if ($u) echo "    {$u->name} (SCRM #{$u->id}): sbooking_user_id = " . ($u->sbooking_user_id ?? 'NULL') . "\n";
+            }
         }
     }
 
     public function down(): void
     {
-        // No-op — không lưu snapshot cũ. Có thể chạy lại nếu cần.
+        // No-op — không lưu snapshot cũ.
     }
 };
