@@ -89,6 +89,8 @@ class RolePermissionSyncSeeder extends Seeder
             // 2026-08-11: CM sale chia kho re-call.
             'recall.view', 'recall.assign',
             'lead.view_self_owned',
+            // 2026-08-19: CM sale (Kim Phấn ĐN) trực tiếp tạo booking cho khách.
+            'lead.book_action',
         ],
         'CM Tele' => [
             'lead.assign_direct',
@@ -112,6 +114,8 @@ class RolePermissionSyncSeeder extends Seeder
             'recall.view', 'recall.assign',
             // 2026-08-19: TL thấy lead self-owned (MKT_BR/SA/BA/HL) của team mình.
             'lead.view_self_owned',
+            // 2026-08-19: TL (Bông ĐN) trực tiếp tạo booking cho khách.
+            'lead.book_action', 'lead.update_booking',
         ],
         'Sale' => [
             'lead.consult', 'lead.create', 'lead.update',
