@@ -80,14 +80,22 @@ new class extends Component
         $this->resetPage();
     }
 
-    /** 2026-08-05: tab hợp lệ cho user hiện tại (Sale cá nhân chỉ thấy 'personal'). */
+    /** 2026-08-05: tab hợp lệ cho user hiện tại (Sale cá nhân chỉ thấy 'personal').
+     *  2026-08-19: tab "Kho công ty" chỉ cho user có `report.view_all` (Admin công ty / DM / Manager cấp cao).
+     *    CM/TL/Admin cơ sở không thấy tab — họ chỉ quản lead trong scope cơ sở/team. */
     public function visibleTabs(): array
     {
         $user = auth()->user();
         $canDistribute = $user->hasAnyPermission(['lead.distribute', 'lead.distribute_to_team', 'lead.distribute_to_sale']);
-        if ($canDistribute) return self::TAB_KINDS;
-        // Sale cá nhân → chỉ Kho cá nhân.
-        return ['personal' => self::TAB_KINDS['personal']];
+        if (! $canDistribute) {
+            // Sale cá nhân → chỉ Kho cá nhân.
+            return ['personal' => self::TAB_KINDS['personal']];
+        }
+        $tabs = self::TAB_KINDS;
+        if (! $user->hasPermission('report.view_all')) {
+            unset($tabs['company']);
+        }
+        return $tabs;
     }
 
     public function updatedPerPage(): void
@@ -114,7 +122,10 @@ new class extends Component
         return Lead::query()
             ->where('pool_level', $spec['pool_level'])
             ->with(['owner', 'poolUnit'])
-            ->when($this->tab !== 'company', fn ($q) => $q->visibleTo($user))
+            // 2026-08-19: bỏ skip visibleTo cho tab company — trước đây skip khiến CM cơ sở
+            //   thấy TOÀN BỘ lead kho công ty nationwide. Giờ apply đồng nhất mọi tab.
+            //   scopeVisibleTo đã handle case pool_common qua perm lead.view_pool + org scope.
+            ->visibleTo($user)
             // Lọc theo kind của PoolUnit cho các tab team (branch/facility/department).
             ->when($spec['pool_kind'], fn ($q) => $q->whereHas('poolUnit', fn ($pq) => $pq->where('kind', $spec['pool_kind'])))
             ->when($this->tab === 'department' && $this->fOrgUnit, fn ($q) => $q->where('pool_unit_id', $this->fOrgUnit))
@@ -383,8 +394,8 @@ new class extends Component
             'leads' => $leads,
             'allPageSelected' => $pageIds !== [] && count(array_intersect($pageIds, $this->selected)) === count($pageIds),
             'counts' => collect(self::TAB_KINDS)->map(function ($spec, $key) use ($user) {
-                $q = Lead::where('pool_level', $spec['pool_level']);
-                if ($key !== 'company') $q->visibleTo($user);
+                // 2026-08-19: đồng bộ với query filtered() — visibleTo cho mọi tab.
+                $q = Lead::where('pool_level', $spec['pool_level'])->visibleTo($user);
                 if ($spec['pool_kind']) $q->whereHas('poolUnit', fn ($pq) => $pq->where('kind', $spec['pool_kind']));
                 return $q->count();
             })->all(),
