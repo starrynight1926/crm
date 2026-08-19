@@ -67,11 +67,24 @@ new class extends Component
         if (! auth()->user()->hasAnyPermission(['lead.distribute', 'lead.distribute_to_team', 'lead.distribute_to_sale'])) {
             $this->tab = 'personal';
         }
+        // 2026-08-19: coerce về tab hợp lệ nếu default 'company' không nằm trong visibleTabs
+        //   (CM/TL/Admin cơ sở ẩn tab công ty nhưng $tab='company' vẫn khiến query trả kho cty).
+        $this->coerceTabIfHidden();
+    }
+
+    private function coerceTabIfHidden(): void
+    {
+        $tabs = $this->visibleTabs();
+        if (! array_key_exists($this->tab, $tabs)) {
+            $this->tab = array_key_first($tabs) ?: 'personal';
+        }
     }
 
     public function switchTab(string $tab): void
     {
         abort_unless(array_key_exists($tab, self::TAB_KINDS), 422);
+        // 2026-08-19: chặn user request tab bị ẩn qua URL/frontend.
+        abort_unless(array_key_exists($tab, $this->visibleTabs()), 403, 'Bạn không có quyền xem tab này.');
         $this->tab = $tab;
         $this->assigningLeadId = null;
         $this->poolingLeadId = null;
