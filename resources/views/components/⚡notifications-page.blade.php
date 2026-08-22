@@ -41,7 +41,7 @@ new class extends Component
 };
 ?>
 
-<div>
+<div wire:poll.5s>
     <div class="flex items-center justify-between gap-3 flex-wrap mb-6">
         <div>
             <h1 class="text-2xl font-bold text-gold-700">Thông báo</h1>

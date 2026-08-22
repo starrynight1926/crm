@@ -463,7 +463,7 @@ new class extends Component
 };
 ?>
 
-<div>
+<div wire:poll.5s>
     <div class="mb-6">
         <h1 class="text-3xl font-bold mb-1">Quản lý Kho Lead tập trung</h1>
         <p class="text-sm text-ink/60">5 cấp kho: Công ty → Địa điểm → Cơ sở → Phòng ban → Cá nhân. Sale cá nhân chỉ thấy kho của mình.</p>

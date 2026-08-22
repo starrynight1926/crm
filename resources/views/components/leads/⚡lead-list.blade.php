@@ -682,7 +682,7 @@ new class extends Component
 };
 ?>
 
-<div>
+<div wire:poll.5s>
     @if (session('status'))
         <p class="mb-4 text-sm text-green-700 bg-green-50 border border-green-200 rounded-md px-4 py-2">{{ session('status') }}</p>
     @endif

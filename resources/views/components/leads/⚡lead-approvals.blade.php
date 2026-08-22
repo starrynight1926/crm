@@ -82,7 +82,7 @@ class extends Component {
     }
 }; ?>
 
-<div class="max-w-6xl mx-auto px-6 py-8">
+<div class="max-w-6xl mx-auto px-6 py-8" wire:poll.5s>
     <div class="mb-6">
         <h1 class="text-3xl font-bold mb-1">Duyệt Walk-in (WI)</h1>
         <p class="text-sm text-ink/60">Danh sách lead nhóm Walk-in (WI) đang chờ CM duyệt.</p>
