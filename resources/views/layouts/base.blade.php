@@ -42,7 +42,9 @@
 </head>
 <body class="bg-cream text-ink font-sans antialiased min-h-screen">
     @yield('body')
-    @auth<livewire:support-bubble />@endauth
+    @auth
+        @livewire('support-bubble')
+    @endauth
     @livewireScripts
 </body>
 </html>

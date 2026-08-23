@@ -194,6 +194,7 @@
                         @if (auth()->user()->hasPermission('connection.manage'))
                             <a href="{{ route('sources.index') }}" class="block px-4 py-2 hover:bg-gold-50">Kết nối nguồn lead</a>
                         @endif
+                        <a href="{{ route('support.index') }}" class="block px-4 py-2 hover:bg-gold-50">💬 Hỗ trợ / Phản hồi</a>
                         <form method="POST" action="{{ route('logout') }}">
                             @csrf
                             <button type="submit" class="w-full text-left px-4 py-2 text-red-700 hover:bg-red-50">Đăng xuất</button>
