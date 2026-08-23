@@ -41,7 +41,7 @@
     $sections = [
         '1. Authentication & Phân quyền' => [
             'Login với tài khoản <code>admin@…</code> mật khẩu <code>59ntn</code>',
-            'Login user <code>hn.sale04@longevity.com.vn</code> mật khẩu <code>59@ntn</code>',
+            'Login user <code>hn.sale04@longevity.com.vn</code> mật khẩu <code>&lt;pass-hn&gt;</code>',
             'Sale không có <code>lead.distribute_sale</code> mở lead đã có owner khác → không thấy nút chia/chuyển kho',
             'User chỉ là CV (gán vào <code>booking_log_consultants</code>), không có role cao → mở lead thấy banner amber, mọi form khách readonly, chỉ mở phần bình luận',
         ],

@@ -54,8 +54,8 @@ Password mặc định theo prefix email (xem `App\Support\DefaultPassword`):
 | Email prefix | Mật khẩu | Cơ sở |
 |---|---|---|
 | `admin@...` | `59ntn` | Superadmin |
-| `hn.*` / `admin.hn` | `59@ntn` | HN (59 Ngô Thì Nhậm) |
-| `hcm.*` / `admin.hcm` | `207@nvt` | HCM (207 Nguyễn Văn Thủ) |
+| `hn.*` / `admin.hn` | `<pass-hn>` | HN (59 Ngô Thì Nhậm) |
+| `hcm.*` / `admin.hcm` | `<pass-hcm>` | HCM (207 Nguyễn Văn Thủ) |
 | `dn.*` / `admin.dn` | `23@tdn` | ĐN (Lô 2+3 Trần Đăng Ninh) |
 | `vh.*` | `59ntn` | Vận hành |
 

@@ -13,6 +13,13 @@ Route::view('/huong-dan', 'guide')->name('guide');
 Route::view('/qa', 'qa-checklist')->name('qa');
 Route::view('/changelog', 'changelog')->name('changelog');
 
+// Hỗ trợ / phản hồi — list + detail cần login (dùng layouts.app). Bubble gửi ticket
+// khả dụng mọi trang qua base layout (guest submit qua bubble → hiển thị toast).
+Route::middleware('auth')->group(function () {
+    Route::view('/ho-tro', 'support.index')->name('support.index');
+    Route::get('/ho-tro/{ticketId}', fn (int $ticketId) => view('support.show', ['ticketId' => $ticketId]))->whereNumber('ticketId')->name('support.show');
+});
+
 Route::get('/', fn () => redirect()->route('dashboard'));
 
 Route::middleware('guest')->group(function () {

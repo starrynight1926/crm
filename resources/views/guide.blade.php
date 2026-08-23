@@ -61,12 +61,14 @@
         ],
         'cm' => [
             'icon' => '🎯',
-            'name' => 'CM / Team Leader',
-            'summary' => 'Sale + up nguồn admin',
-            'intro' => 'Vai trò như một sale bình thường: up được nguồn <strong>MKT BR, SA</strong>. Ngoài ra được up thêm các nguồn: <strong>BDM · BOD · WI</strong>.',
+            'name' => 'CM / DM / Team Leader',
+            'summary' => 'Sale + chia số + up nguồn admin',
+            'intro' => 'Nhóm quản lý team: vừa làm sale, vừa <strong>chia số + duyệt số từ kho</strong> cho một số nguồn, kiểm tra UPS list hằng ngày.',
             'steps' => [
                 ['Nghiệp vụ sale', 'Chăm khách như sale thường: up nguồn <strong>MKT BR, SA</strong>, nhận lead qua UPS, đặt booking, tiếp đón, thu tiền.'],
                 ['Up nguồn admin', 'Ngoài MKT BR + SA, được up thêm <strong>BDM · BOD · WI</strong>. Dropdown nguồn hiện đủ.'],
+                ['Chia số + duyệt số từ kho', 'Menu <strong>Chia số → Kho lead tập trung</strong> — chia + duyệt lead cho team. Chỉ áp dụng <strong>một số nguồn</strong> thuộc phạm vi (không phải toàn bộ).'],
+                ['Kiểm tra UPS', 'Xem UPS list đầu ngày. Nếu thiếu/thừa/sai bucket → <strong>báo Admin điều chỉnh</strong>, CM/DM không tự sửa UPS.'],
                 ['Nhân viên Tele sale chia theo UPS', 'Nhân viên <strong>Tele sale</strong> được chia theo <strong>list UPS ngày hôm đó</strong>.'],
                 ['Thu hồi khả nghi', 'Sale up lead SA/BA khả nghi → vào <strong>Chia số → Kho lead</strong> → bấm <strong>Thu hồi</strong> đưa lead về kho team.'],
             ],
@@ -99,11 +101,13 @@
         ],
         'admin' => [
             'icon' => '⚙️',
-            'name' => 'DM / Admin',
-            'summary' => 'Toàn quyền',
-            'intro' => 'Toàn quyền cấu hình hệ thống, quản nhân sự, phân quyền, dịch vụ, rule chia số, sync sbooking, báo cáo.',
+            'name' => 'Admin',
+            'summary' => 'Cấu hình hệ thống',
+            'intro' => 'Cấu hình hệ thống, quản nhân sự, phân quyền, dịch vụ, rule chia số, sync sbooking, báo cáo. Điều chỉnh UPS khi DM báo cáo. <strong>Không trực tiếp chia số theo nghiệp vụ</strong> — việc đó là của DM/CM.',
             'steps' => [
-                ['Toàn quyền', 'Truy cập mọi menu, mọi thao tác. Không có giới hạn scope.'],
+                ['Cấu hình', 'Truy cập <strong>Thiết lập</strong> — nhân sự, phân quyền, cơ sở, dịch vụ, rule chia số, kết nối sbooking.'],
+                ['Điều chỉnh UPS', 'Khi DM báo có bất thường trên UPS list → chỉnh lại check-in/bucket cho đúng.'],
+                ['Báo cáo & sync', 'Xem báo cáo funnel/doanh số. Chạy sync sbooking khi cần.'],
             ],
         ],
         'observer' => [
@@ -148,17 +152,17 @@
         </h2>
         <div class="bg-white border border-gold-200 rounded-xl shadow-sm p-3">
             <button type="button" @click="zoom = true" class="block w-full">
-                <img src="{{ asset('images/flow-details.png') }}" alt="Sơ đồ luồng hệ thống Data Source"
+                <img src="{{ asset('images/flow_full.PNG') }}" alt="Sơ đồ luồng hệ thống Data Source"
                      class="w-full h-auto rounded-lg cursor-zoom-in hover:opacity-95 transition"
                      onerror="this.style.display='none'; this.nextElementSibling.style.display='block'">
-                <div style="display:none" class="text-center text-ink/40 text-sm py-8">(Chưa có sơ đồ luồng — cần tạo ảnh <code>public/images/flow-details.png</code>)</div>
+                <div style="display:none" class="text-center text-ink/40 text-sm py-8">(Chưa có sơ đồ luồng — cần tạo ảnh <code>public/images/flow_full.PNG</code>)</div>
             </button>
             <p class="text-xs text-ink/50 mt-2 text-center">Nhấn vào ảnh để xem full-size</p>
         </div>
 
         <div x-show="zoom" x-cloak @click="zoom = false" @keydown.escape.window="zoom = false"
              class="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 cursor-zoom-out">
-            <img src="{{ asset('images/flow-details.png') }}" alt="Sơ đồ luồng" class="max-w-full max-h-full rounded-lg shadow-2xl">
+            <img src="{{ asset('images/flow_full.PNG') }}" alt="Sơ đồ luồng" class="max-w-full max-h-full rounded-lg shadow-2xl">
         </div>
     </section>
 

@@ -11,7 +11,7 @@ Format: mỗi lần chốt tạo 1 block `## vX.Y.Z — YYYY-MM-DD` + bullets. M
 - Thêm bộ **Changelog / Version** (trang `/changelog` + chip version ở footer).
 - Login: gộp 2 nút thành 1 nút "Chuyển sang Booking App" + gạch phân tách; nút Hướng dẫn đưa lên trên.
 - Bổ sung LPT (Lê Thị Phương Tự) là HC Team Ashley HCM (chuyển từ Trợ lý kinh doanh).
-- Sửa `DefaultPassword` map theo cơ sở qua assignment (không dựa email prefix); ĐN đổi hằng `l23@tdn`.
+- Sửa `DefaultPassword` map theo cơ sở qua assignment (không dựa email prefix); ĐN đổi hằng `<pass-dn>`.
 - Migration reset password toàn bộ user theo cơ sở.
 
 ## v0.13.0 — 2026-08-12

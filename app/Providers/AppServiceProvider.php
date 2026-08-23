@@ -2,8 +2,12 @@
 
 namespace App\Providers;
 
+use App\Support\PublicLog;
+use Illuminate\Auth\Events\Login;
+use Illuminate\Auth\Events\Logout;
 use Illuminate\Console\Events\CommandStarting;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Cookie;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
 
@@ -40,6 +44,29 @@ class AppServiceProvider extends ServiceProvider
         // 2026-08-04: `migrate:fresh` mặc định chỉ drop connection default (mysql).
         // PgSQL còn giữ `raw_leads` + `custom_fields` — không wipe thì bảng cũ chặn migration
         // pgsql chạy lại. Hook để hỏi trước khi reset PG.
+        // Public log: đăng nhập / đăng xuất + set/xóa cookie gate `scrm_authed`.
+        Event::listen(Login::class, function (Login $e) {
+            PublicLog::write('đăng nhập');
+            // Cookie gate /logs.md — CHỈ set cho username 'admin' (super-admin duy nhất).
+            if (($e->user->username ?? null) === 'admin') {
+                Cookie::queue('scrm_authed', '1', 60 * 24 * 365);
+            }
+        });
+        Event::listen(Logout::class, function (Logout $e) {
+            PublicLog::write('đăng xuất');
+            if (($e->user?->username ?? null) === 'admin') {
+                Cookie::queue(Cookie::forget('scrm_authed'));
+            }
+        });
+
+        // Public log: lead create/update/delete.
+        \App\Models\Lead::created(function ($lead) {
+            PublicLog::write('tạo lead', "lead #{$lead->id} " . ($lead->name ?? '(chưa tên)'));
+        });
+        \App\Models\Lead::deleted(function ($lead) {
+            PublicLog::write('xóa lead', "lead #{$lead->id} " . ($lead->name ?? ''));
+        });
+
         Event::listen(CommandStarting::class, function (CommandStarting $event) {
             if ($event->command !== 'migrate:fresh') {
                 return;

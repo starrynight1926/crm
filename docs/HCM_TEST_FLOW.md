@@ -6,13 +6,13 @@
 
 | Vai trò | Data Source email | Booking username | Pass Data Source | Pass Booking |
 |---|---|---|---|---|
-| Team trực page (up MKT/BDM/Cold) | test.hcm.trucpage@longevity.com.vn | test.hcm.trucpage | 123456 | 207@nvt |
-| CM booking (chia kho booking) | test.hcm.cmbooking@longevity.com.vn | test.hcm.cmbooking | 123456 | 207@nvt |
-| Team booking 1 (đặt lịch) | test.hcm.booking1@longevity.com.vn | test.hcm.booking1 | 123456 | 207@nvt |
-| Team booking 2 | test.hcm.booking2@longevity.com.vn | test.hcm.booking2 | 123456 | 207@nvt |
-| CM sale (chia kho sale) | test.hcm.cmsale@longevity.com.vn | test.hcm.cmsale | 123456 | 207@nvt |
-| Sale 1 (chăm sóc) | test.hcm.sale1@longevity.com.vn | test.hcm.sale1 | 123456 | 207@nvt |
-| Sale 2 | test.hcm.sale2@longevity.com.vn | test.hcm.sale2 | 123456 | 207@nvt |
+| Team trực page (up MKT/BDM/Cold) | test.hcm.trucpage@longevity.com.vn | test.hcm.trucpage | 123456 | <pass-hcm> |
+| CM booking (chia kho booking) | test.hcm.cmbooking@longevity.com.vn | test.hcm.cmbooking | 123456 | <pass-hcm> |
+| Team booking 1 (đặt lịch) | test.hcm.booking1@longevity.com.vn | test.hcm.booking1 | 123456 | <pass-hcm> |
+| Team booking 2 | test.hcm.booking2@longevity.com.vn | test.hcm.booking2 | 123456 | <pass-hcm> |
+| CM sale (chia kho sale) | test.hcm.cmsale@longevity.com.vn | test.hcm.cmsale | 123456 | <pass-hcm> |
+| Sale 1 (chăm sóc) | test.hcm.sale1@longevity.com.vn | test.hcm.sale1 | 123456 | <pass-hcm> |
+| Sale 2 | test.hcm.sale2@longevity.com.vn | test.hcm.sale2 | 123456 | <pass-hcm> |
 
 **Ghi chú common**: Cơ sở HCM slug `207nvt`. Trước mỗi test, mở 2 tab: Data Source (1999) + Booking (1995).
 
@@ -43,7 +43,7 @@
 - [ ] Bấm **Đặt booking → 🏥 Đặt phòng khám**. → Mở tab mới sang Booking `/207nvt/tao-moi?...&khach_ma=KH-XXX-MKT&return_url=...`.
 
 ### T1.4 — Bên Booking: đăng nhập + tạo lịch
-- [ ] Bên Booking: đang chưa login → redirect login. Đăng nhập `test.hcm.booking1` / `207@nvt` → vào form tạo mới.
+- [ ] Bên Booking: đang chưa login → redirect login. Đăng nhập `test.hcm.booking1` / `<pass-hcm>` → vào form tạo mới.
 - [ ] Form đã prefill Họ tên + SĐT (từ URL). Trường ẩn `khach_ma` đã set (verify qua devtools: `document.querySelector('input[name=khach_ma]').value === 'KH-XXX-MKT'`).
 - [ ] Chọn Phòng, Khung giờ, Dịch vụ, Bác sĩ, **Sale phụ trách** (chọn 1 trong 3 CM sale HCM). Bấm **Lưu**.
 - [ ] Redirect về Data Source `/leads/{id}/booking-callback?booking_ma=BKG-...&booking_id=...` → tự động về Chi tiết lead.

@@ -86,17 +86,17 @@
   <table>
     <thead><tr><th>Chi nhánh</th><th>Email</th><th>Password</th><th>Role</th></tr></thead>
     <tbody>
-      <tr><td>Hà Nội</td><td><code>bo.hn@longevity.com.vn</code></td><td><code>59@ntn</code></td><td>BO (Lễ Tân)</td></tr>
-      <tr><td>Đà Nẵng</td><td><code>bo.dn@longevity.com.vn</code></td><td><code>59@ntn</code></td><td>BO (Lễ Tân)</td></tr>
-      <tr><td>Hồ Chí Minh</td><td><code>bo.hcm@longevity.com.vn</code></td><td><code>59@ntn</code></td><td>BO (Lễ Tân)</td></tr>
+      <tr><td>Hà Nội</td><td><code>bo.hn@longevity.com.vn</code></td><td><code>&lt;pass-hn&gt;</code></td><td>BO (Lễ Tân)</td></tr>
+      <tr><td>Đà Nẵng</td><td><code>bo.dn@longevity.com.vn</code></td><td><code>&lt;pass-hn&gt;</code></td><td>BO (Lễ Tân)</td></tr>
+      <tr><td>Hồ Chí Minh</td><td><code>bo.hcm@longevity.com.vn</code></td><td><code>&lt;pass-hn&gt;</code></td><td>BO (Lễ Tân)</td></tr>
     </tbody>
   </table>
-  <div class="sub" style="margin-top:8px">Password fallback theo <code>DefaultPassword::forEmail</code> — email không match prefix hn./hcm./dn. → HN default <code>59@ntn</code>. Đổi rule nếu muốn phân theo chi nhánh.</div>
+  <div class="sub" style="margin-top:8px">Password fallback theo <code>DefaultPassword::forEmail</code> — email không match prefix hn./hcm./dn. → HN default <code>&lt;pass-hn&gt;</code>. Đổi rule nếu muốn phân theo chi nhánh.</div>
 </div>
 
 <h2>Kịch bản test tay 🧪</h2>
 <div class="card">
-  <div class="step"><div class="n">1</div><div>Login <code>bo.hn@longevity.com.vn</code> / <code>59@ntn</code> → mở <code>/ups</code>.</div></div>
+  <div class="step"><div class="n">1</div><div>Login <code>bo.hn@longevity.com.vn</code> / <code>&lt;pass-hn&gt;</code> → mở <code>/ups</code>.</div></div>
   <div class="step"><div class="n">2</div><div>Thấy 1 cơ sở "CS1: 59 Ngô Thì Nhậm" (CS2 190 Hoàng Ngân ẩn vì <code>is_active=false</code>).</div></div>
   <div class="step"><div class="n">3</div><div>Chọn 1 sale từ dropdown → bấm <b>+ Check in</b>. Nếu bây giờ > 08:35 → sale vào cột <b>OFF LIST</b>; ngược lại → cột <b>A</b>.</div></div>
   <div class="step"><div class="n">4</div><div>Ở ô sale vừa check-in: dùng dropdown <code>↔</code> để chuyển sang B/C/MKT; bấm <code>×</code> để xóa.</div></div>

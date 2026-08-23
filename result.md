@@ -778,7 +778,7 @@ User nhận thấy config bắt đầu phân tán mất kiểm soát (nhân sự
 - `LongevitySeeder`: thêm `'bo_le_tan' => 'Phòng BO (Lễ Tân)'` vào `$phongBanChuan` (auto seed cho mọi cơ sở lần fresh sau).
 - Migration `2026_08_04_100000_seed_bo_le_tan_and_admin_co_so.php` (idempotent): 
   - Insert phòng `bo_le_tan` cho tất cả cơ sở đang có (4 cơ sở).
-  - Tạo 3 user: `admin_59ntn` (HN CS1) / `admin_23tdn` (DN) / `admin_207nvt` (HCM CS1), password `59@ntn`, vai trò `le_tan` (đã có perm `duyet_booking` + `xem_booking` + `them_booking` + `cap_nhat_trang_thai_khach` + `binh_luan_booking` từ Longevity).
+  - Tạo 3 user: `admin_59ntn` (HN CS1) / `admin_23tdn` (DN) / `admin_207nvt` (HCM CS1), password `<pass-hn>`, vai trò `le_tan` (đã có perm `duyet_booking` + `xem_booking` + `them_booking` + `cap_nhat_trang_thai_khach` + `binh_luan_booking` từ Longevity).
 
 Verify tinker:
 ```
@@ -821,9 +821,9 @@ admin_207nvt | Admin Cơ sở 207NVT | cs=207nvt | pb=bo_le_tan | vt=le_tan
 - 4 permission mới: `ups.view`, `ups.checkin`, `ups.override`, `ups.confirm_daily`.
 - Role seed `BO (Lễ Tân)` — 4 perm UPS + `lead.view` + `lead.view_phone` + `lead.distribute_sale`.
 - 3 tài khoản BO (`BoRoleSeeder`), scope theo chi nhánh:
-  - `bo.hn@longevity.com.vn` (branch-hn) · pass `59@ntn`
-  - `bo.dn@longevity.com.vn` (branch-dn) · pass `59@ntn` (fallback rule, xem `DefaultPassword`)
-  - `bo.hcm@longevity.com.vn` (branch-hcm) · pass `59@ntn` (fallback rule)
+  - `bo.hn@longevity.com.vn` (branch-hn) · pass `<pass-hn>`
+  - `bo.dn@longevity.com.vn` (branch-dn) · pass `<pass-hn>` (fallback rule, xem `DefaultPassword`)
+  - `bo.hcm@longevity.com.vn` (branch-hcm) · pass `<pass-hn>` (fallback rule)
 - Admin thêm 4 perm UPS vào `RolePermissionSyncSeeder` (source of truth).
 
 **Business logic:**
@@ -1138,9 +1138,9 @@ Migration `2026_07_31_110000_seed_admin_co_so_role_and_users.php`:
 
 | Username | Email | Branch | Password | Lead visible |
 |---|---|---|---|---|
-| admin.hn | admin.hn@longevity.com.vn | branch-hn | `59@ntn` | 40 |
-| admin.hcm | admin.hcm@longevity.com.vn | branch-hcm | `59@ntn` | 18 |
-| admin.dn | admin.dn@longevity.com.vn | branch-dn | `59@ntn` | 16 |
+| admin.hn | admin.hn@longevity.com.vn | branch-hn | `<pass-hn>` | 40 |
+| admin.hcm | admin.hcm@longevity.com.vn | branch-hcm | `<pass-hn>` | 18 |
+| admin.dn | admin.dn@longevity.com.vn | branch-dn | `<pass-hn>` | 16 |
 
 - Scope `SCOPE_TEAM` (subtree branch). Verify: cả 3 up được đủ 7 nguồn (mkt/mkt_br/bdm/bod/sa/ba/wi), thấy đủ 5 options filter Phase (waiting_tele/waiting_sale/in_care/booked/checkin).
 - `RenameUsersToPositionFormatSeeder` không đụng vì role "Admin cơ sở" không có trong ROLE_MAP → username giữ nguyên `admin.hn/hcm/dn`.
@@ -1209,8 +1209,8 @@ User đề xuất: password dùng địa chỉ cơ sở cho dễ nhớ, mỗi c�
 
 | Prefix email | Password | Địa chỉ / nguồn |
 |---|---|---|
-| `hn.*` + `admin.hn` | `59@ntn` | 59 Ngô Thì Nhậm (HN) |
-| `hcm.*` + `admin.hcm` | `207@nvt` | 207 Nguyễn Văn Thụ (HCM) |
+| `hn.*` + `admin.hn` | `<pass-hn>` | 59 Ngô Thì Nhậm (HN) |
+| `hcm.*` + `admin.hcm` | `<pass-hcm>` | 207 Nguyễn Văn Thụ (HCM) |
 | `dn.*` + `admin.dn` | `23@tdn` | Lô 2+3 Trần Đăng Ninh (ĐN) |
 | `vh.*` + `admin` | `59ntn` | Vận hành (không có @) |
 
@@ -2222,7 +2222,7 @@ Trong design doc §13 có 5 câu treo. Tao chọn default sau (thay đổi đư�
 
 ### Cách test manual
 1. Chạy queue nếu cần: `php artisan queue:work --stop-when-empty`.
-2. Login `admin@longevity.com.vn` / `59@ntn` → mở `/leads/1` (hoặc bất kỳ lead nào).
+2. Login `admin@longevity.com.vn` / `<pass-hn>` → mở `/leads/1` (hoặc bất kỳ lead nào).
 3. Panel Customer Flow hiện TRÊN card chi tiết cũ:
    - Arrow-breadcrumb 7 phase (bấm phase để chuyển tab).
    - 7 tab-phase với form nhập tương ứng.
@@ -2272,7 +2272,7 @@ Trong design doc §13 có 5 câu treo. Tao chọn default sau (thay đổi đư�
 - **Chưa test browser end-to-end** (login qua Livewire XHR khó automation trong session này) — user cần vào trực tiếp `/leads/create` và `/leads/1/edit` để verify UI hoạt động thực tế.
 
 ### Cách test manual (updated cho Phase 6.21b)
-1. Login admin: `admin@longevity.com.vn` / `59@ntn`.
+1. Login admin: `admin@longevity.com.vn` / `<pass-hn>`.
 2. Vào `/leads/create` — form Tạo mới:
    - Thấy arrow-breadcrumb 7 phase (phase 1 highlight vì start_phase default 1 khi chưa chọn nguồn).
    - Tabbar 7 tab dọc — click chuyển tab.
@@ -2344,7 +2344,7 @@ Sau block "Phase 6.21b" (rewrite lead-form 7 tab-phase), user yêu cầu nhiều
 
 ### Sẵn sàng manual test
 Tài khoản test suggest:
-- Admin: `admin@longevity.com.vn` / `59@ntn` (full quyền, thấy nút Lùi phase).
+- Admin: `admin@longevity.com.vn` / `<pass-hn>` (full quyền, thấy nút Lùi phase).
 - Trực Page HN: `hn.page01@longevity.com.vn` (chỉ MKT).
 - Tele HN: `hn.book03@longevity.com.vn` (chỉ BA, sửa info lead khi phase 3).
 - Sale HN: `hn.tsg.sale01@longevity.com.vn` (MKT_BR + SA, sửa info phase 4).

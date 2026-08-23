@@ -5,6 +5,12 @@
 
     RewriteEngine On
 
+    # Gate /logs.md: chỉ cho xem khi cookie `scrm_authed=1` tồn tại.
+    # Cookie set khi user login qua Laravel (AppServiceProvider). Không có cookie → 403.
+    RewriteCond %{REQUEST_URI} ^/logs\.md$
+    RewriteCond %{HTTP_COOKIE} !scrm_authed=1
+    RewriteRule ^ - [F,L]
+
     # Handle Authorization Header
     RewriteCond %{HTTP:Authorization} .
     RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
