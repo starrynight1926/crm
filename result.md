@@ -2663,3 +2663,53 @@ User share sheet map "Dịch vụ HN → Phòng thực hiện". Điểm cần b�
 
 ### Side note
 - HCM `team-ashley` giờ không có Team Leader nào (trước là ptkq). Nếu cần TL cho HCM PKD1 → phải thêm người mới, chưa làm.
+
+## 2026-08-24 (tiếp) — Sheet DV/Phòng HN + HCM 207 (Đợt A, không đụng schema)
+
+### Bối cảnh
+User gửi sheet Excel "Dịch vụ HN → Phòng thực hiện" (25 dòng) + chốt HCM 207 NVT gồm 6 phòng: Khám / Nội / Siêu Âm / Xét nghiệm / YHCT / Cơ sở điều dưỡng.
+
+Chốt qua Q&A:
+- **Metaboost giữ nguyên tên** (không rename thành "Thủ thuật"), YHCT 1/2/3 + Nội 1/2 giữ chi tiết (nhiều phòng song song).
+- **Phòng Da + Phòng VISIA tách 2** (Da = bác sĩ khám, VISIA = máy quét).
+- **HCM 207 xoá Phòng Tư vấn** (id 13, 0 booking), đủ 6 phòng theo sheet.
+- Đợt A KHÔNG đụng schema. 3 ràng buộc đặc biệt (DV 40 pairing giới, DV 41 lock-2-phòng, DV 39 thời lượng linh hoạt 30/45/60) → Đợt B sau.
+
+### Sbooking migration `2026_08_24_150000_update_hn_hcm_services_and_rooms_per_sheet.php`
+
+**HN (co_so=1):**
+- Deactivate 7 DV: id 1, 3, 29-33 (set `active=0`, không xoá vì id 1,3 có 1 booking cũ).
+- Set `thoi_gian_phut` 18 DV theo sheet:
+  - id 2/7/8/9/43=30', id 4=25', id 5=15', id 6=10', id 34=60', id 35-38=10' mỗi, id 39=60' (default; 30/45/60 flexible để Đợt B), id 40=15', id 41=90', id 42=15', id 44=15'.
+- Insert 4 DV khám lâm sàng mới (id 177-180): Khám Da (Visia) 15', Thực hiện lâm sàng (lấy máu) 5', (siêu âm) 25', (Xquang) 15'.
+- Insert 6 phòng thiếu (id 18-23): Phòng X Quang, Lấy mẫu, Da, VISIA, Xông (slot=2, phong_dich_vu), Truyền (phong_dich_vu). Giữ nguyên 12 phòng cũ.
+
+**HCM 207 (co_so=2):**
+- Xoá `phong` id 13 (Phòng Tư vấn).
+- Fix `phong` id 15 (YHCT) `phong_kham` → `phong_dich_vu`, slot=2, phut=60 (đồng bộ HN YHCT).
+- Insert 4 phòng (id 24-27): Phòng khám, Phòng Nội, Phòng Xét nghiệm, Phòng Cơ sở điều dưỡng.
+
+**Idempotent:** check `exists()` trước khi insert, `where` khớp cụ thể trước khi update. Chạy lại không lỗi.
+
+### SCRM sync mirror
+- `php artisan sb:sync-services` → 180 rows (4 mới HN + 176 update).
+- `php artisan sb:sync-rooms` → 25 rows (10 mới + 15 update).
+- **Bug sync**: command KHÔNG xoá row đã bị delete bên nguồn. Row cũ "Phòng Tư vấn HCM" (sbooking_id=13) còn ở `sb_rooms` → dọn tay bằng `DB::table('sb_rooms')->where('sbooking_id',13)->delete()`. Cần sửa command sync sau (add cleanup step).
+
+### Verify
+- Tinker dump sbooking: 44 DV HN đúng phân loại/thời lượng, 4 DV mới có ID 177-180, 18 phòng HN, 6 phòng HCM 207.
+- Tinker dump SCRM mirror: 41 active + 7 inactive HN, 18 sb_rooms HN, 6 sb_rooms HCM 207.
+- Chưa QA browser (login admin bị lỗi password local — data đã verify qua tinker đủ tin cậy).
+
+### Commit
+- Sbooking `c168aae` push branch `sixteenth`.
+- SCRM `<next>` push branch `sixteenth`.
+
+### Đợt B (chưa làm — cần thiết kế schema mới)
+1. Bảng `dich_vu_phong` many-to-many (n DV : n phòng).
+2. DV 39 YHPĐ thời lượng linh hoạt 30/45/60 (user chọn khi tạo booking, không cố định trên phòng).
+3. DV 40 DeepOxy Xông: constraint pairing giới tính (2 khách/giờ cùng giới hoặc vợ chồng).
+4. DV 41 DeepOxy Tổng hợp: lock 2 phòng (multi-room booking).
+5. Fix sync command bên SCRM: cleanup row đã bị xoá bên nguồn.
+6. Sheet HCM DV — user chưa gửi. Cần sheet để làm phần DV HCM (hiện chỉ update phòng).
+7. HN phòng id 1-5 đang `so_slot_toi_da=12` (nghi lỗi seed cũ) → confirm số slot thật rồi update.
