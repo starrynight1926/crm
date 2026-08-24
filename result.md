@@ -2728,7 +2728,7 @@ Chốt qua Q&A:
 | Phòng Xét nghiệm | Lấy máu (50), Thực hiện lâm sàng (lấy máu) (187) |
 | Phòng X Quang | Chụp XQuang (49), Thực hiện lâm sàng (Xquang) (189) |
 | Phòng YHCT | EAQ (78), YHPĐ 30/45/60 (184-186) |
-| Phòng Cơ sở điều dưỡng | NK (87) — tạm để trống, user tự ghép sau |
+| Phòng Cơ sở điều dưỡng | NK (87) — Truyền miễn dịch (user confirm) |
 
 **Sync SCRM lần 2**:
 - `sb:sync-services` → 189 DV (9 mới + 180 update).
@@ -2738,6 +2738,20 @@ Chốt qua Q&A:
 - HN: 43 active + 8 inactive = 51 DV (44 gốc + 4 Đợt A + 3 YHPĐ Đợt B1).
 - HCM: 34 active + 16 inactive = 50 DV (44 gốc + 3 YHPĐ + 3 Thực hiện lâm sàng).
 - HCM 7 phòng (6 sheet + Phòng X Quang mới).
+
+### Đợt B2 (2026-08-25) — Fix HCM tiêm khớp
+
+**Migration `2026_08_25_090000_reactivate_hcm_injection_services.php`:**
+User bổ sung mapping: tiêm khớp/dịch nhờn/PRP/Recells thực tế làm ở **Phòng Nội** HCM ("Thủ thuật nội"), không phải Phòng Thủ thuật như HN. Đợt B1 deactivate nhầm 5 DV → reactivate:
+- id 79 BJR (Tiêm gối) — 10'
+- id 80 HA 1%/khớp (Tiêm dịch nhờn) — 10'
+- id 81 HA 2%/khớp (Tiêm khớp gối) — 10'
+- id 82 PRP/khớp — 10'
+- id 88 Recells (Tiêm) — 15'
+
+**Mapping HCM cập nhật**: Phòng Nội giờ nhận 2 nhóm — Khám Nội (id 51) + 5 DV tiêm khớp trên. 1 phòng nhiều DV, sale chọn thủ công.
+
+**Sync + verify**: HCM active 34 → 39 DV (5 reactivate), sb_services mirror sync OK.
 
 ### Đợt C (còn nợ — cần schema mới)
 1. **DV 41 DeepOxy Tổng hợp = combo Xông 15' + YHPĐ 30/45/60** → cần multi-room booking (schema `booking.phong_id` hiện single FK). Chốt cụ thể: 1 booking = 2 phòng (Xông + YHCT).
