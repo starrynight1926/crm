@@ -2643,3 +2643,23 @@ User share sheet map "Dịch vụ HN → Phòng thực hiện". Điểm cần b�
 5. **Deactivate**: id 1, 3 (Thăm khám cũ + Thực hiện lâm sàng cũ) và 29-33 (Gene2/TruAge) — sheet gạch → cần `active=false`.
 
 Đề xuất thứ tự: **1 → 5 → 4 → 3** (đồng bộ danh mục trước) → mới bàn schema cho **2** (nghiệp vụ đặc biệt).
+
+## 2026-08-24 (tiếp) — Branch `sixteenth`: Phan Trần Khánh Quỳnh làm TL HN PKD1
+
+### Fix
+- **`OrgStaffSeeder.php`**:
+  - L243: fix typo tên `Phan Trần Khánh Quỳn` → `Phan Trần Khánh Quỳnh`.
+  - L343: đổi assignment ptkq `team-ashley` (HCM PKD1) → `team-giang` (HN PKD1), giữ role `Team Leader` + `SCOPE_TEAM`.
+  - Thêm block cleanup trước loop assignments: xoá `Assignment` cũ của ptkq @ team-ashley (bắt chước pattern Linda/Bông). Idempotent, match qua email + fallback name (cả 'Quỳn' cũ + 'Quỳnh' mới) để chạy nhiều lần OK.
+- **`public/images/flow_full.PNG`**: user dán đè ảnh sơ đồ mới (30KB). Code `guide.blade.php:155,165` đã trỏ sẵn — không cần sửa view.
+
+### Verify
+- `php artisan db:seed --class=OrgStaffSeeder --force` OK.
+- Tinker: `ptkq` → name = `Phan Trần Khánh Quỳnh`, assignments = `Team Leader @ team-giang` (chỉ 1 dòng, không còn team-ashley).
+- Chưa QA browser login ptkq (task nhẹ — chỉ đổi assignment seed).
+
+### Commit
+- `b0e3316` push lên branch `sixteenth`.
+
+### Side note
+- HCM `team-ashley` giờ không có Team Leader nào (trước là ptkq). Nếu cần TL cho HCM PKD1 → phải thêm người mới, chưa làm.
