@@ -2592,3 +2592,54 @@ User đọc kỹ "Quy tắc PKD Update.docx" và chỉ ra job `RecallByColumnUpd
 - Rule auto-chia UPS khi khách `da_toi` — giữ nguyên (chưa chốt UPS → không chia, lead về pool team).
 - SCRM CM view chia tele phase 2 — đã có sẵn ở `⚡lead-form.blade.php:3813-3840` (radio Auto/Manual + `manualAssignUserId`).
 - Không mark busy khi Admin duyệt (đúng ý: busy chỉ khi sale tự tick quá tải).
+
+## 2026-08-24 — Session hotfix prod: password admin, migration Kim Phấn, support bubble, thêm BS + phòng HCM
+
+### 1. Reset password admin về DefaultPassword — CRM
+- **Bug**: user `admin` (id=1) bị trôi password sang `'password'` từ seed đời đầu. `OrgStaffSeeder` cố tình KHÔNG đụng password user đã có → chạy lại seed không fix được.
+- **Fix ngay**: `\App\Models\User::find(1)->password='59ntn'->save()` — verify OK.
+- **Fix seed**: `SyncCrmAccountsSeeder.php` bổ sung "Phần 1b" — sau backfill username, reset password 4 admin (admin, admin.hn/hcm/dn) về `DefaultPassword::forEmail($email)`. Idempotent, safe chạy nhiều lần.
+- Commit `84f0af3` — pushed.
+
+### 2. Migration Kim Phấn (sbooking) idempotent hoá
+- **Bug prod**: migration `2026_08_22_100000_create_dn_users_and_fix_kim_phan` chạy trên sweetsica prod → `UPDATE users SET email='dn.cms01@...' WHERE id=19` đâm unique. Thực tế Kim Phấn đã tồn tại ở sb#47 với đúng email/username/co_so=3.
+- **Fix**: pre-check `dupExists` (row khác id=19 đang giữ username/email 'dn.cms01') → skip step fix id=19 + log. Row 19 (bản cũ sai co_so=1) để dev xử tay sau khi soi bookings.
+- Commit `69cb670` — pushed. Cần user chạy `git pull && php artisan migrate` trên prod.
+
+### 3. Support bubble tự bung — sbooking
+- **Bug**: partial `_support_bubble.blade.php` dùng Alpine (`x-data`/`x-show`/`x-cloak`). Nhưng topnav + các page booking (dashboard/bookings/create/timeline/show) không nạp Alpine → `x-show="open"` không ẩn được modal → overlay full màn hình hiện đè mọi trang có `@include('partials.topnav')`.
+- **Fix**: viết lại bằng vanilla JS + class `hidden`, `onclick` toggle, CSS `#supportBubbleModal:not(.hidden){display:flex!important}`. Bỏ hoàn toàn Alpine.
+- Commit `71034ec` — pushed.
+
+### 4. Thêm BS Đặng Công Danh (y học cổ truyền) — HCM 207 NVT
+- **Bug**: dropdown "Bác sĩ" rỗng khi tạo booking Dịch vụ + HCM. Trên prod BS chưa có (seed cũ chưa chạy).
+- **Fix seed**: `LongevitySeeder.php:390` — đổi `chuc_danh='BS.'` → `'Bác sĩ chuyên khoa y học cổ truyền'`.
+- **Migration mới**: `2026_08_24_100000_add_dang_cong_danh_hcm.php` — idempotent qua `(co_so_id, ten)`, insert nếu chưa có, update nếu đã có.
+- Commit `f274504` — pushed. Chạy local OK (cập nhật BS#10).
+
+### 5. Fix Phòng YHCT HCM: phong_kham → phong_dich_vu
+- **Root cause**: sau khi thêm BS, dropdown vẫn kẹt vì **phòng** rỗng. Cả 3 phòng HCM (Tư vấn / siêu âm / YHCT) đều bị đánh `kieu_phong=phong_kham` (seed `seedPhong` không truyền `kieu` → default). SCRM bucket "Dịch vụ" filter `kieu_phong=phong_dich_vu` → không có phòng match.
+- So sánh: 59NTN seed có `'kieu' => 'phong_dich_vu'` rõ ràng cho YHCT/Metaboost/Thủ thuật.
+- **Fix seed** + **migration** `2026_08_24_110000_fix_hcm_yhct_room_to_dich_vu.php`: đổi `Phòng YHCT` (207 NVT) → `phong_dich_vu`, 2 slot × 30'. Cột đúng là `phut_moi_khach` (không phải `phut_moi_slot` — commit fix cột `5a17253`).
+- Commits `27cc923` + `5a17253` — pushed. Chạy local OK, đã `sb:sync-rooms` cập nhật mirror SCRM.
+
+### Việc dời lại / cần user xử
+- **Prod sbooking**: `git pull && php artisan migrate` để chạy 3 migration (Kim Phấn idempotent + BS Đặng Công Danh + fix phòng YHCT).
+- **Prod SCRM (data.sweetsica.com)**: chạy sync sau khi sbooking prod migrate:
+  ```
+  php artisan sb:sync-bac-si && php artisan sb:sync-rooms && php artisan sb:sync-services
+  ```
+- **Row sb#19 (Kim Phấn bản cũ)**: cần soi bookings gắn `bac_si_id=19` → nếu có, đổi về id=47 (bản đúng) rồi mới xoá row 19. Chưa làm.
+
+### Phát hiện cần thiết kế (chưa code — user gửi sheet dịch vụ HN)
+User share sheet map "Dịch vụ HN → Phòng thực hiện". Điểm cần bàn trước khi làm:
+1. **Phòng HN seed không khớp sheet**. Seed 59NTN: `Metaboost 1/2/3 T4`, `YHCT 1/2/3 T4`, `Thủ thuật T3`. Sheet dùng phòng **gộp**: `Phòng YHCT`, `Phòng Thủ thuật`, `Phòng Xông`, `Phòng truyền`, `Phòng lấy mẫu`, `Phòng X Quang`, `Phòng khám Nội`, `Phòng VISIA/da`. → Chốt: gộp lại theo sheet hay giữ chi tiết theo tầng?
+2. **3 ràng buộc đặc biệt schema KHÔNG support:**
+   - **DeepOxy Xông** (id 40): 2 khách/giờ + cùng giới hoặc vợ chồng → cần pairing constraint theo giới tính.
+   - **DeepOxy Tổng hợp** (id 41): 1 booking = lock 2 phòng → cần multi-room booking.
+   - **Y học Phương Đông** (id 39): thời lượng 30/45/60 linh hoạt → hiện `phut_moi_khach` cố định trên phòng.
+3. **Nhiều dịch vụ share 1 phòng** (5 loại tiêm khớp → Phòng Thủ thuật). Cần bảng `dich_vu_phong` (many-to-many) hoặc tag thay vì 1-1.
+4. **Data gaps**: STC Japan (id 42) không map phòng; các dòng cuối sheet (Khám Da Visia, Thực hiện lâm sàng lấy máu/siêu âm/Xquang) chưa có trong DB.
+5. **Deactivate**: id 1, 3 (Thăm khám cũ + Thực hiện lâm sàng cũ) và 29-33 (Gene2/TruAge) — sheet gạch → cần `active=false`.
+
+Đề xuất thứ tự: **1 → 5 → 4 → 3** (đồng bộ danh mục trước) → mới bàn schema cho **2** (nghiệp vụ đặc biệt).
