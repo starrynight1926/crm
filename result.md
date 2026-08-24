@@ -2775,10 +2775,26 @@ User bổ sung mapping: tiêm khớp/dịch nhờn/PRP/Recells thực tế làm 
 
 **Skip mapping**: Khám Sản (chưa triển khai), STC Japan (làm ở nước ngoài), DV 41 DeepOxy Tổng hợp (combo — Đợt C.2), DV đã inactive.
 
-### Đợt C.2 (còn nợ)
-1. **Mirror SCRM** bảng `sb_dich_vu_phong` + command `sb:sync-dich-vu-phong`. Hiện SCRM `⚡lead-form.blade.php:690` query `SbRoom::where('sbooking_co_so_id', ...)` — chưa filter theo DV.
-2. **Wire UI SCRM**: filter phòng dropdown theo DV được chọn (dùng mapping).
-3. **DV 41 DeepOxy Tổng hợp** — combo Xông + YHPĐ, 1 booking → 2 phòng. Cần multi-room schema.
+### Đợt C.2 (2026-08-25) — Mirror + Wire UI filter phòng theo DV
+
+**Sbooking:**
+- `SyncApiController::dichVuPhong()` + route `GET /api/sync/dich-vu-phong`.
+
+**SCRM:**
+- Migration `2026_08_25_110000_create_sb_dich_vu_phong_table.php`: bảng mirror với unique (sbooking_dich_vu_id, sbooking_phong_id) + 2 index.
+- Command `sb:sync-dich-vu-phong`: full-replace (DELETE + insert) vì pivot không có id nghiệp vụ. Note: KHÔNG dùng TRUNCATE trong transaction (MySQL implicit commit → "no active transaction" error).
+- Sync test: `Nhận 66 mappings. Xong. Tổng mirror: 66`.
+- `⚡lead-form.blade.php:670-728`: refactor `updatedNewBookingFacilityId` + `updatedNewBookingType` → helper `reloadAvailableRooms()`. Thêm filter `whereIn('sbooking_id', mappedPhongIds)` khi có DV được chọn.
+- `updatedNewBookingServiceId`: gọi `reloadAvailableRooms()` + reset `newBookingRoomId` nếu phòng đang chọn không còn hợp lệ.
+- Fallback: DV không có mapping (STC, gói khám, tư vấn, đọc kết quả gene) → full list phòng bucket.
+
+**Verify tinker:**
+- HCM Khám Nội (51) → 1 phòng: Phòng Nội (25) ✅
+- HN BJR (35) → 4 phòng: Thủ thuật T3 + Metaboost 1/2/3 ✅
+- HN STC (42) → mapped rỗng → fallback full list ✅
+
+### Đợt C.3 (còn nợ)
+1. **DV 41 DeepOxy Tổng hợp** — combo Xông + YHPĐ, 1 booking → 2 phòng. Cần multi-room schema.
 4. **DV 40 DeepOxy Xông** — pairing giới (2 khách/giờ).
 5. **STC Japan** — UI booking skip chọn phòng.
 6. **Fix sync command SCRM**: cleanup row đã delete bên nguồn.

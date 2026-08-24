@@ -669,6 +669,7 @@ new class extends Component
 
     /**
      * Phase C1.d 2026-08-02: chọn cơ sở → load phòng từ sb_rooms.
+     * Đợt C.2 2026-08-25: filter thêm theo DV đã chọn qua sb_dich_vu_phong.
      */
     public function updatedNewBookingFacilityId(mixed $value): void
     {
@@ -678,27 +679,7 @@ new class extends Component
         $this->availableSlots = [];
         $this->roomStatus = null;
         if (! $value) return;
-
-        $sbCoSoId = $this->resolveSbCoSoId((int) $value);
-        if (! $sbCoSoId) return;
-
-        // 2026-08-09: filter theo bucket (newBookingType).
-        //   tu_van   → phòng phải có duoc_dat_tu_van=true (không giới hạn kieu_phong).
-        //   kham_ls  → kieu_phong=phong_kham.
-        //   dich_vu  → kieu_phong=phong_dich_vu.
-        //   Chưa chọn bucket → hiện all phòng của cơ sở.
-        $q = \App\Models\SbRoom::where('sbooking_co_so_id', $sbCoSoId)->where('trang_thai', 'hoat_dong');
-        if ($this->newBookingType === 'tu_van') {
-            $q->where('duoc_dat_tu_van', true);
-        } elseif ($this->newBookingType === 'kham_ls') {
-            $q->where('kieu_phong', 'phong_kham');
-        } elseif ($this->newBookingType === 'dich_vu') {
-            $q->where('kieu_phong', 'phong_dich_vu');
-        }
-        $this->availableRooms = $q->orderBy('ten')
-            ->get(['sbooking_id as id', 'ten', 'so_slot_toi_da', 'kieu_phong', 'duoc_dat_tu_van'])
-            ->map(fn ($r) => $r->toArray())
-            ->all();
+        $this->reloadAvailableRooms();
     }
 
     /** 2026-08-09: đổi bucket → reload phòng theo filter mới. */
@@ -707,14 +688,60 @@ new class extends Component
         $this->newBookingServiceId = null;
         $this->newBookingRoomId = null;
         $this->newBookingSbBacSiId = null;
-        if ($this->newBookingFacilityId) {
-            $this->updatedNewBookingFacilityId($this->newBookingFacilityId);
+        if ($this->newBookingFacilityId) $this->reloadAvailableRooms();
+    }
+
+    /**
+     * Đợt C.2 (2026-08-25): rebuild availableRooms theo cơ sở + bucket + DV.
+     * - Filter cơ sở (sbooking_co_so_id) + bucket (tu_van/kham_ls/dich_vu).
+     * - Nếu DV đã chọn có mapping trong sb_dich_vu_phong → whereIn phòng theo mapping.
+     * - DV không có mapping (STC, gói khám, tư vấn, đọc kết quả gene, …) → fallback full list.
+     */
+    private function reloadAvailableRooms(): void
+    {
+        $sbCoSoId = $this->resolveSbCoSoId((int) $this->newBookingFacilityId);
+        if (! $sbCoSoId) { $this->availableRooms = []; return; }
+
+        $q = \App\Models\SbRoom::where('sbooking_co_so_id', $sbCoSoId)->where('trang_thai', 'hoat_dong');
+        if ($this->newBookingType === 'tu_van') {
+            $q->where('duoc_dat_tu_van', true);
+        } elseif ($this->newBookingType === 'kham_ls') {
+            $q->where('kieu_phong', 'phong_kham');
+        } elseif ($this->newBookingType === 'dich_vu') {
+            $q->where('kieu_phong', 'phong_dich_vu');
         }
+
+        if ($this->newBookingServiceId) {
+            $mappedPhongIds = \Illuminate\Support\Facades\DB::table('sb_dich_vu_phong')
+                ->where('sbooking_dich_vu_id', $this->newBookingServiceId)
+                ->pluck('sbooking_phong_id')
+                ->all();
+            if (! empty($mappedPhongIds)) {
+                $q->whereIn('sbooking_id', $mappedPhongIds);
+            }
+        }
+
+        $this->availableRooms = $q->orderBy('ten')
+            ->get(['sbooking_id as id', 'ten', 'so_slot_toi_da', 'kieu_phong', 'duoc_dat_tu_van'])
+            ->map(fn ($r) => $r->toArray())
+            ->all();
     }
 
     /** Đổi phòng / dịch vụ / ngày → reload slot theo (phong, dv, ngày). */
     public function updatedNewBookingRoomId(mixed $value): void { $this->loadSlotsAndStatus(); }
-    public function updatedNewBookingServiceId(mixed $value): void { $this->loadSlotsAndStatus(); }
+    public function updatedNewBookingServiceId(mixed $value): void
+    {
+        // Đợt C.2 (2026-08-25): chọn DV → reload phòng theo mapping sb_dich_vu_phong.
+        // Reset room nếu phòng đang chọn không còn hợp lệ với DV mới.
+        if ($this->newBookingFacilityId) {
+            $this->reloadAvailableRooms();
+            $validRoomIds = array_column($this->availableRooms, 'id');
+            if ($this->newBookingRoomId && ! in_array($this->newBookingRoomId, $validRoomIds, true)) {
+                $this->newBookingRoomId = null;
+            }
+        }
+        $this->loadSlotsAndStatus();
+    }
     public function updatedNewBookingDate(mixed $value): void { $this->loadSlotsAndStatus(); }
     public function updatedNewBookingTime(mixed $value): void { $this->refreshRoomStatus(); }
 
