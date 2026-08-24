@@ -2753,13 +2753,40 @@ User bổ sung mapping: tiêm khớp/dịch nhờn/PRP/Recells thực tế làm 
 
 **Sync + verify**: HCM active 34 → 39 DV (5 reactivate), sb_services mirror sync OK.
 
-### Đợt C (còn nợ — cần schema mới)
-1. **DV 41 DeepOxy Tổng hợp = combo Xông 15' + YHPĐ 30/45/60** → cần multi-room booking (schema `booking.phong_id` hiện single FK). Chốt cụ thể: 1 booking = 2 phòng (Xông + YHCT).
-2. **DV 40 DeepOxy Xông** — constraint pairing giới (2 khách/giờ cùng giới hoặc vợ chồng).
-3. **Bảng `dich_vu_phong` many-to-many** — lưu cứng mapping DV↔phòng để UI booking auto-suggest phòng (hiện sale chọn thủ công).
-4. **STC Japan UI**: DV 42 (HN) + 86 (HCM) — booking skip phần chọn phòng (làm ở nước ngoài).
-5. **Fix sync command SCRM**: cleanup row đã bị delete bên nguồn (bug đợt A đã note).
-6. **HN phòng id 1-5 `so_slot_toi_da=12`** — nghi lỗi seed cũ, confirm số slot thật rồi update.
+### Đợt C.1 (2026-08-25) — Bảng `dich_vu_phong` many-to-many
+
+**Migration `2026_08_25_100000_create_dich_vu_phong_mapping.php`** (sbooking):
+- Tạo bảng pivot `dich_vu_phong` (id, dich_vu_id, phong_id, timestamps, unique dv+phong, 2 index).
+- Không FK cứng (idempotent, tránh vướng data lệch).
+- Seed **66 mappings** (47 HN + 19 HCM):
+
+**HN — nhóm chính:**
+- Khám tim mạch (id 2) → Ngoại + Nội 1 + Nội 2 (id 1, 3, 4) — chốt Q&A.
+- Siêu âm/XQuang/Lấy máu/Khám Nội/Da/VISIA + 3 "Thực hiện lâm sàng" mới → phòng tương ứng.
+- EAQ + YHPĐ 30/45/60 → YHCT 1/2/3.
+- BJR/HA 1%/HA 2%/PRP/Recells → **cả 4 phòng Thủ thuật** (T3 + Metaboost 1/2/3 T4).
+- DeepOxy Xông (40) → Phòng Xông. NK Truyền (43) → Phòng truyền.
+
+**HCM — nhóm chính:**
+- Khám tim mạch (46) → Phòng khám + Phòng Nội.
+- BJR/HA/PRP/Recells → Phòng Nội (Thủ thuật nội).
+- EAQ + YHPĐ 30/45/60 → Phòng YHCT.
+- NK Truyền (87) → Phòng Cơ sở điều dưỡng.
+
+**Skip mapping**: Khám Sản (chưa triển khai), STC Japan (làm ở nước ngoài), DV 41 DeepOxy Tổng hợp (combo — Đợt C.2), DV đã inactive.
+
+### Đợt C.2 (còn nợ)
+1. **Mirror SCRM** bảng `sb_dich_vu_phong` + command `sb:sync-dich-vu-phong`. Hiện SCRM `⚡lead-form.blade.php:690` query `SbRoom::where('sbooking_co_so_id', ...)` — chưa filter theo DV.
+2. **Wire UI SCRM**: filter phòng dropdown theo DV được chọn (dùng mapping).
+3. **DV 41 DeepOxy Tổng hợp** — combo Xông + YHPĐ, 1 booking → 2 phòng. Cần multi-room schema.
+4. **DV 40 DeepOxy Xông** — pairing giới (2 khách/giờ).
+5. **STC Japan** — UI booking skip chọn phòng.
+6. **Fix sync command SCRM**: cleanup row đã delete bên nguồn.
+7. **HN phòng id 1-5 `slot=12`** — confirm số slot thật.
+
+### Commit chuỗi (branch `sixteenth`)
+- Sbooking: `c168aae` (A), `71b7c91` (B1), `be1c8c6` (B2), `9b11ea4` (C.1).
+- SCRM: `c5a2450` (A), `1278465` (B1), `fe74215` (B2), `<next>` (C.1).
 
 ### Commit
 - Sbooking `<next>` migration đợt B1 → push `sixteenth`.
