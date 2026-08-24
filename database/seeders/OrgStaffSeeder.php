@@ -240,7 +240,7 @@ class OrgStaffSeeder extends Seeder
             ['email' => 'tvh@longevity.com.vn',  'name' => 'Tạ Văn Hợi',           'job_title' => 'Clinic Manager'],
             ['email' => 'nhd@longevity.com.vn',  'name' => 'Nguyễn Hoành Đức',     'job_title' => 'Team Leader'],
             ['email' => 'tnkn@longevity.com.vn', 'name' => 'Trần Nguyễn Kim Ngân', 'job_title' => 'DM'],
-            ['email' => 'ptkq@longevity.com.vn', 'name' => 'Phan Trần Khánh Quỳn', 'job_title' => 'Team Leader'],
+            ['email' => 'ptkq@longevity.com.vn', 'name' => 'Phan Trần Khánh Quỳnh', 'job_title' => 'Team Leader'],
             ['email' => 'tbt@longevity.com.vn',  'name' => 'Trần Thị Bích Trâm',   'job_title' => 'Clinic Manager'],
             ['email' => 'nmt@longevity.com.vn',  'name' => 'Nguyễn Thị Minh Thư',  'job_title' => 'Trợ lý kinh doanh Clinic Manager (Assistant CM HCM)'],
             ['email' => 'hbtl@longevity.com.vn', 'name' => 'Huỳnh Bùi Thanh Lan',  'job_title' => 'Clinic Manager'],
@@ -340,7 +340,7 @@ class OrgStaffSeeder extends Seeder
             ['tvh@longevity.com.vn',  'CM sale',     'team-hoi-hn',   Assignment::SCOPE_TEAM,   []],
             ['nhd@longevity.com.vn',  'Team Leader', 'team-hoi-hn',   Assignment::SCOPE_TEAM,   []],
             ['tnkn@longevity.com.vn', 'DM HCM',      'branch-hcm',    Assignment::SCOPE_CUSTOM, ['branch-hcm']],
-            ['ptkq@longevity.com.vn', 'Team Leader', 'team-ashley',   Assignment::SCOPE_TEAM,   []],
+            ['ptkq@longevity.com.vn', 'Team Leader', 'team-giang',    Assignment::SCOPE_TEAM,   []],
             ['tbt@longevity.com.vn',  'CM sale',     'team-ashley-sale', Assignment::SCOPE_TEAM, []],
             ['hbtl@longevity.com.vn', 'CM sale',     'team-ashley-sale', Assignment::SCOPE_TEAM, []],
             ['nmt@longevity.com.vn',  'CM sale',     'team-ashley-sale', Assignment::SCOPE_TEAM, []],
@@ -420,6 +420,18 @@ class OrgStaffSeeder extends Seeder
         if ($leadDnUserIds->isNotEmpty() && $marketingDnId) {
             Assignment::whereIn('user_id', $leadDnUserIds)
                 ->where('org_unit_id', $marketingDnId)
+                ->delete();
+        }
+
+        // 2026-08-24: Phan Trần Khánh Quỳnh (ptkq) chuyển TL từ team-ashley (HCM PKD1)
+        // sang team-giang (HN PKD1). Xoá assignment cũ để tránh union 2 nơi.
+        $quynhId = User::whereIn('email', ['ptkq@longevity.com.vn'])
+            ->orWhereIn('name', ['Phan Trần Khánh Quỳn', 'Phan Trần Khánh Quỳnh'])
+            ->value('id');
+        $teamAshleyId = OrgUnit::where('code', 'team-ashley')->value('id');
+        if ($quynhId && $teamAshleyId) {
+            Assignment::where('user_id', $quynhId)
+                ->where('org_unit_id', $teamAshleyId)
                 ->delete();
         }
 
