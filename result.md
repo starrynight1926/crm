@@ -2705,11 +2705,48 @@ Chốt qua Q&A:
 - Sbooking `c168aae` push branch `sixteenth`.
 - SCRM `<next>` push branch `sixteenth`.
 
-### Đợt B (chưa làm — cần thiết kế schema mới)
-1. Bảng `dich_vu_phong` many-to-many (n DV : n phòng).
-2. DV 39 YHPĐ thời lượng linh hoạt 30/45/60 (user chọn khi tạo booking, không cố định trên phòng).
-3. DV 40 DeepOxy Xông: constraint pairing giới tính (2 khách/giờ cùng giới hoặc vợ chồng).
-4. DV 41 DeepOxy Tổng hợp: lock 2 phòng (multi-room booking).
-5. Fix sync command bên SCRM: cleanup row đã bị xoá bên nguồn.
-6. Sheet HCM DV — user chưa gửi. Cần sheet để làm phần DV HCM (hiện chỉ update phòng).
-7. HN phòng id 1-5 đang `so_slot_toi_da=12` (nghi lỗi seed cũ) → confirm số slot thật rồi update.
+### Đợt B1 — YHPĐ tách 3 DV + HCM DV mapping
+
+**Migration `2026_08_24_160000_yhpd_split_and_hcm_dv_mapping.php`:**
+- **YHPĐ tách 3** (thay vì flexible field — theo user "cách này đơn giản hơn"):
+  - Deactivate id 39 (HN) + id 83 (HCM) — "Y học Phương Đông" gộp cũ.
+  - Insert 6 DV mới (2 cơ sở × 3 variant): "Y học Phương Đông 30'/45'/60'".
+  - HN: id 181-183. HCM: id 184-186.
+- **HCM 207 (co_so=2)**:
+  - Insert Phòng X Quang (id 28) — `phong_kham`, slot=1, phut=15.
+  - Insert 3 DV "Thực hiện lâm sàng (lấy máu/siêu âm/Xquang)" (id 187-189).
+  - Deactivate 15 DV không có phòng phù hợp: id 45, 47 (thăm khám lâm sàng cũ), 53 (Khám Da liễu — HCM chưa có Phòng da), 73-77 (Gene/TruAge), 79-82 (BJR/HA/PRP — HCM không có Phòng Thủ thuật), 84-85 (DeepOxy), 88 (Recells).
+  - Set `thoi_gian_phut`: id 78 EAQ = 60', id 86 STC = 15'.
+  - id 86 STC Japan giữ active nhưng không map phòng (DV làm ở nước ngoài — UI booking cần skip chọn phòng, để đợt UI sau).
+
+**Mapping DV → Phòng HCM đã suy luận** (chưa lưu cứng vào DB vì chưa có bảng many-to-many):
+| Phòng HCM | DV active |
+|---|---|
+| Phòng khám | Thăm khám tim mạch (46), Khám Sản (52) |
+| Phòng Nội | Khám Nội (51) |
+| Phòng Siêu Âm | Siêu âm (48), Thực hiện lâm sàng (siêu âm) (188) |
+| Phòng Xét nghiệm | Lấy máu (50), Thực hiện lâm sàng (lấy máu) (187) |
+| Phòng X Quang | Chụp XQuang (49), Thực hiện lâm sàng (Xquang) (189) |
+| Phòng YHCT | EAQ (78), YHPĐ 30/45/60 (184-186) |
+| Phòng Cơ sở điều dưỡng | NK (87) — tạm để trống, user tự ghép sau |
+
+**Sync SCRM lần 2**:
+- `sb:sync-services` → 189 DV (9 mới + 180 update).
+- `sb:sync-rooms` → 26 phòng (1 mới + 25 update).
+
+**Verify sau đợt B1**:
+- HN: 43 active + 8 inactive = 51 DV (44 gốc + 4 Đợt A + 3 YHPĐ Đợt B1).
+- HCM: 34 active + 16 inactive = 50 DV (44 gốc + 3 YHPĐ + 3 Thực hiện lâm sàng).
+- HCM 7 phòng (6 sheet + Phòng X Quang mới).
+
+### Đợt C (còn nợ — cần schema mới)
+1. **DV 41 DeepOxy Tổng hợp = combo Xông 15' + YHPĐ 30/45/60** → cần multi-room booking (schema `booking.phong_id` hiện single FK). Chốt cụ thể: 1 booking = 2 phòng (Xông + YHCT).
+2. **DV 40 DeepOxy Xông** — constraint pairing giới (2 khách/giờ cùng giới hoặc vợ chồng).
+3. **Bảng `dich_vu_phong` many-to-many** — lưu cứng mapping DV↔phòng để UI booking auto-suggest phòng (hiện sale chọn thủ công).
+4. **STC Japan UI**: DV 42 (HN) + 86 (HCM) — booking skip phần chọn phòng (làm ở nước ngoài).
+5. **Fix sync command SCRM**: cleanup row đã bị delete bên nguồn (bug đợt A đã note).
+6. **HN phòng id 1-5 `so_slot_toi_da=12`** — nghi lỗi seed cũ, confirm số slot thật rồi update.
+
+### Commit
+- Sbooking `<next>` migration đợt B1 → push `sixteenth`.
+- SCRM `<next>` result.md → push `sixteenth`.
