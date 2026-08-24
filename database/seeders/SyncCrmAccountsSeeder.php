@@ -66,6 +66,26 @@ class SyncCrmAccountsSeeder extends Seeder
             if ($affected > 0) $backfilled++;
         }
 
+        // ---------- Phần 1b: Reset password cho 4 tài khoản admin về DefaultPassword ----------
+        // OrgStaffSeeder/AdminCoSoSeeder cố tình KHÔNG đụng password của user đã có
+        // → admin cũ có thể mang password lạc (VD: 'password' seed đời đầu).
+        // 4 admin này là "known account" dev/staging, luôn phải khớp DefaultPassword
+        // để đăng nhập được sau khi seed lại.
+        $adminEmails = [
+            'admin@longevity.com.vn',
+            'admin.hn@longevity.com.vn',
+            'admin.hcm@longevity.com.vn',
+            'admin.dn@longevity.com.vn',
+        ];
+        $pwSynced = 0;
+        foreach ($adminEmails as $email) {
+            $user = \App\Models\User::firstWhere('email', $email);
+            if (! $user) continue;
+            $user->password = \App\Support\DefaultPassword::forEmail($email);
+            $user->save();
+            $pwSynced++;
+        }
+
         // ---------- Phần 2: DỌN user booking-only ----------
         // 2026-08-05: Bỏ khối "bookingOnly" (29 user: ktv_*/dd_*/ddt_*/bsi*/adminvh).
         // Chúng là mirror data từ sbooking (KTV/ĐD/BS phòng khám) — scrm KHÔNG dùng
@@ -87,6 +107,7 @@ class SyncCrmAccountsSeeder extends Seeder
         }
 
         $this->command->info("Backfilled username: {$backfilled}/" . count($usernameByEmail));
+        $this->command->info("Reset password admin: {$pwSynced}/" . count($adminEmails));
         $this->command->info("Đã xoá {$deleted} user legacy (ktv_/dd_/ddt_/bsi/adminvh).");
     }
 }
