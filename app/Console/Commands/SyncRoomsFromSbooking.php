@@ -40,8 +40,9 @@ class SyncRoomsFromSbooking extends Command
             return self::FAILURE;
         }
 
-        $created = 0; $updated = 0; $total = 0;
+        $created = 0; $updated = 0; $deleted = 0; $total = 0;
         foreach ($coSoIds as $coSoId) {
+            $receivedIds = [];
             $url = $baseUrl . '/sync/phong?co_so_id=' . $coSoId;
             $this->info("Gọi: {$url}");
 
@@ -64,6 +65,7 @@ class SyncRoomsFromSbooking extends Command
             if ($this->option('dry-run')) continue;
 
             foreach ($rows as $r) {
+                $receivedIds[] = (int) $r['id'];
                 $attrs = [
                     'sbooking_co_so_id' => $r['co_so_id'],
                     'ten' => $r['ten'] ?? '',
@@ -80,10 +82,17 @@ class SyncRoomsFromSbooking extends Command
                 if ($existing) { $existing->update($attrs); $updated++; }
                 else { SbRoom::create(array_merge(['sbooking_id' => $r['id']], $attrs)); $created++; }
             }
+
+            // Đợt C.3 (2026-08-25): cleanup phòng đã bị xoá bên sbooking (scope co_so).
+            if (! $this->option('dry-run')) {
+                $deleted += SbRoom::where('sbooking_co_so_id', $coSoId)
+                    ->whereNotIn('sbooking_id', $receivedIds ?: [0])
+                    ->delete();
+            }
         }
 
-        $this->info("Xong. Tạo mới: {$created}, cập nhật: {$updated}, tổng nhận: {$total}");
-        Log::info('sb:sync-rooms', ['created' => $created, 'updated' => $updated, 'total' => $total]);
+        $this->info("Xong. Tạo mới: {$created}, cập nhật: {$updated}, xoá: {$deleted}, tổng nhận: {$total}");
+        Log::info('sb:sync-rooms', ['created' => $created, 'updated' => $updated, 'deleted' => $deleted, 'total' => $total]);
         return self::SUCCESS;
     }
 }

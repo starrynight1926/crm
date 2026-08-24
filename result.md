@@ -2793,8 +2793,40 @@ User bổ sung mapping: tiêm khớp/dịch nhờn/PRP/Recells thực tế làm 
 - HN BJR (35) → 4 phòng: Thủ thuật T3 + Metaboost 1/2/3 ✅
 - HN STC (42) → mapped rỗng → fallback full list ✅
 
-### Đợt C.3 (còn nợ)
-1. **DV 41 DeepOxy Tổng hợp** — combo Xông + YHPĐ, 1 booking → 2 phòng. Cần multi-room schema.
+### Đợt C.3.a (2026-08-25) — Sync cleanup row đã delete bên nguồn
+
+- `SyncServicesFromSbooking`: sau upsert, `SbService::whereNotIn('sbooking_id', $receivedIds)->delete()`.
+- `SyncRoomsFromSbooking`: cleanup scope theo co_so — `SbRoom::where('sbooking_co_so_id', $coSoId)->whereNotIn('sbooking_id', $receivedIds ?: [0])->delete()`. Guard `[0]` tránh delete-all khi API trả rỗng bất thường. Skip khi `--dry-run`.
+- Verify: sync lại services + rooms → `xoá: 0` (mirror đã đồng bộ, không có row thừa).
+
+### Đợt C.3.b (2026-08-25) — STC Japan no-room + UI skip chọn phòng
+
+**Schema:**
+- Sbooking migration `2026_08_25_120000_add_khong_can_phong_to_dich_vu.php`: thêm cột `dich_vu.khong_can_phong` (boolean, default false). Set true cho id 42 (HN) + 86 (HCM) — STC Japan làm ở nước ngoài.
+- Sbooking `SyncApiController::dichVu()` select thêm field `khong_can_phong`.
+- SCRM migration `2026_08_25_120000_add_khong_can_phong_to_sb_services.php`: mirror field.
+- SCRM `SbService`: thêm fillable + cast boolean.
+- SCRM `SyncServicesFromSbooking`: đọc field từ payload.
+
+**UI SCRM `⚡lead-form.blade.php`:**
+- Helper mới `isNewBookingServiceNoRoom()`: query SbService flag.
+- `updatedNewBookingServiceId`: nếu DV no-room → clear `newBookingRoomId`, `availableRooms`, `availableSlots`, `roomStatus`; skip `loadSlotsAndStatus`.
+- Validation: `newBookingRoomId` chuyển `required` → `nullable`. Add manual check: nếu KHÔNG phải no-room mà room null → `addError` + return.
+- Render dropdown: `@if ($this->isNewBookingServiceNoRoom())` → hiện box thông báo "🌐 Dịch vụ này không cần phòng (làm ở nước ngoài)." thay cho select.
+
+**Verify:** sync SCRM → SbService id 42 + 86 có `khong_can_phong=1`.
+
+**Còn nợ (khi user push booking STC thực):** sbooking API preflight/store có thể fail khi phong_id=null (Api BookingApiController.php:119, 171 đã nullable → OK), nhưng `scheduledEndAt` tính từ phòng `phut_moi_khach` — với STC no-room cần fallback dùng `dich_vu.thoi_gian_phut` (STC = 15'). Cần verify end-to-end khi user test tay.
+
+### Đợt C.3.c (chưa làm — chờ user quyết)
+
+1. **DV 41 DeepOxy Tổng hợp** — combo Xông + YHPĐ, 1 booking → 2 phòng. Cần multi-room schema (booking pivot 2 phòng, capacity check kép). Task lớn — cần trình thiết kế trước khi code.
+2. **DV 40 DeepOxy Xông** — pairing giới (2 khách/giờ cùng giới hoặc vợ chồng). Cần thêm cột `gender_pair` trên booking + logic check khi booking cùng slot. Task medium.
+3. **HN phòng id 1-5 `so_slot_toi_da=12`** — nghi lỗi seed cũ (phòng khám thực tế ≤ 2-3 khách/giờ). Cần user confirm số slot thật cho từng phòng.
+
+### Commit chuỗi (branch `sixteenth`)
+- Sbooking: `c168aae` (A), `71b7c91` (B1), `be1c8c6` (B2), `9b11ea4` (C.1), `c5f4e1d` (C.2), `<next>` (C.3.b migration+API).
+- SCRM: `c5a2450` (A), `1278465` (B1), `fe74215` (B2), `356ca85` (C.1), `a3387b4` (C.2), `<next>` (C.3.a + C.3.b).
 4. **DV 40 DeepOxy Xông** — pairing giới (2 khách/giờ).
 5. **STC Japan** — UI booking skip chọn phòng.
 6. **Fix sync command SCRM**: cleanup row đã delete bên nguồn.

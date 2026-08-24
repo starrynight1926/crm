@@ -54,14 +54,17 @@ class SyncServicesFromSbooking extends Command
 
         $created = 0;
         $updated = 0;
+        $receivedIds = [];
 
         foreach ($rows as $r) {
+            $receivedIds[] = (int) $r['id'];
             $attrs = [
                 'sbooking_co_so_id' => $r['co_so_id'] ?? null,
                 'ten' => $r['ten'] ?? '',
                 'thoi_gian_phut' => (int) ($r['thoi_gian_phut'] ?? 30),
                 'thuoc_nhom' => $r['thuoc_nhom'] ?? 'khac',
                 'la_dich_vu' => (bool) ($r['la_dich_vu'] ?? false),
+                'khong_can_phong' => (bool) ($r['khong_can_phong'] ?? false),
                 'active' => (bool) ($r['active'] ?? true),
                 'synced_at' => now(),
             ];
@@ -76,8 +79,11 @@ class SyncServicesFromSbooking extends Command
             }
         }
 
-        $this->info("Xong. Tạo mới: {$created}, cập nhật: {$updated}, tổng: " . count($rows));
-        Log::info('sb:sync-services', ['created' => $created, 'updated' => $updated, 'total' => count($rows)]);
+        // Đợt C.3 (2026-08-25): cleanup row đã bị xoá bên sbooking.
+        $deleted = SbService::whereNotIn('sbooking_id', $receivedIds)->delete();
+
+        $this->info("Xong. Tạo mới: {$created}, cập nhật: {$updated}, xoá: {$deleted}, tổng nhận: " . count($rows));
+        Log::info('sb:sync-services', ['created' => $created, 'updated' => $updated, 'deleted' => $deleted, 'total' => count($rows)]);
 
         return self::SUCCESS;
     }

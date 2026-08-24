@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Model;
     'thoi_gian_phut',
     'thuoc_nhom',
     'la_dich_vu',
+    'khong_can_phong',
     'active',
     'synced_at',
 ])]
@@ -22,6 +23,7 @@ class SbService extends Model
         return [
             'active' => 'boolean',
             'la_dich_vu' => 'boolean',
+            'khong_can_phong' => 'boolean',
             'thoi_gian_phut' => 'integer',
             'synced_at' => 'datetime',
         ];

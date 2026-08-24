@@ -289,7 +289,8 @@ new class extends Component
             'newBookingDate'          => 'required|date',
             'newBookingTime'          => 'required|string',
             'newBookingFacilityId'    => 'required|exists:facilities,id',
-            'newBookingRoomId'        => 'required|exists:sb_rooms,sbooking_id',
+            // Đợt C.3.b (2026-08-25): DV có khong_can_phong=1 (vd STC Japan làm ở nước ngoài) → phòng nullable.
+            'newBookingRoomId'        => 'nullable|exists:sb_rooms,sbooking_id',
             'newBookingSbBacSiId'     => 'nullable|exists:sb_bac_si,sbooking_id',
             'newBookingServiceId'     => 'nullable|integer',
             'newBookingNote'          => 'nullable|string|max:1000',
@@ -305,10 +306,14 @@ new class extends Component
         ], [
             'newBookingType.required' => 'Chọn loại booking (Khám lâm sàng / Tư vấn / Dịch vụ).',
             'newBookingFacilityId.required' => 'Chọn cơ sở — booking phải gắn cơ sở để đẩy sang sbooking.',
-            'newBookingRoomId.required' => 'Chọn phòng — sbooking cần phòng để check capacity.',
             'newBookingDate.required' => 'Chọn ngày đặt — không được để trống, sbooking cần ngày để hiện lịch.',
             'newBookingTime.required' => 'Chọn khung giờ — không được để trống, sbooking cần khung giờ để check slot.',
         ]);
+        // Đợt C.3.b (2026-08-25): DV thường vẫn bắt buộc phòng; chỉ DV có flag khong_can_phong=1 mới được bỏ.
+        if (! $this->isNewBookingServiceNoRoom() && ! $this->newBookingRoomId) {
+            $this->addError('newBookingRoomId', 'Chọn phòng — sbooking cần phòng để check capacity.');
+            return;
+        }
         // Phase C1.b 2026-08-01 rev: chặn cứng nếu cơ sở (hoặc cha nó) chưa map sbooking. Không cho ghi log local.
         $facilityForCheck = \App\Models\Facility::find($this->newBookingFacilityId);
         $sbCoSoResolved = null;
@@ -692,6 +697,17 @@ new class extends Component
     }
 
     /**
+     * Đợt C.3.b (2026-08-25): DV được chọn có flag khong_can_phong không?
+     * Dùng để hide dropdown phòng + skip validation + skip check slot/capacity.
+     */
+    public function isNewBookingServiceNoRoom(): bool
+    {
+        if (! $this->newBookingServiceId) return false;
+        return (bool) \App\Models\SbService::where('sbooking_id', $this->newBookingServiceId)
+            ->value('khong_can_phong');
+    }
+
+    /**
      * Đợt C.2 (2026-08-25): rebuild availableRooms theo cơ sở + bucket + DV.
      * - Filter cơ sở (sbooking_co_so_id) + bucket (tu_van/kham_ls/dich_vu).
      * - Nếu DV đã chọn có mapping trong sb_dich_vu_phong → whereIn phòng theo mapping.
@@ -731,6 +747,14 @@ new class extends Component
     public function updatedNewBookingRoomId(mixed $value): void { $this->loadSlotsAndStatus(); }
     public function updatedNewBookingServiceId(mixed $value): void
     {
+        // Đợt C.3.b (2026-08-25): DV no-room (STC Japan) → clear phòng + không load slot.
+        if ($this->isNewBookingServiceNoRoom()) {
+            $this->newBookingRoomId = null;
+            $this->availableRooms = [];
+            $this->availableSlots = [];
+            $this->roomStatus = null;
+            return;
+        }
         // Đợt C.2 (2026-08-25): chọn DV → reload phòng theo mapping sb_dich_vu_phong.
         // Reset room nếu phòng đang chọn không còn hợp lệ với DV mới.
         if ($this->newBookingFacilityId) {
@@ -3280,6 +3304,12 @@ new class extends Component
                                     @endforeach
                                 </select>
                                 <div>
+                                    @if ($this->isNewBookingServiceNoRoom())
+                                        {{-- Đợt C.3.b: DV có flag khong_can_phong (STC Japan) → không cần phòng --}}
+                                        <div class="w-full border border-dashed border-slate-300 bg-slate-50 rounded px-2 py-1.5 text-sm text-ink/60 italic">
+                                            🌐 Dịch vụ này không cần phòng (làm ở nước ngoài).
+                                        </div>
+                                    @else
                                     <select wire:model.live="newBookingRoomId"
                                             @if(empty($availableRooms)) disabled @endif
                                             class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm {{ empty($availableRooms) ? 'bg-slate-100 text-ink/40' : '' }}">
@@ -3288,6 +3318,7 @@ new class extends Component
                                             <option value="{{ $room['id'] }}">{{ $room['ten'] }} ({{ $room['kieu_phong'] === 'phong_dich_vu' ? 'DV' : 'Khám' }} · max {{ $room['so_slot_toi_da'] }})</option>
                                         @endforeach
                                     </select>
+                                    @endif
                                     @if ($roomStatus)
                                         <div class="mt-1 text-[11px] {{ $roomStatus['full'] ? 'text-red-700 font-semibold' : ($roomStatus['booked'] > 0 ? 'text-amber-700' : 'text-emerald-700') }}">
                                             @if ($roomStatus['full'])
