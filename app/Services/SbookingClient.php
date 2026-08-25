@@ -290,4 +290,72 @@ class SbookingClient
             'synced_at' => now(),
         ]);
     }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Đợt C.3.d (2026-08-25) — Combo helpers cho DV 41 (Xông + YHPĐ)
+    // ═══════════════════════════════════════════════════════════════════
+
+    /**
+     * Preflight 1 phòng qua sbooking (dry-run). Trả về ['ok'=>bool, 'reason'=>string].
+     * Payload gồm: co_so_id, ngay_dat, gio_thuc_hien, gio_ket_thuc, dich_vu_id, phong_id.
+     */
+    public function preflightRoom(array $payload): array
+    {
+        $token = config('services.booking.api_token');
+        $baseUrl = rtrim(config('services.booking.api_url') ?: '', '/');
+        if (! $token || ! $baseUrl) return ['ok' => false, 'reason' => 'Chưa cấu hình sbooking API.'];
+        try {
+            $resp = Http::withToken($token)->timeout(10)->acceptJson()->post($baseUrl . '/bookings/preflight', $payload);
+        } catch (Throwable $e) {
+            return ['ok' => false, 'reason' => 'Preflight HTTP fail: ' . $e->getMessage()];
+        }
+        if (! $resp->successful()) {
+            $body = $resp->json();
+            $reason = is_array($body) && ! empty($body['message']) ? $body['message'] : 'Preflight HTTP ' . $resp->status();
+            return ['ok' => false, 'reason' => $reason];
+        }
+        return ['ok' => true, 'reason' => ''];
+    }
+
+    /**
+     * Push 1 booking raw sang sbooking. Trả ['ok'=>bool, 'id'=>?int, 'ma'=>?string, 'reason'=>string].
+     * KHÔNG ghi vào BookingLog — caller tự lưu.
+     */
+    public function pushRawBooking(array $payload): array
+    {
+        $token = config('services.booking.api_token');
+        $baseUrl = rtrim(config('services.booking.api_url') ?: '', '/');
+        if (! $token || ! $baseUrl) return ['ok' => false, 'id' => null, 'ma' => null, 'reason' => 'Chưa cấu hình sbooking API.'];
+        try {
+            $resp = Http::withToken($token)->timeout(15)->acceptJson()->post($baseUrl . '/bookings', $payload);
+        } catch (Throwable $e) {
+            return ['ok' => false, 'id' => null, 'ma' => null, 'reason' => 'HTTP fail: ' . $e->getMessage()];
+        }
+        if (! $resp->successful()) {
+            $body = $resp->json();
+            $reason = is_array($body) && ! empty($body['message']) ? $body['message'] : 'HTTP ' . $resp->status() . ': ' . substr($resp->body(), 0, 400);
+            return ['ok' => false, 'id' => null, 'ma' => null, 'reason' => $reason];
+        }
+        $body = $resp->json();
+        if (! isset($body['id'])) {
+            return ['ok' => false, 'id' => null, 'ma' => null, 'reason' => 'Response thiếu id.'];
+        }
+        return ['ok' => true, 'id' => (int) $body['id'], 'ma' => $body['ma_booking'] ?? null, 'reason' => ''];
+    }
+
+    /**
+     * Xoá 1 booking (rollback combo). Chỉ hoạt động cho booking cho_duyet.
+     */
+    public function deleteBooking(int $bookingId): bool
+    {
+        $token = config('services.booking.api_token');
+        $baseUrl = rtrim(config('services.booking.api_url') ?: '', '/');
+        if (! $token || ! $baseUrl) return false;
+        try {
+            $resp = Http::withToken($token)->timeout(10)->acceptJson()->delete($baseUrl . '/bookings/' . $bookingId);
+            return $resp->successful();
+        } catch (Throwable $e) {
+            return false;
+        }
+    }
 }

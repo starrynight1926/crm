@@ -168,6 +168,8 @@ new class extends Component
     public ?int $newBookingSbBacSiId = null; // Phase C1.d: sb_bac_si.sbooking_id (thay newBookingDoctorId cũ)
     public ?int $newBookingDoctorId = null; // giữ compat cho code cũ, không set từ form nữa
     public ?int $newBookingServiceId = null;
+    // Đợt C.3.d (2026-08-25): DV 41 combo Xông + YHPĐ, sale chọn YHPĐ variant.
+    public ?int $newBookingComboYhpdVariantId = null;
     public string $newBookingNote = '';
     // Phase C1.b rev9 2026-08-02: 4 field bổ sung đồng bộ với sbooking.
     public string $newBookingSoLieuTrinh = '';
@@ -309,8 +311,15 @@ new class extends Component
             'newBookingDate.required' => 'Chọn ngày đặt — không được để trống, sbooking cần ngày để hiện lịch.',
             'newBookingTime.required' => 'Chọn khung giờ — không được để trống, sbooking cần khung giờ để check slot.',
         ]);
-        // Đợt C.3.b (2026-08-25): DV thường vẫn bắt buộc phòng; chỉ DV có flag khong_can_phong=1 mới được bỏ.
-        if (! $this->isNewBookingServiceNoRoom() && ! $this->newBookingRoomId) {
+        // Đợt C.3.d (2026-08-25): DV 41 combo — validate variant YHPĐ (bỏ qua yêu cầu phòng).
+        if ($this->isNewBookingCombo41()) {
+            if (! in_array((int) $this->newBookingComboYhpdVariantId, [181, 182, 183], true)) {
+                $this->addError('newBookingComboYhpdVariantId', 'Chọn thời lượng YHPĐ đi kèm (30/45/60 phút).');
+                return;
+            }
+        }
+        // Đợt C.3.b (2026-08-25): DV thường vẫn bắt buộc phòng; chỉ DV có flag khong_can_phong=1 hoặc combo 41 mới được bỏ.
+        elseif (! $this->isNewBookingServiceNoRoom() && ! $this->newBookingRoomId) {
             $this->addError('newBookingRoomId', 'Chọn phòng — sbooking cần phòng để check capacity.');
             return;
         }
@@ -482,6 +491,60 @@ new class extends Component
             }
         } catch (\Throwable $e) {
             // Preflight network fail → cho phép tạo local, sync sẽ báo sau (không block bởi lỗi hạ tầng).
+        }
+
+        // ═══════════════════════════════════════════════════════════════════
+        // Đợt C.3.d (2026-08-25): DV 41 combo branch
+        // Auto tạo 2 booking sbooking (Xông 15' + YHPĐ variant), 1 BookingLog SCRM.
+        // ═══════════════════════════════════════════════════════════════════
+        if ($this->isNewBookingCombo41() && $scheduledAt) {
+            $comboRes = $this->pushCombo41(
+                sbCoSoId: (int) $sbCoSoResolved,
+                yhpdVariantSbookingId: (int) $this->newBookingComboYhpdVariantId,
+                scheduledAt: $scheduledAt,
+            );
+            if (! $comboRes['ok']) {
+                $this->addError('newBookingComboYhpdVariantId', $comboRes['error']);
+                return;
+            }
+            // Tạo 1 BookingLog SCRM cho combo, note ghi chi tiết 2 booking.
+            $bl = BookingLog::create([
+                'lead_id'      => $this->lead->id,
+                'user_id'      => $user->id,
+                'type'         => 'dich_vu',
+                'status'       => $this->newBookingStatus,
+                'scheduled_at' => $scheduledAt,
+                'scheduled_end_at' => $comboRes['end_at'],
+                'facility_id'  => $this->newBookingFacilityId,
+                'sb_phong_id'  => $comboRes['xong_phong_id'],  // main = Phòng Xông
+                'sb_bac_si_id' => $this->newBookingSbBacSiId,
+                'sb_dich_vu_id' => 41,  // combo marker
+                'sb_khung_gio_id' => $sbKhungGioId,
+                'doctor_id'    => null,
+                'service_id'   => $resolvedServiceId,
+                'note'         => trim(($this->newBookingNote ? $this->newBookingNote . "\n\n" : '') . $comboRes['note']),
+                'ket_hop_medical' => $this->newBookingKetHopMedical,
+                'co_tu_van' => $this->newBookingCoTuVan,
+                'co_kham_cls' => $this->newBookingCoKhamCls,
+                'sbooking_booking_id' => $comboRes['xong_booking_id'],
+                'sbooking_booking_ma' => $comboRes['xong_booking_ma'],
+                'sync_status' => 'synced',
+                'synced_at' => now(),
+            ]);
+            $cvIds = array_values(array_filter($this->newBookingConsultantIds, fn ($v) => (int) $v > 0));
+            $syncData = [];
+            foreach ($cvIds as $i => $uid) $syncData[(int) $uid] = ['position' => $i + 1];
+            if ($syncData) $bl->syncConsultantsTracked($syncData);
+            BookingLog::syncLeadBookingStatus($this->lead->id);
+            session()->flash('cf_ok', '✨ Combo DeepOxy Tổng hợp đã tạo 2 booking: ' . $comboRes['xong_booking_ma'] . ' (Xông) + ' . $comboRes['yhpd_booking_ma'] . ' (YHPĐ).');
+            $this->reset([
+                'newBookingType', 'newBookingScheduledAt', 'newBookingDate', 'newBookingTime',
+                'newBookingFacilityId', 'newBookingRoomId', 'newBookingSbBacSiId', 'newBookingDoctorId',
+                'newBookingServiceId', 'newBookingComboYhpdVariantId', 'newBookingNote',
+                'newBookingKetHopMedical', 'newBookingCoTuVan', 'newBookingCoKhamCls',
+                'newBookingConsultantIds',
+            ]);
+            return;
         }
 
         $bl = BookingLog::create([
@@ -687,6 +750,108 @@ new class extends Component
         $this->reloadAvailableRooms();
     }
 
+    /**
+     * Đợt C.3.d (2026-08-25): DV 41 combo — orchestrate preflight + push 2 booking + rollback.
+     * HN only (Phòng Xông id 22, Phòng YHCT id 10/11/12).
+     * Trả về: ['ok'=>bool, 'error'=>?, 'xong_booking_id'=>?, 'xong_booking_ma'=>?, 'xong_phong_id'=>?,
+     *          'yhpd_booking_id'=>?, 'yhpd_booking_ma'=>?, 'yhpd_phong_id'=>?, 'end_at'=>?, 'note'=>?].
+     */
+    private function pushCombo41(int $sbCoSoId, int $yhpdVariantSbookingId, string $scheduledAt): array
+    {
+        // Chỉ HN mới có combo (Xông + YHCT ID cứng).
+        if ($sbCoSoId !== 1) {
+            return ['ok' => false, 'error' => 'Combo DeepOxy Tổng hợp chỉ hoạt động ở cơ sở HN.'];
+        }
+        $lead = $this->lead;
+        $XONG_DV = 40; $XONG_PHONG = 22; $XONG_MIN = 15;
+        $YHCT_PHONGS = [10, 11, 12];
+        $yhpdMinutes = match ($yhpdVariantSbookingId) {
+            181 => 30, 182 => 45, 183 => 60,
+            default => 0,
+        };
+        if ($yhpdMinutes === 0) {
+            return ['ok' => false, 'error' => 'YHPĐ variant không hợp lệ.'];
+        }
+
+        $ngay = substr($scheduledAt, 0, 10);
+        $xongStart = substr($scheduledAt, 11, 5) . ':00';
+        $xongEnd = \Carbon\Carbon::parse($scheduledAt)->addMinutes($XONG_MIN)->format('H:i:s');
+        $yhpdStart = $xongEnd;
+        $yhpdEnd = \Carbon\Carbon::parse($scheduledAt)->addMinutes($XONG_MIN + $yhpdMinutes)->format('H:i:s');
+        $endAt = substr($scheduledAt, 0, 11) . $yhpdEnd;
+
+        $client = app(SbookingClient::class);
+
+        // ── Preflight Phòng Xông ─────────────────────────────────────
+        $pf1 = $client->preflightRoom([
+            'co_so_id' => $sbCoSoId, 'ngay_dat' => $ngay,
+            'gio_thuc_hien' => $xongStart, 'gio_ket_thuc' => $xongEnd,
+            'dich_vu_id' => $XONG_DV, 'phong_id' => $XONG_PHONG,
+        ]);
+        if (! $pf1['ok']) {
+            return ['ok' => false, 'error' => 'Phòng Xông không sẵn: ' . $pf1['reason']];
+        }
+
+        // ── Preflight YHCT lần lượt 10 → 11 → 12, pick phòng đầu tiên free ──
+        $yhctPhongId = null;
+        $lastYhctErr = '';
+        foreach ($YHCT_PHONGS as $pid) {
+            $pf = $client->preflightRoom([
+                'co_so_id' => $sbCoSoId, 'ngay_dat' => $ngay,
+                'gio_thuc_hien' => $yhpdStart, 'gio_ket_thuc' => $yhpdEnd,
+                'dich_vu_id' => $yhpdVariantSbookingId, 'phong_id' => $pid,
+            ]);
+            if ($pf['ok']) { $yhctPhongId = $pid; break; }
+            $lastYhctErr = $pf['reason'];
+        }
+        if (! $yhctPhongId) {
+            return ['ok' => false, 'error' => 'Cả 3 Phòng YHCT đều bận: ' . $lastYhctErr];
+        }
+
+        // ── Push Booking 1 (Xông) ────────────────────────────────────
+        $basePayload = [
+            'so_dien_thoai' => $lead->phone, 'ho_ten' => $lead->name ?: 'Khách CRM',
+            'co_so_id' => $sbCoSoId, 'ngay_dat' => $ngay,
+            'nguon' => $lead->source_group ?: 'SCRM',
+            'crm_khach_ma' => $lead->code,
+            'loai_dat_lich' => 'dich_vu',
+            'bac_si_id' => $this->newBookingSbBacSiId,
+        ];
+        $r1 = $client->pushRawBooking(array_merge($basePayload, [
+            'dich_vu_id' => $XONG_DV, 'phong_id' => $XONG_PHONG,
+            'gio_thuc_hien' => $xongStart, 'gio_ket_thuc' => $xongEnd,
+            'ghi_chu' => '[Combo DV 41] Xông 15\' (phần 1/2)',
+        ]));
+        if (! $r1['ok']) {
+            return ['ok' => false, 'error' => 'Push Booking Xông fail: ' . $r1['reason']];
+        }
+
+        // ── Push Booking 2 (YHPĐ) ────────────────────────────────────
+        $r2 = $client->pushRawBooking(array_merge($basePayload, [
+            'dich_vu_id' => $yhpdVariantSbookingId, 'phong_id' => $yhctPhongId,
+            'gio_thuc_hien' => $yhpdStart, 'gio_ket_thuc' => $yhpdEnd,
+            'ghi_chu' => '[Combo DV 41] YHPĐ ' . $yhpdMinutes . '\' (phần 2/2) — kèm ' . $r1['ma'],
+        ]));
+        if (! $r2['ok']) {
+            // Rollback Booking 1
+            $delOk = $client->deleteBooking($r1['id']);
+            $rollbackNote = $delOk ? ' (đã rollback Xông)' : ' (⚠ ROLLBACK FAIL — vào sbooking xoá ' . $r1['ma'] . ' tay)';
+            return ['ok' => false, 'error' => 'Push Booking YHPĐ fail: ' . $r2['reason'] . $rollbackNote];
+        }
+
+        return [
+            'ok' => true, 'error' => null,
+            'xong_booking_id' => $r1['id'], 'xong_booking_ma' => $r1['ma'], 'xong_phong_id' => $XONG_PHONG,
+            'yhpd_booking_id' => $r2['id'], 'yhpd_booking_ma' => $r2['ma'], 'yhpd_phong_id' => $yhctPhongId,
+            'end_at' => $endAt,
+            'note' => sprintf(
+                '✨ Combo DeepOxy Tổng hợp:%s· Xông 15\' @ Phòng Xông [%s → %s] · sbooking %s%s· YHPĐ %d\' @ Phòng YHCT %d [%s → %s] · sbooking %s',
+                "\n", $xongStart, $xongEnd, $r1['ma'], "\n",
+                $yhpdMinutes, $yhctPhongId, $yhpdStart, $yhpdEnd, $r2['ma']
+            ),
+        ];
+    }
+
     /** 2026-08-09: đổi bucket → reload phòng theo filter mới. */
     public function updatedNewBookingType(mixed $value): void
     {
@@ -705,6 +870,16 @@ new class extends Component
         if (! $this->newBookingServiceId) return false;
         return (bool) \App\Models\SbService::where('sbooking_id', $this->newBookingServiceId)
             ->value('khong_can_phong');
+    }
+
+    /**
+     * Đợt C.3.d (2026-08-25): DV 41 (DeepOxy & DetoxCell tổng hợp) = combo Xông + YHPĐ.
+     * Cần sale chọn YHPĐ variant (181=30', 182=45', 183=60'). System auto-tạo 2 booking.
+     * Chỉ HN có DV 41 active (HCM DV 85 đã inactive Đợt B1).
+     */
+    public function isNewBookingCombo41(): bool
+    {
+        return (int) $this->newBookingServiceId === 41;
     }
 
     /**
@@ -747,6 +922,17 @@ new class extends Component
     public function updatedNewBookingRoomId(mixed $value): void { $this->loadSlotsAndStatus(); }
     public function updatedNewBookingServiceId(mixed $value): void
     {
+        // Đợt C.3.d (2026-08-25): DV 41 combo — clear phòng + phong tự pick trong branch push.
+        if ($this->isNewBookingCombo41()) {
+            $this->newBookingRoomId = null;
+            $this->availableRooms = [];
+            $this->availableSlots = [];
+            $this->roomStatus = null;
+            // reset variant nếu chuyển đến/từ DV 41
+            return;
+        }
+        // Đổi DV → clear variant combo cũ (nếu có).
+        $this->newBookingComboYhpdVariantId = null;
         // Đợt C.3.b (2026-08-25): DV no-room (STC Japan) → clear phòng + không load slot.
         if ($this->isNewBookingServiceNoRoom()) {
             $this->newBookingRoomId = null;
@@ -3304,7 +3490,19 @@ new class extends Component
                                     @endforeach
                                 </select>
                                 <div>
-                                    @if ($this->isNewBookingServiceNoRoom())
+                                    @if ($this->isNewBookingCombo41())
+                                        {{-- Đợt C.3.d: DV 41 combo — sale chọn YHPĐ variant, system auto-pick Phòng Xông + Phòng YHCT free. --}}
+                                        <div class="w-full border border-dashed border-emerald-400 bg-emerald-50 rounded px-2 py-1.5 text-xs text-emerald-800 mb-1">
+                                            ✨ <b>Combo DeepOxy Tổng hợp</b>: Xông 15' + YHPĐ (chọn thời lượng). System tự tạo 2 booking @ Phòng Xông + Phòng YHCT.
+                                        </div>
+                                        <select wire:model.live="newBookingComboYhpdVariantId"
+                                                class="w-full border border-emerald-400 rounded px-2 py-1.5 text-sm">
+                                            <option value="">— YHPĐ đi kèm * —</option>
+                                            <option value="181">Y học Phương Đông 30'</option>
+                                            <option value="182">Y học Phương Đông 45'</option>
+                                            <option value="183">Y học Phương Đông 60'</option>
+                                        </select>
+                                    @elseif ($this->isNewBookingServiceNoRoom())
                                         {{-- Đợt C.3.b: DV có flag khong_can_phong (STC Japan) → không cần phòng --}}
                                         <div class="w-full border border-dashed border-slate-300 bg-slate-50 rounded px-2 py-1.5 text-sm text-ink/60 italic">
                                             🌐 Dịch vụ này không cần phòng (làm ở nước ngoài).

@@ -2830,7 +2830,41 @@ User chốt semantics: **slot = max khách/giờ** (tránh dồn khách). Formul
 - HCM Phòng Xét nghiệm: slot 2 → 1.
 - **Chưa apply local** vì MySQL tắt cuối session. User pull + `php artisan migrate` bên sbooking mai.
 
-**3. DV 41 DeepOxy Tổng hợp — approach A (auto-create 2 booking)** — CHƯA CODE, cần bàn chi tiết:
+### Đợt C.3.d (2026-08-25) — DV 41 combo Xông + YHPĐ (auto-create 2 booking + rollback)
+
+**Chốt design:**
+- Combo max time = 15 + 30/45/60 (không phải 90). Sale chọn YHPĐ variant.
+- Preflight cả 2 phòng, chỉ push khi cả 2 free (auto-pick YHCT 10 → 11 → 12).
+- Nếu push Booking 2 fail sau khi Booking 1 OK → auto-rollback (DELETE Booking 1).
+- 1 BookingLog SCRM cho combo (sb_dich_vu_id=41 marker), note chi tiết 2 sbooking IDs.
+
+**Sbooking side:**
+- `DELETE /api/bookings/{booking}` (destroy) — chỉ hoạt động với trang_thai=cho_duyet. Dùng cho rollback.
+
+**SCRM side — `SbookingClient`:**
+- `preflightRoom(payload)` — dry-run 1 phòng qua sbooking API.
+- `pushRawBooking(payload)` — push booking không qua BookingLog (dùng cho combo sub-bookings).
+- `deleteBooking(id)` — rollback booking mồ côi.
+
+**SCRM lead-form `⚡lead-form.blade.php`:**
+- Property mới `newBookingComboYhpdVariantId` (nullable, 181/182/183).
+- Helper `isNewBookingCombo41()` — detect DV 41 selected.
+- UI: khi DV 41 → hide dropdown phòng, hiện box hint + dropdown YHPĐ variant 30/45/60.
+- `updatedNewBookingServiceId`: DV 41 → clear room; DV khác → clear combo variant.
+- `addBookingLog`: validate combo variant nếu DV 41; branch pushCombo41() BEFORE normal push flow.
+- `pushCombo41()` helper (~90 lines): preflight Xông + loop preflight YHCT → push 2 → nếu fail 2 → rollback 1 → trả về ok/error + 2 sbooking IDs cho BookingLog.
+
+**Verify tinker end-to-end:**
+- Setup: lead 1 SA source, HN facility, DV 41 + YHPĐ 45' (182), 2026-09-06 09:00.
+- Kết quả: BookingLog SCRM id=3 tạo OK, sb_dich_vu_id=41, sb_phong_id=22, sbooking_booking_id=5 (main Xông).
+- Sbooking bookings verify: `id=5` DV=40 phòng=22 09:00→09:15; `id=6` DV=182 phòng=10 (YHCT 1) 09:15→10:00 ✅.
+- Note SCRM lưu đầy đủ 2 sbooking ma (BKG-260825-000005 + BKG-260825-000006) + info giờ + phòng.
+- DELETE API test: `curl DELETE /api/bookings/4` → `{"deleted":true,"id":4}` (đã cleanup test STC booking).
+
+**Ghi chú kỹ thuật:**
+- Column `booking_logs.scheduled_end_at` là type `TIME` (không phải DATETIME) — MySQL strip date phần, Carbon cast display date=today. Không ảnh hưởng push sbooking (bookings sbooking có đúng date). Cast quirk sẵn có, không phải bug combo.
+
+**3. DV 41 DeepOxy Tổng hợp — approach A (auto-create 2 booking)** — ĐÃ CODE (Đợt C.3.d trên):
 - Flow: sale chọn DV 41 → UI hiện thêm dropdown "YHPĐ đi kèm (30/45/60)" → sale chọn ngày+giờ+BS → submit → SCRM tự tạo 2 booking liền kề:
   - Booking 1: DV 40 (Xông) 15' @ Phòng Xông, giờ start = giờ user chọn.
   - Booking 2: DV YHPĐ variant (181/182/183) @ Phòng YHCT, giờ start = giờ Xông + 15'.
