@@ -2818,11 +2818,36 @@ User bổ sung mapping: tiêm khớp/dịch nhờn/PRP/Recells thực tế làm 
 
 **Còn nợ (khi user push booking STC thực):** sbooking API preflight/store có thể fail khi phong_id=null (Api BookingApiController.php:119, 171 đã nullable → OK), nhưng `scheduledEndAt` tính từ phòng `phut_moi_khach` — với STC no-room cần fallback dùng `dich_vu.thoi_gian_phut` (STC = 15'). Cần verify end-to-end khi user test tay.
 
-### Đợt C.3.c (chưa làm — chờ user quyết)
+### Đợt C.3.c (2026-08-25) — Chốt từ user
 
-1. **DV 41 DeepOxy Tổng hợp** — combo Xông + YHPĐ, 1 booking → 2 phòng. Cần multi-room schema (booking pivot 2 phòng, capacity check kép). Task lớn — cần trình thiết kế trước khi code.
-2. **DV 40 DeepOxy Xông** — pairing giới (2 khách/giờ cùng giới hoặc vợ chồng). Cần thêm cột `gender_pair` trên booking + logic check khi booking cùng slot. Task medium.
-3. **HN phòng id 1-5 `so_slot_toi_da=12`** — nghi lỗi seed cũ (phòng khám thực tế ≤ 2-3 khách/giờ). Cần user confirm số slot thật cho từng phòng.
+**1. DV 40 pairing giới** — user **BỎ**, chỉ cần ghi chú tay khi book. Không schema, không code.
+
+**2. Fix slot HN + HCM** — Migration `2026_08_25_130000_fix_hn_phong_slot_capacity.php` (sbooking):
+User chốt semantics: **slot = max khách/giờ** (tránh dồn khách). Formula: `so_slot_toi_da=1` (1 giường) + `phut_moi_khach = 60/N`.
+- HN id 1-5 (Ngoại, Chuyên gia, Nội 1/2, Siêu âm): slot 12 → 1, phut=30 (25 cho Siêu âm).
+- HN Phòng lấy mẫu: slot 2 → 1 (giữ phut=10 → 6 khách/giờ).
+- HCM Phòng siêu âm (id 14): slot 24 → 1, phut=25.
+- HCM Phòng Xét nghiệm: slot 2 → 1.
+- **Chưa apply local** vì MySQL tắt cuối session. User pull + `php artisan migrate` bên sbooking mai.
+
+**3. DV 41 DeepOxy Tổng hợp — approach A (auto-create 2 booking)** — CHƯA CODE, cần bàn chi tiết:
+- Flow: sale chọn DV 41 → UI hiện thêm dropdown "YHPĐ đi kèm (30/45/60)" → sale chọn ngày+giờ+BS → submit → SCRM tự tạo 2 booking liền kề:
+  - Booking 1: DV 40 (Xông) 15' @ Phòng Xông, giờ start = giờ user chọn.
+  - Booking 2: DV YHPĐ variant (181/182/183) @ Phòng YHCT, giờ start = giờ Xông + 15'.
+- Chỉ HN có DV 41 active (HCM DV 85 đã inactive).
+- Cần handle: partial failure (Booking 1 OK, Booking 2 fail) — rollback Booking 1 hay giữ + báo user? Cần chốt.
+- Cần handle: BookingLog SCRM lưu 1 log hay 2 log? Nếu 2 → dashboard sẽ hiện 2 booking cho 1 lead — có thể confusing.
+- Task lớn: sửa lead-form submit logic, thêm UI YHPĐ selector, sync 2 booking sang sbooking, handle rollback. **Session sau bàn thiết kế cụ thể trước khi code.**
+
+### Còn nợ verify tay (mai user)
+- Pull sbooking + `php artisan migrate` để chạy migration slot fix.
+- Login SCRM → tạo lead HN phase 3 → chọn DV STC (id 42) → confirm dropdown phòng ẩn + hiện box "🌐 DV không cần phòng".
+- Chọn DV có mapping (BJR 35, Khám Nội 51...) → confirm dropdown chỉ hiện phòng đã map.
+- Push booking STC end-to-end → verify sbooking API accept `phong_id=null` + `scheduledEndAt` calc đúng.
+
+### Commit chuỗi (branch `sixteenth`)
+- Sbooking: A (`c168aae`) → B1 (`71b7c91`) → B2 (`be1c8c6`) → C.1 (`9b11ea4`) → C.2 (`c5f4e1d`) → C.3.b (`1de73d5`) → C.3.c slot fix (`<next>`).
+- SCRM: A (`c5a2450`) → B1 (`1278465`) → B2 (`fe74215`) → C.1 (`356ca85`) → C.2 (`a3387b4`) → C.3 (`6c5dbf1`) → C.3.c result (`<next>`).
 
 ### Commit chuỗi (branch `sixteenth`)
 - Sbooking: `c168aae` (A), `71b7c91` (B1), `be1c8c6` (B2), `9b11ea4` (C.1), `c5f4e1d` (C.2), `<next>` (C.3.b migration+API).
