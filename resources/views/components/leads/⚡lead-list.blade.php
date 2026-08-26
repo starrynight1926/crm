@@ -862,16 +862,7 @@ new class extends Component
             </thead>
             <tbody class="divide-y divide-gold-100">
                 @forelse ($leads as $lead)
-                    @php
-                        // Bôi màu dịu cả dòng theo trạng thái booking (Khách đã tới / Tới trễ / Hủy).
-                        $rowTint = match ($lead->booking_status) {
-                            \App\Models\Lead::BOOKING_KHACH_DA_TOI  => 'bg-green-50/70 hover:bg-green-100/70',
-                            \App\Models\Lead::BOOKING_KHACH_TOI_TRE => 'bg-amber-50/70 hover:bg-amber-100/70',
-                            \App\Models\Lead::BOOKING_KHACH_HUY     => 'bg-red-50/70 hover:bg-red-100/70',
-                            default                                 => 'hover:bg-gold-50/40',
-                        };
-                    @endphp
-                    <tr class="{{ $rowTint }} cursor-pointer" onclick="window.location='{{ $lead->canOpenEditForm(auth()->user()) ? route('leads.edit', $lead) : route('leads.show', $lead) }}'">
+                    <tr class="hover:bg-gold-50/40 cursor-pointer" onclick="window.location='{{ $lead->canOpenEditForm(auth()->user()) ? route('leads.edit', $lead) : route('leads.show', $lead) }}'">
                         @if ($canDelete)
                             <td class="px-4 py-3" onclick="event.stopPropagation()">
                                 <input type="checkbox" wire:model.live="selected" value="{{ $lead->id }}" class="rounded border-gold-300 text-gold-600 w-4 h-4">
