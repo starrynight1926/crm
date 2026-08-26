@@ -184,13 +184,25 @@ class RenameUsersToPositionFormatSeeder extends Seeder
         }
 
         // 4) Apply. Đổi cả username + email (email = <username>@longevity.com.vn).
+        //    2026-08-26: Tự xử duplicate — nếu slot đích đang bị 1 user KHÁC (id cũ hơn) chiếm
+        //    (thường do sync lại từ sbooking sinh ra bản mới cùng tên), thì:
+        //      - chuyển FK org_unit_managers của user cũ → user mới (bỏ nếu trùng),
+        //      - xoá user cũ,
+        //      - rồi rename user mới.
+        //    Rule user chốt: LUÔN giữ bản mới (id lớn hơn), xoá bản cũ.
         DB::transaction(function () use ($renames) {
             foreach ($renames as $userId => $newUsername) {
                 $newEmail = $newUsername . '@longevity.com.vn';
-                // Bỏ qua nếu đã trùng (defensive)
                 $u = User::find($userId);
                 if (! $u) continue;
                 if ($u->username === $newUsername && $u->email === $newEmail) continue;
+
+                $conflict = User::where('id', '!=', $userId)
+                    ->where(fn ($q) => $q->where('username', $newUsername)->orWhere('email', $newEmail))
+                    ->first();
+                if ($conflict) {
+                    $this->resolveDuplicate($conflict, $userId, $newUsername);
+                }
 
                 $u->forceFill([
                     'username' => $newUsername,
@@ -200,6 +212,35 @@ class RenameUsersToPositionFormatSeeder extends Seeder
         });
 
         $this->command?->info('RenameUsersToPositionFormat: đã đổi ' . count($renames) . ' user.');
+    }
+
+    /**
+     * 2026-08-26: Bản cũ chiếm slot username → dời FK sang user mới rồi xoá.
+     * Hiện chỉ có 1 pivot ref thực tế là org_unit_managers (đã scan toàn DB).
+     * Nếu về sau có thêm bảng ref user_id, bổ sung tại đây.
+     */
+    private function resolveDuplicate(User $old, int $newUserId, string $targetUsername): void
+    {
+        $rows = DB::table('org_unit_managers')->where('user_id', $old->id)->get();
+        foreach ($rows as $r) {
+            $dup = DB::table('org_unit_managers')
+                ->where('user_id', $newUserId)
+                ->where('org_unit_id', $r->org_unit_id)
+                ->exists();
+            if ($dup) {
+                DB::table('org_unit_managers')
+                    ->where('user_id', $old->id)
+                    ->where('org_unit_id', $r->org_unit_id)
+                    ->delete();
+            } else {
+                DB::table('org_unit_managers')
+                    ->where('user_id', $old->id)
+                    ->where('org_unit_id', $r->org_unit_id)
+                    ->update(['user_id' => $newUserId]);
+            }
+        }
+        $this->command?->warn("RenameUsersToPositionFormat: xoá user cũ id={$old->id} ('{$old->name}') để nhường slot '{$targetUsername}' cho id={$newUserId}.");
+        User::where('id', $old->id)->delete();
     }
 
     /** Tìm ancestor cấp depth=1 (cơ sở) của org unit. Fallback: chính nó nếu là root/branch. */
