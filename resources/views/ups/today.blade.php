@@ -38,6 +38,5 @@
         @endif
     @endif
 
-    {{-- Admin có quyền chốt/hủy chốt + import/export ngay tại /ups-today; user khác vẫn read-only. --}}
-    <livewire:ups.ups-board :read-only="auth()->user()?->email !== 'admin@longevity.com.vn'" />
+    <livewire:ups.ups-board :read-only="true" />
 @endsection
