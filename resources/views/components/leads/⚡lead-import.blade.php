@@ -943,7 +943,7 @@ new class extends Component
     }
 
     /**
-     * Xuất Excel chứa các dòng lỗi + cột Lý do (mỗi lỗi 1 dòng gộp theo dòng gốc).
+     * Xuất lại nguyên file gốc, chỉ tô đỏ những dòng lỗi + thêm cột "Lý do lỗi".
      */
     public function downloadErrorRows()
     {
@@ -964,25 +964,43 @@ new class extends Component
             $col = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($i + 1);
             $sheet->setCellValue($col . '1', $h);
         }
-        $sheet->getStyle('A1:' . \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex(count($headers)) . '1')
-            ->getFont()->setBold(true);
+        $lastColLetter = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex(count($headers));
+        $sheet->getStyle('A1:' . $lastColLetter . '1')->getFont()->setBold(true);
 
+        // Giữ NGUYÊN toàn bộ dòng của file gốc; chỉ tô đỏ những dòng lỗi + điền cột "Lý do lỗi".
         $r = 2;
-        foreach ($this->rowErrors as $rowIdx => $errs) {
-            $original = $this->preview[$rowIdx] ?? [];
-            $reasons = [];
-            foreach ($errs as $field => $msg) {
-                $label = match ($field) {
-                    'name' => 'Tên', 'phone' => 'SĐT', default => $field,
-                };
-                $reasons[] = "[$label] $msg";
-            }
+        foreach ($this->preview as $rowIdx => $original) {
             $rowOut = array_values($original);
-            $rowOut[count($headers) - 1] = implode(' | ', $reasons);
+            // Đệm cho đủ số cột header gốc (tránh lệch cột "Lý do lỗi").
+            $rowOut = array_pad($rowOut, count($headers) - 1, '');
+
+            $errs = $this->rowErrors[$rowIdx] ?? null;
+            if ($errs) {
+                $reasons = [];
+                foreach ($errs as $field => $msg) {
+                    $label = match ($field) {
+                        'name' => 'Tên', 'phone' => 'SĐT', default => $field,
+                    };
+                    $reasons[] = "[$label] $msg";
+                }
+                $rowOut[count($headers) - 1] = implode(' | ', $reasons);
+            } else {
+                $rowOut[count($headers) - 1] = '';
+            }
+
             foreach ($rowOut as $ci => $val) {
                 $col = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($ci + 1);
                 $sheet->setCellValue($col . $r, is_scalar($val) ? $val : json_encode($val, JSON_UNESCAPED_UNICODE));
             }
+
+            if ($errs) {
+                $sheet->getStyle('A' . $r . ':' . $lastColLetter . $r)
+                    ->getFill()->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
+                    ->getStartColor()->setARGB('FFFECACA'); // đỏ nhạt (tailwind red-200)
+                $sheet->getStyle('A' . $r . ':' . $lastColLetter . $r)
+                    ->getFont()->getColor()->setARGB('FF991B1B'); // chữ đỏ đậm (red-800)
+            }
+
             $r++;
         }
 
