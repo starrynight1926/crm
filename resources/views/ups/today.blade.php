@@ -38,5 +38,6 @@
         @endif
     @endif
 
-    <livewire:ups.ups-board :read-only="true" />
+    {{-- Ai có ups.confirm_daily (admin cơ sở + super admin) thao tác được ngay; user khác vẫn read-only. --}}
+    <livewire:ups.ups-board :read-only="! auth()->user()?->hasPermission('ups.confirm_daily')" />
 @endsection

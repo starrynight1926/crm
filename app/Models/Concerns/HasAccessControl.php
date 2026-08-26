@@ -46,6 +46,12 @@ trait HasAccessControl
 
     public function hasPermission(string $key): bool
     {
+        // Super admin (email admin@longevity.com.vn — khớp AdminScope::isSuperAdmin) bypass mọi perm.
+        // Trước đây thiếu bypass này → admin@ không vào được /ups-*, không confirm được UPS, v.v.
+        if ($this->email === 'admin@longevity.com.vn') {
+            return true;
+        }
+
         $this->permissionKeysCache ??= $this->effectiveAssignments()
             ->flatMap(fn (Assignment $a) => $a->role->permissions->pluck('key'))
             ->unique()
