@@ -2101,6 +2101,13 @@ new class extends Component
         LeadStatusLog::record($lead, 'created', null, 'Nhập tay bởi ' . $user->name, $user->id);
         AuditLog::record('create', $lead);
 
+        // 2026-08-26: Nguồn MKT — auto chia theo UPS ngay khi Trực Page up (khớp spec bảng ma trận chia số).
+        // Trước đây chỉ ProcessRawLead (import Excel) gọi engine → UI /leads/create không chia → lead treo pool_common.
+        if ($lead->source_group === Lead::SOURCE_MKT && $lead->pool_level === Lead::POOL_COMMON && $lead->owner_id === null) {
+            app(\App\Services\DistributionEngine::class)->distribute($lead);
+            $lead->refresh();
+        }
+
         session()->flash('status', 'Đã tạo lead mới.');
 
         // 2026-08-05 fix: mọi user tạo lead xong đều mở edit lead vừa tạo (không lùi về /create).
