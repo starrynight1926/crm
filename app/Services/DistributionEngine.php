@@ -29,6 +29,15 @@ class DistributionEngine
     /** Chia 1 lead từ vị trí hiện tại xuống sâu nhất có thể. */
     public function distribute(Lead $lead): void
     {
+        // 2026-08-26 — MKT là logic cứng: chia round-robin theo UPS list của cơ sở người up,
+        // không phụ thuộc distribution_rules (bảng đó dành cho MKT_BR / SA / BA / BDM cần rule config).
+        if ($lead->source_group === Lead::SOURCE_MKT && $lead->owner_id === null) {
+            if ($this->assignMktByUps($lead)) {
+                return; // Đã pick sale + gán owner. Không chạy rule engine nữa.
+            }
+            // pickMkt trả null (UPS list rỗng hoặc chưa chốt UPS) → fallthrough: giữ lead ở pool để CM chia tay.
+        }
+
         // Phase 6.20 — eager load customValues để accessor page/camp không N+1 khi match rule
         $lead->loadMissing('customValues');
         if ($lead->pool_level === Lead::POOL_COMMON) {
@@ -39,6 +48,52 @@ class DistributionEngine
             $lead->loadMissing('customValues');
             $this->runLevel($lead, DistributionRule::LEVEL_TEAM_TO_USER);
         }
+    }
+
+    /**
+     * MKT auto-assign: suy facility từ user Trực Page (imported_by) → UpsDispatcher::pickMkt round-robin.
+     * Trả true nếu đã gán owner, false nếu không pick được (list rỗng / UPS chưa chốt / không suy được facility).
+     */
+    private function assignMktByUps(Lead $lead): bool
+    {
+        $importerId = $lead->imported_by;
+        if (! $importerId) {
+            return false;
+        }
+        $facilityPoolUnitId = $this->resolvePoolUnitIdFromUser($importerId);
+        if (! $facilityPoolUnitId) {
+            return false;
+        }
+        $sale = app(\App\Services\Ups\UpsDispatcher::class)->pickMkt($facilityPoolUnitId);
+        if (! $sale) {
+            return false;
+        }
+        // Suy org_unit_id của sale (team-sale) để lead có scope đúng.
+        $saleOrgId = $sale->assignments()->first()?->org_unit_id;
+        $lead->update([
+            'owner_id'        => $sale->id,
+            'org_unit_id'     => $saleOrgId,
+            'pool_level'      => Lead::POOL_PERSONAL,
+            'assigned_at'     => now(),
+            'pipeline_status' => Lead::PSTATUS_IN_CARE,
+        ]);
+        LeadDistributionLog::create([
+            'lead_id'         => $lead->id,
+            'action'          => LeadDistributionLog::ACTION_DISTRIBUTE,
+            'from_pool_level' => Lead::POOL_COMMON,
+            'to_pool_level'   => Lead::POOL_PERSONAL,
+            'to_owner_id'     => $sale->id,
+            'org_unit_id'     => $saleOrgId,
+            'actor_id'        => null,        // system (UPS auto)
+            'reason'          => 'MKT auto UPS round-robin',
+            'created_at'      => now(),
+        ]);
+        try {
+            $sale->notify(new LeadAssigned($lead));
+        } catch (\Throwable $e) {
+            // Notification lỗi không rollback assignment.
+        }
+        return true;
     }
 
     private function runLevel(Lead $lead, string $level): void
