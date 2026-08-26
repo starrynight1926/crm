@@ -141,8 +141,11 @@ class OrgStaffSeeder extends Seeder
                 'perms' => ['lead.approve_source','lead.book_action','lead.create','lead.view_pool','lead.distribute','lead.distribute_tele','lead.distribute_sale','lead.distribute_to_team','lead.distribute_to_sale','lead.read_booking','lead.recall','lead.update','lead.update_booking','lead.update_sale','lead.view','lead.view_phone','report.view'],
             ],
             'Sale' => [
-                'desc' => 'Khai thác & chăm sóc khách hàng',
-                'perms' => ['lead.create','lead.update','lead.consult','lead.view','report.view','payment.record'],
+                'desc' => 'Khai thác & chăm sóc khách hàng (kiêm đặt lịch — admin SBooking duyệt sẽ gán sale tiếp đón)',
+                // 2026-08-26: bổ sung lead.book_action + lead.read_booking để Sale UPS-list nhận lead MKT
+                // được tự đặt lịch (khớp ma trận chia số — flow "Đặt lịch" bên MKT do sale được chia thực hiện,
+                // admin SBooking duyệt sau đó tự gán sale tiếp đón). Thiếu perm này flow duyet_lich đứt gãy.
+                'perms' => ['lead.create','lead.update','lead.consult','lead.view','lead.book_action','lead.read_booking','lead.update_booking','report.view','payment.record'],
             ],
             'Observer' => [
                 'desc' => 'Xem toàn bộ, không thêm/sửa/xóa dịch vụ và nhân sự',
