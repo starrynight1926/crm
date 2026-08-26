@@ -146,7 +146,7 @@ new class extends Component
         'source_group'     => ['nhóm nguồn', 'nguồn', 'nguon', 'source', 'source_group'],
         'distribution'     => ['phương thức chia', 'phuong thuc chia', 'chia', 'distribution'],
         'insight'          => ['insight', 'ghi chú insight', 'ghi chu insight'],
-        'link'             => ['link', 'url'],
+        // 2026-08-11: 'link' đã chuyển sang custom field (xem TARGETS) — bỏ khỏi GUESS để tránh $this->mapping['link'] undefined.
         'birthday'         => ['ngày sinh', 'ngay sinh', 'birthday', 'dob'],
         'occupation'       => ['nghề nghiệp', 'nghe nghiep', 'occupation'],
         'address'          => ['địa chỉ', 'dia chi', 'address'],
