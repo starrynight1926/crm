@@ -94,7 +94,7 @@ new class extends Component
 };
 ?>
 
-<div>
+<div wire:poll.5s>
     <div class="flex flex-wrap items-start justify-between gap-4 mb-6">
         <div>
             <h1 class="text-3xl font-bold mb-1">Lead lỗi (chưa chuẩn hóa được)</h1>
