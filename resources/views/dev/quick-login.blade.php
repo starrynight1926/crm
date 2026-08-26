@@ -20,9 +20,13 @@
 
     @foreach ($groups as $branch => $users)
         <div class="mb-6">
+            @php
+                // Badge tròn chỉ chứa mã ngắn HN/HCM/ĐN. Nhóm "Khác / Toàn công ty" → badge "?" + text đầy đủ.
+                $isShort = mb_strlen($branch) <= 3;
+            @endphp
             <h2 class="text-lg font-semibold text-ink mb-3 flex items-center gap-2">
-                <span class="w-8 h-8 rounded-full bg-gold-100 text-gold-700 flex items-center justify-center text-sm font-bold">{{ $branch }}</span>
-                <span>Chi nhánh {{ $branch }}</span>
+                <span class="w-8 h-8 rounded-full bg-gold-100 text-gold-700 flex items-center justify-center text-sm font-bold shrink-0">{{ $isShort ? $branch : '?' }}</span>
+                <span>{{ $isShort ? 'Chi nhánh ' . $branch : $branch }}</span>
                 <span class="text-xs text-ink/50">({{ count($users) }} user)</span>
             </h2>
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
