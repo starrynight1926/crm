@@ -50,6 +50,36 @@ new class extends Component
         RawLead::where('status', RawLead::STATUS_FAILED)->findOrFail($id)->delete();
     }
 
+    /** Import lại tất cả dòng lỗi (áp filter nguồn hiện tại nếu có): reset về pending + dispatch job. */
+    public function retryAll(): void
+    {
+        abort_unless(auth()->user()->hasPermission('lead.import'), 403);
+        $q = RawLead::where('status', RawLead::STATUS_FAILED);
+        if ($this->fSource !== '') $q->where('source_type', $this->fSource);
+        $ids = $q->pluck('id');
+        if ($ids->isEmpty()) {
+            session()->flash('status', 'Không có dòng lỗi để import lại.');
+            return;
+        }
+        RawLead::whereIn('id', $ids)->update([
+            'status' => RawLead::STATUS_PENDING,
+            'error_reason' => null,
+        ]);
+        foreach ($ids as $id) ProcessRawLead::dispatch($id);
+        session()->flash('status', "Đã đưa {$ids->count()} dòng vào chuẩn hóa lại.");
+    }
+
+    /** Xóa toàn bộ dòng lỗi (áp filter nguồn hiện tại nếu có). */
+    public function discardAll(): void
+    {
+        abort_unless(auth()->user()->hasPermission('lead.import'), 403);
+        $q = RawLead::where('status', RawLead::STATUS_FAILED);
+        if ($this->fSource !== '') $q->where('source_type', $this->fSource);
+        $count = $q->count();
+        $q->delete();
+        session()->flash('status', "Đã loại bỏ {$count} dòng lỗi.");
+    }
+
     public function with(): array
     {
         return [
@@ -70,13 +100,27 @@ new class extends Component
             <h1 class="text-3xl font-bold mb-1">Lead lỗi (chưa chuẩn hóa được)</h1>
             <p class="text-sm text-ink/60">{{ $failedCount }} dòng bị pipeline từ chối — sửa lại rồi chạy lại, hoặc loại bỏ.</p>
         </div>
-        <select wire:model.live="fSource" class="border border-gold-200 rounded-md px-3 py-2 text-sm bg-white focus:outline-none focus:border-gold-500">
-            <option value="">Tất cả nguồn</option>
-            <option value="excel">Import Excel/CSV</option>
-            <option value="webhook">Webhook</option>
-            <option value="ads_api">Ads API</option>
-            <option value="manual">Nhập tay</option>
-        </select>
+        <div class="flex items-center gap-2">
+            <select wire:model.live="fSource" class="border border-gold-200 rounded-md px-3 py-2 text-sm bg-white focus:outline-none focus:border-gold-500">
+                <option value="">Tất cả nguồn</option>
+                <option value="excel">Import Excel/CSV</option>
+                <option value="webhook">Webhook</option>
+                <option value="ads_api">Ads API</option>
+                <option value="manual">Nhập tay</option>
+            </select>
+            @if ($failedCount > 0)
+                <button wire:click="retryAll"
+                        wire:confirm="Đưa toàn bộ dòng lỗi{{ $fSource ? ' (đang lọc)' : '' }} vào chuẩn hóa lại?"
+                        class="text-sm font-semibold text-white bg-gold-600 hover:bg-gold-700 px-4 py-2 rounded-md">
+                    Import lại
+                </button>
+                <button wire:click="discardAll"
+                        wire:confirm="Xóa VĨNH VIỄN toàn bộ dòng lỗi{{ $fSource ? ' (đang lọc)' : '' }}? Không thể hoàn tác."
+                        class="text-sm font-semibold text-red-700 border border-red-300 hover:bg-red-50 px-4 py-2 rounded-md">
+                    Loại bỏ toàn bộ
+                </button>
+            @endif
+        </div>
     </div>
 
     @if (session('status'))
