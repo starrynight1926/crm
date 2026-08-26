@@ -78,7 +78,7 @@ class RealCmStaffSeeder extends Seeder
 
             // === HCM — 1 DM + 3 CM + 1 TL + 1 Trợ lý ===
             ['tnkn@longevity.com.vn', 'Trần Nguyễn Kim Ngân', $roleDmHcm, $branchHcm, Assignment::SCOPE_CUSTOM, [$branchHcm?->id], 'DM'],
-            ['ptkq@longevity.com.vn', 'Phan Trần Khánh Quỳn', $roleTl, $teamAshley, Assignment::SCOPE_TEAM, [], 'Team Leader'],
+            ['ptkq@longevity.com.vn', 'Phan Trần Khánh Quỳnh', $roleTl, $teamAshley, Assignment::SCOPE_TEAM, [], 'Team Leader'],
             // 2026-07-16: 3 CM HCM là đồng CM Team Sale Ashley (scope team).
             ['tbt@longevity.com.vn', 'Trần Thị Bích Trâm', $roleCmHcm, OrgUnit::firstWhere('code','team-ashley-sale'), Assignment::SCOPE_TEAM, [], 'Clinic Manager'],
             ['nmt@longevity.com.vn', 'Nguyễn Thị Minh Thư', $roleCmHcm, OrgUnit::firstWhere('code','team-ashley-sale'), Assignment::SCOPE_TEAM, [], 'Trợ lý kinh doanh Clinic Manager (Assistant CM HCM)'],

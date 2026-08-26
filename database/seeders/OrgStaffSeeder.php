@@ -48,6 +48,8 @@ class OrgStaffSeeder extends Seeder
                             ['code' => 'team-hoi-booking', 'name' => 'Team Booking'],
                             ['code' => 'team-hoi-sale', 'name' => 'Team Sale'],
                         ]],
+                        // 2026-08-26: Team Phan Trần Khánh Quỳnh — 1 node đơn lẻ (không chia booking/sale).
+                        ['code' => 'team-quynh', 'name' => 'Team Phan Trần Khánh Quỳnh'],
                     ]],
                 ]],
                 ['code' => 'branch-hcm', 'name' => 'Cơ sở HCM: 207 Nguyễn Văn Thụ', 'children' => [
@@ -340,7 +342,9 @@ class OrgStaffSeeder extends Seeder
             ['tvh@longevity.com.vn',  'CM sale',     'team-hoi-hn',   Assignment::SCOPE_TEAM,   []],
             ['nhd@longevity.com.vn',  'Team Leader', 'team-hoi-hn',   Assignment::SCOPE_TEAM,   []],
             ['tnkn@longevity.com.vn', 'DM HCM',      'branch-hcm',    Assignment::SCOPE_CUSTOM, ['branch-hcm']],
-            ['ptkq@longevity.com.vn', 'Team Leader', 'team-giang',    Assignment::SCOPE_TEAM,   []],
+            // 2026-08-26: Quỳnh làm TL 2 team song song — team-quynh (HN, base) + team-ashley (HCM PKD1).
+            ['ptkq@longevity.com.vn', 'Team Leader', 'team-quynh',    Assignment::SCOPE_TEAM,   []],
+            ['ptkq@longevity.com.vn', 'Team Leader', 'team-ashley',   Assignment::SCOPE_TEAM,   []],
             ['tbt@longevity.com.vn',  'CM sale',     'team-ashley-sale', Assignment::SCOPE_TEAM, []],
             ['hbtl@longevity.com.vn', 'CM sale',     'team-ashley-sale', Assignment::SCOPE_TEAM, []],
             ['nmt@longevity.com.vn',  'CM sale',     'team-ashley-sale', Assignment::SCOPE_TEAM, []],
@@ -423,15 +427,16 @@ class OrgStaffSeeder extends Seeder
                 ->delete();
         }
 
-        // 2026-08-24: Phan Trần Khánh Quỳnh (ptkq) chuyển TL từ team-ashley (HCM PKD1)
-        // sang team-giang (HN PKD1). Xoá assignment cũ để tránh union 2 nơi.
+        // 2026-08-26: Quỳnh (ptkq) tách team riêng team-quynh (HN, base) + giữ team-ashley (HCM PKD1) song song.
+        // Xoá assignment team-giang cũ (từng gán 2026-08-24 khi chuyển team-ashley → team-giang, giờ bỏ).
+        // Loop assignment ở dưới sẽ tự upsert team-quynh + team-ashley.
         $quynhId = User::whereIn('email', ['ptkq@longevity.com.vn'])
             ->orWhereIn('name', ['Phan Trần Khánh Quỳn', 'Phan Trần Khánh Quỳnh'])
             ->value('id');
-        $teamAshleyId = OrgUnit::where('code', 'team-ashley')->value('id');
-        if ($quynhId && $teamAshleyId) {
+        $teamGiangId = OrgUnit::where('code', 'team-giang')->value('id');
+        if ($quynhId && $teamGiangId) {
             Assignment::where('user_id', $quynhId)
-                ->where('org_unit_id', $teamAshleyId)
+                ->where('org_unit_id', $teamGiangId)
                 ->delete();
         }
 

@@ -29,7 +29,7 @@ class OrgUnitManagerSeeder extends Seeder
         'nhd@longevity.com.vn'     => 'Nguyễn Hoành Đức',
         'tbt@longevity.com.vn'     => 'Trần Thị Bích Trâm',
         'hbtl@longevity.com.vn'    => 'Huỳnh Bùi Thanh Lan',
-        'ptkq@longevity.com.vn'    => 'Phan Trần Khánh Quỳn',
+        'ptkq@longevity.com.vn'    => 'Phan Trần Khánh Quỳnh',
         'baoit@longevity.com.vn'   => 'Bảo',
         'tumod@longevity.com.vn'   => 'Tú',
     ];
