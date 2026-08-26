@@ -38,8 +38,13 @@ new class extends Component
         $u = auth()->user();
         if ($this->seesAllReports()) return Lead::query();
         if ($this->isPersonalScopeOnly()) {
+            // 2026-08-26: bổ sung imported_by — Trực Page/importer phải thấy lead mình đẩy vào,
+            // dù chưa được chia (owner/receiver còn null). Ngta không sửa được (không có perm),
+            // chỉ để theo dõi lô mình đã nhập.
             return Lead::query()->where(function ($q) use ($u) {
-                $q->where('owner_id', $u->id)->orWhere('receiver_id', $u->id);
+                $q->where('owner_id', $u->id)
+                  ->orWhere('receiver_id', $u->id)
+                  ->orWhere('imported_by', $u->id);
             });
         }
         return Lead::visibleTo($u);
