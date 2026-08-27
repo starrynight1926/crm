@@ -27,7 +27,12 @@ class DatabaseSeeder extends Seeder
             RenameUsersToPositionFormatSeeder::class, // Đổi username+email sang <cơ_sở>.<chức_vụ>NN
             PoolUnitSeeder::class,                    // Cây Kho số Longevity Medical (Phase 6.22)
             BoRoleSeeder::class,                      // Role BO (Lễ Tân) + 3 tk BO HN/DN/HCM (Phase 6.22)
-            RolePermissionSyncSeeder::class,          // SNAPSHOT role→perms — SOURCE OF TRUTH, CHẠY SAU CÙNG
+            RolePermissionSyncSeeder::class,          // SNAPSHOT role→perms
+            SourcePermissionMatrixSeeder::class,      // Overlay source.up.* — SOURCE OF TRUTH cho quyền up nguồn (chạy sau RolePermissionSync).
+            StaffAndOrgSeeder::class,                 // Observer tài khoản + Admin hệ thống + chức danh + Kim Phấn CM DN.
+            ReportCustomFieldSeeder::class,           // Custom fields báo cáo (ngay_sinh, dia_chi...) + facilities/staff demo.
+            CompanyReportPresetSeeder::class,         // Preset báo cáo list cấp Công ty.
+            // NOTE: Phase66FlowSeeder + OrgAndRoleSeeder ĐÃ DEAD (Phase66 fail null-id, OrgAndRole silent).
         ]);
     }
 }

@@ -3597,23 +3597,35 @@ new class extends Component
                                         $__dvPhutSelected = (int) (\App\Models\SbService::where('sbooking_id', $newBookingServiceId)->value('thoi_gian_phut') ?? 0);
                                     }
                                     $__toMin = fn ($t) => $t ? ((int) substr($t, 0, 2) * 60 + (int) substr($t, 3, 2)) : 0;
+                                    $__freeTime = $this->isNewBookingCombo41() || $this->isNewBookingServiceNoRoom();
                                 @endphp
-                                <select wire:model.live="newBookingTime"
-                                        @if(! $hasSlots) disabled @endif
-                                        class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm {{ $hasSlots ? '' : 'bg-slate-100 text-ink/40' }}"
-                                        title="{{ $slotHint }}">
-                                    <option value="">— Khung giờ —</option>
-                                    @foreach ($availableSlots as $slot)
-                                        @php
-                                            $__slotPhut = max(0, $__toMin($slot['gio_ket_thuc'] ?? '') - $__toMin($slot['gio_bat_dau'] ?? ''));
-                                            $__shortForDv = $__dvPhutSelected > 0 && $__slotPhut > 0 && $__slotPhut < $__dvPhutSelected;
-                                        @endphp
-                                        <option value="{{ ($slot['id'] ?? '') . '|' . ($slot['gio_bat_dau'] ?? '') . '|' . ($slot['gio_ket_thuc'] ?? '') }}" @if(($slot['full'] ?? false) || $__shortForDv) disabled @endif>
-                                            {{ $slot['label'] ?? ($slot['gio_bat_dau'] ?? '') }}@if($__slotPhut) · {{ $__slotPhut }} phút @endif{{ ($slot['full'] ?? false) ? ' (đầy)' : '' }}@if($__shortForDv) ⚠️ ngắn hơn DV ({{ $__dvPhutSelected }}') @endif
-                                        </option>
-                                    @endforeach
-                                </select>
-                                <div class="text-[11px] text-ink/50">{{ $slotHint }}</div>
+                                @if ($__freeTime)
+                                    {{-- Combo 41 (auto tạo 2 booking Xông+YHPĐ) hoặc DV khong_can_phong (STC) → nhập giờ tự do HH:mm. --}}
+                                    <input type="time"
+                                           wire:model.live="newBookingTime"
+                                           class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm"
+                                           step="900">
+                                    <div class="text-[11px] text-ink/50">
+                                        {{ $this->isNewBookingCombo41() ? 'Giờ bắt đầu Xông (combo tự cộng 15\' + YHPĐ).' : 'Giờ bắt đầu — DV không phụ thuộc slot phòng.' }}
+                                    </div>
+                                @else
+                                    <select wire:model.live="newBookingTime"
+                                            @if(! $hasSlots) disabled @endif
+                                            class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm {{ $hasSlots ? '' : 'bg-slate-100 text-ink/40' }}"
+                                            title="{{ $slotHint }}">
+                                        <option value="">— Khung giờ —</option>
+                                        @foreach ($availableSlots as $slot)
+                                            @php
+                                                $__slotPhut = max(0, $__toMin($slot['gio_ket_thuc'] ?? '') - $__toMin($slot['gio_bat_dau'] ?? ''));
+                                                $__shortForDv = $__dvPhutSelected > 0 && $__slotPhut > 0 && $__slotPhut < $__dvPhutSelected;
+                                            @endphp
+                                            <option value="{{ ($slot['id'] ?? '') . '|' . ($slot['gio_bat_dau'] ?? '') . '|' . ($slot['gio_ket_thuc'] ?? '') }}" @if(($slot['full'] ?? false) || $__shortForDv) disabled @endif>
+                                                {{ $slot['label'] ?? ($slot['gio_bat_dau'] ?? '') }}@if($__slotPhut) · {{ $__slotPhut }} phút @endif{{ ($slot['full'] ?? false) ? ' (đầy)' : '' }}@if($__shortForDv) ⚠️ ngắn hơn DV ({{ $__dvPhutSelected }}') @endif
+                                            </option>
+                                        @endforeach
+                                    </select>
+                                    <div class="text-[11px] text-ink/50">{{ $slotHint }}</div>
+                                @endif
                             </div>
                         </div>
                         {{-- 2026-08-05: CV auto lấy từ UPS Sale list (bucket A→B→C→OFF) của cơ sở booking.
