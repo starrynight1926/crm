@@ -589,12 +589,11 @@ new class extends Component
         if ($bl->status === BookingLog::STATUS_DA_XAC_NHAN && ! empty($cvIds) && ! $this->lead->fresh()->owner_id) {
             $this->assignToSale((int) $cvIds[0], 1);
         }
-        // Phase C1.b 2026-08-01 rev: mọi booking đều push sang sbooking (đã chặn cứng ở đầu).
+        // 2026-08-28: push sbooking bất đồng bộ qua queue để tránh Apache Windows deadlock
+        // (Livewire request giữ worker + Http::post sbooking cùng Apache → 30s timeout).
+        // Yêu cầu queue worker chạy nền: `php artisan queue:work`.
         $bl->update(['sync_status' => 'pending']);
-        $ok = app(SbookingClient::class)->pushBooking($bl->fresh());
-        if (! $ok) {
-            session()->flash('cf_warn', 'Đã ghi booking nhưng chưa đồng bộ được sang sbooking (' . $bl->fresh()->sync_error . '). Bấm "🔄 Thử lại" ở dòng booking để retry.');
-        }
+        \App\Jobs\PushBookingLogJob::dispatch($bl->id);
         $this->reset([
             'newBookingType', 'newBookingScheduledAt', 'newBookingDate', 'newBookingTime',
             'newBookingFacilityId', 'newBookingRoomId', 'newBookingSbBacSiId', 'newBookingDoctorId',

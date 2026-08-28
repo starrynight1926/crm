@@ -132,7 +132,7 @@ class SbookingClient
         ];
 
         try {
-            $response = Http::withToken($token)->timeout(30)->retry(2, 500)->acceptJson()
+            $response = Http::withToken($token)->connectTimeout(3)->timeout(30)->acceptJson()
                 ->post($baseUrl . '/bookings', $payload);
         } catch (Throwable $e) {
             $this->markFailed($log, 'HTTP fail: ' . $e->getMessage());
@@ -233,7 +233,7 @@ class SbookingClient
         }
 
         try {
-            $response = \Illuminate\Support\Facades\Http::withToken($token)->timeout(30)->retry(2, 500)->acceptJson()
+            $response = \Illuminate\Support\Facades\Http::withToken($token)->connectTimeout(3)->timeout(30)->acceptJson()
                 ->put($baseUrl . '/bookings/' . $log->sbooking_booking_id, $payload);
         } catch (Throwable $e) {
             $this->markFailed($log, 'PUT fail: ' . $e->getMessage());
@@ -270,7 +270,7 @@ class SbookingClient
         }
 
         try {
-            $r = \Illuminate\Support\Facades\Http::withToken($token)->timeout(20)->retry(2, 500)->acceptJson()
+            $r = \Illuminate\Support\Facades\Http::withToken($token)->connectTimeout(3)->timeout(20)->acceptJson()
                 ->post($baseUrl . '/bookings/' . $log->sbooking_booking_id . '/comments', [
                     'noi_dung' => $content,
                     'sbooking_user_id' => $sbookingUserId,
@@ -305,7 +305,7 @@ class SbookingClient
         $baseUrl = rtrim(config('services.booking.api_url') ?: '', '/');
         if (! $token || ! $baseUrl) return ['ok' => false, 'reason' => 'Chưa cấu hình sbooking API.'];
         try {
-            $resp = Http::withToken($token)->timeout(20)->retry(2, 500)->acceptJson()->post($baseUrl . '/bookings/preflight', $payload);
+            $resp = Http::withToken($token)->connectTimeout(3)->timeout(20)->acceptJson()->post($baseUrl . '/bookings/preflight', $payload);
         } catch (Throwable $e) {
             return ['ok' => false, 'reason' => 'Preflight HTTP fail: ' . $e->getMessage()];
         }
@@ -327,7 +327,7 @@ class SbookingClient
         $baseUrl = rtrim(config('services.booking.api_url') ?: '', '/');
         if (! $token || ! $baseUrl) return ['ok' => false, 'id' => null, 'ma' => null, 'reason' => 'Chưa cấu hình sbooking API.'];
         try {
-            $resp = Http::withToken($token)->timeout(30)->retry(2, 500)->acceptJson()->post($baseUrl . '/bookings', $payload);
+            $resp = Http::withToken($token)->connectTimeout(3)->timeout(30)->acceptJson()->post($baseUrl . '/bookings', $payload);
         } catch (Throwable $e) {
             return ['ok' => false, 'id' => null, 'ma' => null, 'reason' => 'HTTP fail: ' . $e->getMessage()];
         }
@@ -352,7 +352,7 @@ class SbookingClient
         $baseUrl = rtrim(config('services.booking.api_url') ?: '', '/');
         if (! $token || ! $baseUrl) return false;
         try {
-            $resp = Http::withToken($token)->timeout(20)->retry(2, 500)->acceptJson()->delete($baseUrl . '/bookings/' . $bookingId);
+            $resp = Http::withToken($token)->connectTimeout(3)->timeout(20)->acceptJson()->delete($baseUrl . '/bookings/' . $bookingId);
             return $resp->successful();
         } catch (Throwable $e) {
             return false;

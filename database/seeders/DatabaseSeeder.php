@@ -32,6 +32,7 @@ class DatabaseSeeder extends Seeder
             StaffAndOrgSeeder::class,                 // Observer tài khoản + Admin hệ thống + chức danh + Kim Phấn CM DN.
             ReportCustomFieldSeeder::class,           // Custom fields báo cáo (ngay_sinh, dia_chi...) + facilities/staff demo.
             CompanyReportPresetSeeder::class,         // Preset báo cáo list cấp Công ty.
+            SyncSbookingCatalogSeeder::class,         // Kéo BS/DV/phòng từ sbooking (phut_kham_ls…) — chạy cuối, cần sbooking đang up.
             // NOTE: Phase66FlowSeeder + OrgAndRoleSeeder ĐÃ DEAD (Phase66 fail null-id, OrgAndRole silent).
         ]);
     }
