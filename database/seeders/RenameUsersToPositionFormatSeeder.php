@@ -208,6 +208,10 @@ class RenameUsersToPositionFormatSeeder extends Seeder
                 $u->forceFill([
                     'username' => $newUsername,
                     'email'    => $newEmail,
+                    // Reset password theo email mới (bug fix 2026-08-28):
+                    // OrgStaffSeeder tạo user với email tạm (ntan@, tyn@…) → forEmail fallback HN.
+                    // Sau khi email chuyển sang dn.*/hcm.*/hn.* thì password phải khớp cơ sở.
+                    'password' => \App\Support\DefaultPassword::forEmail($newEmail),
                 ])->save();
             }
         });
