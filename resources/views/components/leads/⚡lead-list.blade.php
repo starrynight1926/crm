@@ -662,6 +662,58 @@ new class extends Component
         }, $filename);
     }
 
+    /**
+     * 2026-08-28: 3 stat card như dashboard, count theo Customer Flow phase.
+     * Áp mọi filter đang bật (search/date/nguon/classification) TRỪ fPhase — để
+     * user chọn 1 phase vẫn thấy tổng 3 phase trong cùng phạm vi ngày.
+     */
+    private function statsWidgets(): array
+    {
+        $savedPhase = $this->fPhase;
+        $this->fPhase = '';
+        try {
+            $base = $this->filteredQuery()->reorder(); // bỏ orderBy để count nhanh
+            $sql = clone $base;
+            $counts = (clone $sql)
+                ->selectRaw('phase, COUNT(*) as c')
+                ->groupBy('phase')
+                ->pluck('c', 'phase');
+        } finally {
+            $this->fPhase = $savedPhase;
+        }
+
+        return [
+            [
+                'label' => 'Lead mới nhập',
+                'desc'  => 'Phase 1 (Tạo mới & Chia số)',
+                'value' => (int) ($counts[Lead::CF_PHASE_NEW] ?? 0),
+                'color' => 'blue',
+                'phase' => Lead::CF_PHASE_NEW,
+            ],
+            [
+                'label' => 'Lead Tele chăm sóc',
+                'desc'  => 'Phase 2 (Gọi điện) — Tele care',
+                'value' => (int) ($counts[Lead::CF_PHASE_CALL] ?? 0),
+                'color' => 'amber',
+                'phase' => Lead::CF_PHASE_CALL,
+            ],
+            [
+                'label' => 'Lead đang booking',
+                'desc'  => 'Phase 3 (Booking thăm khám)',
+                'value' => (int) ($counts[Lead::CF_PHASE_BOOKING] ?? 0),
+                'color' => 'emerald',
+                'phase' => Lead::CF_PHASE_BOOKING,
+            ],
+        ];
+    }
+
+    /** Click card → set fPhase filter luôn (không navigate). */
+    public function setPhaseFilter(int $phase): void
+    {
+        $this->fPhase = $this->fPhase === (string) $phase ? '' : (string) $phase;
+        $this->resetPage();
+    }
+
     public function with(): array
     {
         $user = auth()->user();
@@ -670,6 +722,7 @@ new class extends Component
 
         return [
             'leads' => $leads,
+            'statsWidgets' => $this->statsWidgets(),
             'nguonOptions' => \App\Models\CustomField::find(1)?->options ?? [],
             'exportCore' => $this->showExportModal ? $this->coreColumns() : [],
             'exportCustomFields' => $this->showExportModal ? $this->exportableCustomFields() : collect(),
@@ -711,6 +764,31 @@ new class extends Component
                 </a>
             @endif
         </div>
+    </div>
+
+    {{-- 2026-08-28: 3 card thống kê real-time (wire:poll.5s ở root), respect filter ngày bên dưới. --}}
+    @php
+        $statColorMap = [
+            'blue'    => 'bg-blue-50 border-blue-200 hover:border-blue-400 text-blue-800',
+            'amber'   => 'bg-amber-50 border-amber-200 hover:border-amber-400 text-amber-800',
+            'emerald' => 'bg-emerald-50 border-emerald-200 hover:border-emerald-400 text-emerald-800',
+        ];
+        $statColorActive = [
+            'blue'    => 'ring-2 ring-blue-500',
+            'amber'   => 'ring-2 ring-amber-500',
+            'emerald' => 'ring-2 ring-emerald-500',
+        ];
+    @endphp
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
+        @foreach ($statsWidgets as $w)
+            @php $isActive = $fPhase === (string) $w['phase']; @endphp
+            <button type="button" wire:click="setPhaseFilter({{ $w['phase'] }})"
+                class="text-left block border-2 rounded-xl p-4 shadow-card transition-all {{ $statColorMap[$w['color']] }} {{ $isActive ? $statColorActive[$w['color']] : '' }}">
+                <div class="text-3xl font-extrabold tabular-nums leading-none mb-1">{{ number_format($w['value']) }}</div>
+                <div class="font-bold text-sm">{{ $w['label'] }}</div>
+                <div class="text-[11px] opacity-70 mt-1 leading-snug">{{ $w['desc'] }}</div>
+            </button>
+        @endforeach
     </div>
 
     {{-- Bộ lọc — chỉ hiện khi cột tương ứng đang bật (Phase 6.19) --}}
