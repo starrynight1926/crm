@@ -383,7 +383,7 @@ new class extends Component
                                             @endphp
                                             <tr class="{{ $att->list_bucket === 'OFF' ? 'bg-red-50/50' : '' }}">
                                                 <td class="border border-gold-200 px-3 py-2 text-center text-ink/60">{{ $i + 1 }}</td>
-                                                <td class="border border-gold-200 px-3 py-2 text-center font-mono text-xs">{{ optional($att->checkin_at)?->setTimezone('Asia/Ho_Chi_Minh')->format('H:i:s') }}</td>
+                                                <td class="border border-gold-200 px-3 py-2 text-center font-mono text-xs">{{ $att->checkin_at?->setTimezone('Asia/Ho_Chi_Minh')?->format('H:i:s') }}</td>
                                                 <td class="border border-gold-200 px-3 py-2 font-semibold text-center">
                                                     {{ $att->user->name }}
                                                     @if ($att->list_bucket)
@@ -531,7 +531,7 @@ new class extends Component
                                                                 {{ $att->user->name }}
                                                             </div>
                                                             <div class="flex items-center justify-center gap-2 mt-1">
-                                                                <span class="text-[11px] text-ink/60 font-mono">{{ optional($att->checkin_at)?->setTimezone('Asia/Ho_Chi_Minh')->format('H:i') }}</span>
+                                                                <span class="text-[11px] text-ink/60 font-mono">{{ $att->checkin_at?->setTimezone('Asia/Ho_Chi_Minh')?->format('H:i') }}</span>
                                                                 @if ($canOverride && ! $fb['confirmed'])
                                                                     <select x-on:change="$wire.call('moveBucket', {{ $att->id }}, $event.target.value); $event.target.value=''" class="text-[10px] border border-ink/20 rounded px-1 py-0 bg-white" title="Chuyển bucket">
                                                                         <option value="">↔</option>
@@ -558,7 +558,7 @@ new class extends Component
                                                             {{ $att->user->name }}
                                                         </div>
                                                         <div class="flex items-center justify-center gap-2 mt-1">
-                                                            <span class="text-[11px] text-ink/60 font-mono">{{ optional($att->checkin_at)?->setTimezone('Asia/Ho_Chi_Minh')->format('H:i') }}</span>
+                                                            <span class="text-[11px] text-ink/60 font-mono">{{ $att->checkin_at?->setTimezone('Asia/Ho_Chi_Minh')?->format('H:i') }}</span>
                                                             @if ($canOverride && ! $fb['confirmed'])
                                                                 <button wire:click="toggleMkt({{ $att->id }})" class="text-[10px] border border-red-200 rounded px-1 py-0.5 bg-white hover:bg-red-50 text-red-600" title="Bỏ khỏi MKT">
                                                                     −M
