@@ -64,6 +64,25 @@
                 ['label'=>'Sao lưu & khôi phục','desc'=>'Xuất cấu hình ra JSON để backup, nhập lại để rollback; xuất toàn bộ dữ liệu ra file ZIP kèm Excel.','route'=>'settings.backup','perm'=>'system.backup','icon'=>'box'],
             ],
         ],
+        'booking' => [
+            'label' => 'Cài đặt Booking',
+            'desc' => 'Các cài đặt admin của hệ Booking (deep-link mở tab mới). Chỉ admin hệ thống chỉnh được — gom về đây để không phải nhớ 2 URL.',
+            'modules' => (function () {
+                $bkBase = rtrim((string) config('services.booking.url'), '/');
+                if (! $bkBase) return [];
+                $mk = fn (string $label, string $desc, string $path, string $icon) => [
+                    'label' => $label, 'desc' => $desc, 'url' => $bkBase . $path, 'perm' => null, 'icon' => $icon,
+                ];
+                return [
+                    $mk('Thiết lập chung (Booking)', 'Trang tổng cài đặt bên hệ Booking.', '/longevity/thiet-lap', 'plug'),
+                    $mk('Kết nối SCRM', 'Cấu hình token/URL SBooking → SCRM (server-to-server).', '/longevity/thiet-lap/ket-noi/scrm', 'plug'),
+                    $mk('Cấu hình qua Excel', 'Import/export toàn bộ cấu hình cơ sở qua file Excel.', '/longevity/thiet-lap/cau-hinh-excel', 'box'),
+                    $mk('Nhật ký thông báo (Booking)', 'Xem log notification bên hệ Booking.', '/longevity/thiet-lap/nhat-ky-thong-bao', 'chart'),
+                    $mk('Sơ đồ tổ chức (Booking)', 'Xem cây phòng ban/nhân sự bên hệ Booking.', '/longevity/so-do-to-chuc', 'tree'),
+                    $mk('Báo cáo (Booking)', 'Trang báo cáo tổng hợp bên hệ Booking.', '/longevity/bao-cao', 'chart'),
+                ];
+            })(),
+        ],
         'me' => [
             'label' => 'Cá nhân',
             'desc' => 'Quản lý phiên đăng nhập và đổi mật khẩu của chính bạn.',
@@ -73,6 +92,11 @@
             ],
         ],
     ];
+
+    // Tab 'booking' chứa deep-link admin SBooking — chỉ hiện cho super-admin (username 'admin').
+    if (($u->username ?? null) !== 'admin') {
+        unset($tabs['booking']);
+    }
 
     // Lọc module theo perm; ẩn tab nếu không còn module nào.
     foreach ($tabs as $key => &$tab) {
@@ -112,13 +136,23 @@
                 <p class="text-sm text-ink/50 mb-4">{{ $tab['desc'] }}</p>
                 <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                     @foreach ($tab['modules'] as $m)
-                        <a href="{{ route($m['route']) }}"
+                        @php
+                            $href = isset($m['url']) ? $m['url'] : route($m['route']);
+                            $isExternal = isset($m['url']);
+                        @endphp
+                        <a href="{{ $href }}"
+                           @if ($isExternal) target="_blank" rel="noopener" @endif
                            class="group bg-white border border-gold-200 rounded-xl p-5 flex gap-4 shadow-card hover:border-gold-500 hover:shadow-md transition">
                             <div class="shrink-0 w-12 h-12 rounded-lg bg-gold-50 border border-gold-100 flex items-center justify-center group-hover:bg-gold-100 transition">
                                 <svg class="w-6 h-6 text-gold-600" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="{{ $icons[$m['icon']] }}"/></svg>
                             </div>
                             <div class="min-w-0">
-                                <div class="font-bold text-ink">{{ $m['label'] }}</div>
+                                <div class="font-bold text-ink flex items-center gap-1.5">
+                                    {{ $m['label'] }}
+                                    @if ($isExternal)
+                                        <svg class="w-3.5 h-3.5 text-ink/40" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25"/></svg>
+                                    @endif
+                                </div>
                                 <p class="text-sm text-ink/55 mt-1 leading-snug">{!! $m['desc'] !!}</p>
                             </div>
                         </a>
