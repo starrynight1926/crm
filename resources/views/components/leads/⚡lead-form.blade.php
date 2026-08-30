@@ -2706,13 +2706,20 @@ new class extends Component
         </div>
     @endif
 
-    {{-- Phase 6.21g — hiển thị tổng errors ở đầu form để user thấy dù đang ở tab nào --}}
-    @if ($errors->any())
+    {{-- Phase 6.21g — hiển thị tổng errors ở đầu form để user thấy dù đang ở tab nào.
+         2026-08-30: exclude errors của form "Tạo booking mới" (key bắt đầu 'newBooking')
+         — hiện dưới nút "+ Tạo booking" cho khớp ngữ cảnh. --}}
+    @php
+        $nonBookingErrs = collect($errors->getMessages())
+            ->reject(fn ($msgs, $key) => str_starts_with($key, 'newBooking'))
+            ->flatMap(fn ($msgs) => $msgs);
+    @endphp
+    @if ($nonBookingErrs->isNotEmpty())
         <div x-data x-init="$nextTick(() => { $el.scrollIntoView({ behavior: 'smooth', block: 'center' }) })"
              class="mb-5 bg-red-50 border border-red-300 rounded-lg px-4 py-3 text-sm text-red-800">
             <div class="font-bold mb-1">⚠️ Không thể lưu — sửa các lỗi sau:</div>
             <ul class="list-disc pl-5 space-y-0.5 text-xs">
-                @foreach ($errors->all() as $err)
+                @foreach ($nonBookingErrs as $err)
                     <li>{{ $err }}</li>
                 @endforeach
             </ul>
@@ -3685,6 +3692,23 @@ new class extends Component
                             </label>
                         </div>
                         <input wire:model="newBookingNote" placeholder="Ghi chú" class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm">
+                        {{-- 2026-08-30: hiển thị errors của form "Tạo booking mới" ngay tại đây,
+                             không kéo lên đầu form nữa (tránh hiểu nhầm "phòng còn chỗ" mà báo lỗi trên). --}}
+                        @php
+                            $bookingErrs = collect($errors->getMessages())
+                                ->filter(fn ($msgs, $key) => str_starts_with($key, 'newBooking'))
+                                ->flatMap(fn ($msgs) => $msgs);
+                        @endphp
+                        @if ($bookingErrs->isNotEmpty())
+                            <div class="bg-red-50 border border-red-300 rounded px-3 py-2 text-sm text-red-800">
+                                <div class="font-semibold mb-0.5">Không tạo được booking:</div>
+                                <ul class="list-disc pl-5 space-y-0.5 text-xs">
+                                    @foreach ($bookingErrs as $err)
+                                        <li>{{ $err }}</li>
+                                    @endforeach
+                                </ul>
+                            </div>
+                        @endif
                         <div class="flex justify-end">
                             <button type="button" wire:click="addBookingLog" class="text-sm bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-4 py-1.5 rounded">+ Tạo booking</button>
                         </div>
