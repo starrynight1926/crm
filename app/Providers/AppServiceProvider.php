@@ -5,10 +5,13 @@ namespace App\Providers;
 use App\Support\PublicLog;
 use Illuminate\Auth\Events\Login;
 use Illuminate\Auth\Events\Logout;
+use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Console\Events\CommandStarting;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cookie;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -26,6 +29,14 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // API v1 rate limit: 60 req/min mỗi token (fallback IP). Tắt qua env API_V1_RATE_LIMIT=0.
+        RateLimiter::for('api-v1', function (Request $request) {
+            $max = (int) env('API_V1_RATE_LIMIT', 60);
+            if ($max <= 0) return Limit::none();
+            $key = $request->bearerToken() ?: $request->ip();
+            return Limit::perMinute($max)->by($key);
+        });
+
         // 2026-08-02: override config services.booking từ AppSetting (UI /settings/booking-connection)
         // để user sửa token/URL không cần đụng .env. Bọc try/catch — bootstrap có thể chạy trước migration.
         try {
