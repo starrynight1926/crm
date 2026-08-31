@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Route;
 // API v1 — CRUD chuẩn (bearer token qua AuthByApiToken, throttle 60/min/token).
 // Phase A (2026-08-30): users + facilities.
 // ═══════════════════════════════════════════════════════════════════
-Route::prefix('v1')->middleware([AuthByApiToken::class, 'throttle:api-v1'])->group(function () {
+Route::prefix('v1')->middleware([AuthByApiToken::class, 'throttle:api-v1', 'api.audit'])->group(function () {
     Route::apiResource('users', \App\Http\Controllers\Api\V1\UserController::class);
     Route::apiResource('facilities', \App\Http\Controllers\Api\V1\FacilityController::class);
 
@@ -32,6 +32,11 @@ Route::prefix('v1')->middleware([AuthByApiToken::class, 'throttle:api-v1'])->gro
     Route::post('booking-logs/{booking_log}/push', [\App\Http\Controllers\Api\V1\BookingLogController::class, 'push']);
     Route::apiResource('booking-logs', \App\Http\Controllers\Api\V1\BookingLogController::class)
         ->parameters(['booking-logs' => 'booking_log']);
+
+    // Phase D: audit + inspect (deep state snapshot 1 call)
+    Route::get('audit-logs', [\App\Http\Controllers\Api\V1\AuditLogController::class, 'index']);
+    Route::get('inspect/booking-log/{id}', [\App\Http\Controllers\Api\V1\InspectController::class, 'bookingLog']);
+    Route::get('inspect/lead/{id}',        [\App\Http\Controllers\Api\V1\InspectController::class, 'lead']);
 });
 
 Route::middleware(AuthByApiToken::class)->group(function () {

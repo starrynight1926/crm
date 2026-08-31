@@ -17,6 +17,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([
             'permission' => \App\Http\Middleware\EnsurePermission::class,
+            'api.audit'  => \App\Http\Middleware\LogApiAudit::class,
         ]);
         $middleware->validateCsrfTokens(except: ['webhook/*', 'api/*']);
     })
