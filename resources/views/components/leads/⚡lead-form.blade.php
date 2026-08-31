@@ -3427,7 +3427,7 @@ new class extends Component
                                                         @if ($__isNext) <span class="text-emerald-700">➤</span> @endif
                                                         {{ $__a->user?->name ?? 'Sale #'.$__a->user_id }}
                                                     </div>
-                                                    <div class="text-[11px] text-ink/50">Check-in {{ optional($__a->checkin_at)?->setTimezone('Asia/Ho_Chi_Minh')->format('H:i') }}</div>
+                                                    <div class="text-[11px] text-ink/50">Check-in {{ $__a->checkin_at?->setTimezone('Asia/Ho_Chi_Minh')?->format('H:i') }}</div>
                                                 </div>
                                                 <span class="text-[11px] font-semibold px-2 py-0.5 rounded {{ $__cls }} whitespace-nowrap">{{ $__label }}</span>
                                             </li>
@@ -4327,7 +4327,7 @@ new class extends Component
                                                 <li class="px-3 py-2 flex items-center gap-2 hover:bg-gold-50/40">
                                                     <div class="flex-1 min-w-0">
                                                         <div class="text-sm font-semibold text-ink truncate">{{ $__a->user?->name ?? 'Sale #'.$__a->user_id }}</div>
-                                                        <div class="text-[11px] text-ink/50">Check-in {{ optional($__a->checkin_at)?->setTimezone('Asia/Ho_Chi_Minh')->format('H:i') }}</div>
+                                                        <div class="text-[11px] text-ink/50">Check-in {{ $__a->checkin_at?->setTimezone('Asia/Ho_Chi_Minh')?->format('H:i') }}</div>
                                                     </div>
                                                     <span class="text-[10px] font-bold px-1.5 py-0.5 rounded {{ $__bkc }}">{{ $__bkLabel }}</span>
                                                     <span class="text-[11px] font-semibold px-2 py-0.5 rounded {{ $__cls }} whitespace-nowrap">{{ $__label }}</span>
