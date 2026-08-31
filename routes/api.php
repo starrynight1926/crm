@@ -23,6 +23,15 @@ Route::prefix('v1')->middleware([AuthByApiToken::class, 'throttle:api-v1'])->gro
     Route::post  ('users/{user}/assignments',                  [\App\Http\Controllers\Api\V1\AssignmentController::class, 'store']);
     Route::patch ('users/{user}/assignments/{assignment}',     [\App\Http\Controllers\Api\V1\AssignmentController::class, 'update']);
     Route::delete('users/{user}/assignments/{assignment}',     [\App\Http\Controllers\Api\V1\AssignmentController::class, 'destroy']);
+
+    // Phase C
+    Route::get('leads/export', [\App\Http\Controllers\Api\V1\LeadController::class, 'export']);
+    Route::apiResource('leads', \App\Http\Controllers\Api\V1\LeadController::class);
+
+    Route::get('booking-logs/export', [\App\Http\Controllers\Api\V1\BookingLogController::class, 'export']);
+    Route::post('booking-logs/{booking_log}/push', [\App\Http\Controllers\Api\V1\BookingLogController::class, 'push']);
+    Route::apiResource('booking-logs', \App\Http\Controllers\Api\V1\BookingLogController::class)
+        ->parameters(['booking-logs' => 'booking_log']);
 });
 
 Route::middleware(AuthByApiToken::class)->group(function () {
