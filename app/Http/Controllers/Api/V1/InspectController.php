@@ -62,7 +62,7 @@ class InspectController extends BaseV1Controller
         $ownershipHistory = LeadOwnershipHistory::where('lead_id', $lead->id)
             ->orderByDesc('id')->limit(30)->get();
         $statusLogs = LeadStatusLog::where('lead_id', $lead->id)
-            ->orderByDesc('id')->limit(30)->get(['id', 'field', 'old_value', 'new_value', 'changed_by', 'created_at']);
+            ->orderByDesc('id')->limit(30)->get(['id', 'field', 'old_value', 'new_value', 'user_id', 'created_at']);
 
         return $this->ok([
             'lead'          => $lead->toArray(),
