@@ -127,6 +127,18 @@ Route::middleware('auth')->group(function () {
         ->middleware('permission:user.manage')
         ->name('admin.api-list');
 
+    // 2026-09-02 — Lịch sử UPS (DailyAttendance) + import/export CSV.
+    Route::prefix('admin/ups-history')->middleware('permission:user.manage')->group(function () {
+        Route::get('/',       [\App\Http\Controllers\Admin\UpsHistoryController::class, 'index'])->name('admin.ups-history');
+        Route::get('/export', [\App\Http\Controllers\Admin\UpsHistoryController::class, 'export'])->name('admin.ups-history.export');
+        Route::post('/import',[\App\Http\Controllers\Admin\UpsHistoryController::class, 'import'])->name('admin.ups-history.import');
+    });
+
+    // 2026-09-02 — Nhật ký hệ thống (public/logs.md).
+    Route::get('/admin/logs', [\App\Http\Controllers\Admin\PublicLogController::class, 'index'])
+        ->middleware('permission:user.manage')
+        ->name('admin.logs');
+
     // 2026-08-04 (Task 3) — Danh mục hệ thống: xem + nhập + xuất core catalog (chỉ Admin hệ thống)
     Route::prefix('admin/catalog')->middleware('permission:user.manage')->group(function () {
         Route::view('/', 'admin.catalog')->name('admin.catalog');

@@ -63,6 +63,8 @@
                 ['label'=>'Nhật ký thông báo','desc'=>'Xem toàn bộ thông báo hệ thống đã gửi — kể cả những cái user đã ẩn.','route'=>'settings.notification-log','perm'=>'role.manage','icon'=>'chart'],
                 ['label'=>'Sao lưu & khôi phục','desc'=>'Xuất cấu hình ra JSON để backup, nhập lại để rollback; xuất toàn bộ dữ liệu ra file ZIP kèm Excel.','route'=>'settings.backup','perm'=>'system.backup','icon'=>'box'],
                 ['label'=>'Danh sách API v1','desc'=>'Reference tất cả endpoint /api/v1/* (SCRM + SBooking) — Phase A/B/C/D. Kèm ví dụ SDK Python.','route'=>'admin.api-list','perm'=>'user.manage','icon'=>'plug'],
+                ['label'=>'Lịch sử UPS','desc'=>'DailyAttendance — check-in / bucket / MKT list. Filter theo cơ sở/ngày, import/export CSV để backup hoặc chỉnh bulk.','route'=>'admin.ups-history','perm'=>'user.manage','icon'=>'tree'],
+                ['label'=>'Nhật ký hệ thống','desc'=>'Log hành động (login, tạo/xoá lead) từ public/logs.md — search + tail N dòng cuối.','route'=>'admin.logs','perm'=>'user.manage','icon'=>'chart'],
             ],
         ],
         'booking' => [
