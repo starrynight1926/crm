@@ -122,6 +122,11 @@ Route::middleware('auth')->group(function () {
     // Phase 6.6 — Quy tắc vận hành (chỉ admin hệ thống)
     Route::view('/ops/rules', 'ops.rules')->middleware('permission:ops.manage')->name('ops.rules');
 
+    // 2026-09-02 — Danh sách API v1 (dev doc cho super-admin).
+    Route::view('/admin/api-list', 'admin.api-list')
+        ->middleware('permission:user.manage')
+        ->name('admin.api-list');
+
     // 2026-08-04 (Task 3) — Danh mục hệ thống: xem + nhập + xuất core catalog (chỉ Admin hệ thống)
     Route::prefix('admin/catalog')->middleware('permission:user.manage')->group(function () {
         Route::view('/', 'admin.catalog')->name('admin.catalog');

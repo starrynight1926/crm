@@ -62,6 +62,7 @@
                 ['label'=>'Thiết lập thông báo','desc'=>'Tick từng vai trò → sẽ nhận loại thông báo nào (lead mới, chuyển lead, booking, ghi chú, thu hồi...).','route'=>'settings.notifications','perm'=>'role.manage','icon'=>'shield'],
                 ['label'=>'Nhật ký thông báo','desc'=>'Xem toàn bộ thông báo hệ thống đã gửi — kể cả những cái user đã ẩn.','route'=>'settings.notification-log','perm'=>'role.manage','icon'=>'chart'],
                 ['label'=>'Sao lưu & khôi phục','desc'=>'Xuất cấu hình ra JSON để backup, nhập lại để rollback; xuất toàn bộ dữ liệu ra file ZIP kèm Excel.','route'=>'settings.backup','perm'=>'system.backup','icon'=>'box'],
+                ['label'=>'Danh sách API v1','desc'=>'Reference tất cả endpoint /api/v1/* (SCRM + SBooking) — Phase A/B/C/D. Kèm ví dụ SDK Python.','route'=>'admin.api-list','perm'=>'user.manage','icon'=>'plug'],
             ],
         ],
         'booking' => [
