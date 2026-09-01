@@ -81,6 +81,7 @@
                     $mk('Kết nối SCRM', 'Cấu hình token/URL SBooking → SCRM (server-to-server).', '/longevity/thiet-lap/ket-noi/scrm', 'plug'),
                     $mk('Cấu hình qua Excel', 'Import/export toàn bộ cấu hình cơ sở qua file Excel.', '/longevity/thiet-lap/cau-hinh-excel', 'box'),
                     $mk('Nhật ký thông báo (Booking)', 'Xem log notification bên hệ Booking.', '/longevity/thiet-lap/nhat-ky-thong-bao', 'chart'),
+                    $mk('Nhật ký hệ thống (Booking)', 'Log hành động: login/logout, tạo/sửa/xoá booking, duyệt lịch.', '/longevity/thiet-lap/nhat-ky-hanh-dong', 'chart'),
                     $mk('Sơ đồ tổ chức (Booking)', 'Xem cây phòng ban/nhân sự bên hệ Booking.', '/longevity/so-do-to-chuc', 'tree'),
                     $mk('Báo cáo (Booking)', 'Trang báo cáo tổng hợp bên hệ Booking.', '/longevity/bao-cao', 'chart'),
                 ];
