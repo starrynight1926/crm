@@ -52,7 +52,7 @@ class OrgUsersExportController extends Controller
         $sheet = $ss->getActiveSheet();
         $sheet->setTitle('Nhân viên');
         $sheet->fromArray(
-            ['Họ tên', 'Email', 'SĐT', 'Chức danh', 'Trạng thái', 'Vai trò @ Đơn vị'],
+            ['ID', 'Họ tên', 'Email', 'SĐT', 'Chức danh', 'Trạng thái', 'Vai trò @ Đơn vị'],
             null, 'A1'
         );
 
@@ -64,6 +64,7 @@ class OrgUsersExportController extends Controller
                 ->implode('; ');
 
             $sheet->fromArray([
+                $u->id,
                 $u->name,
                 $u->email,
                 $u->phone ?? '',
@@ -73,8 +74,8 @@ class OrgUsersExportController extends Controller
             ], null, 'A' . $row++);
         }
 
-        foreach (range('A', 'F') as $c) $sheet->getColumnDimension($c)->setAutoSize(true);
-        $sheet->getStyle('A1:F1')->getFont()->setBold(true);
+        foreach (range('A', 'G') as $c) $sheet->getColumnDimension($c)->setAutoSize(true);
+        $sheet->getStyle('A1:G1')->getFont()->setBold(true);
 
         $slug = \Illuminate\Support\Str::slug($orgLabel) ?: 'all';
         $filename = "nhan-vien-{$slug}-" . now()->format('Ymd-His') . '.xlsx';
