@@ -52,30 +52,32 @@ class OrgUsersExportController extends Controller
         $sheet = $ss->getActiveSheet();
         $sheet->setTitle('Nhân viên');
         $sheet->fromArray(
-            ['ID', 'Họ tên', 'Email', 'SĐT', 'Chức danh', 'Trạng thái', 'Vai trò @ Đơn vị'],
+            ['ID', 'Tên', 'Email', 'Username', 'Password', 'Trạng thái', 'Vai trò', 'Team', 'Chức danh'],
             null, 'A1'
         );
 
         $row = 2;
         foreach ($users as $u) {
-            $roles = $u->assignments
-                ->filter(fn ($a) => ! empty($subtreeIds) ? in_array($a->org_unit_id, $subtreeIds, true) : true)
-                ->map(fn ($a) => ($a->role?->name ?? '—') . ' @ ' . ($a->orgUnit?->name ?? '—'))
-                ->implode('; ');
+            $assignments = $u->assignments
+                ->filter(fn ($a) => ! empty($subtreeIds) ? in_array($a->org_unit_id, $subtreeIds, true) : true);
+            $roles = $assignments->map(fn ($a) => $a->role?->name ?? '—')->unique()->implode('; ');
+            $teams = $assignments->map(fn ($a) => $a->orgUnit?->name ?? '—')->unique()->implode('; ');
 
             $sheet->fromArray([
                 $u->id,
                 $u->name,
                 $u->email,
-                $u->phone ?? '',
-                $u->job_title ?? '',
+                $u->username ?? '',
+                '',  // Password không export plaintext — cột để trống, dùng khi import bulk gán password mới.
                 $u->isLocked() ? 'Khoá' : 'Hoạt động',
                 $roles,
+                $teams,
+                $u->job_title ?? '',
             ], null, 'A' . $row++);
         }
 
-        foreach (range('A', 'G') as $c) $sheet->getColumnDimension($c)->setAutoSize(true);
-        $sheet->getStyle('A1:G1')->getFont()->setBold(true);
+        foreach (range('A', 'I') as $c) $sheet->getColumnDimension($c)->setAutoSize(true);
+        $sheet->getStyle('A1:I1')->getFont()->setBold(true);
 
         $slug = \Illuminate\Support\Str::slug($orgLabel) ?: 'all';
         $filename = "nhan-vien-{$slug}-" . now()->format('Ymd-His') . '.xlsx';
