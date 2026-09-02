@@ -70,6 +70,8 @@ Route::middleware('auth')->group(function () {
         ->middleware('permission:staff.manage')->name('settings.staff.export');
 
     Route::view('/org/users', 'org.users')->middleware('permission:user.manage')->name('org.users');
+    Route::get('/org/users/export', [\App\Http\Controllers\OrgUsersExportController::class, 'export'])
+        ->middleware('permission:user.manage')->name('org.users.export');
     Route::view('/org/roles', 'org.roles')->middleware('permission:role.manage')->name('org.roles');
     Route::view('/org/chart', 'org.chart')->middleware('permission:org.manage')->name('org.chart');
     Route::view('/org/fields', 'org.fields')->middleware('permission:field.manage')->name('org.fields');

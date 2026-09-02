@@ -354,6 +354,20 @@ new class extends Component
             <div class="flex-1"></div>
             <input type="search" wire:model.live.debounce.300ms="search" placeholder="Tìm kiếm nhân viên..."
                    class="border border-gold-200 rounded-md px-3 py-2 text-sm w-64 focus:outline-none focus:border-gold-500">
+            @php
+                $exportQuery = array_filter([
+                    'org_unit' => $filterOrgUnit ?: null,
+                    'role'     => $filterRole ?: null,
+                    'q'        => $search ?: null,
+                ]);
+            @endphp
+            <a href="{{ route('org.users.export', $exportQuery) }}"
+               class="inline-flex items-center gap-1.5 border border-gold-300 bg-gold-50 hover:bg-gold-100 text-gold-800 rounded-md px-3 py-2 text-sm font-medium">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/>
+                </svg>
+                Xuất dữ liệu
+            </a>
         </div>
 
         {{-- Table --}}
