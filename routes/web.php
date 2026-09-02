@@ -94,6 +94,7 @@ Route::middleware('auth')->group(function () {
     Route::view('/services', 'services.catalog')->middleware('permission:service.manage')->name('services.catalog');
     Route::view('/payments', 'services.payments')->middleware('permission:payment.record')->name('payments.index');
     Route::view('/reports', 'reports.index')->middleware('permission:report.view,report.view_all')->name('reports.index');
+    Route::view('/tong-quan', 'overview')->name('overview');
     Route::view('/sources', 'sources.connections')->middleware('permission:connection.manage')->name('sources.index');
 
     // /leads/create chỉ cần lead.create (Team nhập lead dùng để up lead nhưng không xem danh sách)

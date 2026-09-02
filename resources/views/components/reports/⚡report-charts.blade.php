@@ -28,6 +28,9 @@ new class extends Component
 {
     public ?int $facilityId = null;
 
+    /** Nếu true → áp Lead::visibleTo($user) + scope BookingLog theo lead visible. */
+    public bool $scoped = false;
+
     public function updatedFacilityId(): void
     {
         // trigger re-render + JS re-init charts
@@ -36,7 +39,9 @@ new class extends Component
 
     private function scopedLeads()
     {
-        $q = Lead::query()->when($this->facilityId, function ($qq) {
+        $u = auth()->user();
+        $q = $this->scoped && $u ? Lead::visibleTo($u) : Lead::query();
+        $q->when($this->facilityId, function ($qq) {
             $ids = $this->facilitySubtreeIds($this->facilityId);
             $qq->whereIn('facility_id', $ids);
         });
@@ -45,7 +50,12 @@ new class extends Component
 
     private function scopedBookingLogs()
     {
-        $q = BookingLog::query()->when($this->facilityId, function ($qq) {
+        $u = auth()->user();
+        $q = BookingLog::query();
+        if ($this->scoped && $u) {
+            $q->whereIn('lead_id', Lead::visibleTo($u)->select('id'));
+        }
+        $q->when($this->facilityId, function ($qq) {
             $ids = $this->facilitySubtreeIds($this->facilityId);
             $qq->whereIn('facility_id', $ids);
         });

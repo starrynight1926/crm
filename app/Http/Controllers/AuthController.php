@@ -60,6 +60,11 @@ class AuthController extends Controller
      */
     private function landingRouteFor(User $user): string
     {
+        // Observer: chỉ giám sát, landing thẳng /tong-quan (dashboard chart).
+        if ($user->hasRole('Observer')) {
+            return route('overview');
+        }
+
         if (! $user->hasAnyPermission(['report.view', 'report.view_all', 'lead.view', 'lead.create', 'lead.import'])
             && $user->hasPermission('ups.view')) {
             return route('ups.list');
