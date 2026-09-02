@@ -3026,3 +3026,30 @@ Nguồn: gom `lead_status_logs` (user_id) + `lead_distribution_logs` (actor_id),
 - View: `resources/views/me/activity.blade.php` — nhóm theo ngày (Hôm nay/Hôm qua/dd-mm-yyyy), mỗi dòng `HH:mm — <text>` click sang lead.
 - Menu: thêm "Lịch sử hoạt động" trong avatar dropdown (`layouts/app.blade.php`, trước "Đổi mật khẩu").
 - QA: tinker render OK; test dữ liệu thực trả `Thêm lead mới KH-033-BOD vvq (Nhập tay bởi …)` — đúng mẫu user.
+
+## 2026-09-02 — Nhiều tính năng + fix routing 🟢
+
+### API v1 name collision (critical fix)
+`Route::apiResource('leads', ...)` trong `routes/api.php` tạo route tên `leads.index` **trùng** với web route → `route('leads.index')` global lookup trả URL API `/api/v1/leads` (401 Missing bearer token) → menu "Danh sách khách hàng" gãy. Fix: wrap group v1 bằng `->as('api.v1.')` + đặt tên tường minh cho mọi route bare trong group.
+
+### Trang / tính năng mới
+- **Avatar → Lịch sử hoạt động** (`/me/activity`): gom `lead_status_logs` + `lead_distribution_logs`, self mặc định, admin (`user.manage`) truyền `?user_id=`.
+- **Avatar → 🔀 Chuyển sang Booking**: deep-link `config('services.booking.url')`. Chiều ngược cần thêm bên repo `lara-sbooking`.
+- **/org/users** — nút "Xuất dữ liệu" XLSX theo filter hiện tại (cơ sở/team/role/search). Cột: ID, Tên, Email, Username, Password (trống), Trạng thái, Vai trò, Team, Chức danh.
+- **/reports** — khối "Dashboard tổng quan" ở đầu trang: 4 KPI (Tổng KH, Mới/Trở lại, Loại booking, Lịch trễ — so tháng trước) + 3 chart Chart.js (line 6 tháng, donut loại, bar funnel phase). Filter cơ sở chỉ hiện root active + có lead thật (ẩn seed lạ).
+- **/tong-quan** (`overview`): reuse component `report-charts` với `scoped=true` (Lead::visibleTo). Chỉ role Observer vào được. AuthController redirect Observer login thẳng /tong-quan.
+
+### Chẩn đoán host (2026-09-02)
+- **Queue worker daemon KHÔNG chạy** (thiết kế). Dùng cron `queue-drain.sh` gọi `queue:work --stop-when-empty --max-time=55` mỗi phút, có `flock` chống chạy chồng.
+- **BUG cron**: crontab đang set `*/19 * * * *` (mỗi 19 phút) thay vì `* * * * *` như script comment ghi. Hậu quả: import lead phải chờ trung bình ~10 phút, tối đa 19 phút mới xử lý. Fix bằng `crontab -e` đổi lại `* * * * *`.
+- 2 failed jobs từ 26/08 (duplicate `leads_phone_unique` khi ProcessRawLead insert) — irrelevant, dùng `queue:forget 1 2` dọn.
+
+### Commit hôm nay
+- `75155c8` fix api v1 name-prefix + Lịch sử hoạt động
+- `4020725` nút Xuất dữ liệu /org/users
+- `2f0c74e` thêm cột ID vào export
+- `6a081cc` reports dashboard tổng quan
+- `2b95529` /tong-quan cho Observer + landing auto
+- `d19f816` avatar Chuyển sang Booking
+- `6cce168` dropdown cơ sở filter root + có lead
+- `0078e6c` (user commit) export thêm Username/Password/Team
