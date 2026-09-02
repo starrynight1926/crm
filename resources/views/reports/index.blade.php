@@ -3,6 +3,7 @@
 @section('title', 'Báo cáo Funnel & Hiệu suất')
 
 @section('content')
+    <livewire:reports.report-charts />
     <livewire:reports.report-center />
     <livewire:reports.report-template-manager />
 @endsection
