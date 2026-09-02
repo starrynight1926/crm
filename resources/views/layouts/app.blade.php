@@ -189,6 +189,7 @@
                         @if (app()->environment('local') && auth()->user()->hasPermission('user.manage'))
                             <a href="{{ route('dev.quick-login') }}" class="block px-4 py-2 hover:bg-red-50 text-red-700 font-semibold">🚀 Quick Login (dev)</a>
                         @endif
+                        <a href="{{ route('me.activity') }}" class="block px-4 py-2 hover:bg-gold-50">Lịch sử hoạt động</a>
                         <a href="{{ route('settings.password') }}" class="block px-4 py-2 hover:bg-gold-50">Đổi mật khẩu</a>
                         <a href="{{ route('sessions.index') }}" class="block px-4 py-2 hover:bg-gold-50">Quản lý phiên đăng nhập</a>
                         @if (auth()->user()->hasPermission('connection.manage'))

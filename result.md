@@ -3016,3 +3016,13 @@ Chưa scope. Có thể là:
 - Audit log cho API v1 write ops (bảng `api_audit_logs`).
 - Export XLSX (thêm Maatwebsite/Excel).
 - Frontend admin UI dùng SDK JS thay vì Livewire.
+
+## 2026-09-02 — Avatar → "Lịch sử hoạt động" 🟢
+
+Nguồn: gom `lead_status_logs` (user_id) + `lead_distribution_logs` (actor_id), UNION ALL, order desc, paginate 50/trang. Không double-write, tận dụng index sẵn `(user_id, created_at)`.
+
+- Route: `GET /me/activity` (`me.activity`) — self mặc định; admin có `user.manage` truyền `?user_id=` xem user khác + filter `from/to`.
+- Controller: `app/Http/Controllers/MyActivityController.php` — formatter riêng cho status (tạo/sửa/chuyển field) và dist (distribute/recall/pull/manual/…).
+- View: `resources/views/me/activity.blade.php` — nhóm theo ngày (Hôm nay/Hôm qua/dd-mm-yyyy), mỗi dòng `HH:mm — <text>` click sang lead.
+- Menu: thêm "Lịch sử hoạt động" trong avatar dropdown (`layouts/app.blade.php`, trước "Đổi mật khẩu").
+- QA: tinker render OK; test dữ liệu thực trả `Thêm lead mới KH-033-BOD vvq (Nhập tay bởi …)` — đúng mẫu user.

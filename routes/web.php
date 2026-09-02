@@ -86,6 +86,8 @@ Route::middleware('auth')->group(function () {
     // B3 (2026-08-14): sale toggle "Không tiếp nhận" / "Tiếp tục nhận" từ avatar dropdown.
     Route::post('/me/receive-toggle', [\App\Http\Controllers\MeStatusController::class, 'toggleReceive'])
         ->name('me.receive-toggle');
+    Route::get('/me/activity', [\App\Http\Controllers\MyActivityController::class, 'index'])
+        ->name('me.activity');
 
     Route::view('/services', 'services.catalog')->middleware('permission:service.manage')->name('services.catalog');
     Route::view('/payments', 'services.payments')->middleware('permission:payment.record')->name('payments.index');
