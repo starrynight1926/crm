@@ -3548,7 +3548,7 @@ new class extends Component
                                             @if($bsList->isEmpty()) disabled @endif
                                             title="Bác sĩ chính"
                                             class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm {{ $bsList->isEmpty() ? 'bg-slate-100 text-ink/40' : '' }}">
-                                        <option value="">{{ $bsList->isEmpty() ? '— Chọn cơ sở —' : '— Bác sĩ —' }}</option>
+                                        <option value="">{{ $bsList->isEmpty() ? '— Chọn cơ sở trước —' : '— Bác sĩ —' }}</option>
                                         @foreach ($bsList as $bs)
                                             <option value="{{ $bs->sbooking_id }}">{{ $bs->displayName() }}</option>
                                         @endforeach
