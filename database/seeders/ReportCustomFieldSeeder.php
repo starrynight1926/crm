@@ -12,7 +12,8 @@ class ReportCustomFieldSeeder extends Seeder
     public function run(): void
     {
         $this->seedCustomFields();
-        $this->seedFacilitiesAndStaff();
+        // 2026-09-04: Bỏ seedFacilitiesAndStaff() — Cơ sở Quận 1/Quận 7 + BS dummy đã dọn khỏi prod;
+        // giữ hàm phía dưới cho reference nhưng KHÔNG gọi.
     }
 
     private function seedCustomFields(): void
