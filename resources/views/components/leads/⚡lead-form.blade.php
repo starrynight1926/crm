@@ -3542,25 +3542,29 @@ new class extends Component
                                         </div>
                                     @endif
                                 </div>
-                                <select wire:model.live="newBookingSbBacSiId"
-                                        @if($bsList->isEmpty()) disabled @endif
-                                        class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm {{ $bsList->isEmpty() ? 'bg-slate-100 text-ink/40' : '' }}">
-                                    <option value="">{{ $bsList->isEmpty() ? '— Chọn cơ sở trước —' : '— Bác sĩ —' }}</option>
-                                    @foreach ($bsList as $bs)
-                                        <option value="{{ $bs->sbooking_id }}">{{ $bs->displayName() }}</option>
-                                    @endforeach
-                                </select>
-                                {{-- 2026-09-04 — Phase 2: nhân viên hỗ trợ (KTV/DD), optional --}}
-                                <select wire:model.live="newBookingSbHoTroId"
-                                        @if($bsList->isEmpty()) disabled @endif
-                                        class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm mt-1 {{ $bsList->isEmpty() ? 'bg-slate-100 text-ink/40' : '' }}">
-                                    <option value="">— Nhân viên hỗ trợ (tùy chọn) —</option>
-                                    @foreach ($bsList as $bs)
-                                        @if ($bs->sbooking_id != $newBookingSbBacSiId)
+                                {{-- 2026-09-04 — Phase 2: BS chính + Nhân viên hỗ trợ (grid 2 cols để đẹp cạnh nhau) --}}
+                                <div class="grid grid-cols-2 gap-1.5">
+                                    <select wire:model.live="newBookingSbBacSiId"
+                                            @if($bsList->isEmpty()) disabled @endif
+                                            title="Bác sĩ chính"
+                                            class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm {{ $bsList->isEmpty() ? 'bg-slate-100 text-ink/40' : '' }}">
+                                        <option value="">{{ $bsList->isEmpty() ? '— Chọn cơ sở —' : '— Bác sĩ —' }}</option>
+                                        @foreach ($bsList as $bs)
                                             <option value="{{ $bs->sbooking_id }}">{{ $bs->displayName() }}</option>
-                                        @endif
-                                    @endforeach
-                                </select>
+                                        @endforeach
+                                    </select>
+                                    <select wire:model.live="newBookingSbHoTroId"
+                                            @if($bsList->isEmpty()) disabled @endif
+                                            title="Nhân viên hỗ trợ (KTV/DD, tùy chọn)"
+                                            class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm {{ $bsList->isEmpty() ? 'bg-slate-100 text-ink/40' : '' }}">
+                                        <option value="">— Hỗ trợ (tùy chọn) —</option>
+                                        @foreach ($bsList as $bs)
+                                            @if ($bs->sbooking_id != $newBookingSbBacSiId)
+                                                <option value="{{ $bs->sbooking_id }}">{{ $bs->displayName() }}</option>
+                                            @endif
+                                        @endforeach
+                                    </select>
+                                </div>
                             </div>
 
                             {{-- Cột 2: Nội dung — Dịch vụ → Số lượng (gộp thay cho "Số liệu trình" + "Dung tích lọ") --}}
