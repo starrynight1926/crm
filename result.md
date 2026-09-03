@@ -2,6 +2,30 @@
 
 > Làm xong phase nào ghi vào đây: ngày hoàn thành, việc đã làm, việc dời lại/chưa xong, ghi chú & quyết định phát sinh. Mẫu bên dưới.
 
+## 2026-09-04 — Booking form: dropdown "Nhân viên hỗ trợ" + push sang sbooking + dọn cơ sở demo 🚧
+
+Nhánh `eighteenth`. Đi kèm patch bên [lara-sbooking](../lara-sbooking/result.md) cùng ngày.
+
+### Design v3 (chốt cùng bên sbooking)
+1 người chính (BS/KTV — `booking_logs.sb_bac_si_id`) + 1 hỗ trợ (KTV/DD — `booking_logs.sb_ho_tro_id`). Optional cả 2 field.
+
+### Files
+- Migration [2026_09_04_120000_add_sb_ho_tro_id_to_booking_logs.php](database/migrations/2026_09_04_120000_add_sb_ho_tro_id_to_booking_logs.php) — cột `booking_logs.sb_ho_tro_id`.
+- [BookingLog.php](app/Models/BookingLog.php) — fillable thêm `sb_ho_tro_id`.
+- [lead-form.blade.php](resources/views/components/leads/⚡lead-form.blade.php) — public prop `newBookingSbHoTroId` + dropdown "Nhân viên hỗ trợ" ngay sau dropdown BS (exclude BS đã chọn) + save vào BookingLog + reset khi tạo xong.
+- [SbookingClient.php](app/Services/SbookingClient.php) — 2 chỗ push (create + update): thêm field `ho_tro_id`.
+
+### Dọn data rác 2026-09-04
+- Xóa 2 facility demo "Cơ sở 1 — Quận 1" + "Cơ sở 2 — Quận 7" (kèm 4 phòng con) + 7 nhân sự dummy (BS. Nguyễn Văn A/B/E/F + CV. Lê Văn C/D/G) khỏi prod. Leads gán = 0 nên xóa cứng an toàn.
+- [ReportCustomFieldSeeder.php](database/seeders/ReportCustomFieldSeeder.php) — bỏ call `seedFacilitiesAndStaff()` để `migrate:fresh --seed` không tái tạo.
+
+### TODO
+- Bên sbooking form dv: thêm dropdown "BS chính" + "Hỗ trợ" (option A đã chốt) — chưa code (form dv hiện chỉ có KTV cũ, cần đảo lại).
+- Notification: gửi in-app cho hỗ trợ nếu có (bên sbooking).
+
+---
+
+
 ## 2026-08-15 — E2E HTTP push cancel sbooking + fix enum 'huy' ✅
 
 Script `scratchpad/qa_push_cancel.php` full HTTP flow:

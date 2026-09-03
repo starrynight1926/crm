@@ -166,6 +166,7 @@ new class extends Component
     public ?int $newBookingFacilityId = null;
     public ?int $newBookingRoomId = null; // Phase C1.d: sb_rooms.sbooking_id
     public ?int $newBookingSbBacSiId = null; // Phase C1.d: sb_bac_si.sbooking_id (thay newBookingDoctorId cũ)
+    public ?int $newBookingSbHoTroId = null; // 2026-09-04 — nhân viên hỗ trợ (KTV/DD), sync sang sbooking.booking.ho_tro_id
     public ?int $newBookingDoctorId = null; // giữ compat cho code cũ, không set từ form nữa
     public ?int $newBookingServiceId = null;
     // Đợt C.3.d (2026-08-25): DV 41 combo Xông + YHPĐ, sale chọn YHPĐ variant.
@@ -539,7 +540,7 @@ new class extends Component
             session()->flash('cf_ok', '✨ Combo DeepOxy Tổng hợp đã tạo 2 booking: ' . $comboRes['xong_booking_ma'] . ' (Xông) + ' . $comboRes['yhpd_booking_ma'] . ' (YHPĐ).');
             $this->reset([
                 'newBookingType', 'newBookingScheduledAt', 'newBookingDate', 'newBookingTime',
-                'newBookingFacilityId', 'newBookingRoomId', 'newBookingSbBacSiId', 'newBookingDoctorId',
+                'newBookingFacilityId', 'newBookingRoomId', 'newBookingSbBacSiId', 'newBookingSbHoTroId', 'newBookingDoctorId',
                 'newBookingServiceId', 'newBookingComboYhpdVariantId', 'newBookingNote',
                 'newBookingKetHopMedical', 'newBookingCoTuVan', 'newBookingCoKhamCls',
                 'newBookingConsultantIds',
@@ -563,6 +564,7 @@ new class extends Component
             'facility_id'  => $this->newBookingFacilityId,
             'sb_phong_id'  => $this->newBookingRoomId,
             'sb_bac_si_id' => $this->newBookingSbBacSiId,
+            'sb_ho_tro_id' => $this->newBookingSbHoTroId,
             'sb_dich_vu_id' => $sbDichVuId,
             'sb_khung_gio_id' => $sbKhungGioId,
             'doctor_id'    => null,
@@ -596,7 +598,7 @@ new class extends Component
         \App\Jobs\PushBookingLogJob::dispatch($bl->id);
         $this->reset([
             'newBookingType', 'newBookingScheduledAt', 'newBookingDate', 'newBookingTime',
-            'newBookingFacilityId', 'newBookingRoomId', 'newBookingSbBacSiId', 'newBookingDoctorId',
+            'newBookingFacilityId', 'newBookingRoomId', 'newBookingSbBacSiId', 'newBookingSbHoTroId', 'newBookingDoctorId',
             'newBookingServiceId', 'newBookingNote',
             'newBookingSoLieuTrinh', 'newBookingSoLuongLo', 'newBookingDungTichLo', 'newBookingKetHopMedical',
             'newBookingCoTuVan', 'newBookingCoKhamCls',
@@ -3546,6 +3548,17 @@ new class extends Component
                                     <option value="">{{ $bsList->isEmpty() ? '— Chọn cơ sở trước —' : '— Bác sĩ —' }}</option>
                                     @foreach ($bsList as $bs)
                                         <option value="{{ $bs->sbooking_id }}">{{ $bs->displayName() }}</option>
+                                    @endforeach
+                                </select>
+                                {{-- 2026-09-04 — Phase 2: nhân viên hỗ trợ (KTV/DD), optional --}}
+                                <select wire:model.live="newBookingSbHoTroId"
+                                        @if($bsList->isEmpty()) disabled @endif
+                                        class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm mt-1 {{ $bsList->isEmpty() ? 'bg-slate-100 text-ink/40' : '' }}">
+                                    <option value="">— Nhân viên hỗ trợ (tùy chọn) —</option>
+                                    @foreach ($bsList as $bs)
+                                        @if ($bs->sbooking_id != $newBookingSbBacSiId)
+                                            <option value="{{ $bs->sbooking_id }}">{{ $bs->displayName() }}</option>
+                                        @endif
                                     @endforeach
                                 </select>
                             </div>

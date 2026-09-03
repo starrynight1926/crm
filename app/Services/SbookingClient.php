@@ -98,6 +98,7 @@ class SbookingClient
             // Phase C1.d 2026-08-02: gửi thêm phòng + BS đã chọn ở form scrm.
             'phong_id'      => $log->sb_phong_id,
             'bac_si_id'     => $log->sb_bac_si_id,
+            'ho_tro_id'     => $log->sb_ho_tro_id,
             // 2026-08-03 fix bug #2: gửi khung_gio_id để sbooking chốt slot khớp form scrm.
             'khung_gio_id'  => $log->sb_khung_gio_id,
             // 2026-08-19 Phase B: map 3 loại — kham_ls/tu_van/dich_vu.

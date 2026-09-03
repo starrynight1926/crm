@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 #[Fillable([
     'lead_id', 'user_id', 'type', 'status', 'scheduled_at',
-    'facility_id', 'sb_phong_id', 'doctor_id', 'sb_bac_si_id', 'sb_dich_vu_id', 'sb_khung_gio_id', 'scheduled_end_at', 'service_id', 'note',
+    'facility_id', 'sb_phong_id', 'doctor_id', 'sb_bac_si_id', 'sb_ho_tro_id', 'sb_dich_vu_id', 'sb_khung_gio_id', 'scheduled_end_at', 'service_id', 'note',
     'so_lieu_trinh', 'so_luong_lo', 'dung_tich_lo', 'ket_hop_medical',
     'co_tu_van', 'co_kham_cls',
     'sbooking_booking_id', 'sbooking_booking_ma', 'sync_status', 'sync_error', 'synced_at',
