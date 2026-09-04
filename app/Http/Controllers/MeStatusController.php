@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\DailyAttendance;
+use App\Services\SbookingClient;
 use App\Services\Ups\UpsDispatcher;
 
 /**
@@ -30,6 +31,12 @@ class MeStatusController extends Controller
         $dispatcher = app(UpsDispatcher::class);
         $newPaused ? $dispatcher->markPause($user->id, $workDate) : $dispatcher->markResume($user->id, $workDate);
 
-        return back()->with('status', $newPaused ? 'Đã tạm ngừng nhận lead.' : 'Đã tiếp tục nhận lead.');
+        // Phase 6.26.c (2026-09-04) — sync trạng thái busy sang sbooking users.dung_nhan_lead.
+        // Silent fail (không phá flow SCRM khi sbooking sự cố) — sbooking chỉ hiển thị badge cảnh báo.
+        $syncOk = app(SbookingClient::class)->syncBusyStatus($user->id, $newPaused);
+        $suffix = $syncOk ? '' : ' (chưa đồng bộ được sang sbooking — badge có thể lệch)';
+
+        return back()->with('status',
+            ($newPaused ? 'Đã tạm ngừng nhận lead.' : 'Đã tiếp tục nhận lead.') . $suffix);
     }
 }

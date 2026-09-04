@@ -359,6 +359,32 @@ class SbookingClient
         return ['ok' => true, 'reason' => ''];
     }
 
+    /**
+     * Phase 6.26.c (2026-09-04) — SCRM sync trạng thái busy sang sbooking users.dung_nhan_lead.
+     * Silent fail (return bool) — không throw để không phá flow toggle bên SCRM khi sbooking sự cố.
+     */
+    public function syncBusyStatus(int $scrmUserId, bool $isPaused): bool
+    {
+        $sbookingUserId = \App\Models\User::where('id', $scrmUserId)->value('sbooking_user_id');
+        if (! $sbookingUserId) return false;
+
+        $token = config('services.booking.api_token');
+        $baseUrl = rtrim(config('services.booking.api_url') ?: '', '/');
+        // baseUrl là …/api → PATCH …/api/v1/users/{id}/toggle-busy chưa có prefix v1; tự nối.
+        $v1Base = preg_replace('#/api$#', '/api/v1', $baseUrl);
+        if (! $token || ! $v1Base) return false;
+
+        try {
+            $r = Http::withToken($token)->connectTimeout(3)->timeout(15)->acceptJson()
+                ->post($v1Base . '/users/' . (int) $sbookingUserId . '/toggle-busy', [
+                    'dung_nhan_lead' => $isPaused,
+                ]);
+            return $r->successful();
+        } catch (Throwable $e) {
+            return false;
+        }
+    }
+
     private function markFailed(BookingLog $log, string $reason): void
     {
         $log->update([
