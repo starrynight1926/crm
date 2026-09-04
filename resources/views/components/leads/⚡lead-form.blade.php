@@ -4709,32 +4709,25 @@ new class extends Component
                     @endphp
                     @if ($__canAct)
                         <div class="mt-3 pt-3 border-t border-blue-100">
-                            <div class="text-xs font-semibold text-blue-900 mb-2">🎯 Bạn là Sale tiếp đón booking này — thao tác sẽ đồng bộ ngay sang sbooking:</div>
+                            <div class="text-xs font-semibold text-blue-900 mb-2">🎯 Bạn là Sale tiếp đón booking này:</div>
+                            <div class="text-[11px] text-blue-700/80 mb-2">
+                                Trạng thái khách <b>(Đã tới / Tới trễ / Hủy)</b> do Admin cơ sở đánh bên Sbooking. Bạn chỉ thao tác tiếp đón + comment.
+                            </div>
                             <div class="flex flex-wrap items-center gap-2">
-                                {{-- 3 nút trạng thái khách. Bấm lại đúng trạng thái = bỏ chọn (backend toggle). --}}
-                                @foreach (['da_toi' => ['Khách đã tới', 'bg-emerald-600'], 'toi_tre' => ['Khách tới trễ', 'bg-amber-500'], 'huy' => ['Khách hủy', 'bg-red-600']] as $__ttk => $__meta)
-                                    <form method="POST" action="{{ route('leads.booking.tt-khach', ['lead' => $lead->id, 'log' => $__latestBl->id]) }}"
-                                          onsubmit="return confirm('Xác nhận: {{ $__meta[0] }}? Sẽ đẩy sang sbooking.');" class="inline">
-                                        @csrf
-                                        <input type="hidden" name="trang_thai_khach" value="{{ $__ttk }}">
-                                        <button type="submit" class="px-3 py-1.5 rounded text-white text-xs font-semibold {{ $__meta[1] }} hover:opacity-90">{{ $__meta[0] }}</button>
-                                    </form>
-                                @endforeach
+                                {{-- 2026-09-04 fix: bỏ 3 nút trạng thái khách — đó là việc admin cơ sở làm bên sbooking. --}}
                                 {{-- Toggle Đang tiếp đón / Hoàn tất. Server tự quyết theo trạng thái hiện tại — form cho 2 nút riêng. --}}
-                                <div class="flex items-center gap-1 ml-2 pl-2 border-l border-blue-200">
-                                    <form method="POST" action="{{ route('leads.booking.tiep-don', ['lead' => $lead->id, 'log' => $__latestBl->id]) }}"
-                                          onsubmit="return confirm('Bắt đầu tiếp đón khách? (mark sale busy)');" class="inline">
-                                        @csrf
-                                        <input type="hidden" name="trang_thai_tiep_don" value="dang_tiep_don">
-                                        <button type="submit" class="px-3 py-1.5 rounded bg-blue-600 text-white text-xs font-semibold hover:opacity-90">▶ Đang tiếp đón</button>
-                                    </form>
-                                    <form method="POST" action="{{ route('leads.booking.tiep-don', ['lead' => $lead->id, 'log' => $__latestBl->id]) }}"
-                                          onsubmit="return confirm('Hoàn tất tiếp đón? (mark sale free)');" class="inline">
-                                        @csrf
-                                        <input type="hidden" name="trang_thai_tiep_don" value="hoan_tat">
-                                        <button type="submit" class="px-3 py-1.5 rounded bg-slate-600 text-white text-xs font-semibold hover:opacity-90">✓ Hoàn tất</button>
-                                    </form>
-                                </div>
+                                <form method="POST" action="{{ route('leads.booking.tiep-don', ['lead' => $lead->id, 'log' => $__latestBl->id]) }}"
+                                      onsubmit="return confirm('Bắt đầu tiếp đón khách? (mark sale busy)');" class="inline">
+                                    @csrf
+                                    <input type="hidden" name="trang_thai_tiep_don" value="dang_tiep_don">
+                                    <button type="submit" class="px-3 py-1.5 rounded bg-blue-600 text-white text-xs font-semibold hover:opacity-90">▶ Đang tiếp đón</button>
+                                </form>
+                                <form method="POST" action="{{ route('leads.booking.tiep-don', ['lead' => $lead->id, 'log' => $__latestBl->id]) }}"
+                                      onsubmit="return confirm('Hoàn tất tiếp đón? (mark sale free)');" class="inline">
+                                    @csrf
+                                    <input type="hidden" name="trang_thai_tiep_don" value="hoan_tat">
+                                    <button type="submit" class="px-3 py-1.5 rounded bg-slate-600 text-white text-xs font-semibold hover:opacity-90">✓ Hoàn tất</button>
+                                </form>
                             </div>
                             {{-- Ô comment nhanh, đẩy sang sbooking. --}}
                             <form method="POST" action="{{ route('leads.booking.comment', ['lead' => $lead->id, 'log' => $__latestBl->id]) }}" class="mt-2 flex gap-2 items-start">

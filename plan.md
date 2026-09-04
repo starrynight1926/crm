@@ -208,6 +208,44 @@ Bổ sung nối tiếp 6.21. Không đụng phase đã done. Chốt thiết kế
 - [x] Rule 15' auto-hủy sync 2 chiều: datasource `pushBookingUpdate` gửi `trang_thai=huy + ly_do_huy` (commit `805db67`); sbooking `update()` accept + map sang `ly_do_tu_choi` (commit `daf8eb2`).
 - [ ] QA browser end-to-end: MySQL dev cần chạy. Kiểm chứng: admin sbooking duyệt → sync về datasource; auto-cancel 15' → cả 2 bên thấy `khach_huy`/`trang_thai=huy`.
 
+## Phase 6.26 — Sale Tiếp Đón thao tác bên SCRM (2026-09-04)
+
+**Bối cảnh**: Sale không muốn phải mở sbooking để đánh trạng thái khách / bật "Đang tiếp đón" — làm bên SCRM luôn cho tiện. Booking bị SCRM UPS override sai nguồn SA (đã fix guard `isUpsBased + owner null` ở commit `a9ec291`). Giờ rework luồng gán tiếp đón + move UI sang SCRM.
+
+### 6.26.a — sbooking: API + lock UI sale
+- [x] 3 endpoint `scrm.token`:
+  - `POST /api/v1/bookings/{id}/trang-thai-khach` — body `{ trang_thai_khach, actor_scrm_user_id, actor_name }`
+  - `POST /api/v1/bookings/{id}/trang-thai-tiep-don` — body `{ trang_thai_tiep_don, actor_scrm_user_id, actor_name }`
+  - `POST /api/v1/bookings/{id}/comments` — reuse `POST /api/bookings/{id}/comments`, thêm actor.
+- [x] Guard: `actor_scrm_user_id` → map sang sbooking user, phải khớp `tiep_don_user_id` booking. Log `booking_logs` actor "SCRM: {name}".
+- [x] UI sbooking (blade `show`, `dashboard` list action): ẩn 3 nút với sale (không admin). Admin vẫn thấy để fallback.
+
+### 6.26.b — SCRM: UI trong lead-form Phase 4
+- [x] Row booking hiện: toggle "Đang tiếp đón / Hoàn tất" + ô comment (2026-09-04 fix: **bỏ 3 nút trạng thái khách** — đó là việc Admin cơ sở làm bên sbooking, không phải Sale).
+- [x] Chỉ hiện khi auth user là CV1 (position=1) của booking log & booking đã sync sbooking.
+- [x] Gọi `SbookingClient::pushTrangThaiTiepDon` / `pushComment`. API `pushTrangThaiKhach` giữ trong service để dùng nội bộ, không expose UI.
+
+### 6.26.c — Nút "Bận" (user-wide toggle, move từ sbooking sang SCRM)
+- [x] SCRM header user hoặc trang UPS check-in: toggle "Bận / Nhận lead" → PATCH `users.dung_nhan_lead` qua API `PATCH /api/v1/users/{id}/toggle-busy`.
+- [x] UPS `pickGreet` skip user `dung_nhan_lead = true`.
+- [x] **Booking đã gán không đổi** — chỉ chặn lượt chia mới.
+- [x] sbooking `show.blade.php`: badge "· Sale hiện đang bận" cạnh tên nếu `tiepDonUser.dung_nhan_lead = true`.
+- [x] Bỏ nút toggle bên sbooking (nếu có).
+
+### 6.26.d — Gán tiếp đón khi Admin duyệt
+- [x] Form duyệt booking (sbooking): khi mở, `tiep_don_user_id null` + nguồn UPS-based (MKT/MKT_BR):
+  - UPS đã confirm cho cơ sở đó ngày `ngay_dat` → **auto-fill gợi ý** sale kế tiếp UPS list (admin bấm Duyệt = xác nhận, hoặc đổi tay).
+  - Chưa confirm → hiện "Chưa chốt UPS list ngày {DD/MM}" + admin bắt buộc chọn tay.
+- [x] Nguồn khác (SA/BA/BOD/WI/CM): giữ nguyên `sale_id = nguoi_tao_id` như logic 2026-08-18 (không đổi).
+- [x] Bỏ auto-dispatch UPS khi khách check-in (`BookingEventController`): guard `isUpsBased + owner null` giờ gần như no-op vì admin đã gán lúc duyệt — giữ code làm safety net, không xoá.
+
+### 6.26.e — Test & QA
+- [ ] Feature: sale A là tiếp đón booking B → 3 API OK, log actor SCRM. Sale khác gọi → 403.
+- [ ] Feature: admin duyệt MKT booking (a) UPS confirmed → gợi ý sale; (b) chưa confirm → chọn tay bắt buộc.
+- [ ] Feature: sale bật "Bận" → UPS skip; booking đã gán giữ nguyên; badge hiển thị.
+- [ ] Manual: sale login sbooking không thấy 3 nút; admin vẫn thấy.
+- [ ] Ghi `result.md`.
+
 ## Phase 7 — Ads API + hoàn thiện
 - [ ] Màn 14 đầy đủ: kết nối Facebook Lead Form / TikTok / Google Ads, sync định kỳ
 - [ ] Seed ~200–300k lead giả, test index/pagination/aggregate ở quy mô thật, tune query

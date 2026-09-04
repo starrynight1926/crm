@@ -2,6 +2,33 @@
 
 > Làm xong phase nào ghi vào đây: ngày hoàn thành, việc đã làm, việc dời lại/chưa xong, ghi chú & quyết định phát sinh. Mẫu bên dưới.
 
+## 2026-09-04 — Phase 6.26 (a-d) Sale Tiếp Đón thao tác bên SCRM 🚧 (còn test tay 6.26.e)
+
+**Bối cảnh**: user báo booking BKG-260904-000060 (nguồn SA, Hoài Như đặt) bị SCRM UPS override sang Bích Trâm khi khách check-in. Rework luồng: sale không vào sbooking, mọi thao tác làm bên SCRM. Đồng thời fix perm scope: sale HC thấy nhầm lead BOD kho team.
+
+### Đã làm
+- **UPS override fix** (`a9ec291` scrm): `BookingEventController::pickGreet` guard `Lead::isUpsBased($source) && empty($lead->owner_id)` — chỉ MKT chưa có owner mới auto-chia. SA/BA/BOD/WI/CM giữ nguyên owner gốc.
+- **Perm scope fix** (`9e5379d` scrm): thêm perm `lead.view_team_pool` tách khỏi `lead.view_pool`. Migration + PermissionSeeder + RolePermissionSyncSeeder grant cho 9 role management đang có `view_pool` (Admin, Admin cơ sở, CM sale, CM Tele, CM booking, DM HCM, Manager, Observer, Team Leader). Sale HC/SHC không có → không thấy pool nữa. `Lead::scopeVisibleTo` gate 2 nhánh `POOL_TEAM + memberOrgIds` và `pool_unit_id + visiblePoolIds` cùng perm mới. Verify local: Hoàng Uyên 1→0 lead BOD; Admin Cơ sở HN vẫn thấy 5.
+- **6.26.a sbooking** (`d648341`): API `POST /api/bookings/{id}/trang-thai-khach` + `/trang-thai-tiep-don` (guard `sbooking_user_id === tiep_don_user_id | sale_id`, log actor SCRM). Blade `partials/trang-thai-lich-hen.blade.php` ẩn 3 nút + comment cho user role sale (chuc_danh HC/SHC/CM/DM), admin giữ fallback.
+- **6.26.b SCRM** (`37aa9e8` + hotfix cùng session): `SbookingClient::pushTrangThaiKhach` + `pushTrangThaiTiepDon`. `LeadBookingActionController` 3 route POST guard (log↔lead, đã sync sbooking, auth = CV1). Lead-form Phase 4 chèn khối "🎯 Bạn là Sale tiếp đón" sau "Thông tin booking đến lịch" với 2 nút **Đang tiếp đón/Hoàn tất** + ô comment. **Bỏ 3 nút trạng thái khách** (user correction: "Khách đã tới/Tới trễ/Hủy" là admin cơ sở đánh bên sbooking, không phải sale). Chỉ hiện khi user = CV1 & booking đã sync.
+- **6.26.c** (scrm `fa410f9` + sbooking `f7682d5`): API `POST /api/v1/users/{id}/toggle-busy`. `MeStatusController::toggleReceive` sau khi flip local gọi `SbookingClient::syncBusyStatus` silent-fail. sbooking topnav đổi nút toggle → badge read-only (tooltip nhắc bấm bên SCRM). `show.blade.php` badge amber "· Sale hiện đang bận" cạnh tên `tiepDonUser` khi `dung_nhan_lead=true`.
+- **6.26.d** (`eba45ed` sbooking): modal Duyệt (`_approve_modal.blade.php`) `loadSales` trả cả object `{data, source}`. Nguồn MKT chưa có `tiep_don_user_id`: `source='ups'` → auto-fill dropdown ưu tiên A rảnh > A bận > B/C rảnh + note xanh "💡 Gợi ý UPS"; `source='local|error'` → banner amber "⚠ Chưa chốt UPS list ngày DD/MM" + chọn tay bắt buộc; `source='future_all_users'` giữ hành vi cũ. Nguồn SELF_OWNED không đổi.
+
+### Bonus cùng session
+- Notif log `/lo23tdn/thiet-lap/nhat-ky-thong-bao` fix `stdClass::$data->event` (`9489658` sbooking).
+- Dashboard widget carry `loai/nhom/ngay/q` — bấm "Lịch chờ duyệt" ở tab Tư vấn không nhảy về Lịch khám (`9489658`).
+- `deploy/cron/queue-drain.sh` cho sbooking (`793d5b2`) — notif dừng 5 ngày do queue worker không chạy. Host add cron `* * * * *`.
+
+### Dời lại
+- **6.26.e Test & QA** — user tự test tay (feature test PHPUnit chưa viết). 4 case chính: (1) sale A là tiếp đón push OK, sale khác 403; (2) admin duyệt MKT UPS confirmed → gợi ý; chưa → chọn tay; (3) toggle Bận → UPS skip + badge hiện; (4) sale login sbooking không thấy 3 nút.
+
+### Ghi chú
+- SCRM `daily_attendance.dung_nhan_lead` (per work_date) vs sbooking `users.dung_nhan_lead` (persistent) — sync 1 chiều SCRM→sbooking khi toggle. Nếu sbooking sự cố, flash msg SCRM thêm suffix cảnh báo, không block.
+- Bỏ auto-dispatch UPS khi check-in giờ gần như no-op (admin đã gán lúc duyệt) — giữ code làm safety net cho case UPS confirm SAU khi booking đã duyệt.
+- SOURCES_UPS_BASED hiện chỉ `MKT` (không có MKT_BR). MKT_BR thuộc SELF_OWNED — bị lock cứng creator bên sbooking modal.
+
+
+
 ## 2026-09-04 — Booking form: dropdown "Nhân viên hỗ trợ" + push sang sbooking + dọn cơ sở demo 🚧
 
 Nhánh `eighteenth`. Đi kèm patch bên [lara-sbooking](../lara-sbooking/result.md) cùng ngày.
