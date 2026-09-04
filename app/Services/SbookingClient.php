@@ -277,8 +277,17 @@ class SbookingClient
                     'sbooking_user_id' => $sbookingUserId,
                     'scrm_user_name' => $scrmUserName,
                 ]);
+            if (! $r->successful()) {
+                // 2026-09-04: log rõ để tránh silent-fail như bug token mismatch local.
+                \Illuminate\Support\Facades\Log::warning('SbookingClient::pushComment fail', [
+                    'booking_id' => $log->sbooking_booking_id,
+                    'status' => $r->status(),
+                    'body' => substr($r->body(), 0, 300),
+                ]);
+            }
             return $r->successful();
         } catch (Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('SbookingClient::pushComment exception: ' . $e->getMessage());
             return false;
         }
     }
