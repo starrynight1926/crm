@@ -487,7 +487,7 @@ new class extends Component
                         'return_url' => route('leads.booking-callback', $lead),
                     ]);
                     $bookingBase = $coSoSlug ? rtrim($bookingBaseUrl, '/') . '/' . $coSoSlug : null;
-                    $bookingClinicUrl = $bookingBase ? $bookingBase . '/tao-moi?' . $bookingQuery : null;
+                    $bookingClinicUrl = $bookingBase ? $bookingBase . '/dat-lich-tham-kham?' . $bookingQuery : null;
                     $bookingServiceUrl = $bookingBase ? $bookingBase . '/dat-lich-dich-vu?' . $bookingQuery : null;
                 @endphp
                 {{-- Phase C1.b 2026-08-01: gỡ nút "Đặt booking" (mở tab sbooking). Booking bây giờ tạo tự động từ tab Booking khi status = "Đã xác nhận". --}}

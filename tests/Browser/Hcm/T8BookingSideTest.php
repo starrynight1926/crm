@@ -42,7 +42,7 @@ class T8BookingSideTest extends DuskTestCase
                     ->type('password', '207@nvt')
                     ->press('Đăng nhập')
                     ->pause(1500)
-                    ->visit('http://127.0.0.1:1995/207nvt/tao-moi?ho_ten=Test&so_dien_thoai=0900017001&khach_ma=KH-TEST-BOOK')
+                    ->visit('http://127.0.0.1:1995/207nvt/dat-lich-tham-kham?ho_ten=Test&so_dien_thoai=0900017001&khach_ma=KH-TEST-BOOK')
                     ->pause(1500)
                     ->assertSee('Đặt lịch')
                     ->assertInputValue('input[name="ho_ten"]', 'Test')
