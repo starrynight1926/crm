@@ -283,6 +283,82 @@ class SbookingClient
         }
     }
 
+    /**
+     * Phase 6.26.a (2026-09-04) — SCRM sale tiếp đón đánh trạng thái khách bên data source.
+     * Push POST /api/bookings/{id}/trang-thai-khach — sbooking guard sbooking_user_id vs tiep_don_user_id.
+     * Trả ['ok'=>bool, 'reason'=>string, 'trang_thai_khach'=>?string].
+     */
+    public function pushTrangThaiKhach(BookingLog $log, ?string $trangThaiKhach, int $scrmUserId, string $scrmUserName): array
+    {
+        if (! $log->sbooking_booking_id) {
+            return ['ok' => false, 'reason' => 'Booking chưa sync sbooking.', 'trang_thai_khach' => null];
+        }
+        $token = config('services.booking.api_token');
+        $baseUrl = rtrim(config('services.booking.api_url') ?: '', '/');
+        if (! $token || ! $baseUrl) {
+            return ['ok' => false, 'reason' => 'Chưa cấu hình sbooking API.', 'trang_thai_khach' => null];
+        }
+        $sbookingUserId = \App\Models\User::where('id', $scrmUserId)->value('sbooking_user_id');
+        if (! $sbookingUserId) {
+            return ['ok' => false, 'reason' => 'User SCRM chưa map sbooking_user_id.', 'trang_thai_khach' => null];
+        }
+        try {
+            $r = Http::withToken($token)->connectTimeout(3)->timeout(20)->acceptJson()
+                ->post($baseUrl . '/bookings/' . $log->sbooking_booking_id . '/trang-thai-khach', [
+                    'trang_thai_khach' => $trangThaiKhach,
+                    'sbooking_user_id' => (int) $sbookingUserId,
+                    'scrm_user_name'   => $scrmUserName,
+                ]);
+        } catch (Throwable $e) {
+            return ['ok' => false, 'reason' => 'HTTP fail: ' . $e->getMessage(), 'trang_thai_khach' => null];
+        }
+        if (! $r->successful()) {
+            $body = $r->json();
+            $reason = is_array($body) && ! empty($body['error']) ? $body['error']
+                : (is_array($body) && ! empty($body['message']) ? $body['message'] : 'HTTP ' . $r->status());
+            return ['ok' => false, 'reason' => $reason, 'trang_thai_khach' => null];
+        }
+        $body = $r->json();
+        return ['ok' => true, 'reason' => '', 'trang_thai_khach' => $body['trang_thai_khach'] ?? null];
+    }
+
+    /**
+     * Phase 6.26.a (2026-09-04) — SCRM sale bấm "Đang tiếp đón / Hoàn tất" bên data source.
+     * Push POST /api/bookings/{id}/trang-thai-tiep-don.
+     */
+    public function pushTrangThaiTiepDon(BookingLog $log, string $trangThaiTiepDon, int $scrmUserId, string $scrmUserName): array
+    {
+        if (! $log->sbooking_booking_id) {
+            return ['ok' => false, 'reason' => 'Booking chưa sync sbooking.'];
+        }
+        $token = config('services.booking.api_token');
+        $baseUrl = rtrim(config('services.booking.api_url') ?: '', '/');
+        if (! $token || ! $baseUrl) {
+            return ['ok' => false, 'reason' => 'Chưa cấu hình sbooking API.'];
+        }
+        $sbookingUserId = \App\Models\User::where('id', $scrmUserId)->value('sbooking_user_id');
+        if (! $sbookingUserId) {
+            return ['ok' => false, 'reason' => 'User SCRM chưa map sbooking_user_id.'];
+        }
+        try {
+            $r = Http::withToken($token)->connectTimeout(3)->timeout(20)->acceptJson()
+                ->post($baseUrl . '/bookings/' . $log->sbooking_booking_id . '/trang-thai-tiep-don', [
+                    'trang_thai_tiep_don' => $trangThaiTiepDon,
+                    'sbooking_user_id'    => (int) $sbookingUserId,
+                    'scrm_user_name'      => $scrmUserName,
+                ]);
+        } catch (Throwable $e) {
+            return ['ok' => false, 'reason' => 'HTTP fail: ' . $e->getMessage()];
+        }
+        if (! $r->successful()) {
+            $body = $r->json();
+            $reason = is_array($body) && ! empty($body['error']) ? $body['error']
+                : (is_array($body) && ! empty($body['message']) ? $body['message'] : 'HTTP ' . $r->status());
+            return ['ok' => false, 'reason' => $reason];
+        }
+        return ['ok' => true, 'reason' => ''];
+    }
+
     private function markFailed(BookingLog $log, string $reason): void
     {
         $log->update([

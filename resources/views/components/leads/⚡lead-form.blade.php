@@ -4697,6 +4697,54 @@ new class extends Component
                                     <div class="md:col-span-2 text-xs bg-slate-50 border border-slate-200 rounded px-2 py-1"><span class="text-ink/50">Ghi chú:</span> {{ $__latestBl->note }}</div>
                                 @endif
                             </div>
+
+                    {{-- Phase 6.26.b (2026-09-04) — Sale tiếp đón thao tác 3 hành động bên SCRM,
+                         push sang sbooking. Chỉ hiện khi:
+                           - Booking đã sync (có sbooking_booking_id)
+                           - Auth user là CV1 (position=1) của booking log --}}
+                    @php
+                        $__cv1 = $__latestBl->consultants->firstWhere('pivot.position', 1);
+                        $__isCV1 = $__cv1 && (int) $__cv1->id === (int) auth()->id();
+                        $__canAct = $__isCV1 && $__latestBl->sbooking_booking_id;
+                    @endphp
+                    @if ($__canAct)
+                        <div class="mt-3 pt-3 border-t border-blue-100">
+                            <div class="text-xs font-semibold text-blue-900 mb-2">🎯 Bạn là Sale tiếp đón booking này — thao tác sẽ đồng bộ ngay sang sbooking:</div>
+                            <div class="flex flex-wrap items-center gap-2">
+                                {{-- 3 nút trạng thái khách. Bấm lại đúng trạng thái = bỏ chọn (backend toggle). --}}
+                                @foreach (['da_toi' => ['Khách đã tới', 'bg-emerald-600'], 'toi_tre' => ['Khách tới trễ', 'bg-amber-500'], 'huy' => ['Khách hủy', 'bg-red-600']] as $__ttk => $__meta)
+                                    <form method="POST" action="{{ route('leads.booking.tt-khach', ['lead' => $lead->id, 'log' => $__latestBl->id]) }}"
+                                          onsubmit="return confirm('Xác nhận: {{ $__meta[0] }}? Sẽ đẩy sang sbooking.');" class="inline">
+                                        @csrf
+                                        <input type="hidden" name="trang_thai_khach" value="{{ $__ttk }}">
+                                        <button type="submit" class="px-3 py-1.5 rounded text-white text-xs font-semibold {{ $__meta[1] }} hover:opacity-90">{{ $__meta[0] }}</button>
+                                    </form>
+                                @endforeach
+                                {{-- Toggle Đang tiếp đón / Hoàn tất. Server tự quyết theo trạng thái hiện tại — form cho 2 nút riêng. --}}
+                                <div class="flex items-center gap-1 ml-2 pl-2 border-l border-blue-200">
+                                    <form method="POST" action="{{ route('leads.booking.tiep-don', ['lead' => $lead->id, 'log' => $__latestBl->id]) }}"
+                                          onsubmit="return confirm('Bắt đầu tiếp đón khách? (mark sale busy)');" class="inline">
+                                        @csrf
+                                        <input type="hidden" name="trang_thai_tiep_don" value="dang_tiep_don">
+                                        <button type="submit" class="px-3 py-1.5 rounded bg-blue-600 text-white text-xs font-semibold hover:opacity-90">▶ Đang tiếp đón</button>
+                                    </form>
+                                    <form method="POST" action="{{ route('leads.booking.tiep-don', ['lead' => $lead->id, 'log' => $__latestBl->id]) }}"
+                                          onsubmit="return confirm('Hoàn tất tiếp đón? (mark sale free)');" class="inline">
+                                        @csrf
+                                        <input type="hidden" name="trang_thai_tiep_don" value="hoan_tat">
+                                        <button type="submit" class="px-3 py-1.5 rounded bg-slate-600 text-white text-xs font-semibold hover:opacity-90">✓ Hoàn tất</button>
+                                    </form>
+                                </div>
+                            </div>
+                            {{-- Ô comment nhanh, đẩy sang sbooking. --}}
+                            <form method="POST" action="{{ route('leads.booking.comment', ['lead' => $lead->id, 'log' => $__latestBl->id]) }}" class="mt-2 flex gap-2 items-start">
+                                @csrf
+                                <textarea name="noi_dung" required maxlength="2000" rows="2" placeholder="Ghi chú nhanh, phản ánh khách… (đẩy sang sbooking)"
+                                          class="flex-1 text-sm border border-blue-200 rounded px-2 py-1 focus:border-blue-400 focus:ring-1 focus:ring-blue-200 outline-none"></textarea>
+                                <button type="submit" class="px-3 py-2 rounded bg-blue-700 text-white text-xs font-semibold hover:opacity-90">Gửi</button>
+                            </form>
+                        </div>
+                    @endif
                         </div>
                     @endif
                 @endif

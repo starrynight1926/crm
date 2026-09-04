@@ -114,6 +114,10 @@ Route::middleware('auth')->group(function () {
         })->name('leads.by-code');
         Route::get('/{lead}', fn (\App\Models\Lead $lead) => view('leads.show', ['lead' => $lead]))->name('leads.show');
         Route::get('/{lead}/booking-callback', \App\Http\Controllers\BookingCallbackController::class)->name('leads.booking-callback');
+        // Phase 6.26.b (2026-09-04) — Sale tiếp đón thao tác 3 hành động bên SCRM, push sang sbooking.
+        Route::post('/{lead}/booking/{log}/trang-thai-khach', [\App\Http\Controllers\LeadBookingActionController::class, 'trangThaiKhach'])->name('leads.booking.tt-khach');
+        Route::post('/{lead}/booking/{log}/tiep-don',         [\App\Http\Controllers\LeadBookingActionController::class, 'tiepDon'])->name('leads.booking.tiep-don');
+        Route::post('/{lead}/booking/{log}/comment',          [\App\Http\Controllers\LeadBookingActionController::class, 'comment'])->name('leads.booking.comment');
         Route::get('/{lead}/edit', function (\App\Models\Lead $lead) {
             // 2026-08-05: đổi gate canEditPersonalInfo → canOpenEditForm (owner Sale/Tele mở
             // được form để ghi call/booking log, dù không có perm sửa info personal).
