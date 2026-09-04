@@ -411,8 +411,15 @@ class BookingEventController extends Controller
 
     protected function dispatchNotification(Lead $lead, array $data, ?string $bookingMa, ?int $actorId): void
     {
+        // 2026-09-04: type=status + trang_thai=tu_choi → notification riêng đỏ, đính kèm lý do.
+        $isRejected = ($data['type'] ?? null) === 'status' && ($data['trang_thai'] ?? null) === 'tu_choi';
+
         [$eventKey, $tieuDe, $noiDung] = match ($data['type']) {
-            'status'  => [
+            'status'  => $isRejected ? [
+                NotificationEvents::BOOKING_STATUS_CHANGED,
+                '❌ Booking bị TỪ CHỐI',
+                $lead->name.($bookingMa ? " ($bookingMa)" : '').' — Lý do: '.trim((string) ($data['ly_do_tu_choi'] ?? 'Admin sbooking không nêu lý do')),
+            ] : [
                 NotificationEvents::BOOKING_STATUS_CHANGED,
                 'Booking đổi trạng thái',
                 $lead->name.' — '.(Lead::BOOKING_STATUSES[$lead->fresh()->booking_status] ?? $lead->booking_status).($bookingMa ? " ($bookingMa)" : ''),

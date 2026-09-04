@@ -3809,8 +3809,12 @@ new class extends Component
                                 };
                                 $facLabel = $bl->facility ? (($bl->facility->parent?->name ? $bl->facility->parent->name . ' › ' : '') . $bl->facility->name) : '—';
                             @endphp
-                            <div class="p-3 space-y-1.5">
+                            {{-- 2026-09-04: highlight card đỏ khi Sbooking từ chối (sync_status=rejected) để sale không miss. --}}
+                            <div class="p-3 space-y-1.5 {{ $bl->sync_status === 'rejected' ? 'bg-rose-50 border-l-4 border-rose-500' : '' }}">
                                 <div class="flex items-center flex-wrap gap-2">
+                                    @if ($bl->sync_status === 'rejected')
+                                        <span class="text-xs px-2 py-0.5 rounded whitespace-nowrap bg-rose-600 text-white font-bold uppercase tracking-wide">❌ Đã bị Sbooking từ chối</span>
+                                    @endif
                                     <span class="text-xs px-2 py-0.5 rounded whitespace-nowrap {{ $tb }}">{{ $tlabel }}</span>
                                     <span class="text-xs px-2 py-0.5 rounded whitespace-nowrap {{ $b }}">{{ $bl->statusLabel() }}</span>
                                     @php
