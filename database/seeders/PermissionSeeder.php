@@ -28,6 +28,10 @@ class PermissionSeeder extends Seeder
         ],
         'distribution' => [
             'lead.view_pool' => 'Xem kho số (kho chung công ty, chưa chia)',
+            // 2026-09-04: tách gate kho team ra khỏi kho công ty — trước đây mọi member org
+            // đều tự động thấy lead trong pool_unit của mình. Perm này chỉ CM sale / Manager +
+            // các role chia số cần, sale nhân viên không.
+            'lead.view_team_pool' => 'Xem kho team/pool (lead trong pool_unit chờ chia xuống cá nhân)',
             'lead.distribute' => 'Chia số thủ công',
             'lead.distribute_tele' => 'Chia số tele (chia lead nhóm 1 cho tele/booker gọi khách)',
             'lead.distribute_sale' => 'Chia số tiếp đón (chia sale tiếp đón khách tại clinic — nhóm 2/3)',

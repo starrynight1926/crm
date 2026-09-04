@@ -864,19 +864,24 @@ class Lead extends Model
             $poolUnitIds = $user->visiblePoolUnitIds();
             // Phase 6.23 — Kho chung công ty chỉ visible với user có perm `lead.view_pool`.
             $canSeePool = $user->hasPermission('lead.view_pool');
+            // 2026-09-04 — Kho team/pool tách gate riêng: perm `lead.view_team_pool`
+            // (trước đây mọi member org auto thấy pool_unit → sale HC lộ lead BOD kho team).
+            $canSeeTeamPool = $user->hasPermission('lead.view_team_pool');
             if ($orgIds !== []) {
                 $q->orWhereIn('org_unit_id', $orgIds);
                 if ($canSeePool) {
                     $q->orWhere(fn (Builder $sub) => $sub->whereNull('org_unit_id')->where('pool_level', self::POOL_COMMON));
                 }
             }
-            // Kho chung phòng/team: thành viên (org của mình + cấp cha) thấy được, dù scope self
-            if ($memberOrgIds !== []) {
+            // Kho chung phòng/team: thành viên (org của mình + cấp cha) thấy được, dù scope self.
+            // 2026-09-04: gate bằng lead.view_team_pool — chỉ CM sale / Manager thấy, sale HC không.
+            if ($canSeeTeamPool && $memberOrgIds !== []) {
                 $q->orWhere(fn (Builder $sub) => $sub->where('pool_level', self::POOL_TEAM)->whereIn('org_unit_id', $memberOrgIds));
             }
             // Fix 2026-08-08 (Phase 6.24 regression): lead nằm trong Kho số (pool_unit_id) với
             // org_unit_id=null vẫn phải visible cho user có scope đến kho đó.
-            if ($poolUnitIds !== []) {
+            // 2026-09-04: cùng gate lead.view_team_pool như nhánh POOL_TEAM ở trên.
+            if ($canSeeTeamPool && $poolUnitIds !== []) {
                 $q->orWhereIn('pool_unit_id', $poolUnitIds);
             }
             // Past handler: lead đã từng ở org của user → user vẫn thấy (read-only + add note).
