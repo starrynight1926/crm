@@ -104,7 +104,13 @@ class BookingEventController extends Controller
                     // + mark sale busy + broadcast realtime để sbooking không phải F5.
                     // 2026-08-04 fix Bug U7: BỎ QUA auto-chia nếu chưa chốt UPS hôm nay ở cơ sở đó
                     // (trước đây pickGreet không check UpsDailyConfirm → chia dù chưa chốt).
-                    if ($newStatus === Lead::BOOKING_KHACH_DA_TOI) {
+                    // 2026-09-04 fix: UPS pickGreet CHỈ chạy khi lead thuộc SOURCES_UPS_BASED
+                    //   (MKT/MKT_BR) VÀ chưa có owner. Trước đây cứ da_toi là chia lại,
+                    //   ghi đè Sale phụ trách của SA/BA/BOD/WI/CM (lead đã có sale rõ từ đầu)
+                    //   — user báo: nguồn SA Hoài Như đặt, check-in lại bị chia sang slot UPS.
+                    if ($newStatus === Lead::BOOKING_KHACH_DA_TOI
+                        && Lead::isUpsBased($lead->source)
+                        && empty($lead->owner_id)) {
                         // 2026-08-12: fallback resolve facility từ owner_id nếu pool_unit_id null
                         //   (lead cũ trước fix assignToOwner/manualAssign vẫn có null).
                         $facility = null;
