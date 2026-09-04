@@ -940,7 +940,18 @@ new class extends Component
             </thead>
             <tbody class="divide-y divide-gold-100">
                 @forelse ($leads as $lead)
-                    <tr class="hover:bg-gold-50/40 cursor-pointer" onclick="window.location='{{ $lead->canOpenEditForm(auth()->user()) ? route('leads.edit', $lead) : route('leads.show', $lead) }}'">
+                    @php
+                        // 2026-09-04 (Phase 6.26): bôi màu dịu cả dòng theo trạng thái khách sync
+                        // từ sbooking — sale dễ nhận biết lead nào đã tới / trễ / hủy (giống UI sbooking dashboard).
+                        $__rowTint = match ($lead->booking_status ?? null) {
+                            \App\Models\Lead::BOOKING_KHACH_DA_TOI  => 'bg-green-50/70 hover:bg-green-100/70',
+                            \App\Models\Lead::BOOKING_KHACH_TOI_TRE => 'bg-amber-50/70 hover:bg-amber-100/70',
+                            \App\Models\Lead::BOOKING_KHACH_HUY     => 'bg-red-50/70 hover:bg-red-100/70',
+                            \App\Models\Lead::BOOKING_DA_XONG       => 'bg-purple-50/70 hover:bg-purple-100/70',
+                            default                                  => 'hover:bg-gold-50/40',
+                        };
+                    @endphp
+                    <tr class="{{ $__rowTint }} cursor-pointer" onclick="window.location='{{ $lead->canOpenEditForm(auth()->user()) ? route('leads.edit', $lead) : route('leads.show', $lead) }}'">
                         @if ($canDelete)
                             <td class="px-4 py-3" onclick="event.stopPropagation()">
                                 <input type="checkbox" wire:model.live="selected" value="{{ $lead->id }}" class="rounded border-gold-300 text-gold-600 w-4 h-4">
