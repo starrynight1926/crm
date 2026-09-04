@@ -53,10 +53,25 @@ new class extends Component
     }
 }; ?>
 
-<div x-data="{}" class="fixed bottom-5 right-5 z-[9999]">
-    {{-- Bubble --}}
-    <button type="button" wire:click="$set('open', true)"
-            title="Gửi phản hồi / yêu cầu hỗ trợ"
+<div x-data="{ menu: false }" @click.outside="menu = false" class="fixed bottom-5 right-5 z-[9999]">
+    {{-- Popover 2 mục — 2026-09-04: gộp trigger "tạo" + "danh sách" vào 1 bubble. --}}
+    <div x-show="menu" x-cloak x-transition
+         class="absolute bottom-16 right-0 min-w-[220px] bg-white rounded-xl shadow-2xl border border-gold-100 overflow-hidden">
+        <button type="button" @click="menu = false" wire:click="$set('open', true)"
+                class="w-full flex items-center gap-3 px-4 py-3 hover:bg-gold-50 text-left">
+            <span class="material-symbols-outlined text-[20px] text-ink/70">edit_note</span>
+            <span class="text-sm text-ink">Tạo ticket hỗ trợ</span>
+        </button>
+        <a href="/ho-tro"
+           class="flex items-center gap-3 px-4 py-3 hover:bg-gold-50 border-t border-gold-100">
+            <span class="material-symbols-outlined text-[20px] text-ink/70">list</span>
+            <span class="text-sm text-ink">Danh sách ticket</span>
+        </a>
+    </div>
+
+    {{-- Bubble "?" duy nhất --}}
+    <button type="button" @click="menu = !menu"
+            title="Hỗ trợ"
             class="w-14 h-14 rounded-full bg-gold-600 hover:bg-gold-700 text-white shadow-lg flex items-center justify-center text-2xl font-bold transition-transform hover:scale-110">
         ?
     </button>
