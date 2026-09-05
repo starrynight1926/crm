@@ -50,7 +50,9 @@ class SyncBacSiFromSbooking extends Command
         if ($this->option('dry-run')) return self::SUCCESS;
 
         $created = 0; $updated = 0;
+        $seenSbookingIds = [];
         foreach ($rows as $r) {
+            $seenSbookingIds[] = (int) $r['id'];
             $attrs = [
                 'sbooking_co_so_id' => $r['co_so_id'],
                 'ten' => $r['ten'] ?? '',
@@ -71,8 +73,15 @@ class SyncBacSiFromSbooking extends Command
             else { SbBacSi::create(array_merge(['sbooking_id' => $r['id']], $attrs)); $created++; }
         }
 
-        $this->info("Xong. Tạo mới: {$created}, cập nhật: {$updated}, tổng: " . count($rows));
-        Log::info('sb:sync-bac-si', ['created' => $created, 'updated' => $updated, 'total' => count($rows)]);
+        // 2026-09-04 fix: BS bị xoá bên sbooking không được reflect → SCRM dropdown vẫn hiển thị,
+        // user chọn → payload preflight fail "The selected bac si id is invalid". Sau sync mark
+        // active=false cho row không còn trong response (soft-deactivate, không xoá cứng để giữ FK).
+        $deactivated = SbBacSi::where('active', true)
+            ->whereNotIn('sbooking_id', $seenSbookingIds ?: [0])
+            ->update(['active' => false, 'synced_at' => now()]);
+
+        $this->info("Xong. Tạo mới: {$created}, cập nhật: {$updated}, deactivate: {$deactivated}, tổng: " . count($rows));
+        Log::info('sb:sync-bac-si', ['created' => $created, 'updated' => $updated, 'deactivated' => $deactivated, 'total' => count($rows)]);
         return self::SUCCESS;
     }
 }
