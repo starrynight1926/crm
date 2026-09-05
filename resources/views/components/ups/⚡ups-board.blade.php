@@ -203,6 +203,52 @@ new class extends Component
         ]);
     }
 
+    /**
+     * 2026-09-04 — Đẩy sale lên/xuống trong CÙNG bucket bằng cách swap checkin_at
+     * với dòng liền kề. pickFromBucket orderBy(checkin_at asc) → dòng trên nhận trước.
+     * $direction: -1 (lên), +1 (xuống).
+     */
+    public function moveWithinBucket(int $attendanceId, int $direction): void
+    {
+        abort_unless(auth()->user()?->hasPermission('ups.override'), 403);
+        abort_unless(in_array($direction, [-1, 1], true), 422);
+
+        $att = DailyAttendance::findOrFail($attendanceId);
+        if (! $att->list_bucket) return;
+
+        $peers = DailyAttendance::where('facility_pool_unit_id', $att->facility_pool_unit_id)
+            ->whereDate('work_date', $att->work_date)
+            ->where('list_bucket', $att->list_bucket)
+            ->orderBy('checkin_at')
+            ->orderBy('id') // tie-breaker khi cùng timestamp
+            ->get();
+
+        $idx = $peers->search(fn ($p) => $p->id === $att->id);
+        if ($idx === false) return;
+        $swapIdx = $idx + $direction;
+        if ($swapIdx < 0 || $swapIdx >= $peers->count()) return; // đã ở đầu/cuối
+
+        $neighbor = $peers[$swapIdx];
+        $t1 = $att->checkin_at;
+        $t2 = $neighbor->checkin_at;
+
+        // Cùng timestamp → nhích neighbor 1 giây để tạo order rõ ràng.
+        if ($t1 && $t2 && $t1->equalTo($t2)) {
+            $t2 = $direction === -1 ? $t1->copy()->addSecond() : $t1->copy()->subSecond();
+        }
+
+        DailyAttendance::where('id', $att->id)->update([
+            'checkin_at'  => $t2,
+            'override_by' => auth()->id(),
+            'override_at' => now(),
+        ]);
+        DailyAttendance::where('id', $neighbor->id)->update([
+            'checkin_at'  => $t1,
+            'override_by' => auth()->id(),
+            'override_at' => now(),
+        ]);
+    }
+
     public function toggleMkt(int $attendanceId): void
     {
         abort_unless(auth()->user()?->hasPermission('ups.override'), 403);
@@ -533,6 +579,9 @@ new class extends Component
                                                             <div class="flex items-center justify-center gap-2 mt-1">
                                                                 <span class="text-[11px] text-ink/60 font-mono">{{ $att->checkin_at?->setTimezone('Asia/Ho_Chi_Minh')?->format('H:i') }}</span>
                                                                 @if ($canOverride && ! $fb['confirmed'])
+                                                                    {{-- 2026-09-04: nút ↑↓ đổi thứ tự trong bucket (pickFromBucket order by checkin_at). --}}
+                                                                    <button wire:click="moveWithinBucket({{ $att->id }}, -1)" class="text-[10px] border border-ink/20 rounded px-1 py-0.5 bg-white hover:bg-sky-50" title="Đẩy lên (ưu tiên nhận số sớm hơn)">↑</button>
+                                                                    <button wire:click="moveWithinBucket({{ $att->id }}, 1)"  class="text-[10px] border border-ink/20 rounded px-1 py-0.5 bg-white hover:bg-sky-50" title="Đẩy xuống (nhường lượt sale trên)">↓</button>
                                                                     <select x-on:change="$wire.call('moveBucket', {{ $att->id }}, $event.target.value); $event.target.value=''" class="text-[10px] border border-ink/20 rounded px-1 py-0 bg-white" title="Chuyển bucket">
                                                                         <option value="">↔</option>
                                                                         @foreach ($buckets as $bb)
