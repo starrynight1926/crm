@@ -20,19 +20,11 @@ class UpsDispatcher
      */
     public function pickMkt(int $facilityPoolUnitId, ?string $workDate = null): ?User
     {
-        // 2026-09-04 fix: MKT chia phải theo priority bucket A→B→C→OFF (giống pickGreet),
-        // không round-robin cross-bucket. User confirm intent: "hết A mới B, hết B mới C".
-        // Trước đây pickFromMkt lấy all bucket ≠ OFF round-robin → C-sales nhận trước A-sales
-        // nếu C checkin sớm hơn (user báo bug với 7 lead test MKT KH-828..834 cơ sở 2).
-        foreach (self::BUCKET_ORDER_GREET as $bucket) {
-            $sale = $this->pickFromBucket($facilityPoolUnitId, $bucket, $workDate);
-            if ($sale) return $sale;
-        }
-        foreach (self::BUCKET_ORDER_GREET as $bucket) {
-            $sale = $this->pickFromBucket($facilityPoolUnitId, $bucket, $workDate, includeBusy: true);
-            if ($sale) return $sale;
-        }
-        return null;
+        // 2026-09-04 v2: round-robin cross-bucket theo priority A→B→C (OFF loại).
+        //   Mỗi người trong bucket nhận 1 lượt trước khi sang bucket sau.
+        //   Vòng: A1 → A3 (A2 nếu bận) → A4 → ... → B1 → B2 → ... → C1 → ... → wrap A.
+        //   Trước đây strict priority "A độc chiếm khi rảnh" → user báo 11/11 lead về Trâm.
+        return $this->pickCrossBucket($facilityPoolUnitId, $workDate);
     }
 
     /**
@@ -101,22 +93,70 @@ class UpsDispatcher
      */
     public function pickGreet(int $facilityPoolUnitId, ?string $workDate = null): ?User
     {
-        foreach (self::BUCKET_ORDER_GREET as $bucket) {
-            $sale = $this->pickFromBucket($facilityPoolUnitId, $bucket, $workDate);
-            if ($sale) {
-                return $sale;
-            }
-        }
+        // 2026-09-04 v2: giống pickMkt — round-robin cross-bucket A→B→C.
+        //   User (2026-09-04): "chia hết A1..A4 sang B1 tiếp tục", "A2 bận thì skip".
+        return $this->pickCrossBucket($facilityPoolUnitId, $workDate);
+    }
 
-        // Fallback wrap-around: bỏ qua is_busy filter, vẫn round-robin.
-        foreach (self::BUCKET_ORDER_GREET as $bucket) {
-            $sale = $this->pickFromBucket($facilityPoolUnitId, $bucket, $workDate, includeBusy: true);
-            if ($sale) {
-                return $sale;
-            }
-        }
+    /**
+     * 2026-09-04 — Round-robin qua toàn bộ sale active theo priority bucket A→B→C.
+     * Mỗi call trả sale kế tiếp trong danh sách [A_sorted, B_sorted, C_sorted]
+     * (skip OFF, skip dung_nhan_lead=true). Vòng lặp tự nhiên bằng modulo count.
+     *
+     * State: bảng ups_rr_state, bucket sentinel '__CROSS' để tách khỏi state per-bucket cũ.
+     */
+    public function pickCrossBucket(int $facilityPoolUnitId, ?string $workDate = null): ?User
+    {
+        $workDate ??= now()->toDateString();
 
-        return null;
+        return DB::transaction(function () use ($facilityPoolUnitId, $workDate) {
+            // Ordered: bucket priority (A=1, B=2, C=3) rồi checkin_at asc.
+            $sales = DailyAttendance::with('user')
+                ->where('facility_pool_unit_id', $facilityPoolUnitId)
+                ->whereDate('work_date', $workDate)
+                ->whereIn('list_bucket', self::BUCKET_ORDER_GREET) // A, B, C, OFF theo const
+                ->where('list_bucket', '!=', 'OFF')
+                ->where('dung_nhan_lead', false)
+                ->orderByRaw("FIELD(list_bucket, 'A', 'B', 'C')")
+                ->orderBy('checkin_at')
+                ->orderBy('id')
+                ->get()->pluck('user')->filter()->values();
+
+            if ($sales->isEmpty()) return null;
+
+            $bucket = '__CROSS';
+            $state = DB::table('ups_rr_state')
+                ->where('facility_pool_unit_id', $facilityPoolUnitId)
+                ->where('work_date', $workDate)
+                ->where('bucket', $bucket)
+                ->lockForUpdate()
+                ->first();
+
+            $lastUserId = $state?->last_user_id;
+            $lastIdx = -1;
+            if ($lastUserId) {
+                foreach ($sales as $i => $s) {
+                    if ($s->id === $lastUserId) { $lastIdx = $i; break; }
+                }
+            }
+            $nextIdx = ($lastIdx + 1) % $sales->count();
+            $picked = $sales[$nextIdx];
+
+            DB::table('ups_rr_state')->updateOrInsert(
+                [
+                    'facility_pool_unit_id' => $facilityPoolUnitId,
+                    'work_date' => $workDate,
+                    'bucket' => $bucket,
+                ],
+                [
+                    'last_user_id' => $picked->id,
+                    'updated_at' => now(),
+                    'created_at' => $state ? $state->created_at : now(),
+                ]
+            );
+
+            return $picked;
+        });
     }
 
     /**
