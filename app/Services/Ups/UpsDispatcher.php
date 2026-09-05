@@ -20,7 +20,19 @@ class UpsDispatcher
      */
     public function pickMkt(int $facilityPoolUnitId, ?string $workDate = null): ?User
     {
-        return $this->pickFromMkt($facilityPoolUnitId, $workDate);
+        // 2026-09-04 fix: MKT chia phải theo priority bucket A→B→C→OFF (giống pickGreet),
+        // không round-robin cross-bucket. User confirm intent: "hết A mới B, hết B mới C".
+        // Trước đây pickFromMkt lấy all bucket ≠ OFF round-robin → C-sales nhận trước A-sales
+        // nếu C checkin sớm hơn (user báo bug với 7 lead test MKT KH-828..834 cơ sở 2).
+        foreach (self::BUCKET_ORDER_GREET as $bucket) {
+            $sale = $this->pickFromBucket($facilityPoolUnitId, $bucket, $workDate);
+            if ($sale) return $sale;
+        }
+        foreach (self::BUCKET_ORDER_GREET as $bucket) {
+            $sale = $this->pickFromBucket($facilityPoolUnitId, $bucket, $workDate, includeBusy: true);
+            if ($sale) return $sale;
+        }
+        return null;
     }
 
     /**
