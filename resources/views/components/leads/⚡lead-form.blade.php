@@ -4705,8 +4705,20 @@ new class extends Component
                     @php
                         $__cv1 = $__latestBl->consultants->firstWhere('pivot.position', 1);
                         $__isCV1 = $__cv1 && (int) $__cv1->id === (int) auth()->id();
-                        $__canAct = $__isCV1 && $__latestBl->sbooking_booking_id;
+                        $__hasSbooking = (bool) $__latestBl->sbooking_booking_id;
+                        $__canAct = $__isCV1 && $__hasSbooking;
                     @endphp
+                    @if ($__isCV1 && ! $__hasSbooking)
+                        {{-- Phase 6.26.b (2026-09-04): booking chưa sync sbooking (admin chưa duyệt hoặc
+                             push fail) — hiển thị placeholder thay vì ẩn hoàn toàn để sale biết nút sẽ mở sau. --}}
+                        <div class="mt-3 pt-3 border-t border-amber-200">
+                            <div class="text-xs font-semibold text-amber-900 mb-1">⏳ Đang chờ Admin duyệt bên Sbooking</div>
+                            <div class="text-[11px] text-amber-700/80">
+                                Bạn là Sale tiếp đón booking này. Sau khi Admin cơ sở duyệt bên Sbooking, các nút
+                                <b>▶ Đang tiếp đón</b> / <b>✓ Hoàn tất</b> + ô comment sẽ mở tại đây.
+                            </div>
+                        </div>
+                    @endif
                     @if ($__canAct)
                         <div class="mt-3 pt-3 border-t border-blue-100">
                             <div class="text-xs font-semibold text-blue-900 mb-2">🎯 Bạn là Sale tiếp đón booking này:</div>
