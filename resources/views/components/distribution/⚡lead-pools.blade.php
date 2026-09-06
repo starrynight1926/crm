@@ -580,6 +580,7 @@ new class extends Component
                     <th class="px-4 py-3 font-semibold">Khu vực / Nguồn</th>
                     @if ($tab !== 'common')<th class="px-4 py-3 font-semibold">Team</th>@endif
                     @if ($tab === 'personal')<th class="px-4 py-3 font-semibold">Đang giữ</th><th class="px-4 py-3 font-semibold">Nhận lúc</th>@endif
+                    <th class="px-4 py-3 font-semibold">Giờ chia</th>
                     <th class="px-4 py-3 font-semibold text-right">Hành động</th>
                 </tr>
             </thead>
@@ -606,6 +607,7 @@ new class extends Component
                             <td class="px-4 py-3 font-semibold text-gold-700">{{ $lead->owner?->name }}</td>
                             <td class="px-4 py-3 text-ink/50">{{ $lead->assigned_at?->diffForHumans() }}</td>
                         @endif
+                        <td class="px-4 py-3 text-ink/60 whitespace-nowrap">{{ $lead->assigned_at?->format('H:i d/m/Y') ?: '—' }}</td>
                         <td class="px-4 py-3 text-right">
                             @if ($assigningLeadId === $lead->id)
                                 <span class="inline-flex flex-wrap items-center gap-2">
