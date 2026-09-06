@@ -66,22 +66,20 @@ class SyncCrmAccountsSeeder extends Seeder
             if ($affected > 0) $backfilled++;
         }
 
-        // ---------- Phần 1b: Reset password cho 4 tài khoản admin về DefaultPassword ----------
+        // ---------- Phần 1b: Reset password toàn bộ user về DefaultPassword ----------
         // OrgStaffSeeder/AdminCoSoSeeder cố tình KHÔNG đụng password của user đã có
-        // → admin cũ có thể mang password lạc (VD: 'password' seed đời đầu).
-        // 4 admin này là "known account" dev/staging, luôn phải khớp DefaultPassword
-        // để đăng nhập được sau khi seed lại.
-        $adminEmails = [
-            'admin@longevity.com.vn',
-            'admin.hn@longevity.com.vn',
-            'admin.hcm@longevity.com.vn',
-            'admin.dn@longevity.com.vn',
-        ];
+        // (tránh ghi đè khi seed lại). Hệ quả: user seed đời đầu ('123456' / 'password')
+        // hoặc user bị rename email vẫn giữ password lạc → login fail sau seed.
+        // Ở dev/staging mọi tài khoản đều là "known account" → password luôn phải khớp
+        // DefaultPassword::forUser (đã resolve qua assignment tại thời điểm này).
+        // Idempotent: chỉ save khi Hash::check fail, tránh bump updated_at vô nghĩa.
         $pwSynced = 0;
-        foreach ($adminEmails as $email) {
-            $user = \App\Models\User::firstWhere('email', $email);
-            if (! $user) continue;
-            $user->password = \App\Support\DefaultPassword::forEmail($email);
+        foreach (\App\Models\User::all() as $user) {
+            $expected = \App\Support\DefaultPassword::forUser($user);
+            if ($user->password && \Illuminate\Support\Facades\Hash::check($expected, $user->password)) {
+                continue;
+            }
+            $user->password = $expected;
             $user->save();
             $pwSynced++;
         }
@@ -107,7 +105,7 @@ class SyncCrmAccountsSeeder extends Seeder
         }
 
         $this->command->info("Backfilled username: {$backfilled}/" . count($usernameByEmail));
-        $this->command->info("Reset password admin: {$pwSynced}/" . count($adminEmails));
+        $this->command->info("Reset password (lệch DefaultPassword): {$pwSynced} user");
         $this->command->info("Đã xoá {$deleted} user legacy (ktv_/dd_/ddt_/bsi/adminvh).");
     }
 }
