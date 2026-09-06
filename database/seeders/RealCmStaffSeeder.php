@@ -142,8 +142,12 @@ class RealCmStaffSeeder extends Seeder
             $assignment->scopeNodes()->sync(array_filter($scopeNodes));
 
             // Reset password theo cơ sở (assignment đã có → resolve chuẩn).
-            $user->password = \App\Support\DefaultPassword::forUser($user->fresh());
-            $user->saveQuietly();
+            // Guard 2026-09-06: chỉ reset ở local/staging/testing để không đè password prod.
+            if (app()->environment(['local', 'staging', 'testing'])
+                || filter_var(env('SEED_RESET_PASSWORDS', false), FILTER_VALIDATE_BOOLEAN)) {
+                $user->password = \App\Support\DefaultPassword::forUser($user->fresh());
+                $user->saveQuietly();
+            }
         }
 
         // Xóa 2 user demo cũ không dùng nữa (giữ cmdn cho Đà Nẵng chưa có nhân sự thật)

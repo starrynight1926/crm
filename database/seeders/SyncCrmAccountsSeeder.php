@@ -67,21 +67,25 @@ class SyncCrmAccountsSeeder extends Seeder
         }
 
         // ---------- Phần 1b: Reset password toàn bộ user về DefaultPassword ----------
-        // OrgStaffSeeder/AdminCoSoSeeder cố tình KHÔNG đụng password của user đã có
-        // (tránh ghi đè khi seed lại). Hệ quả: user seed đời đầu ('123456' / 'password')
-        // hoặc user bị rename email vẫn giữ password lạc → login fail sau seed.
-        // Ở dev/staging mọi tài khoản đều là "known account" → password luôn phải khớp
-        // DefaultPassword::forUser (đã resolve qua assignment tại thời điểm này).
-        // Idempotent: chỉ save khi Hash::check fail, tránh bump updated_at vô nghĩa.
+        // Chỉ chạy ở local/staging/testing. Prod đã có mật khẩu thật cho từng khu vực
+        // (guard 2026-09-06 sau khi bản trước duyệt cả bảng → nguy cơ ghi đè prod).
+        // Muốn chạy trên env khác → set SEED_RESET_PASSWORDS=true.
+        $allowReset = app()->environment(['local', 'staging', 'testing'])
+            || filter_var(env('SEED_RESET_PASSWORDS', false), FILTER_VALIDATE_BOOLEAN);
         $pwSynced = 0;
-        foreach (\App\Models\User::all() as $user) {
-            $expected = \App\Support\DefaultPassword::forUser($user);
-            if ($user->password && \Illuminate\Support\Facades\Hash::check($expected, $user->password)) {
-                continue;
+        if (! $allowReset) {
+            $this->command->warn('SyncCrmAccountsSeeder: BỎ QUA reset password (env=' . app()->environment() . '). Đặt SEED_RESET_PASSWORDS=true nếu thật sự muốn.');
+        } else {
+            // Idempotent: chỉ save khi Hash::check fail, tránh bump updated_at vô nghĩa.
+            foreach (\App\Models\User::all() as $user) {
+                $expected = \App\Support\DefaultPassword::forUser($user);
+                if ($user->password && \Illuminate\Support\Facades\Hash::check($expected, $user->password)) {
+                    continue;
+                }
+                $user->password = $expected;
+                $user->save();
+                $pwSynced++;
             }
-            $user->password = $expected;
-            $user->save();
-            $pwSynced++;
         }
 
         // ---------- Phần 2: DỌN user booking-only ----------
