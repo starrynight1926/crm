@@ -12,49 +12,46 @@ class PermissionSeeder extends Seeder
      */
     public const PERMISSIONS = [
         'lead' => [
-            // [XEM LEAD THEO PHÒNG BAN / CÁ NHÂN] — scope theo assignment/org của user
-            'lead.view' => '[Xem – phòng ban/cá nhân] Xem lead trong phòng ban / cá nhân được gán',
-            'lead.create' => '[Thao tác] Tạo lead',
-            'lead.update' => '[Thao tác] Sửa lead (ghi chú, phân loại, booking_status, dịch vụ)',
-            'lead.consult' => '[Thao tác] Là chuyên viên tư vấn (được chọn ở khối CV tư vấn của lead)',
-            'lead.read_booking' => '[Thao tác] Vào màn Cập nhật readonly khi phase Booking (Team booking xem info + bấm Đặt booking)',
-            'lead.update_booking' => '[Thao tác] Sửa info cá nhân khi lead ở phase Booking',
-            'lead.book_action' => '[Thao tác] Bấm nút "Đặt booking" (chuyển sang lara-sbooking)',
-            'lead.update_sale' => '[Thao tác] Sửa info cá nhân khi lead ở phase Sale',
-            'lead.delete' => '[Thao tác] Xóa lead',
-            'lead.import' => '[Thao tác] Import lead (Excel/CSV)',
-            'lead.export' => '[Thao tác] Export lead (mặc định tắt, ghi audit)',
-            // [XEM LEAD TOÀN CÔNG TY] — bypass scope
-            'lead.view_phone' => '[Xem – toàn công ty] Xem SĐT đầy đủ ngoài scope',
-            'lead.source_all' => '[Thao tác] Up data mọi nguồn — bypass gate SOURCE_PERMISSIONS',
+            'lead.view'           => 'L1.  [Xem – phòng ban/cá nhân] Xem lead trong phòng ban / cá nhân được gán',
+            'lead.view_phone'     => 'L2.  [Xem – toàn công ty] Xem SĐT đầy đủ ngoài scope',
+            'lead.create'         => 'L3.  [Thao tác] Tạo lead',
+            'lead.update'         => 'L4.  [Thao tác] Sửa lead (ghi chú, phân loại, booking_status, dịch vụ)',
+            'lead.consult'        => 'L5.  [Thao tác] Là chuyên viên tư vấn (được chọn ở khối CV tư vấn của lead)',
+            'lead.read_booking'   => 'L6.  [Thao tác] Vào màn Cập nhật readonly khi phase Booking (Team booking xem info + bấm Đặt booking)',
+            'lead.update_booking' => 'L7.  [Thao tác] Sửa info cá nhân khi lead ở phase Booking',
+            'lead.book_action'    => 'L8.  [Thao tác] Bấm nút "Đặt booking" (chuyển sang lara-sbooking)',
+            'lead.update_sale'    => 'L9.  [Thao tác] Sửa info cá nhân khi lead ở phase Sale',
+            'lead.delete'         => 'L10. [Thao tác] Xóa lead',
+            'lead.import'         => 'L11. [Thao tác] Import lead (Excel/CSV)',
+            'lead.export'         => 'L12. [Thao tác] Export lead (mặc định tắt, ghi audit)',
+            'lead.source_all'     => 'L13. [Thao tác] Up data mọi nguồn — bypass gate SOURCE_PERMISSIONS',
         ],
         'distribution' => [
-            // [XEM LEAD TOÀN CÔNG TY]
-            'lead.view_pool' => '[Xem – toàn công ty] Xem kho số công ty (kho chung, chưa chia)',
-            // [XEM LEAD THEO PHÒNG BAN / CÁ NHÂN]
-            'lead.view_team_pool' => '[Xem – phòng ban/cá nhân] Xem kho team/pool (lead trong pool_unit chờ chia xuống cá nhân)',
+            // [XEM]
+            'lead.view_pool'       => 'D1. [Xem – toàn công ty] Xem kho số công ty (kho chung, chưa chia)',
+            'lead.view_team_pool'  => 'D2. [Xem – phòng ban/cá nhân] Xem kho team/pool (lead trong pool_unit chờ chia xuống cá nhân)',
 
-            // [CHIA LEAD TOÀN CÔNG TY] — chia được cross cơ sở/chi nhánh, không giới hạn scope
-            'lead.distribute' => '[Chia – toàn công ty] Chia số thủ công (bypass rule)',
-            'lead.distribute_branch' => '[Chia – toàn công ty] Chia toàn Chi nhánh — Trực Page up MKT chọn cơ sở bất kỳ trong chi nhánh của mình',
-            'lead.distribute_company' => '[Chia – toàn công ty] Chia toàn Công ty — Trực Page up MKT chọn cơ sở bất kỳ trong cả 3 chi nhánh',
-            'lead.assign_direct' => '[Chia – toàn công ty] Chia lead thẳng — CM chọn thẳng 1 nhân sự trong scope để giao lead phase 2 (không qua UPS)',
+            // [CHIA – TOÀN CÔNG TY]
+            'lead.distribute'         => 'D3. [Chia – toàn công ty] Chia số thủ công (bypass rule)',
+            'lead.distribute_branch'  => 'D4. [Chia – toàn công ty] Chia toàn Chi nhánh — Trực Page up MKT chọn cơ sở bất kỳ trong chi nhánh của mình',
+            'lead.distribute_company' => 'D5. [Chia – toàn công ty] Chia toàn Công ty — Trực Page up MKT chọn cơ sở bất kỳ trong cả 3 chi nhánh',
+            'lead.assign_direct'      => 'D6. [Chia – toàn công ty] Chia lead thẳng — CM chọn thẳng 1 nhân sự trong scope để giao lead phase 2 (không qua UPS)',
 
-            // [CHIA LEAD THEO PHÒNG BAN / CÁ NHÂN] — chia trong scope của user
-            'lead.distribute_tele' => '[Chia – phòng ban/cá nhân] Chia số tele (nhóm 1 cho tele/booker gọi khách)',
-            'lead.distribute_sale' => '[Chia – phòng ban/cá nhân] Chia số tiếp đón (sale tiếp đón khách tại clinic — nhóm 2/3)',
-            'lead.distribute_to_team' => '[Chia – phòng ban/cá nhân] CM cơ sở: chia lead từ kho công ty/cơ sở xuống kho team',
-            'lead.distribute_to_sale' => '[Chia – phòng ban/cá nhân] CM team: chia lead từ kho team xuống sale (owner)',
-            'lead.pull_pool' => '[Chia – phòng ban/cá nhân] Phân bổ từ kho số — chia thẳng lead trong kho cho 1 Sale/Tele (dashboard widget Kho số)',
-            'lead.distribute_pool_ups' => '[Chia – phòng ban/cá nhân] Chia kho số theo UPS — bấm "Chia tự động" trên lead trong kho, hệ thống pick round-robin UPS list',
+            // [CHIA – PHÒNG BAN / CÁ NHÂN]
+            'lead.distribute_tele'     => 'D7.  [Chia – phòng ban/cá nhân] Chia số tele (nhóm 1 cho tele/booker gọi khách)',
+            'lead.distribute_sale'     => 'D8.  [Chia – phòng ban/cá nhân] Chia số tiếp đón (sale tiếp đón khách tại clinic — nhóm 2/3)',
+            'lead.distribute_to_team'  => 'D9.  [Chia – phòng ban/cá nhân] CM cơ sở: chia lead từ kho công ty/cơ sở xuống kho team',
+            'lead.distribute_to_sale'  => 'D10. [Chia – phòng ban/cá nhân] CM team: chia lead từ kho team xuống sale (owner)',
+            'lead.pull_pool'           => 'D11. [Chia – phòng ban/cá nhân] Phân bổ từ kho số — chia thẳng lead trong kho cho 1 Sale/Tele (dashboard widget Kho số)',
+            'lead.distribute_pool_ups' => 'D12. [Chia – phòng ban/cá nhân] Chia kho số theo UPS — bấm "Chia tự động" trên lead trong kho, hệ thống pick round-robin UPS list',
 
             // [CẤU HÌNH THỜI GIAN THU HỒI]
-            'lead.recall' => '[Cấu hình thu hồi] Thu hồi lead + đặt mốc thu hồi khi chia',
-            'ops.manage' => '[Cấu hình thu hồi] Cấu hình Quy tắc vận hành (thời gian recall/escalate/UPS lock)',
-            'rule.manage' => '[Cấu hình thu hồi] Cấu hình rule chia số',
+            'lead.recall' => 'D13. [Cấu hình thu hồi] Thu hồi lead + đặt mốc thu hồi khi chia',
+            'ops.manage'  => 'D14. [Cấu hình thu hồi] Cấu hình Quy tắc vận hành (thời gian recall/escalate/UPS lock)',
+            'rule.manage' => 'D15. [Cấu hình thu hồi] Cấu hình rule chia số',
 
             // Còn lại
-            'lead.approve_source' => '[Thao tác] Duyệt lead từ luồng Walk-in (WI)',
+            'lead.approve_source' => 'D16. [Thao tác] Duyệt lead từ luồng Walk-in (WI)',
         ],
         'organization' => [
             'user.manage' => 'Quản lý nhân viên & phân quyền',
