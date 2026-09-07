@@ -7,7 +7,7 @@ use App\Models\CustomField;
 use App\Models\Lead;
 use App\Models\LeadCustomValue;
 use App\Models\LeadStatusLog;
-use App\Models\PhaseClosure;
+use App\Models\LeadPhaseClosure;
 use App\Services\DistributionEngine;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
@@ -22,7 +22,7 @@ use Illuminate\Support\Facades\Log;
  *
  *   Cột 4,5 (day 3, ≥72h): thêm Phân loại + Kết quả.
  *     → CustomField `phan_loai` + `ket_qua` (đã đưa về scope Công ty ở migration 2026-08-07)
- *       phải có value; và PhaseClosure phase=2 đã đóng (Bước tiếp theo được chốt).
+ *       phải có value; và LeadPhaseClosure phase=2 đã đóng (Bước tiếp theo được chốt).
  *
  * Mặc định áp cho MỌI lead cá nhân. Ô tick "Không thu hồi" (skip_recall=true) ở form
  * chia số dùng để exempt lead khỏi luật (VD lead đặc biệt CM giữ tay).
@@ -32,36 +32,38 @@ use Illuminate\Support\Facades\Log;
  */
 class RecallByColumnUpdates extends Command
 {
-    protected $signature = 'leads:recall-by-columns {--dry-run}';
+    protected $signature = 'leads:recall-by-columns {--dry-run} {--day1-minutes=1440 : Ngưỡng day 1 tính bằng phút (mặc định 1440 = 24h)} {--day3-minutes=4320 : Ngưỡng day 3 tính bằng phút (mặc định 4320 = 72h)}';
 
-    protected $description = 'Thu hồi lead cá nhân theo quy tắc PKD (1 ngày: có ghi nhận cuộc gọi; 3 ngày: đủ phân loại + kết quả + đóng phase 2)';
+    protected $description = 'Thu hồi lead cá nhân theo quy tắc PKD (day1: có ghi nhận cuộc gọi; day3: đủ phân loại + kết quả + đóng phase 2). Ngưỡng cấu hình qua --day1-minutes / --day3-minutes.';
 
     public function handle(DistributionEngine $engine): int
     {
         $recalled = ['day1' => 0, 'day3' => 0];
         $now = now();
+        $day1Minutes = max(1, (int) $this->option('day1-minutes'));
+        $day3Minutes = max(1, (int) $this->option('day3-minutes'));
 
         Lead::query()
             ->where('skip_recall', false)
             ->where('pool_level', Lead::POOL_PERSONAL)
             ->whereNotNull('assigned_at')
             ->with('orgUnit')
-            ->chunkById(200, function ($leads) use ($engine, &$recalled, $now) {
+            ->chunkById(200, function ($leads) use ($engine, &$recalled, $now, $day1Minutes, $day3Minutes) {
                 foreach ($leads as $lead) {
-                    $hoursSinceAssigned = $lead->assigned_at->diffInHours($now, false);
+                    $minutesSinceAssigned = $lead->assigned_at->diffInMinutes($now, false);
 
                     // Day 1 — chưa có call_log nào có ghi nhận (note ≠ '').
-                    if ($hoursSinceAssigned >= 24 && ! $this->hasCallWithNote($lead)) {
-                        $this->recallLead($lead, $engine, 'Thu hồi tự động (1 ngày): chưa có ghi nhận cuộc gọi nào.');
+                    if ($minutesSinceAssigned >= $day1Minutes && ! $this->hasCallWithNote($lead)) {
+                        $this->recallLead($lead, $engine, "Thu hồi tự động (day1 ≥ {$day1Minutes}p): chưa có ghi nhận cuộc gọi nào.");
                         $recalled['day1']++;
                         continue;
                     }
 
                     // Day 3 — đủ điều kiện cột 4+5 + bước tiếp theo.
-                    if ($hoursSinceAssigned >= 72) {
+                    if ($minutesSinceAssigned >= $day3Minutes) {
                         $missing = $this->missingDay3Requirements($lead);
                         if ($missing !== []) {
-                            $this->recallLead($lead, $engine, 'Thu hồi tự động (3 ngày): thiếu ' . implode(', ', $missing) . '.');
+                            $this->recallLead($lead, $engine, "Thu hồi tự động (day3 ≥ {$day3Minutes}p): thiếu " . implode(', ', $missing) . '.');
                             $recalled['day3']++;
                         }
                     }
@@ -106,7 +108,7 @@ class RecallByColumnUpdates extends Command
             if (! $filled) $missing[] = $label;
         }
 
-        $phase2Closed = PhaseClosure::where('lead_id', $lead->id)->where('phase', 2)->exists();
+        $phase2Closed = LeadPhaseClosure::where('lead_id', $lead->id)->where('phase', 2)->exists();
         if (! $phase2Closed) $missing[] = 'đóng phase 2 (Bước tiếp theo)';
 
         return $missing;

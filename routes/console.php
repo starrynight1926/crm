@@ -27,7 +27,8 @@ Schedule::command('leads:recall-idle-booking-hcm')->dailyAt('02:30');
 
 // 2026-08-04 — Thu hồi theo quy tắc PKD (col 1-3 sau 1 ngày, col 4-5 sau 3 ngày).
 // 2026-08-07: mặc định áp mọi lead cá nhân; chỉ skip nếu skip_recall=true (CM tick "Không thu hồi").
-Schedule::command('leads:recall-by-columns')->hourly();
+// 2026-09-07 (TEST): tạm hạ ngưỡng day1/day3 xuống 5' để test. Bật lại 1440/4320 khi xong.
+Schedule::command('leads:recall-by-columns --day1-minutes=5 --day3-minutes=5')->everyMinute();
 
 // Aggregate hôm nay mỗi 2 phút (độ tươi dashboard 1–3 phút); chốt cứng hôm qua sau nửa đêm
 Schedule::command('stats:aggregate')->everyTwoMinutes();
