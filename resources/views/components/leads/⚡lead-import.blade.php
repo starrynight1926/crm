@@ -258,20 +258,28 @@ new class extends Component
                     break;
                 }
             }
-            // Custom fields: ưu tiên match theo import_code, fallback theo nhãn
+            // Custom fields: ưu tiên match theo import_code, fallback theo nhãn.
+            // 2026-09-07: BREAK sau khi assign xong — 1 header CHỈ được map tới 1 custom
+            //   field (trước đây có thể trùng: header "Phân loại" match cả field phan_loai
+            //   VÀ phan_loai_khach nếu labels overlap → cùng giá trị đổ vào nhiều cột).
+            //   Skip nếu column index này đã dùng cho cf khác trong cùng vòng lặp.
+            $usedForCustom = false;
             foreach ($fields as $f) {
+                if ($usedForCustom) break;
                 $target = 'cf_' . $f->id;
                 if (($this->mapping[$target] ?? '') !== '') {
                     continue;
                 }
                 if ($f->import_code && $h === $this->norm($f->import_code)) {
                     $this->mapping[$target] = (string) $index;
+                    $usedForCustom = true;
                     continue;
                 }
                 $label = $custom[$target] ?? '';
                 $base = $this->norm(preg_replace('/\s*[#(].*$/', '', $label));
                 if ($base !== '' && $h === $base) {
                     $this->mapping[$target] = (string) $index;
+                    $usedForCustom = true;
                 }
             }
         }
