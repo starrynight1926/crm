@@ -79,7 +79,9 @@ new class extends Component
                 @forelse ($notifications as $n)
                     @php
                         $d    = $n->data;
-                        $link = $d['link'] ?? (isset($d['lead_id']) ? '/leads/'.$d['lead_id'] : '#');
+                        // 2026-09-07: link về /leads/{id}/edit (form 7 phase có Lịch sử cuộc gọi),
+                        //   không phải /leads/{id} (show page landing ở "Liên hệ gần nhất" upload ảnh).
+                        $link = $d['link'] ?? (isset($d['lead_id']) ? '/leads/'.$d['lead_id'].'/edit' : '#');
                         $title= $d['tieu_de'] ?? $d['message'] ?? 'Thông báo';
                         $body = $d['noi_dung'] ?? null;
                         $event = $d['event'] ?? '';
