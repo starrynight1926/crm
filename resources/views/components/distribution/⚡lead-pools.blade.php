@@ -449,12 +449,44 @@ new class extends Component
                 // 2026-08-19: siết scope — CM/TL/DM cơ sở chỉ chia được cho nhân sự trong
                 //   phạm vi org của mình. Trước đây trả full list nationwide → CM ĐN thấy sale HN/HCM.
                 //   Super admin (visibleOrgIds rỗng do scope tất cả) → không filter, thấy toàn công ty.
+                // 2026-09-07: khi đang chia 1 lead cụ thể (assigningLeadId), thêm 1 tầng scope
+                //   theo CƠ SỞ của lead (lead.pool_unit_id → org_pool_map → org_unit_ids của
+                //   cơ sở đó). Trực Page ở CN HCM up lead vào cơ sở 207NVT → dropdown chỉ hiện
+                //   sale của 207NVT, không bung sang cơ sở khác cùng chi nhánh.
                 $visibleOrgIds = $user->visibleOrgUnitIds();
+                $facilityOrgIds = null;
+                if ($this->assigningLeadId) {
+                    $lead = Lead::find($this->assigningLeadId);
+                    if ($lead && $lead->pool_unit_id) {
+                        $poolUnit = \App\Models\PoolUnit::find($lead->pool_unit_id);
+                        if ($poolUnit && $poolUnit->kind === 'facility') {
+                            $facilityOrgIds = \DB::table('org_pool_map')
+                                ->where('pool_unit_id', $poolUnit->id)
+                                ->pluck('org_unit_id')->all();
+                            // Bung subtree các org_unit này (facility có team con dưới).
+                            if ($facilityOrgIds !== []) {
+                                $paths = \App\Models\OrgUnit::whereIn('id', $facilityOrgIds)->pluck('path')->all();
+                                $q = \App\Models\OrgUnit::query();
+                                foreach ($paths as $i => $p) {
+                                    $q->{$i === 0 ? 'where' : 'orWhere'}('path', 'like', $p . '%');
+                                }
+                                $facilityOrgIds = $q->pluck('id')->all();
+                            }
+                        }
+                    }
+                }
+                // Giao 2 scope: user's visible + lead's facility (nếu có).
+                $finalScope = $visibleOrgIds;
+                if ($facilityOrgIds !== null && $facilityOrgIds !== []) {
+                    $finalScope = $visibleOrgIds === []
+                        ? $facilityOrgIds // super admin → dùng scope cơ sở
+                        : array_values(array_intersect($visibleOrgIds, $facilityOrgIds));
+                }
                 return User::where('status', 'active')
                     ->whereHas('assignments.role.permissions', fn ($q) => $q->where('key', 'lead.update'))
                     ->whereDoesntHave('assignments.role.permissions', fn ($q) => $q->whereIn('key', ['lead.distribute', 'lead.distribute_tele', 'lead.distribute_sale']))
-                    ->when($visibleOrgIds !== [], fn ($q) => $q->whereHas('assignments', fn ($qq) => $qq
-                        ->effective()->whereIn('org_unit_id', $visibleOrgIds)))
+                    ->when($finalScope !== [], fn ($q) => $q->whereHas('assignments', fn ($qq) => $qq
+                        ->effective()->whereIn('org_unit_id', $finalScope)))
                     ->orderBy('name')
                     ->get();
             })(),
