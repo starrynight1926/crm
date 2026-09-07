@@ -4482,7 +4482,11 @@ new class extends Component
                                     <span>
                                         <span class="font-semibold text-amber-900">Không áp dụng luật thu hồi</span>
                                         <span class="block text-xs text-amber-700 mt-0.5">
-                                            Mặc định: sau <b>1 ngày</b> không có ghi nhận cuộc gọi → thu hồi. Sau <b>3 ngày</b> chưa đủ <b>Phân loại + Kết quả + đóng phase 2</b> → thu hồi về kho team. Tick ô này để <b>bỏ qua</b> luật cho lead đặc biệt.
+                                            Luật thu hồi mặc định (áp cho lead cá nhân):
+                                            <br>• Sau <b>1 ngày</b> chưa có ghi nhận cuộc gọi → thu hồi về <b>kho cơ sở</b>.
+                                            <br>• Sau <b>3 ngày</b> chưa đủ <b>Phân loại + Kết quả</b> → thu hồi về <b>kho cơ sở</b>.
+                                            <br>Tick ô này để <b>miễn</b> 2 luật trên cho lead đặc biệt (CM giữ tay).
+                                            <br><span class="text-[10px] text-amber-600 italic">Riêng luật MKT — Tele không ghi cuộc gọi trong 10 phút → thu hồi — KHÔNG bị bỏ qua bởi ô này.</span>
                                         </span>
                                     </span>
                                 </label>
