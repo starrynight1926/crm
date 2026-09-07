@@ -15,6 +15,8 @@ Schedule::command('leads:recall-overdue')->everyTenMinutes();
 Schedule::command('leads:process-recalls')->dailyAt('00:30');
 // B1d (2026-08-14): MKT-specific 3-tier recall (1d/3d/30d).
 Schedule::command('leads:process-mkt-recalls')->hourly();
+// 2026-09-07: MKT — Tele không ghi cuộc gọi trong 2' sau khi UPS chia → thu hồi về kho cơ sở.
+Schedule::command('leads:recall-mkt-idle-no-call')->everyMinute();
 // B5b (2026-08-14): Auto-hủy booking khách trễ quá 15 phút chưa tới.
 Schedule::command('bookings:auto-cancel-late')->everyFiveMinutes();
 Schedule::command('leads:process-escalates')->dailyAt('02:00');
