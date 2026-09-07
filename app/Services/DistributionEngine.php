@@ -68,8 +68,30 @@ class DistributionEngine
         if (! $sale) {
             return false;
         }
-        // Suy org_unit_id của sale (team-sale) để lead có scope đúng.
-        $saleOrgId = $sale->assignments()->first()?->org_unit_id;
+        // 2026-09-07: Suy org_unit_id của sale — PHẢI chọn assignment nằm trong cây
+        //   của facility đích (không random first). Trước: sale multi-facility (VD
+        //   Quỳnh: PKD1 HN + team-ashley HCM) → first() có thể trả HCM khi UPS
+        //   đang chia lead HN → lead 866 gắn org PKD1 HCM sai branch.
+        $facilityOrgIds = \DB::table('org_pool_map')
+            ->where('pool_unit_id', $facilityPoolUnitId)
+            ->pluck('org_unit_id')->all();
+        $facilitySubtreeIds = [];
+        if ($facilityOrgIds) {
+            $paths = \App\Models\OrgUnit::whereIn('id', $facilityOrgIds)->pluck('path')->all();
+            $q = \App\Models\OrgUnit::query();
+            foreach ($paths as $i => $p) {
+                $q->{$i === 0 ? 'where' : 'orWhere'}('path', 'like', $p . '%');
+            }
+            $facilitySubtreeIds = $q->pluck('id')->all();
+        }
+        $saleOrgId = null;
+        if ($facilitySubtreeIds) {
+            $saleOrgId = $sale->assignments()
+                ->whereIn('org_unit_id', $facilitySubtreeIds)
+                ->value('org_unit_id');
+        }
+        // Fallback: first assignment (giữ hành vi cũ nếu không tìm được match).
+        $saleOrgId ??= $sale->assignments()->first()?->org_unit_id;
         $lead->update([
             'owner_id'        => $sale->id,
             'org_unit_id'     => $saleOrgId,
