@@ -482,9 +482,17 @@ new class extends Component
                         ? $facilityOrgIds // super admin → dùng scope cơ sở
                         : array_values(array_intersect($visibleOrgIds, $facilityOrgIds));
                 }
+                // 2026-09-07: đổi từ blacklist perm sang blacklist role name.
+                //   Perm-based loại nhầm Team Leader (VD Phan Trần Khánh Quỳnh) vì TL có
+                //   lead.distribute — nhưng TL vẫn phải nhận lead trực tiếp (leaf-team).
+                //   Blacklist theo role name: chỉ loại manager cấp cao/CM/DM/quan sát/trực page.
                 return User::where('status', 'active')
                     ->whereHas('assignments.role.permissions', fn ($q) => $q->where('key', 'lead.update'))
-                    ->whereDoesntHave('assignments.role.permissions', fn ($q) => $q->whereIn('key', ['lead.distribute', 'lead.distribute_tele', 'lead.distribute_sale']))
+                    ->whereDoesntHave('assignments.role', fn ($r) => $r->whereIn('name', [
+                        'Admin', 'Manager', 'DM HCM',
+                        'CM booking', 'CM sale',
+                        'Observer', 'Trực Page',
+                    ]))
                     ->when($finalScope !== [], fn ($q) => $q->whereHas('assignments', fn ($qq) => $qq
                         ->effective()->whereIn('org_unit_id', $finalScope)))
                     ->orderBy('name')
