@@ -2556,10 +2556,30 @@ new class extends Component
             //   Chọn cơ sở UPS = cơ sở của user thao tác (assignment → org_pool_map → PoolUnit facility).
             //   Sale ở HN → dùng cơ sở HN. Note: hiện chưa map scrm.facilities.id → pool_units.id
             //   (khác cây, cần bảng map riêng). Nếu sau này 1 sale thao tác nhiều cơ sở, add dropdown chọn.
-            'cvPreview' => ($__cvPool = $this->trucPageFacility())
-                ? $this->previewNextGreets($__cvPool->id, count($this->newBookingConsultantIds))
-                : [],
-            'cvPoolFacilityName' => $__cvPool?->name,
+            // 2026-09-07: ưu tiên facility của LEAD (pool_unit_id → facility) trước, fallback
+            //   trucPageFacility. Trước: user có scope > 1 facility (VD Quỳnh PKD1 HN +
+            //   team-ashley HCM) → trucPageFacility null → cvPreview empty → banner
+            //   "Chưa có UPS list Sale" oan mặc dù UPS HN đã chốt và có 5 người ABC.
+            'cvPreview' => (function () {
+                $fac = null;
+                if ($this->lead && $this->lead->pool_unit_id) {
+                    $node = \App\Models\PoolUnit::find($this->lead->pool_unit_id);
+                    while ($node && $node->kind !== 'facility') {
+                        $node = $node->parent;
+                    }
+                    $fac = $node;
+                }
+                if (! $fac) $fac = $this->trucPageFacility();
+                return $fac ? $this->previewNextGreets($fac->id, count($this->newBookingConsultantIds)) : [];
+            })(),
+            'cvPoolFacilityName' => (function () {
+                if ($this->lead && $this->lead->pool_unit_id) {
+                    $node = \App\Models\PoolUnit::find($this->lead->pool_unit_id);
+                    while ($node && $node->kind !== 'facility') { $node = $node->parent; }
+                    if ($node) return $node->name;
+                }
+                return $this->trucPageFacility()?->name;
+            })(),
             'staffTree' => $staffTree,
             'allStaff' => $allStaff,
             'serviceTree' => $serviceTree = Service::whereNull('parent_id')->where('active', true)
