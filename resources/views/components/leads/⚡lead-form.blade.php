@@ -1594,12 +1594,13 @@ new class extends Component
         $workDate = now()->toDateString();
 
         // 2026-09-07 fix: nguồn MKT chia Tele từ cột MKT trong UPS (không mix A/B/C).
+        //   MKT bucket: list_bucket=NULL + is_mkt=true (comment 2026-08-19).
         //   Cột MKT không lọc bận (Tele chỉ gọi, không tiếp khách trực tiếp);
         //   chỉ skip dung_nhan_lead. Nếu MKT LIST rỗng → không có ai để chia (null).
         $sales = \App\Models\DailyAttendance::with('user')
             ->where('facility_pool_unit_id', $facilityPoolUnitId)
             ->whereDate('work_date', $workDate)
-            ->where('list_bucket', 'MKT')
+            ->where('is_mkt', true)
             ->where('dung_nhan_lead', false)
             ->orderBy('checkin_at')
             ->orderBy('id')
@@ -2540,7 +2541,7 @@ new class extends Component
                 ? \App\Models\DailyAttendance::with('user')
                     ->where('facility_pool_unit_id', $__f2->id)
                     ->whereDate('work_date', now()->toDateString())
-                    ->where('list_bucket', 'MKT') // 2026-09-07: chỉ cột MKT, không mix A/B/C.
+                    ->where('is_mkt', true) // 2026-09-07: MKT bucket = is_mkt=true (list_bucket=NULL); không mix A/B/C.
                     ->orderBy('checkin_at')->get()
                 : collect(),
             // 2026-08-05: user list cho radio "Thủ công" — filter theo data_scope của user hiện tại (visibleOrgUnitIds).

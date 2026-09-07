@@ -28,10 +28,11 @@ class UpsDispatcher
         $workDate ??= now()->toDateString();
 
         return DB::transaction(function () use ($facilityPoolUnitId, $workDate) {
+            // MKT bucket: list_bucket=NULL + is_mkt=true (comment 2026-08-19 trong lead-form).
             $teles = DailyAttendance::with('user')
                 ->where('facility_pool_unit_id', $facilityPoolUnitId)
                 ->whereDate('work_date', $workDate)
-                ->where('list_bucket', 'MKT')
+                ->where('is_mkt', true)
                 ->where('dung_nhan_lead', false)
                 ->orderBy('checkin_at')
                 ->orderBy('id')
