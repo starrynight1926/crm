@@ -144,6 +144,11 @@ Route::middleware('auth')->group(function () {
     });
 
     // 2026-09-02 — Nhật ký hệ thống (public/logs.md).
+    // Danh mục dịch vụ (mirror sbooking) — tra cứu / test sync đủ chưa.
+    Route::get('/admin/danh-muc-dich-vu-mirror', [\App\Http\Controllers\Admin\DanhMucDichVuMirrorController::class, 'index'])
+        ->middleware('permission:user.manage')
+        ->name('admin.danh-muc-dich-vu-mirror');
+
     Route::get('/admin/logs', [\App\Http\Controllers\Admin\PublicLogController::class, 'index'])
         ->middleware('permission:user.manage')
         ->name('admin.logs');
