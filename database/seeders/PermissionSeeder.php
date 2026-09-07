@@ -43,6 +43,7 @@ class PermissionSeeder extends Seeder
             'lead.distribute_branch' => 'Chia toàn Chi nhánh — Trực Page up lead MKT được chọn cơ sở bất kỳ trong chi nhánh của mình (không tick = chỉ cấp cơ sở của họ)',
             'lead.distribute_company' => 'Chia toàn Công ty — Trực Page up lead MKT được chọn cơ sở bất kỳ trong cả 3 chi nhánh (cao hơn Chia toàn Chi nhánh)',
             'lead.assign_direct' => 'Chia lead thẳng — CM chọn thẳng 1 nhân sự trong scope để giao lead phase 2 (không qua UPS)',
+            'lead.distribute_pool_ups' => 'Chia kho số theo UPS — bấm "Chia tự động" trên lead trong kho công ty/team, hệ thống pick round-robin UPS list (cho phép Trực Page cùng chia với DM/CM)',
             'rule.manage' => 'Cấu hình rule chia số',
             'ops.manage' => 'Cấu hình Quy tắc vận hành (thời gian recall/escalate)',
         ],

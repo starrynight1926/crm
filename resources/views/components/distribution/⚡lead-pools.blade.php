@@ -215,6 +215,12 @@ new class extends Component
     {
         $user = auth()->user();
         if ($user->hasPermission('lead.distribute')) return true;
+        // 2026-09-07: perm mới — chia kho số theo UPS. Cho phép Trực Page cùng chia
+        //   với DM/CM khi lead còn trong kho (COMMON/TEAM). Không mở POOL_PERSONAL.
+        if ($user->hasPermission('lead.distribute_pool_ups')
+            && in_array($lead->pool_level, [Lead::POOL_COMMON, Lead::POOL_TEAM], true)) {
+            return true;
+        }
         if ($lead->pool_level === Lead::POOL_COMMON) {
             if (! $user->hasPermission('lead.distribute_to_team')) return false;
             return $lead->imported_by === $user->id;
