@@ -15,16 +15,63 @@ class UpsDispatcher
     public const BUCKET_ORDER_GREET = ['A', 'B', 'C', 'OFF'];
 
     /**
-     * Chọn 1 sale từ MKT List của cơ sở hôm nay (round-robin).
-     * Return null nếu list rỗng.
+     * Chọn 1 Tele từ MKT LIST của cơ sở hôm nay (round-robin theo checkin_at).
+     * Return null nếu MKT LIST rỗng — KHÔNG fallback sang A/B/C (đó là bucket Sale tiếp đón).
+     *
+     * 2026-09-07 fix: rule chuẩn — nguồn MKT (Trực page up) chia Tele MKT theo cột MKT
+     *   trong UPS, KHÔNG phải A/B/C. Trước đây gọi pickCrossBucket → sai. Cột MKT
+     *   không lọc bận (Tele chỉ gọi, không tiếp khách trực tiếp); dung_nhan_lead vẫn skip
+     *   để Tele có nút tự dừng nhận khi cần.
      */
     public function pickMkt(int $facilityPoolUnitId, ?string $workDate = null): ?User
     {
-        // 2026-09-04 v2: round-robin cross-bucket theo priority A→B→C (OFF loại).
-        //   Mỗi người trong bucket nhận 1 lượt trước khi sang bucket sau.
-        //   Vòng: A1 → A3 (A2 nếu bận) → A4 → ... → B1 → B2 → ... → C1 → ... → wrap A.
-        //   Trước đây strict priority "A độc chiếm khi rảnh" → user báo 11/11 lead về Trâm.
-        return $this->pickCrossBucket($facilityPoolUnitId, $workDate);
+        $workDate ??= now()->toDateString();
+
+        return DB::transaction(function () use ($facilityPoolUnitId, $workDate) {
+            $teles = DailyAttendance::with('user')
+                ->where('facility_pool_unit_id', $facilityPoolUnitId)
+                ->whereDate('work_date', $workDate)
+                ->where('list_bucket', 'MKT')
+                ->where('dung_nhan_lead', false)
+                ->orderBy('checkin_at')
+                ->orderBy('id')
+                ->get()->pluck('user')->filter()->values();
+
+            if ($teles->isEmpty()) return null;
+
+            $bucket = 'MKT';
+            $state = DB::table('ups_rr_state')
+                ->where('facility_pool_unit_id', $facilityPoolUnitId)
+                ->where('work_date', $workDate)
+                ->where('bucket', $bucket)
+                ->lockForUpdate()
+                ->first();
+
+            $lastUserId = $state?->last_user_id;
+            $lastIdx = -1;
+            if ($lastUserId) {
+                foreach ($teles as $i => $t) {
+                    if ($t->id === $lastUserId) { $lastIdx = $i; break; }
+                }
+            }
+            $nextIdx = ($lastIdx + 1) % $teles->count();
+            $picked = $teles[$nextIdx];
+
+            DB::table('ups_rr_state')->updateOrInsert(
+                [
+                    'facility_pool_unit_id' => $facilityPoolUnitId,
+                    'work_date' => $workDate,
+                    'bucket' => $bucket,
+                ],
+                [
+                    'last_user_id' => $picked->id,
+                    'updated_at' => now(),
+                    'created_at' => $state ? $state->created_at : now(),
+                ]
+            );
+
+            return $picked;
+        });
     }
 
     /**
