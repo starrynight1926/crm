@@ -1593,22 +1593,20 @@ new class extends Component
     {
         $workDate = now()->toDateString();
 
-        // 2026-08-14: UPS đã chốt → mọi sale check-in đều là ứng viên chia MKT
-        //   (loại bucket OFF & dung_nhan_lead). Bỏ điều kiện is_mkt tick tay.
-        $baseQ = \App\Models\DailyAttendance::with('user')
+        // 2026-09-07 fix: nguồn MKT chia Tele từ cột MKT trong UPS (không mix A/B/C).
+        //   Cột MKT không lọc bận (Tele chỉ gọi, không tiếp khách trực tiếp);
+        //   chỉ skip dung_nhan_lead. Nếu MKT LIST rỗng → không có ai để chia (null).
+        $sales = \App\Models\DailyAttendance::with('user')
             ->where('facility_pool_unit_id', $facilityPoolUnitId)
             ->whereDate('work_date', $workDate)
-            ->where('list_bucket', '!=', 'OFF')
+            ->where('list_bucket', 'MKT')
             ->where('dung_nhan_lead', false)
-            ->orderBy('checkin_at');
+            ->orderBy('checkin_at')
+            ->orderBy('id')
+            ->get()->pluck('user')->filter()->values();
+        if ($sales->isEmpty()) return null;
 
-        // Ưu tiên sale rảnh; nếu hết → wrap-around bất chấp busy (giữ nguyên round-robin state).
-        $free = (clone $baseQ)->where('is_busy', false)->get()->pluck('user')->filter()->values();
-        $all  = (clone $baseQ)->get()->pluck('user')->filter()->values();
-        if ($all->isEmpty()) return null;
-
-        $rotated = $free->isEmpty();
-        $sales = $rotated ? $all : $free;
+        $rotated = false;
 
         $state = \Illuminate\Support\Facades\DB::table('ups_rr_state')
             ->where('facility_pool_unit_id', $facilityPoolUnitId)
@@ -2542,7 +2540,7 @@ new class extends Component
                 ? \App\Models\DailyAttendance::with('user')
                     ->where('facility_pool_unit_id', $__f2->id)
                     ->whereDate('work_date', now()->toDateString())
-                    ->where('list_bucket', '!=', 'OFF')
+                    ->where('list_bucket', 'MKT') // 2026-09-07: chỉ cột MKT, không mix A/B/C.
                     ->orderBy('checkin_at')->get()
                 : collect(),
             // 2026-08-05: user list cho radio "Thủ công" — filter theo data_scope của user hiện tại (visibleOrgUnitIds).
