@@ -80,10 +80,16 @@ new class extends Component
             return collect();
         }
 
+        // 2026-09-07: mở rộng — bao gồm Team Leader (VD Phan Trần Khánh Quỳnh) và
+        //   Trợ lý kinh doanh (assistant) vì họ vẫn tiếp khách. Trước lọc %ale% match
+        //   'Sale/Team Sale/CM sale' bỏ sót 'Team Leader', 'Trợ lý' → mất khỏi UPS list.
         return User::query()
             ->whereHas('assignments', function ($q) use ($subtreeIds) {
                 $q->whereIn('org_unit_id', $subtreeIds)
-                    ->whereHas('role', fn ($r) => $r->where('name', 'like', '%ale%'));
+                    ->whereHas('role', fn ($r) => $r
+                        ->where('name', 'like', '%ale%')       // Sale / Team Sale / CM sale
+                        ->orWhere('name', 'like', '%eader%')   // Team Leader
+                        ->orWhere('name', 'like', '%Trợ lý%'));// Trợ lý kinh doanh
             })
             ->orderBy('name')->get();
     }
