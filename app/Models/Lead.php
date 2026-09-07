@@ -685,16 +685,17 @@ class Lead extends Model
             }
         }
 
-        // 2026-08-11 fix v2: 1 user vừa Tele vừa Sale tùy UPS bucket → không thể phân biệt
-        // theo pipeline_phase. Slot Sale = CV1 nếu đã tạo booking, else owner (Sale UPS-assigned
-        // vẫn hiện tên trong cột "Sale tiếp đón" ngay khi chia).
-        // Slot Tele = receiver (nếu khác owner VÀ khác imported_by) — người bàn giao trước.
-        $sale = $this->consultant1 ?? $this->owner;
+        // 2026-09-07 fix: UPS chia lead → người nhận là TELE trước, Sale chỉ xuất hiện khi
+        //   đã tạo booking (CV1). Trước đây owner đổ vào slot "sale" nên UPS vừa chia
+        //   đã hiện tên ở cột "Sale tiếp đón", cột "Tele phụ trách" trống — ngược logic.
+        //   Slot Tele = owner hiện tại (nếu chưa có CV1) hoặc receiver (trường hợp bàn giao rõ ràng).
+        //   Slot Sale = consultant1 (CV1 booking); null khi chưa có.
+        $sale    = $this->consultant1;
         $booking = ($this->receiver_id
                 && $this->receiver_id !== $this->owner_id
                 && $this->receiver_id !== $this->imported_by)
             ? $this->receiver
-            : null;
+            : ($this->consultant_1_id ? null : $this->owner);
         return ['importer' => $importer, 'booking' => $booking, 'sale' => $sale];
     }
 
