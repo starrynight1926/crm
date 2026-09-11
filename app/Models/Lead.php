@@ -1096,6 +1096,9 @@ class Lead extends Model
         //   (lễ tân / admin cơ sở) tạo booking luôn → Admin duyệt gắn sale tiếp đón.
         //   Bulk-open 1..3 giống SA/BA để 1 lần lưu chốt cả 3 phase, phase 2 auto-close rỗng.
         self::SOURCE_WI     => 3,
+        // 2026-09-11: HL (Hotline) — Sale trực hotline = tele + tiếp đón luôn (self-owned).
+        //   Bulk-open 1..3 giống SA/BA để nhập KH + tạo booking trong 1 lần lưu.
+        self::SOURCE_HL     => 3,
     ];
 
     // ---- Relations ----
