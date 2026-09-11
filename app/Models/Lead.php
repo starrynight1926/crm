@@ -871,9 +871,16 @@ class Lead extends Model
             $canSeeTeamPool = $user->hasPermission('lead.view_team_pool');
             if ($orgIds !== []) {
                 $q->orWhereIn('org_unit_id', $orgIds);
-                if ($canSeePool) {
-                    $q->orWhere(fn (Builder $sub) => $sub->whereNull('org_unit_id')->where('pool_level', self::POOL_COMMON));
-                }
+            }
+            // 2026-09-11 — Kho chung công ty gate theo pool_unit_id thuộc user (cây Kho số).
+            //   TRƯỚC: whereNull('org_unit_id') → CM HN nhìn cả kho chung ĐN/HCM.
+            //   SAU:  chỉ thấy lead POOL_COMMON nằm trong pool_unit_id user có scope
+            //          (visiblePoolUnitIds đã bung subtree theo mapping org_pool_map).
+            //   Lead POOL_COMMON pool_unit_id=NULL (chưa gán kho nào) — không ai thấy
+            //   tới khi được gán vào 1 pool cơ sở cụ thể.
+            if ($canSeePool && $poolUnitIds !== []) {
+                $q->orWhere(fn (Builder $sub) => $sub->where('pool_level', self::POOL_COMMON)
+                    ->whereIn('pool_unit_id', $poolUnitIds));
             }
             // Kho chung phòng/team: thành viên (org của mình + cấp cha) thấy được, dù scope self.
             // 2026-09-04: gate bằng lead.view_team_pool — chỉ CM sale / Manager thấy, sale HC không.
