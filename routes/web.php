@@ -118,6 +118,8 @@ Route::middleware('auth')->group(function () {
         Route::post('/{lead}/booking/{log}/trang-thai-khach', [\App\Http\Controllers\LeadBookingActionController::class, 'trangThaiKhach'])->name('leads.booking.tt-khach');
         Route::post('/{lead}/booking/{log}/tiep-don',         [\App\Http\Controllers\LeadBookingActionController::class, 'tiepDon'])->name('leads.booking.tiep-don');
         Route::post('/{lead}/booking/{log}/comment',          [\App\Http\Controllers\LeadBookingActionController::class, 'comment'])->name('leads.booking.comment');
+        // 2026-09-11 — Tải PLCP đã fill mã KH / tên / ngày lập / cơ sở.
+        Route::get('/{lead}/booking/{log}/plcp',              [\App\Http\Controllers\LeadPlcpController::class, 'download'])->name('leads.booking.plcp');
         Route::get('/{lead}/edit', function (\App\Models\Lead $lead) {
             // 2026-08-05: đổi gate canEditPersonalInfo → canOpenEditForm (owner Sale/Tele mở
             // được form để ghi call/booking log, dù không có perm sửa info personal).

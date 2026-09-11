@@ -4785,10 +4785,10 @@ new class extends Component
                                     <input type="hidden" name="trang_thai_tiep_don" value="hoan_tat">
                                     <button type="submit" class="px-3 py-1.5 rounded bg-slate-600 text-white text-xs font-semibold hover:opacity-90">✓ Hoàn tất</button>
                                 </form>
-                                {{-- 2026-09-11: Tải mẫu Phiếu tiếp đón khách (PLCP) — file tĩnh trong public/downloads. --}}
-                                <a href="{{ asset('downloads/plcp-mau.pdf') }}" download
+                                {{-- 2026-09-11: Tải PLCP đã fill mã KH / họ tên / ngày lập / cơ sở. --}}
+                                <a href="{{ route('leads.booking.plcp', ['lead' => $lead->id, 'log' => $__latestBl->id]) }}"
                                    class="px-3 py-1.5 rounded bg-emerald-600 text-white text-xs font-semibold hover:opacity-90 inline-flex items-center gap-1">
-                                    ⬇ Tải mẫu PLCP
+                                    ⬇ Tải PLCP
                                 </a>
                             </div>
                             {{-- Ô comment nhanh, đẩy sang sbooking. --}}

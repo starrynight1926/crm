@@ -43,6 +43,10 @@ class LeadBookingActionController extends Controller
 
         $u = auth()->user();
         $res = $client->pushTrangThaiTiepDon($log, $data['trang_thai_tiep_don'], $u->id, $u->name ?? '');
+        // 2026-09-11: chấm mốc "Ngày lập" cho PLCP — lần đầu bấm "Đang tiếp đón".
+        if ($res['ok'] && $data['trang_thai_tiep_don'] === 'dang_tiep_don' && ! $log->first_tiep_don_at) {
+            $log->forceFill(['first_tiep_don_at' => now()])->save();
+        }
         $label = $data['trang_thai_tiep_don'] === 'dang_tiep_don' ? 'Bắt đầu tiếp đón' : 'Hoàn tất tiếp đón';
         return back()->with($res['ok'] ? 'success' : 'error',
             $res['ok'] ? $label . ' — đã đồng bộ sbooking.' : 'Không cập nhật được: ' . $res['reason']);
