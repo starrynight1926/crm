@@ -26,10 +26,12 @@ class LeadPlcpController extends Controller
     /** Toạ độ ước lượng — mày mở ?debug=grid xong chỉnh lại chỗ này. */
     private const PLCP_FIELDS_MM = [
         // key       => [x, y, font_size]
-        'ma_kh'      => [45, 45, 11],
-        'ho_ten'     => [45, 55, 11],
-        'ngay_lap'   => [45, 65, 11],
-        'co_so'      => [45, 75, 11],
+        // 2026-09-11 rev2: dựa vào layout PLCP (2 cột trên, "Họ và tên" trong Phần 1).
+        //   Ước lượng — mở ?debug=grid để đo lại cho khớp.
+        'ma_kh'      => [55, 53, 10],    // "Mã khách hàng: ......"      (trên trái)
+        'ngay_lap'   => [155, 53, 10],   // "Ngày lập hồ sơ: ......"      (trên phải)
+        'co_so'      => [45, 70, 10],    // "Cơ sở: ......"               (dòng full-width dưới)
+        'ho_ten'     => [45, 148, 10],   // "Họ và tên: ......"           (trong PHẦN 1)
     ];
 
     private const TEMPLATE_PATH = 'downloads/plcp-mau.pdf';
