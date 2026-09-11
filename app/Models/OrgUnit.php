@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable(['parent_id', 'name', 'code', 'path', 'depth', 'position', 'active'])]
@@ -23,6 +24,11 @@ class OrgUnit extends Model
     public function children(): HasMany
     {
         return $this->hasMany(self::class, 'parent_id')->orderBy('position');
+    }
+
+    public function managers(): BelongsToMany
+    {
+        return $this->belongsToMany(User::class, 'org_unit_managers')->withTimestamps();
     }
 
     /**
@@ -50,6 +56,17 @@ class OrgUnit extends Model
             ->where('path', 'like', $this->path . '%')
             ->pluck('id')
             ->all();
+    }
+
+    public function getShortNameAttribute(): string
+    {
+        return match ($this->code) {
+            'branch-hn'  => 'CS1: 59NTN',
+            'branch-hcm' => 'CS2: 207NVT',
+            'branch-dn'  => 'CS3: L23TĐN',
+            'ops-monitor' => 'Vận hành',
+            default       => $this->name,
+        };
     }
 
     /** Scope subtree cho query builder. */

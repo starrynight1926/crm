@@ -1,24 +1,47 @@
 <?php
 
+use App\Models\AppSetting;
 use App\Models\AuditLog;
 use App\Models\Contribution;
 use App\Models\ContributionTemplate;
 use App\Models\Lead;
 use App\Models\LeadStatusLog;
+use App\Models\Payment;
 use App\Services\ContributionService;
+use App\Services\DistributionEngine;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Livewire\Component;
+use Livewire\WithFileUploads;
+use Livewire\WithPagination;
 
 new class extends Component
 {
+    use WithFileUploads, WithPagination;
+
     public Lead $lead;
 
     public string $newNote = '';
+
+    /** Ảnh đính kèm ghi chú (đánh giá trước/sau khi dùng dịch vụ). */
+    public array $noteImages = [];
+
+    /** Cờ "Khách trở lại" cho ghi chú này — đếm để ra tần suất quay lại. */
+    public bool $noteIsReturn = false;
+
+    /** Cờ "Khách tới lần đầu". Exclusive với noteIsReturn. */
+    public bool $noteIsFirstVisit = false;
+
+    /** Mã tiếp đón — bắt buộc khi tick "Khách trở lại". */
+    public string $noteReceptionCode = '';
 
     public bool $phoneRevealed = false;
 
     public function mount(Lead $lead): void
     {
-        abort_unless($lead->isVisibleTo(auth()->user()) || auth()->user()->hasPermission('lead.view_phone'), 403);
+        // Perm `lead.view_phone` chỉ để **unmask SĐT khi lead trong scope**, KHÔNG phải bypass visibility toàn trang.
+        // (Bug Phase 6.13 phát hiện: book1 có view_phone bypass được cả trang lead sale của team khác.)
+        abort_unless($lead->isVisibleTo(auth()->user()), 403);
         $this->lead = $lead;
     }
 
@@ -31,19 +54,213 @@ new class extends Component
         $this->phoneRevealed = true;
     }
 
+    /** Chỉ sửa/chăm được lead trong phạm vi mình (không phải lead đang nằm kho chung/ngoài scope). */
+    /**
+     * Sửa lead đầy đủ (info, classification, service...): user thuộc scope hiện tại của lead.
+     * Past handler (team đã từng giữ) KHÔNG có quyền này — chỉ được add note.
+     */
+    private function canEditLead(): bool
+    {
+        $user = auth()->user();
+        if (! $user->hasPermission('lead.update')) return false;
+        if (! $this->lead->isVisibleTo($user)) return false;
+        // Nếu chỉ là past handler → không được edit full.
+        if ($this->isPastHandlerOnly($user)) return false;
+        return true;
+    }
+
+    /** Add note: user thuộc scope hiện tại HOẶC past handler (đã từng giữ lead). */
+    private function canAddNote(): bool
+    {
+        $user = auth()->user();
+        return $user->hasPermission('lead.update') && $this->lead->isVisibleTo($user);
+    }
+
+    /** True nếu user CHỈ là past handler (không nằm trong scope hiện tại). */
+    private function isPastHandlerOnly(\App\Models\User $user): bool
+    {
+        // Owner/receiver luôn coi là current.
+        if ($this->lead->owner_id === $user->id || $this->lead->receiver_id === $user->id) return false;
+        // Có thấy qua scope hiện tại?
+        $memberOrgs = $user->memberOrgUnitIds();
+        if ($this->lead->pool_level === Lead::POOL_TEAM && in_array($this->lead->org_unit_id, $memberOrgs, true)) return false;
+        if ($this->lead->org_unit_id !== null && $user->canSeeOrgUnit($this->lead->org_unit_id)) return false;
+        if ($this->lead->org_unit_id === null && $this->lead->pool_level === Lead::POOL_COMMON && $user->hasPermission('lead.view_pool')) return false;
+        // Không current mà thấy được → chắc chắn là past.
+        return $this->lead->isPastHandlerFor($user);
+    }
+
+    public function updatedNoteIsReturn(): void
+    {
+        if ($this->noteIsReturn) {
+            $this->noteIsFirstVisit = false;
+        }
+    }
+
+    public function updatedNoteIsFirstVisit(): void
+    {
+        if ($this->noteIsFirstVisit) {
+            $this->noteIsReturn = false;
+            $this->noteReceptionCode = '';
+        }
+    }
+
     public function addNote(): void
     {
-        $this->validate(['newNote' => 'required|string|max:2000'], [], ['newNote' => 'ghi chú']);
+        abort_unless($this->canAddNote(), 403);
+        // Khách đã có ghi chú "Lần đầu" trước đó → bỏ cờ, tránh double-mark do race/devtools.
+        // Phase C1.b rev11 2026-08-02: chỉ chặn nếu lead đã "quay lại" (is_first_visit=false).
+        // Booking đến/trễ/xong KHÔNG chặn — đó có thể chính là lần đầu.
+        if ($this->noteIsFirstVisit && (
+            LeadStatusLog::where('lead_id', $this->lead->id)->where('is_first_visit', true)->exists()
+            || ! (bool) $this->lead->is_first_visit
+        )) {
+            $this->noteIsFirstVisit = false;
+        }
+        $this->validate([
+            'newNote' => 'nullable|string|max:2000',
+            'noteImages' => 'array|max:10',
+            'noteImages.*' => 'image|max:5120',
+            'noteReceptionCode' => $this->noteIsReturn
+                ? ['required', 'string', 'max:60', 'unique:lead_status_logs,reception_code']
+                : ['nullable'],
+        ], [
+            'noteReceptionCode.required' => 'Phải nhập mã tiếp đón khi tick "Khách trở lại".',
+            'noteReceptionCode.unique' => 'Mã tiếp đón này đã tồn tại, nhập mã khác.',
+        ], ['newNote' => 'ghi chú', 'noteImages.*' => 'ảnh', 'noteReceptionCode' => 'mã tiếp đón']);
 
-        LeadStatusLog::record($this->lead, 'note', $this->lead->note, $this->newNote, auth()->id());
-        $this->lead->update(['note' => $this->newNote, 'last_care_at' => now()]);
+        if (trim($this->newNote) === '' && $this->noteImages === []) {
+            $this->addError('newNote', 'Nhập ghi chú hoặc đính kèm ít nhất 1 ảnh.');
+            return;
+        }
 
-        $this->newNote = '';
+        $paths = [];
+        foreach ($this->noteImages as $img) {
+            $paths[] = $img->store('lead-notes/' . $this->lead->id, 'public');
+        }
+
+        LeadStatusLog::record(
+            $this->lead, 'note', $this->lead->note, $this->newNote ?: null, auth()->id(),
+            $paths, $this->noteIsReturn, $this->noteIsReturn ? trim($this->noteReceptionCode) : null,
+            $this->noteIsFirstVisit
+        );
+        $this->lead->update(['note' => $this->newNote ?: $this->lead->note, 'last_care_at' => now()]);
+
+        if (trim($this->newNote) !== '') {
+            $payload = [
+                'tieu_de'  => 'Lead có ghi chú mới',
+                'noi_dung' => $this->lead->name.' — '.\Illuminate\Support\Str::limit(trim($this->newNote), 80),
+                'link'     => '/leads/'.$this->lead->id,
+                'lead_id'  => $this->lead->id,
+                'actor'    => auth()->user()?->name,
+            ];
+            $dispatcher = app(\App\Services\NotificationDispatcher::class);
+            if ($this->lead->owner_id && $this->lead->owner_id !== auth()->id()) {
+                $dispatcher->send(\App\Support\NotificationEvents::LEAD_NOTE_ADDED, [$this->lead->owner_id], $payload);
+            }
+            $dispatcher->sendToRoles(\App\Support\NotificationEvents::LEAD_NOTE_ADDED, $payload, [
+                'owner_id'    => $this->lead->owner_id,
+                'org_unit_id' => $this->lead->org_unit_id,
+            ]);
+        }
+
+        $this->reset(['newNote', 'noteImages', 'noteIsReturn', 'noteIsFirstVisit', 'noteReceptionCode']);
         $this->lead->refresh();
+    }
+
+    /** Tần suất quay lại = số mã tiếp đón. */
+    public function returnCount(): int
+    {
+        return LeadStatusLog::where('lead_id', $this->lead->id)->where('is_return', true)->count();
+    }
+
+    /**
+     * Đồng bộ booking từ lara-sbooking về Data Source: gọi API /api/bookings?so_dien_thoai=...
+     * Nếu tìm thấy booking mới nhất → update lead giống flow callback (booking_status/ma, classification, log).
+     */
+    public function syncFromBooking(): void
+    {
+        abort_unless($this->lead->isVisibleTo(auth()->user()), 403);
+
+        $baseUrl = AppSetting::get('booking_url', config('services.booking.url'));
+        $token   = AppSetting::get('booking_api_token', config('services.booking.api_token'));
+        if (! $baseUrl || ! $token) {
+            session()->flash('error', 'Chưa cấu hình Booking URL/Token — vào Cài đặt › Kết nối Booking.');
+            return;
+        }
+
+        try {
+            $r = Http::withToken($token)->acceptJson()->timeout(8)
+                ->get(rtrim($baseUrl, '/') . '/api/bookings', [
+                    'so_dien_thoai' => $this->lead->phone,
+                    'per_page' => 5,
+                ]);
+        } catch (\Throwable $e) {
+            session()->flash('error', 'Lỗi kết nối Booking: ' . $e->getMessage());
+            return;
+        }
+
+        if (! $r->successful()) {
+            session()->flash('error', 'Booking trả lỗi HTTP ' . $r->status() . '.');
+            return;
+        }
+
+        $items = $r->json('data', []);
+        if (empty($items)) {
+            session()->flash('status', 'Bên Booking chưa có lịch nào cho SĐT này.');
+            return;
+        }
+
+        $latest = $items[0]; // đã sort desc theo updated_at bên booking
+        $bookingMa = $latest['ma_booking'] ?? $latest['ma'] ?? $latest['booking_ma'] ?? ('BKG-' . ($latest['id'] ?? '?'));
+
+        // Map trạng thái từ booking → Data Source. Ưu tiên trang_thai_khach (Khách đã tới/tới trễ/hủy),
+        // rồi trang_thai=da_xong, cuối cùng fallback = "đã đặt".
+        $ttk = $latest['trang_thai_khach'] ?? null;
+        $tt  = $latest['trang_thai'] ?? null;
+        // Ưu tiên: Đã xong > Khách hủy > Tới trễ > Đã tới > Booked.
+        $newBookingStatus = match (true) {
+            $tt  === 'da_xong'  => Lead::BOOKING_DA_XONG,
+            $ttk === 'huy'      => Lead::BOOKING_KHACH_HUY,
+            $ttk === 'toi_tre'  => Lead::BOOKING_KHACH_TOI_TRE,
+            $ttk === 'da_toi'   => Lead::BOOKING_KHACH_DA_TOI,
+            default             => Lead::BOOKING_BOOKED,
+        };
+
+        DB::transaction(function () use ($bookingMa, $latest, $newBookingStatus) {
+            $bookingBefore = $this->lead->booking_status;
+            $classificationBefore = $this->lead->classification;
+
+            $this->lead->fill([
+                'booking_status' => $newBookingStatus,
+                'booking_ma'     => $bookingMa,
+                'booked_at'      => now(),
+                'classification' => 'booking',
+                'last_care_at'   => now(),
+            ])->save();
+
+            AuditLog::record('booking_synced', $this->lead, [
+                'booking_ma' => $bookingMa,
+                'booking_id' => $latest['id'] ?? null,
+                'booking_status_before' => $bookingBefore,
+                'classification_before' => $classificationBefore,
+                'source' => 'manual_sync',
+            ]);
+
+            LeadStatusLog::record($this->lead, 'booking_status', $bookingBefore, $newBookingStatus, auth()->id());
+            LeadStatusLog::record($this->lead, 'note', null, 'Đồng bộ từ Booking: ' . $bookingMa . ' — ' . (Lead::BOOKING_STATUSES[$newBookingStatus] ?? $newBookingStatus) . '.', auth()->id());
+            if ($classificationBefore !== 'booking') {
+                LeadStatusLog::record($this->lead, 'classification', $classificationBefore, 'booking', auth()->id());
+            }
+        });
+
+        $this->lead->refresh();
+        session()->flash('status', 'Đã đồng bộ booking ' . $bookingMa . ' từ hệ thống Booking.');
     }
 
     public function updateClassification(string $value): void
     {
+        abort_unless($this->canEditLead(), 403);
         abort_unless(array_key_exists($value, Lead::CLASSIFICATIONS), 422);
 
         if ($value === $this->lead->classification) {
@@ -51,11 +268,20 @@ new class extends Component
         }
 
         LeadStatusLog::record($this->lead, 'classification', $this->lead->classification, $value, auth()->id());
-        $this->lead->update(['classification' => $value, 'last_care_at' => now()]);
+        $update = ['classification' => $value, 'last_care_at' => now()];
+        // #12 (2026-08-12) — 'Gọi lại sau': lead về kho cá nhân của tele/sale hiện tại,
+        // lock 1 ngày trước khi ProcessLeadRecalls đưa về kho địa điểm (POOL_TEAM).
+        if ($value === 'goi_lai_sau') {
+            $teleId = $this->lead->owner_id ?? $this->lead->receiver_id ?? auth()->id();
+            $update['owner_id'] = $teleId;
+            $update['pool_level'] = Lead::POOL_PERSONAL;
+            $update['recall_at'] = now()->addDay();
+            $update['is_permanent_assignment'] = false;
+        }
+        $this->lead->update($update);
         AuditLog::record('update', $this->lead, ['classification' => $value]);
         $this->lead->refresh();
 
-        // Deal Close → mở popup % đóng góp (Màn 10)
         if ($value === 'close' && auth()->user()->hasPermission('contribution.set')) {
             $this->openContribution();
         }
@@ -75,13 +301,11 @@ new class extends Component
         $existing = Contribution::with('user')->where('lead_id', $this->lead->id)->get();
 
         if ($existing->isNotEmpty()) {
-            // Đã chia rồi → mở lại để sửa
             $this->contribRows = $existing->map(fn ($c) => [
                 'user_id' => $c->user_id, 'name' => $c->user->name,
                 'role_label' => $c->role_label, 'percent' => (string) round((float) $c->percent, 2),
             ])->all();
         } else {
-            // Gợi ý người tham gia từ lịch sử + áp template mặc định theo vai trò
             $participants = app(ContributionService::class)->suggestParticipants($this->lead);
             $template = ContributionTemplate::firstWhere('is_default', true);
             $templatePercents = collect($template?->items ?? [])->pluck('percent', 'role_label');
@@ -119,18 +343,91 @@ new class extends Component
         session()->flash('status', 'Đã lưu bảng % đóng góp.');
     }
 
+    /** Thu hồi lead khỏi sale đang giữ — đưa về kho team để CM chia lại. */
+    public function recallLead(): void
+    {
+        abort_unless(auth()->user()->hasPermission('lead.recall'), 403);
+        abort_unless($this->lead->owner_id !== null, 422, 'Lead chưa được chia — không có gì để thu hồi.');
+        abort_unless($this->lead->isVisibleTo(auth()->user()), 403);
+
+        app(DistributionEngine::class)->recall($this->lead, Lead::POOL_TEAM, auth()->id());
+        $this->lead->refresh();
+        session()->flash('status', 'Đã thu hồi lead về kho team.');
+    }
+
+    /**
+     * Chuyển lead từ Booking phase sang Sale phase (trạng thái Chờ chia).
+     * Team booking bấm khi khách đồng ý gặp → CM sale sẽ chia số ở kho Sale.
+     */
+    public function moveToSalePhase(): void
+    {
+        abort_unless($this->lead->pipeline_phase === Lead::PHASE_BOOKING, 422,
+            'Lead không ở phase Booking, không thể chuyển.');
+        abort_unless(
+            auth()->user()->hasAnyPermission(['lead.update_booking', 'lead.distribute_tele'])
+                && $this->lead->isVisibleTo(auth()->user()),
+            403
+        );
+
+        $before = $this->lead->pipelineLabel();
+        try {
+            $this->lead->moveToSaleWaiting();
+        } catch (\DomainException $e) {
+            session()->flash('cf_error', $e->getMessage());
+            return;
+        }
+        LeadStatusLog::record(
+            $this->lead, 'pipeline_phase', $before, $this->lead->pipelineLabel(),
+            auth()->id()
+        );
+        $this->lead->refresh();
+        session()->flash('status', 'Đã chuyển sang phase Sale — chờ CM sale chia số.');
+    }
+
     public function with(): array
     {
         $customFields = \App\Models\CustomField::applicableTo($this->lead->orgUnit);
         $customValues = $this->lead->customValues->pluck('value', 'custom_field_id');
 
+        $this->lead->load([
+            'treatments.performingDoctor',
+            'upsells.staffMember', 'upsells.service',
+        ]);
+
+        // Phase 4 rework 2026-08-01: cơ sở/BS/DV/CV lấy từ booking_logs mới nhất, không đọc cột lead nữa.
+        $latestBooking = $this->lead->bookingLogs()
+            ->with(['facility.parent', 'doctor.facility.parent', 'service', 'consultants'])
+            ->orderByDesc('scheduled_at')
+            ->orderByDesc('created_at')
+            ->first();
+
+        $lastPayment = Payment::where('lead_id', $this->lead->id)->orderByDesc('paid_at')->first();
+        $totalPaid = Payment::where('lead_id', $this->lead->id)->sum('amount');
+        $paymentMethods = Payment::where('lead_id', $this->lead->id)
+            ->selectRaw('method, SUM(amount) as total')
+            ->groupBy('method')
+            ->pluck('total', 'method');
+
         return [
-            'logs' => $this->lead->statusLogs()->with('user')->limit(50)->get(),
-            'canEdit' => auth()->user()->hasPermission('lead.update'),
+            'logs' => $this->lead->statusLogs()->with('user')->paginate(6, pageName: 'logPage'),
+            'canEdit' => $this->canEditLead(),
+            'canAddNote' => $this->canAddNote(),
+            'isPastHandlerOnly' => $this->isPastHandlerOnly(auth()->user()),
+            'canEditPersonalInfo' => $this->lead->canOpenEditForm(auth()->user()),
+            'canMoveToSale' => $this->lead->canBookAction(auth()->user()),
+            'canRecall' => auth()->user()->hasPermission('lead.recall') && $this->lead->isVisibleTo(auth()->user()),
             'customFields' => $customFields,
             'customValues' => $customValues,
             'contributions' => Contribution::with('user')->where('lead_id', $this->lead->id)->orderByDesc('percent')->get(),
             'canSetContribution' => auth()->user()->hasPermission('contribution.set'),
+            'hasFirstVisit' => \App\Models\LeadStatusLog::where('lead_id', $this->lead->id)->where('is_first_visit', true)->exists(),
+            // Phase C1.b rev11 2026-08-02: chỉ lock "Lần đầu" khi lead đã bấm "Khởi động lần khám mới" (is_first_visit=false).
+            // Booking status khach_da_toi vẫn coi là lần đầu (khách vừa đến CHÍNH LÀ lần đầu, không phải cấm ghi chú).
+            'customerHasVisited' => ! (bool) $this->lead->is_first_visit,
+            'lastPayment' => $lastPayment,
+            'totalPaid' => $totalPaid,
+            'paymentMethods' => $paymentMethods,
+            'latestBooking' => $latestBooking,
         ];
     }
 };
@@ -146,117 +443,367 @@ new class extends Component
             </div>
             <h1 class="text-3xl font-bold">{{ $lead->name }}</h1>
             @if ($lead->code)
-                <div class="font-mono text-sm text-gold-700 mt-1">{{ $lead->code }}
-                    <span class="font-sans text-xs text-ink/40">({{ \App\Models\Lead::TYPE_CODES[$lead->type_code] ?? $lead->type_code }})</span>
-                </div>
+                <div class="font-mono text-sm text-gold-700 mt-1">{{ $lead->code }}</div>
+            @endif
+            @php
+                $isBooking = $lead->pipeline_phase === \App\Models\Lead::PHASE_BOOKING;
+                $isWaiting = $lead->pipeline_status === \App\Models\Lead::PSTATUS_WAITING;
+                $badgeClass = $isBooking
+                    ? ($isWaiting ? 'bg-amber-100 text-amber-800 border-amber-200' : 'bg-blue-100 text-blue-800 border-blue-200')
+                    : ($isWaiting ? 'bg-purple-100 text-purple-800 border-purple-200' : 'bg-green-100 text-green-800 border-green-200');
+            @endphp
+            <span class="inline-block mt-2 text-xs font-semibold px-2.5 py-1 rounded-full border {{ $badgeClass }}"
+                  title="Phase & trạng thái lifecycle">
+                {{ $lead->pipelineLabel() }}
+            </span>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+            @if ($canRecall && $lead->owner_id)
+                <button type="button"
+                        wire:click="recallLead"
+                        wire:confirm="Thu hồi lead khỏi {{ $lead->owner?->name ?? 'người giữ' }}? Lead sẽ quay về kho team."
+                        class="flex items-center gap-2 text-sm font-semibold text-red-700 border border-red-200 px-5 py-2.5 rounded-md hover:bg-red-50">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 016 6v6"/></svg>
+                    Thu hồi
+                </button>
+            @endif
+            @if ($canEditPersonalInfo)
+                <a href="{{ route('leads.edit', $lead) }}"
+                   class="flex items-center gap-2 text-sm font-semibold text-ink/70 border border-gold-200 px-5 py-2.5 rounded-md hover:bg-gold-50">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487z"/></svg>
+                    Cập nhật thông tin
+                </a>
+            @endif
+            @if ($canMoveToSale)
+                @php
+                    // Lấy slug qua helper: facility → parent facility → branch owner (mapping branch-hn/hcm/dn → slug facility gốc).
+                    $facility = $lead->facility;
+                    $coSoSlug = $lead->resolvedBookingSlug();
+                    $bookingBaseUrl = \App\Models\AppSetting::get('booking_url', config('services.booking.url'));
+                    $bookingQuery = http_build_query([
+                        'ho_ten' => $lead->name,
+                        'so_dien_thoai' => $lead->phone,
+                        'khach_ma' => $lead->code,
+                        'return_url' => route('leads.booking-callback', $lead),
+                    ]);
+                    $bookingBase = $coSoSlug ? rtrim($bookingBaseUrl, '/') . '/' . $coSoSlug : null;
+                    $bookingClinicUrl = $bookingBase ? $bookingBase . '/dat-lich-tham-kham?' . $bookingQuery : null;
+                    $bookingServiceUrl = $bookingBase ? $bookingBase . '/dat-lich-dich-vu?' . $bookingQuery : null;
+                @endphp
+                {{-- Phase C1.b 2026-08-01: gỡ nút "Đặt booking" (mở tab sbooking). Booking bây giờ tạo tự động từ tab Booking khi status = "Đã xác nhận". --}}
+                <button type="button" wire:click="syncFromBooking" wire:loading.attr="disabled" wire:target="syncFromBooking"
+                        class="flex items-center gap-2 text-sm font-semibold text-ink/70 border border-gold-200 px-4 py-2.5 rounded-md hover:bg-gold-50 disabled:opacity-50 disabled:cursor-wait"
+                        title="Kiểm tra bên hệ thống Booking xem SĐT khách này đã có lịch chưa. Nếu có, cập nhật Data Source về trạng thái Đã đặt + phân loại Booking.">
+                    <svg class="w-4 h-4" wire:loading.class="animate-spin" wire:target="syncFromBooking" fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/></svg>
+                    <span wire:loading.remove wire:target="syncFromBooking">Đồng bộ Booking</span>
+                    <span wire:loading wire:target="syncFromBooking">Đang kiểm tra…</span>
+                </button>
+                <button type="button"
+                        wire:click="moveToSalePhase"
+                        wire:confirm="Xác nhận: khách đã đồng ý gặp. Chuyển lead sang phase Sale (Chờ chia) để CM sale phân bổ?"
+                        class="flex items-center gap-2 text-sm font-semibold text-white bg-gold-600 hover:bg-gold-700 px-5 py-2.5 rounded-md"
+                        title="Khách đồng ý gặp — chuyển sang phase Sale">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M13 5l7 7-7 7M20 12H4"/>
+                    </svg>
+                    Chuyển sang Sale
+                </button>
             @endif
         </div>
-        @if ($canEdit)
-            <a href="{{ route('leads.edit', $lead) }}"
-               class="flex items-center gap-2 text-sm font-semibold text-ink/70 border border-gold-200 px-5 py-2.5 rounded-md hover:bg-gold-50">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487z"/></svg>
-                Sửa thông tin
-            </a>
-        @endif
     </div>
 
     @if (session('status'))
         <p class="mb-4 text-sm text-green-700 bg-green-50 border border-green-200 rounded-md px-4 py-2">{{ session('status') }}</p>
     @endif
 
-    <div class="grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-6 items-start">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+        {{-- ═══ CỘT TRÁI: Thông tin khách hàng ═══ --}}
         <div class="space-y-6">
-            {{-- Thông tin chi tiết --}}
+            {{-- Card chính: Thông tin cơ bản + Nhân sự + Trạng thái --}}
             <div class="bg-white border-l-4 border-gold-600 border-y border-r border-y-gold-200 border-r-gold-200 rounded-xl shadow-card p-6">
-                <h2 class="text-xs font-bold uppercase tracking-[0.15em] text-ink/60 border-b border-gold-100 pb-3 mb-4">Thông tin chi tiết</h2>
-                <dl class="space-y-3.5 text-sm">
-                    <div class="grid grid-cols-2 gap-3">
+                <h2 class="text-xs font-bold uppercase tracking-[0.15em] text-ink/60 border-b border-gold-100 pb-3 mb-4">Thông tin khách hàng</h2>
+                <dl class="space-y-3 text-sm">
+                    {{-- SĐT nổi bật --}}
+                    <div class="flex items-center gap-3 bg-gold-50 border border-gold-200 rounded-lg px-4 py-2.5">
+                        <svg class="w-4 h-4 text-gold-600 shrink-0" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 002.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 01-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 00-1.091-.852H4.5A2.25 2.25 0 002.25 4.5v2.25z"/></svg>
+                        <span class="font-mono font-bold text-gold-800 text-base">
+                            @if ($phoneRevealed) {{ $lead->phone }}
+                            @else {{ \App\Models\Lead::maskPhone($lead->phone) }}
+                            @endif
+                        </span>
+                        @if ($lead->canViewFullPhone(auth()->user()))
+                            @if ($phoneRevealed)
+                                <button wire:click="$set('phoneRevealed', false)" class="text-xs font-semibold text-ink/50 border border-gray-300 px-2 py-0.5 rounded hover:bg-gray-100 ml-auto">Ẩn số</button>
+                            @else
+                                <button wire:click="revealPhone" class="text-xs font-semibold text-gold-600 border border-gold-300 px-2 py-0.5 rounded hover:bg-gold-100 ml-auto" title="Ghi audit log khi xem">Hiện số</button>
+                            @endif
+                        @endif
+                    </div>
+
+                    <div class="grid grid-cols-3 gap-3">
                         <div>
                             <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Ngày</dt>
                             <dd class="font-medium">{{ $lead->received_date->format('d/m/Y') }}</dd>
                         </div>
                         <div>
-                            <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Page</dt>
-                            <dd class="font-medium">{{ $lead->page ?: '—' }}</dd>
+                            <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Nhóm nguồn</dt>
+                            <dd class="font-medium">{{ \App\Models\Lead::SOURCE_GROUPS[$lead->source_group] ?? '—' }}</dd>
+                        </div>
+                        <div>
+                            <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Tần suất quay lại</dt>
+                            <dd class="font-bold text-gold-700">{{ $this->returnCount() }}</dd>
                         </div>
                     </div>
+
+                    {{-- Page + Camp giờ hiển thị trong section "Trường bổ sung" (Phase 6.20) --}}
+
+                    @if ($lead->insight || $lead->link)
                     <div>
-                        <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Số điện thoại</dt>
-                        <dd class="font-mono font-semibold text-gold-700 flex items-center gap-2">
-                            @if ($phoneRevealed)
-                                {{ $lead->phone }}
-                            @else
-                                {{ \App\Models\Lead::maskPhone($lead->phone) }}
-                                @if ($lead->canViewFullPhone(auth()->user()))
-                                    <button wire:click="revealPhone" class="text-xs font-sans font-semibold text-gold-600 border border-gold-300 px-2 py-0.5 rounded hover:bg-gold-50" title="Ghi audit log khi xem">
-                                        Hiện số
-                                    </button>
-                                @endif
-                            @endif
-                        </dd>
-                    </div>
-                    <div>
-                        <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Camp (chiến dịch)</dt>
-                        <dd class="font-medium">{{ $lead->camp ?: '—' }}</dd>
-                    </div>
-                    <div>
-                        <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Insight / Link</dt>
+                        <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Insight</dt>
                         <dd class="font-medium">
-                            {{ $lead->insight ?: '—' }}
+                            {{ $lead->insight ?: '' }}
                             @if ($lead->link)
-                                <a href="{{ $lead->link }}" target="_blank" rel="noopener" class="block text-gold-600 underline truncate">{{ $lead->link }}</a>
+                                <a href="{{ $lead->link }}" target="_blank" rel="noopener" class="block text-gold-600 underline truncate text-xs mt-0.5">{{ $lead->link }}</a>
                             @endif
                         </dd>
                     </div>
-                    <div class="grid grid-cols-2 gap-3">
-                        <div>
-                            <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Nguồn</dt>
-                            <dd class="font-medium">{{ $lead->ad_source ?: '—' }}</dd>
-                        </div>
-                        <div>
-                            <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Người nhận</dt>
-                            <dd class="font-medium">{{ $lead->receiver?->name ?: 'Hệ thống' }}</dd>
-                        </div>
-                    </div>
-                    <div class="grid grid-cols-2 gap-3">
-                        <div>
-                            <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Lead chia cho</dt>
-                            <dd class="font-medium text-gold-700">{{ $lead->owner?->name ?: 'Chưa chia' }}</dd>
-                        </div>
-                        <div>
-                            <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Khu vực</dt>
-                            <dd class="font-medium">{{ $lead->region ?: '—' }}</dd>
-                        </div>
-                    </div>
-                    <div class="grid grid-cols-2 gap-3">
-                        <div>
-                            <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Tình trạng lần 1</dt>
-                            <dd class="font-medium">{{ $lead->status_1 ?: '—' }}</dd>
-                        </div>
-                        <div>
-                            <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Tình trạng lần 2</dt>
-                            <dd class="font-medium">{{ $lead->status_2 ?: '—' }}</dd>
-                        </div>
-                    </div>
-                    <div>
-                        <dt class="text-xs uppercase tracking-wider text-ink/40 mb-1">Phân loại kết quả</dt>
-                        <dd>
-                            @if ($canEdit)
-                                <select wire:change="updateClassification($event.target.value)"
-                                        class="border border-gold-200 rounded-full px-3 py-1.5 text-sm bg-gold-50 text-gold-800 font-semibold focus:outline-none focus:border-gold-500">
-                                    @foreach (\App\Models\Lead::CLASSIFICATIONS as $key => $label)
-                                        <option value="{{ $key }}" @selected($lead->classification === $key)>{{ $label }}</option>
-                                    @endforeach
-                                </select>
-                            @else
-                                <span class="text-sm bg-gold-50 border border-gold-200 text-gold-800 font-semibold px-3 py-1 rounded-full">{{ $lead->classificationLabel() }}</span>
+                    @endif
+
+                    {{-- Nhóm nhân sự --}}
+                    <div class="border-t border-gold-100 pt-3 mt-1">
+                        <p class="text-xs font-bold uppercase tracking-wider text-ink/40 mb-2">Cơ sở & Nhân sự</p>
+                        <div class="space-y-2">
+                            {{-- Phase 4 rework 2026-08-01: đọc từ booking mới nhất, không đọc cột lead nữa. --}}
+                            @if ($latestBooking?->facility)
+                            <div class="flex items-center gap-2">
+                                <svg class="w-3.5 h-3.5 text-ink/30 shrink-0" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 21h19.5m-18-18v18m10.5-18v18m6-13.5V21M6.75 6.75h.75m-.75 3h.75m-.75 3h.75m3-6h.75m-.75 3h.75m-.75 3h.75M6.75 21v-3.375c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21M3 3h12m-.75 4.5H21m-3.75 3H21"/></svg>
+                                <span class="font-medium text-sm">
+                                    @if ($latestBooking->facility->parent) {{ $latestBooking->facility->parent->name }} › @endif{{ $latestBooking->facility->name }}
+                                </span>
+                                <span class="text-[10px] text-ink/40">(booking gần nhất)</span>
+                            </div>
                             @endif
-                        </dd>
+                            @if ($latestBooking?->doctor)
+                            <div class="flex items-start gap-2">
+                                <span class="text-[10px] font-bold uppercase tracking-wider bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded shrink-0 mt-0.5">BS tư vấn</span>
+                                <span class="font-medium text-sm whitespace-pre-line leading-tight">{{ $latestBooking->doctor->displayName() }}</span>
+                            </div>
+                            @endif
+                            @if ($latestBooking && $latestBooking->consultants->isNotEmpty())
+                                @foreach ($latestBooking->consultants as $i => $cv)
+                                <div class="flex items-center gap-2">
+                                    <span class="text-[10px] font-bold uppercase tracking-wider bg-green-100 text-green-700 px-1.5 py-0.5 rounded shrink-0">CV{{ $i + 1 }}</span>
+                                    <span class="font-medium text-sm">{{ $cv->name }}</span>
+                                </div>
+                                @endforeach
+                            @endif
+                            @if ($latestBooking?->service)
+                            <div class="flex items-center gap-2">
+                                <span class="text-[10px] font-bold uppercase tracking-wider bg-gold-100 text-gold-700 px-1.5 py-0.5 rounded shrink-0">Dịch vụ</span>
+                                <span class="font-medium text-sm">{{ $latestBooking->service->name }}</span>
+                            </div>
+                            @endif
+                        </div>
+                    </div>
+
+                    {{-- 3 người phụ trách vòng đời lead --}}
+                    @php $trio = $lead->handlerTrio(); @endphp
+                    <div class="border-t border-gold-100 pt-3 mt-1">
+                        <dt class="text-xs uppercase tracking-wider text-ink/40 mb-2">Người phụ trách</dt>
+                        <div class="grid grid-cols-3 gap-3">
+                            <div>
+                                <div class="text-[10px] uppercase tracking-wider text-ink/40">Nhập</div>
+                                <div class="text-sm font-medium">{{ $trio['importer']?->name ?: '—' }}</div>
+                            </div>
+                            <div>
+                                <div class="text-[10px] uppercase tracking-wider text-ink/40">Booking</div>
+                                <div class="text-sm font-medium">
+                                    @if ($trio['booking'])
+                                        {{ $trio['booking']->name }}
+                                    @elseif ($lead->isDirectSaleSource())
+                                        <span class="text-ink/40 italic">Không qua booking</span>
+                                    @else
+                                        —
+                                    @endif
+                                </div>
+                            </div>
+                            <div>
+                                <div class="text-[10px] uppercase tracking-wider text-ink/40">Sale</div>
+                                <div class="text-sm font-medium text-gold-700">{{ $trio['sale']?->name ?: '—' }}</div>
+                            </div>
+                        </div>
+                        @if (! $trio['sale'] && $lead->pool_level === \App\Models\Lead::POOL_COMMON)
+                            <p class="text-[11px] text-ink/40 mt-2">Lead đang ở kho chung, chưa chia cho sale.</p>
+                        @endif
+                    </div>
+
+                    {{-- Trạng thái --}}
+                    <div class="border-t border-gold-100 pt-3 mt-1">
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Tình trạng 1</dt>
+                                <dd class="font-medium">{{ $lead->status_1 ?: '—' }}</dd>
+                            </div>
+                            <div>
+                                <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Tình trạng 2</dt>
+                                <dd class="font-medium">{{ $lead->status_2 ?: '—' }}</dd>
+                            </div>
+                        </div>
+                        @if ($lastPayment)
+                        <div class="mt-2">
+                            <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Ngày ghi nhận doanh thu</dt>
+                            <dd class="font-medium">{{ $lastPayment->paid_at->format('d/m/Y') }}</dd>
+                        </div>
+                        @endif
+                        <div class="mt-3">
+                            <dt class="text-xs uppercase tracking-wider text-ink/40 mb-1">Phân loại kết quả</dt>
+                            <dd class="flex flex-wrap items-center gap-2">
+                                @if ($canEdit)
+                                    <select wire:change="updateClassification($event.target.value)"
+                                            class="border border-gold-200 rounded-full px-3 py-1.5 text-sm bg-gold-50 text-gold-800 font-semibold focus:outline-none focus:border-gold-500">
+                                        @foreach (\App\Models\Lead::CLASSIFICATIONS as $key => $label)
+                                            <option value="{{ $key }}" @selected($lead->classification === $key)>{{ $label }}</option>
+                                        @endforeach
+                                    </select>
+                                @else
+                                    <span class="text-sm bg-gold-50 border border-gold-200 text-gold-800 font-semibold px-3 py-1 rounded-full">{{ $lead->classificationLabel() }}</span>
+                                @endif
+                                @php
+                                    $_bs = $lead->booking_status;
+                                    $_bsIcon = \App\Models\Lead::BOOKING_STATUS_ICONS[$_bs] ?? 'schedule';
+                                    $_bsColor = \App\Models\Lead::BOOKING_STATUS_COLORS[$_bs] ?? 'bg-ink/5 text-ink/50 border-ink/10';
+                                    $_bsLabel = \App\Models\Lead::BOOKING_STATUSES[$_bs] ?? $_bs;
+                                @endphp
+                                <span class="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full border {{ $_bsColor }}" title="Trạng thái đặt lịch (sync từ Booking)">
+                                    <span>{{ $_bsIcon }}</span>
+                                    {{ $_bsLabel }}
+                                    @if ($lead->booking_ma)
+                                        <span class="text-[10px] opacity-70">· {{ $lead->booking_ma }}</span>
+                                    @endif
+                                </span>
+                            </dd>
+                        </div>
                     </div>
                 </dl>
             </div>
 
-            {{-- % đóng góp (hiện khi đã chia hoặc deal close) --}}
+            {{-- INSIGHT — gom vào 1 card nếu có --}}
+            @if ($lead->birthday || $lead->address || $lead->medical_history || $lead->occupation || $lead->treatments->isNotEmpty())
+            <div class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
+                <h2 class="text-xs font-bold uppercase tracking-[0.15em] text-ink/60 border-b border-gold-100 pb-3 mb-4">INSIGHT khách hàng</h2>
+                <dl class="space-y-3 text-sm">
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Ngày sinh</dt>
+                            <dd class="font-medium">{{ $lead->birthday?->format('d/m/Y') ?: '—' }}</dd>
+                        </div>
+                        <div>
+                            <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Nghề nghiệp</dt>
+                            <dd class="font-medium">{{ $lead->occupation ?: '—' }}</dd>
+                        </div>
+                    </div>
+                    @if ($lead->address)
+                    <div>
+                        <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Địa chỉ</dt>
+                        <dd class="font-medium">{{ $lead->address }}</dd>
+                    </div>
+                    @endif
+                    @if ($lead->medical_history)
+                    <div>
+                        <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Khai thác tiền sử</dt>
+                        <dd class="font-medium whitespace-pre-line">{{ $lead->medical_history }}</dd>
+                    </div>
+                    @endif
+                </dl>
+
+                {{-- LIỆU TRÌNH — dạng thẻ 1-N (Phase 6.11) --}}
+                @if ($lead->treatments->isNotEmpty())
+                <div class="border-t border-gold-100 mt-4 pt-4">
+                    <p class="text-xs font-bold uppercase tracking-wider text-ink/40 mb-3">Liệu trình</p>
+                    <div class="space-y-2.5">
+                        @foreach ($lead->treatments as $tr)
+                            <div class="border border-gold-200 rounded-md p-3 bg-gold-50/30">
+                                <div class="flex items-center justify-between mb-1.5">
+                                    <span class="text-xs font-bold uppercase tracking-wider text-gold-700">Lần {{ $tr->sequence }}</span>
+                                    <span class="text-xs text-ink/60">{{ $tr->performed_at ? $tr->performed_at->format('d/m/Y') : '— chưa có ngày —' }}</span>
+                                </div>
+                                @if ($tr->performingDoctor)
+                                    <div class="flex items-start gap-2 mb-1">
+                                        <span class="text-[10px] font-bold uppercase tracking-wider bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded shrink-0 mt-0.5">BS</span>
+                                        <span class="font-medium text-sm whitespace-pre-line leading-tight">{{ $tr->performingDoctor->displayName() }}</span>
+                                    </div>
+                                @endif
+                                @if ($tr->quality_rating)
+                                    <p class="text-xs text-ink/70 whitespace-pre-line mt-1">{{ $tr->quality_rating }}</p>
+                                @endif
+                            </div>
+                        @endforeach
+                    </div>
+                </div>
+                @endif
+            </div>
+            @endif
+
+            {{-- DV tiềm năng & UPSELL + Tài chính — gom lại --}}
+            @if ($lead->potential_service || $lead->upsells->isNotEmpty() || $totalPaid > 0)
+            <div class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
+                <h2 class="text-xs font-bold uppercase tracking-[0.15em] text-ink/60 border-b border-gold-100 pb-3 mb-4">Tài chính & Dịch vụ phát sinh</h2>
+
+                {{-- Tổng tiền thực trả --}}
+                @if ($totalPaid > 0)
+                <div class="bg-green-50 border border-green-200 rounded-lg px-4 py-3 mb-4">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-bold uppercase tracking-wider text-green-700">Tổng tiền thực trả</span>
+                        <span class="font-mono font-bold text-lg text-green-700">{{ number_format($totalPaid, 0, ',', '.') }}₫</span>
+                    </div>
+                    @if ($paymentMethods->isNotEmpty())
+                    <div class="mt-2 space-y-1">
+                        @foreach ($paymentMethods as $method => $amount)
+                            <div class="flex items-center justify-between text-sm">
+                                <span class="text-green-600">{{ \App\Models\Payment::METHODS[$method] ?? $method }}</span>
+                                <span class="font-mono text-green-700">{{ number_format($amount, 0, ',', '.') }}₫</span>
+                            </div>
+                        @endforeach
+                    </div>
+                    @endif
+                </div>
+                @endif
+
+                <dl class="space-y-3 text-sm">
+                    @if ($lead->potential_service)
+                    <div>
+                        <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">Dịch vụ tiềm năng</dt>
+                        <dd class="font-medium whitespace-pre-line">{{ $lead->potential_service }}</dd>
+                    </div>
+                    @endif
+
+                    @if ($lead->upsells->isNotEmpty())
+                    <div class="border-t border-gold-100 pt-3">
+                        <dt class="text-xs uppercase tracking-wider text-ink/40 mb-2">DS Dịch vụ phát sinh</dt>
+                        <div class="space-y-1.5">
+                            @foreach ($lead->upsells as $up)
+                                <div class="flex items-center justify-between bg-gold-50/50 border border-gold-100 rounded-lg px-3 py-2">
+                                    <div>
+                                        <span class="font-medium">{{ $up->service?->name ?? '—' }}</span>
+                                        @if ($up->staffMember)
+                                            <span class="text-xs text-ink/50 ml-1">— {{ $up->staffMember->name }}</span>
+                                        @endif
+                                    </div>
+                                    <span class="font-mono font-semibold text-gold-700">{{ number_format($up->amount, 0, ',', '.') }}₫</span>
+                                </div>
+                            @endforeach
+                        </div>
+                        <div class="flex items-center justify-between border-t border-gold-200 mt-2 pt-2">
+                            <span class="text-xs font-bold uppercase tracking-wider text-ink/60">Tổng phát sinh</span>
+                            <span class="font-mono font-bold text-gold-700">{{ number_format($lead->upsells->sum('amount'), 0, ',', '.') }}₫</span>
+                        </div>
+                    </div>
+                    @endif
+                </dl>
+            </div>
+            @endif
+
+            {{-- % đóng góp + Trường bổ sung --}}
             @if ($contributions->isNotEmpty() || $lead->classification === 'close')
                 <div class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
                     <div class="flex items-center justify-between border-b border-gold-100 pb-3 mb-4">
@@ -279,13 +826,12 @@ new class extends Component
                 </div>
             @endif
 
-            {{-- Trường bổ sung theo phòng ban --}}
             @if ($customFields->isNotEmpty())
                 <div class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
                     <h2 class="text-xs font-bold uppercase tracking-[0.15em] text-ink/60 border-b border-gold-100 pb-3 mb-4">
                         Trường bổ sung {{ $lead->orgUnit ? '(' . $lead->orgUnit->name . ')' : '' }}
                     </h2>
-                    <dl class="space-y-3.5 text-sm">
+                    <dl class="grid grid-cols-2 gap-3 text-sm">
                         @foreach ($customFields as $field)
                             <div>
                                 <dt class="text-xs uppercase tracking-wider text-ink/40 mb-0.5">
@@ -300,26 +846,72 @@ new class extends Component
             @endif
         </div>
 
+        {{-- ═══ CỘT PHẢI: Tương tác + Dịch vụ ═══ --}}
         <div class="space-y-6">
             {{-- Thêm ghi chú --}}
+            @if (auth()->user()->hasPermission('lead.update'))
             <div class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
                 <h2 class="font-bold flex items-center gap-2 mb-4">
                     <span class="w-9 h-9 rounded-full bg-gold-50 border border-gold-200 text-gold-600 flex items-center justify-center">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10"/></svg>
                     </span>
                     Thêm Ghi chú mới
+                    <span class="ml-auto text-xs font-normal text-ink/50">Tần suất quay lại: <strong class="text-gold-700">{{ $this->returnCount() }}</strong></span>
                 </h2>
-                <textarea wire:model="newNote" rows="4" placeholder="Nhập nội dung tương tác hoặc ghi chú quan trọng về khách hàng..."
+                <textarea wire:model="newNote" rows="3" placeholder="Nhập nội dung tương tác hoặc ghi chú quan trọng về khách hàng..."
                           class="w-full border border-gold-200 rounded-lg px-4 py-3 text-sm bg-gold-50/40 focus:outline-none focus:border-gold-500 mb-3"></textarea>
                 @error('newNote')<p class="text-xs text-red-600 mb-2">{{ $message }}</p>@enderror
-                <div class="flex justify-end">
-                    <button wire:click="addNote" class="bg-gold-600 hover:bg-gold-700 text-white font-semibold text-sm px-6 py-2.5 rounded-md">Lưu Ghi chú</button>
+
+                <div class="mb-3">
+                    <label class="flex items-center gap-2 text-sm font-semibold text-gold-700 border border-dashed border-gold-300 rounded-lg px-4 py-2.5 cursor-pointer hover:bg-gold-50 w-fit">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z"/></svg>
+                        Đính kèm ảnh
+                        <input type="file" wire:model="noteImages" accept="image/*" multiple class="hidden">
+                    </label>
+                    <div wire:loading wire:target="noteImages" class="text-xs text-ink/40 mt-1">Đang tải ảnh…</div>
+                    @error('noteImages.*')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
+                    @if ($noteImages)
+                        <div class="flex flex-wrap gap-2 mt-2">
+                            @foreach ($noteImages as $img)
+                                @if (is_object($img))
+                                    <img src="{{ $img->temporaryUrl() }}" class="w-16 h-16 object-cover rounded-md border border-gold-200">
+                                @endif
+                            @endforeach
+                        </div>
+                    @endif
+                </div>
+
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                    <div class="flex flex-wrap items-center gap-3">
+                        @php $firstVisitLocked = $hasFirstVisit || $customerHasVisited; @endphp
+                        <label class="flex items-center gap-2 text-sm {{ $firstVisitLocked ? 'cursor-not-allowed opacity-50' : 'cursor-pointer' }}"
+                               title="{{ $firstVisitLocked ? ($hasFirstVisit ? 'Khách đã có ghi chú Lần đầu.' : 'Khách đã bấm "Khởi động lần khám mới" — giờ là lần quay lại, không phải lần đầu.') : '' }}">
+                            <input type="checkbox" wire:model.live="noteIsFirstVisit" {{ $firstVisitLocked ? 'disabled' : '' }} class="rounded border-gold-300 text-green-600 w-4 h-4 disabled:cursor-not-allowed">
+                            <span class="font-semibold text-green-700">🆕 Lần đầu</span>
+                        </label>
+                        <label class="flex items-center gap-2 text-sm cursor-pointer">
+                            <input type="checkbox" wire:model.live="noteIsReturn" class="rounded border-gold-300 text-gold-600 w-4 h-4">
+                            <span class="font-semibold text-gold-800">🔁 Trở lại</span>
+                        </label>
+                        @if ($noteIsReturn)
+                            <div>
+                                <input type="text" wire:model="noteReceptionCode" placeholder="Mã tiếp đón *"
+                                       class="border border-gold-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:border-gold-500 w-40">
+                                @error('noteReceptionCode')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
+                            </div>
+                        @endif
+                    </div>
+                    <button wire:click="addNote" class="bg-gold-600 hover:bg-gold-700 text-white font-semibold text-sm px-5 py-2 rounded-md">Lưu Ghi chú</button>
                 </div>
             </div>
+            @endif
 
             {{-- Timeline lịch sử --}}
             <div class="bg-white border border-gold-200 rounded-xl shadow-card p-6">
-                <h2 class="font-bold mb-5">Lịch sử tương tác</h2>
+                <div class="flex items-center justify-between mb-5">
+                    <h2 class="font-bold">Lịch sử tương tác</h2>
+                    <span class="text-xs text-ink/40">{{ $logs->total() }} ghi chú</span>
+                </div>
                 <div class="relative pl-6 space-y-4">
                     <div class="absolute left-2 top-1 bottom-1 w-px bg-gold-200"></div>
                     @forelse ($logs as $log)
@@ -330,12 +922,20 @@ new class extends Component
                                     <span class="text-[10px] font-bold uppercase tracking-wider {{ $log->field === 'created' ? 'bg-gold-600 text-white' : 'bg-gold-100 border border-gold-300 text-gold-800' }} px-2 py-0.5 rounded">
                                         {{ \App\Models\LeadStatusLog::FIELD_LABELS[$log->field] ?? $log->field }}
                                     </span>
+                                    @if ($log->is_first_visit)
+                                        <span class="text-[10px] font-bold uppercase tracking-wider bg-blue-100 border border-blue-300 text-blue-800 px-2 py-0.5 rounded">🆕 Lần đầu</span>
+                                    @endif
+                                    @if ($log->is_return)
+                                        <span class="text-[10px] font-bold uppercase tracking-wider bg-green-100 border border-green-300 text-green-800 px-2 py-0.5 rounded">🔁 Trở lại</span>
+                                        @if ($log->reception_code)
+                                            <span class="text-[10px] font-bold uppercase tracking-wider bg-gold-100 border border-gold-300 text-gold-800 px-2 py-0.5 rounded">{{ $log->reception_code }}</span>
+                                        @endif
+                                    @endif
                                     <span class="font-semibold text-sm">{{ $log->user?->name ?? 'Hệ thống' }}</span>
                                     <span class="text-xs text-ink/40 ml-auto">{{ $log->created_at->format('d/m/Y H:i') }}</span>
                                 </div>
                                 <div class="text-sm text-ink/80">
                                     @if ($log->field === 'classification')
-                                        Cập nhật trạng thái:
                                         <span class="text-ink/50">{{ \App\Models\Lead::CLASSIFICATIONS[$log->old_value] ?? $log->old_value ?? '—' }}</span>
                                         →
                                         <strong class="text-gold-700">{{ \App\Models\Lead::CLASSIFICATIONS[$log->new_value] ?? $log->new_value }}</strong>
@@ -345,12 +945,33 @@ new class extends Component
                                         {{ $log->new_value ?: '—' }}
                                     @endif
                                 </div>
+                                @if (! empty($log->images))
+                                    <div class="flex flex-wrap gap-2 mt-2" x-data="{ lightbox: null }">
+                                        @foreach ($log->images as $idx => $path)
+                                            @php $url = asset('uploads/' . ltrim($path, '/')); @endphp
+                                            <img src="{{ $url }}" alt="Ảnh {{ $idx + 1 }}"
+                                                 class="w-12 h-12 object-cover rounded border border-gold-200 cursor-pointer hover:ring-2 hover:ring-gold-400"
+                                                 @click="lightbox = '{{ $url }}'">
+                                        @endforeach
+                                        <template x-if="lightbox">
+                                            <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" @click.self="lightbox = null" @keydown.escape.window="lightbox = null">
+                                                <img :src="lightbox" class="max-w-full max-h-[90vh] rounded-lg shadow-2xl">
+                                                <button @click="lightbox = null" class="absolute top-4 right-4 text-white bg-black/50 rounded-full w-10 h-10 flex items-center justify-center text-xl hover:bg-black/70">&times;</button>
+                                            </div>
+                                        </template>
+                                    </div>
+                                @endif
                             </div>
                         </div>
                     @empty
                         <p class="text-sm text-ink/40">Chưa có hoạt động nào.</p>
                     @endforelse
                 </div>
+                @if ($logs->hasPages())
+                    <div class="mt-5 pt-4 border-t border-gold-100">
+                        {{ $logs->links() }}
+                    </div>
+                @endif
             </div>
         </div>
     </div>

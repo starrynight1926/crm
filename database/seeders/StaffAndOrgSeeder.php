@@ -1,0 +1,228 @@
+<?php
+
+namespace Database\Seeders;
+
+use App\Models\Assignment;
+use App\Models\OrgUnit;
+use App\Models\Permission;
+use App\Models\Role;
+use App\Models\User;
+use Illuminate\Database\Seeder;
+
+class StaffAndOrgSeeder extends Seeder
+{
+    public function run(): void
+    {
+        $this->restructureOrg();
+        $this->createViewerRole();
+        $this->seedViewerAccounts();
+        $this->seedSystemAdmins();
+        $this->setJobTitles();
+
+        $this->command?->info('StaffAndOrgSeeder hoàn tất.');
+    }
+
+    private function restructureOrg(): void
+    {
+        $root = OrgUnit::firstWhere('code', 'company');
+        if (! $root) {
+            $this->command?->error('Không tìm thấy Công ty (code=company).');
+            return;
+        }
+
+        $hanoi = OrgUnit::firstWhere('code', 'branch-hn');
+        if (! $hanoi) {
+            $hanoi = OrgUnit::createNode([
+                'name' => 'Cơ sở Hà Nội: 59 Ngô Thì Nhậm',
+                'code' => 'branch-hn',
+            ], $root);
+        }
+
+        $hcm = OrgUnit::firstWhere('code', 'branch-hcm');
+        if (! $hcm) {
+            OrgUnit::createNode([
+                'name' => 'Cơ sở HCM: 207 Nguyễn Văn Thụ',
+                'code' => 'branch-hcm',
+            ], $root);
+        }
+
+        $deptCodes = ['mkt', 'telesales-mkt', 'bdm'];
+        foreach ($deptCodes as $code) {
+            $unit = OrgUnit::firstWhere('code', $code);
+            if ($unit && $unit->parent_id !== $hanoi->id) {
+                $unit->parent_id = $hanoi->id;
+                $unit->depth = $hanoi->depth + 1;
+                $unit->path = rtrim($hanoi->path, '/') . '/' . $unit->id . '/';
+                $unit->save();
+
+                $this->fixChildPaths($unit);
+            }
+        }
+
+        $this->command?->info('Cây tổ chức: thêm Cơ sở HN + HCM, chuyển phòng ban vào HN.');
+    }
+
+    private function fixChildPaths(OrgUnit $parent): void
+    {
+        foreach ($parent->children as $child) {
+            $child->depth = $parent->depth + 1;
+            $child->path = rtrim($parent->path, '/') . '/' . $child->id . '/';
+            $child->save();
+            $this->fixChildPaths($child);
+        }
+    }
+
+    private function createViewerRole(): void
+    {
+        $viewer = Role::updateOrCreate(
+            ['name' => 'Observer'],
+            ['description' => 'Xem toàn bộ, không thêm/sửa/xóa dịch vụ và nhân sự']
+        );
+
+        $viewPerms = Permission::whereIn('key', [
+            'lead.view',
+            'lead.view_phone',
+            'lead.export',
+            'report.view',
+            'report.view_all',
+        ])->pluck('id');
+
+        $viewer->permissions()->sync($viewPerms);
+    }
+
+    private function seedViewerAccounts(): void
+    {
+        $viewer = Role::firstWhere('name', 'Observer');
+        $root = OrgUnit::firstWhere('code', 'company');
+        // 2026-07-16: Observer gán vào Nhóm Giám Sát (id 38), scope custom vẫn = root để thấy toàn cây.
+        $opsMonSub = OrgUnit::firstWhere('code', 'ops-monitor-sub')
+            ?? OrgUnit::createNode(['name' => 'Nhóm Giám Sát', 'code' => 'ops-monitor-sub'],
+                OrgUnit::firstWhere('code', 'ops-monitor'));
+        if (! $viewer || ! $root) {
+            return;
+        }
+
+        // 2026-08-09: đổi email pattern → vh.obs01..05 (khớp SCRM + sbooking sau refactor).
+        $accounts = [
+            ['email' => 'vh.obs01', 'name' => 'Huyền', 'job_title' => 'Trợ lý kinh doanh'],
+            ['email' => 'vh.obs02', 'name' => 'Hằng', 'job_title' => 'Kế toán trưởng'],
+            ['email' => 'vh.obs03', 'name' => 'Ly', 'job_title' => 'Kế toán doanh thu'],
+            ['email' => 'vh.obs04', 'name' => 'An', 'job_title' => 'COO'],
+            ['email' => 'vh.obs05', 'name' => 'Tuyết', 'job_title' => 'CEO'],
+        ];
+
+        foreach ($accounts as $acc) {
+            $email = $acc['email'] . '@longevity.com.vn';
+            $user = User::firstWhere('email', $email);
+            if (! $user) {
+                $user = User::create([
+                    'name' => $acc['name'],
+                    'email' => $email,
+                    'job_title' => $acc['job_title'],
+                    'password' => '123456',
+                    'status' => User::STATUS_ACTIVE,
+                ]);
+            } else {
+                $user->update(['job_title' => $acc['job_title']]);
+            }
+
+            if (! Assignment::where('user_id', $user->id)->where('role_id', $viewer->id)->exists()) {
+                $assignment = Assignment::create([
+                    'user_id' => $user->id,
+                    'role_id' => $viewer->id,
+                    'org_unit_id' => $opsMonSub->id,
+                    'data_scope' => Assignment::SCOPE_CUSTOM,
+                ]);
+                $assignment->scopeNodes()->sync([$root->id]);
+            }
+        }
+
+        $this->command?->info('Seeded ' . count($accounts) . ' tài khoản Observer.');
+    }
+
+    private function seedSystemAdmins(): void
+    {
+        $admin = Role::firstWhere('name', 'Admin');
+        $root = OrgUnit::firstWhere('code', 'company');
+        // 2026-07-16: Bảo + Tú (Admin IT/QC) gán vào Nhóm Vận Hành, scope custom vẫn = root.
+        $opsRun = OrgUnit::firstWhere('code', 'ops-run')
+            ?? OrgUnit::createNode(['name' => 'Nhóm Vận Hành', 'code' => 'ops-run'],
+                OrgUnit::firstWhere('code', 'ops-monitor'));
+        if (! $admin || ! $root) {
+            return;
+        }
+
+        $accounts = [
+            ['email' => 'baoit', 'name' => 'Bảo', 'job_title' => 'IT hệ thống'],
+            ['email' => 'tumod', 'name' => 'Tú', 'job_title' => 'Kiểm soát hệ thống PK'],
+        ];
+
+        foreach ($accounts as $acc) {
+            $email = $acc['email'] . '@longevity.com.vn';
+            $user = User::firstWhere('email', $email);
+            if (! $user) {
+                $user = User::create([
+                    'name' => $acc['name'],
+                    'email' => $email,
+                    'job_title' => $acc['job_title'],
+                    'password' => '123456',
+                    'status' => User::STATUS_ACTIVE,
+                ]);
+            } else {
+                $user->update(['job_title' => $acc['job_title']]);
+            }
+
+            if (! Assignment::where('user_id', $user->id)->where('role_id', $admin->id)->exists()) {
+                $assignment = Assignment::create([
+                    'user_id' => $user->id,
+                    'role_id' => $admin->id,
+                    'org_unit_id' => $opsRun->id,
+                    'data_scope' => Assignment::SCOPE_CUSTOM,
+                ]);
+                $assignment->scopeNodes()->sync([$root->id]);
+            }
+        }
+
+        $this->command?->info('Seeded ' . count($accounts) . ' tài khoản Admin hệ thống.');
+    }
+
+    private function setJobTitles(): void
+    {
+        $titles = [
+            'Tạ Văn Hợi' => 'Clinic Manager (CM)',
+            'Trần Thị Thu Giang' => 'Clinic Manager (CM)',
+            'Nguyễn Hoành Đức' => 'Team Leader (TL)',
+        ];
+
+        foreach ($titles as $name => $title) {
+            User::where('name', $name)->update(['job_title' => $title]);
+        }
+
+        // 2026-07-16: Lương Thị Kim Phấn = CM Marketing Đà Nẵng, gán role CM sale ở Marketing Đà Nẵng.
+        $phan = User::firstWhere('name', 'Lương Thị Kim Phấn');
+        if (! $phan) {
+            $phan = User::create([
+                'name' => 'Lương Thị Kim Phấn',
+                'email' => 'ltkp@longevity.com.vn',
+                'job_title' => 'CM Marketing Đà Nẵng',
+                'password' => '123456',
+                'status' => User::STATUS_ACTIVE,
+            ]);
+        } else {
+            $phan->update(['job_title' => 'CM Marketing Đà Nẵng']);
+        }
+
+        $cmSale = Role::firstWhere('name', 'CM sale');
+        $mktDn = OrgUnit::firstWhere('code', 'marketing-dn');
+        if ($cmSale && $mktDn && ! Assignment::where('user_id', $phan->id)->where('role_id', $cmSale->id)->exists()) {
+            Assignment::create([
+                'user_id' => $phan->id,
+                'role_id' => $cmSale->id,
+                'org_unit_id' => $mktDn->id,
+                'data_scope' => Assignment::SCOPE_TEAM,
+            ]);
+        }
+
+        $this->command?->info('Cập nhật chức danh + gán Kim Phấn làm CM Marketing Đà Nẵng.');
+    }
+}

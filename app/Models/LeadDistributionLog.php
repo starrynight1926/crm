@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 #[Fillable([
     'lead_id', 'action', 'from_pool_level', 'to_pool_level',
-    'from_owner_id', 'to_owner_id', 'org_unit_id', 'rule_id', 'actor_id', 'created_at',
+    'from_owner_id', 'to_owner_id', 'org_unit_id', 'rule_id', 'actor_id', 'reason', 'created_at',
 ])]
 class LeadDistributionLog extends Model
 {
@@ -18,6 +18,11 @@ class LeadDistributionLog extends Model
     public const ACTION_RECALL = 'recall';
     public const ACTION_PULL = 'pull';
     public const ACTION_MANUAL = 'manual_assign';
+    // Phase 6.6
+    public const ACTION_ESCALATE = 'escalate';
+    public const ACTION_APPROVE = 'approve';
+    public const ACTION_REJECT = 'reject';
+    public const ACTION_MARK_OVERDUE = 'mark_overdue';
 
     protected function casts(): array
     {

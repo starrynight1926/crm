@@ -1,0 +1,193 @@
+<?php
+
+namespace Database\Seeders;
+
+use App\Models\Permission;
+use App\Models\Role;
+use Illuminate\Database\Seeder;
+
+/**
+ * SNAPSHOT role → permissions (2026-08-03) — nguồn sự thật duy nhất.
+ * Chạy CUỐI DatabaseSeeder để đè lên các sync trước đó. Dùng sync() (replace) — không phải
+ * syncWithoutDetaching — để đảm bảo state khớp 100%.
+ *
+ * Sửa role/perm: cập nhật MẢNG dưới đây, không sửa rải rác nhiều seeder khác.
+ */
+class RolePermissionSyncSeeder extends Seeder
+{
+    public const MATRIX = [
+        'Admin' => [
+            'connection.manage', 'contribution.set', 'field.approve', 'field.manage',
+            'lead.approve_source', 'lead.assign_direct',
+            'lead.book_action', 'lead.consult', 'lead.create', 'lead.delete',
+            'lead.distribute', 'lead.distribute_sale', 'lead.distribute_tele',
+            'lead.distribute_to_sale', 'lead.distribute_to_team', 'lead.export',
+            'lead.import', 'lead.pull_pool', 'lead.read_booking', 'lead.recall',
+            'lead.source_all',
+            'lead.update', 'lead.update_booking', 'lead.update_sale', 'lead.view',
+            'lead.view_phone', 'lead.view_pool', 'lead.view_team_pool', 'ops.manage', 'org.manage',
+            'payment.record', 'phase.close.booking', 'phase.close.call',
+            'phase.close.checkin', 'phase.close.new',
+            'phase.rollback', 'report.view', 'report.view_all', 'role.manage',
+            'rule.manage', 'service.manage', 'source.up.bdm', 'source.up.bod', 'source.up.wi', 'source.up.sa',
+            'source.up.mkt_br', 'source.up.ba', 'source.up.mkt', 'staff.manage',
+            'system.backup',
+            'ups.checkin', 'ups.confirm_daily', 'ups.override', 'ups.view',
+            'user.manage',
+            'recall.import', 'recall.view', 'recall.assign',
+            'lead.view_self_owned',
+        ],
+        'DM HCM' => [
+            'contribution.set', 'field.approve', 'field.manage', 'lead.approve_source',
+            'lead.assign_direct',
+            'lead.create', 'lead.delete', 'lead.distribute',
+            'lead.distribute_sale', 'lead.distribute_tele', 'lead.distribute_to_sale',
+            'lead.distribute_to_team', 'lead.export', 'lead.import', 'lead.read_booking',
+            'lead.recall', 'lead.update', 'lead.update_booking', 'lead.update_sale',
+            'lead.view', 'lead.view_phone', 'lead.view_pool', 'lead.view_team_pool', 'payment.record',
+            'phase.close.booking', 'phase.close.call', 'phase.close.checkin',
+            'phase.close.new', 'report.view', 'report.view_all',
+            'rule.manage', 'service.manage', 'source.up.bdm', 'source.up.bod', 'source.up.wi', 'source.up.sa',
+            'source.up.mkt_br', 'source.up.ba', 'source.up.mkt', 'user.manage',
+            'recall.import', 'recall.view', 'recall.assign',
+            'lead.view_self_owned',
+        ],
+        'Manager' => [
+            'lead.approve_source', 'lead.assign_direct',
+            'lead.create', 'lead.distribute',
+            'lead.distribute_sale', 'lead.distribute_tele', 'lead.distribute_to_sale',
+            'lead.distribute_to_team', 'lead.read_booking', 'lead.recall', 'lead.update',
+            'lead.update_booking', 'lead.update_sale', 'lead.view', 'lead.view_phone',
+            'lead.view_pool', 'lead.view_team_pool', 'phase.close.booking', 'phase.close.call',
+            'phase.close.checkin', 'phase.close.new',
+            'report.view', 'source.up.sa', 'source.up.mkt_br',
+            'lead.view_self_owned',
+        ],
+        'Admin cơ sở' => [
+            'lead.book_action', 'lead.create', 'lead.delete', 'lead.distribute',
+            'lead.distribute_sale', 'lead.distribute_tele', 'lead.distribute_to_sale',
+            'lead.distribute_to_team', 'lead.import', 'lead.read_booking', 'lead.recall',
+            'lead.update_booking', 'lead.view', 'lead.view_phone', 'lead.view_pool', 'lead.view_team_pool',
+            'phase.close.new', 'phase.close.booking', 'phase.close.call', 'phase.close.checkin',
+            'report.view', 'source.up.bdm', 'source.up.bod', 'source.up.wi', 'source.up.sa',
+            'ups.view', 'ups.checkin', 'ups.override', 'ups.confirm_daily',
+            // 2026-08-11: Admin cơ sở xem + chia kho re-call (không import).
+            'recall.view', 'recall.assign',
+        ],
+        'CM sale' => [
+            'lead.assign_direct',
+            'lead.consult', 'lead.create', 'lead.distribute',
+            // 2026-08-07: CM có CẢ 2 quyền chia số (tele + tiếp đón). Trước đây tách CM sale / CM Tele
+            // mỗi role 1 quyền — giờ gộp lại: ai là CM thì chia được cả hai luồng.
+            'lead.distribute_sale', 'lead.distribute_tele',
+            'lead.distribute_to_sale', 'lead.recall',
+            'lead.update', 'lead.update_sale', 'lead.update_booking', 'lead.view', 'lead.view_phone', 'lead.view_pool', 'lead.view_team_pool',
+            'lead.read_booking',
+            'payment.record', 'phase.close.booking', 'phase.close.call',
+            'phase.close.new', 'report.view',
+            'source.up.bdm', 'source.up.bod', 'source.up.wi', 'source.up.sa', 'source.up.mkt_br',
+            // 2026-08-11: CM sale chia kho re-call.
+            'recall.view', 'recall.assign',
+            'lead.view_self_owned',
+            // 2026-08-19: CM sale (Kim Phấn ĐN) trực tiếp tạo booking cho khách.
+            'lead.book_action',
+        ],
+        'CM Tele' => [
+            'lead.assign_direct',
+            'lead.create', 'lead.distribute',
+            // 2026-08-07: CM Tele cũng có luôn distribute_sale — nhất quán với 'CM sale'.
+            'lead.distribute_tele', 'lead.distribute_sale',
+            'lead.distribute_to_sale', 'lead.read_booking', 'lead.recall', 'lead.update',
+            'lead.update_booking', 'lead.view', 'lead.view_phone', 'lead.view_pool', 'lead.view_team_pool',
+            'payment.record', 'phase.close.call',
+            'phase.close.new', 'report.view', 'source.up.ba',
+            'recall.view', 'recall.assign',
+            'lead.view_self_owned',
+        ],
+        'Team Leader' => [
+            'lead.approve_source', 'lead.create', 'lead.distribute',
+            'lead.distribute_sale', 'lead.distribute_tele', 'lead.distribute_to_sale',
+            'lead.read_booking', 'lead.recall', 'lead.update', 'lead.view',
+            'lead.view_phone', 'lead.view_pool', 'lead.view_team_pool', 'payment.record',
+            'phase.close.booking', 'phase.close.call',
+            'phase.close.new', 'report.view', 'source.up.sa', 'source.up.mkt_br', 'source.up.ba',
+            'recall.view', 'recall.assign',
+            // 2026-08-19: TL thấy lead self-owned (MKT_BR/SA/BA/HL) của team mình.
+            'lead.view_self_owned',
+            // 2026-08-19: TL (Bông ĐN) trực tiếp tạo booking cho khách.
+            'lead.book_action', 'lead.update_booking',
+        ],
+        'Sale' => [
+            'lead.consult', 'lead.create', 'lead.update',
+            // 2026-08-05: thêm update_booking + read_booking + book_action — Sale nhận lead MKT qua UPS bucket
+            // (owner = sale, pipeline_phase=booking) phải sửa info + đặt booking được, không chỉ Team Tele.
+            'lead.update_sale', 'lead.update_booking', 'lead.read_booking', 'lead.book_action',
+            'lead.view', 'payment.record', 'phase.close.booking',
+            // 2026-08-09: thêm source.up.tele — Sale bucket MKT hôm nay được up BA (gate bởi UPS bucket).
+            'phase.close.call', 'phase.close.new', 'report.view', 'source.up.sa',
+            // 2026-08-15: source.up.hl — Sale trực hotline nhận lead trực tiếp (self-owned).
+            'source.up.mkt_br', 'source.up.ba', 'source.up.hl',
+            // 2026-08-19: Sale thấy lead self-owned của chính mình (creator/owner đã có nhánh riêng,
+            // perm này cho phép thấy trong scope org nếu là cùng team).
+            'lead.view_self_owned',
+        ],
+        'Team sale' => [
+            'lead.consult', 'lead.update', 'lead.update_sale',
+            // 2026-08-05: cùng lý do như Sale — Team sale được UPS chia lead MKT (owner + phase booking).
+            'lead.update_booking', 'lead.read_booking', 'lead.book_action',
+            'lead.view', 'lead.view_phone', 'payment.record', 'phase.close.booking',
+            'phase.close.call', 'phase.close.new',
+            // 2026-08-09: thêm source.up.tele — Sale bucket MKT hôm nay được up BA (gate bởi UPS bucket).
+            'report.view', 'source.up.sa', 'source.up.mkt_br', 'source.up.ba', 'source.up.hl',
+        ],
+        'Team sale ĐN' => [
+            // 2026-08-07: Team Linda ĐN — xuyên suốt tele+booking+sale. Thêm book_action để tự
+            // đặt booking (trước bị thiếu, không tạo được booking được).
+            'lead.book_action',
+            'lead.consult', 'lead.create', 'lead.read_booking',
+            'lead.update', 'lead.update_booking', 'lead.update_sale', 'lead.view',
+            'lead.view_phone', 'payment.record', 'phase.close.booking',
+            'phase.close.call', 'phase.close.new',
+            // 2026-08-09: thêm source.up.tele — Sale bucket MKT hôm nay được up BA (gate bởi UPS bucket).
+            'report.view', 'source.up.sa', 'source.up.mkt_br', 'source.up.ba', 'source.up.hl',
+        ],
+        'Team Tele' => [
+            'lead.create', 'lead.read_booking', 'lead.update',
+            'lead.update_booking', 'lead.view', 'lead.view_phone', 'phase.close.call',
+            'phase.close.new', 'source.up.ba',
+        ],
+        'Trực Page' => [
+            'lead.create', 'lead.import', 'lead.view', 'phase.close.new',
+            // 2026-08-11: Trực Page CHỈ up MKT. MKT_BR (khách quay lại do MKT tìm ra)
+            // để chính Sale điền — Trực Page không đụng.
+            'source.up.mkt',
+            // 2026-08-11: Trực Page phụ trách kho re-call (import + chia).
+            'recall.import', 'recall.view', 'recall.assign',
+        ],
+        'Trợ lý kinh doanh' => [
+            'lead.view', 'report.view',
+        ],
+        'BO (Lễ Tân)' => [
+            // 2026-08-08: BO chỉ dùng UPS list — bỏ 3 perm lead.* (không cần Dashboard/Khách hàng/Thiết lập).
+            'ups.checkin', 'ups.confirm_daily', 'ups.override', 'ups.view',
+        ],
+        'Observer' => [
+            // 2026-08-08: thêm view_pool để Observer xem được kho số (kho chung/team chưa chia).
+            'lead.export', 'lead.view', 'lead.view_phone', 'lead.view_pool', 'lead.view_team_pool',
+            'report.view', 'report.view_all',
+        ],
+    ];
+
+    public function run(): void
+    {
+        foreach (self::MATRIX as $roleName => $permKeys) {
+            $role = Role::firstOrCreate(['name' => $roleName]);
+            $permIds = Permission::whereIn('key', $permKeys)->pluck('id')->all();
+            if (count($permIds) < count($permKeys)) {
+                $missing = array_diff($permKeys, Permission::whereIn('key', $permKeys)->pluck('key')->all());
+                $this->command?->warn("Role '{$roleName}' thiếu perm chưa seed: " . implode(', ', $missing));
+            }
+            $role->permissions()->sync($permIds);
+        }
+    }
+}

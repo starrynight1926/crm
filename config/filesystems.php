@@ -38,10 +38,12 @@ return [
             'report' => false,
         ],
 
+        // 2026-08-13: shared hosting không cho symlink → lưu thẳng public/uploads
+        //   trong docroot. URL trả /uploads/... (relative, cùng host với site).
         'public' => [
             'driver' => 'local',
-            'root' => storage_path('app/public'),
-            'url' => rtrim(env('APP_URL', 'http://localhost'), '/').'/storage',
+            'root' => public_path('uploads'),
+            'url' => rtrim(env('APP_URL', 'http://localhost'), '/').'/uploads',
             'visibility' => 'public',
             'throw' => false,
             'report' => false,

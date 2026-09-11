@@ -1,0 +1,7 @@
+Tên khách hàng,SĐT,Ngày,PAGE,Camp,Nguồn QC,Link,Insight
+Nguyễn Văn Import 1,0987000001,17/07/2026,FBPage A,camp-summer,Facebook,https://fb.com/import1,khách quan tâm liệu trình
+Trần Thị Import 2,0987000002,17/07/2026,FBPage B,camp-summer,Facebook,https://fb.com/import2,muốn tư vấn giá
+Lê Văn Import 3,0987000003,17/07/2026,,,,,
+Phạm Thị Import 4,invalid_phone,17/07/2026,,,,,
+,0987000005,17/07/2026,,,,,
+Đỗ Văn Import 6,0987000001,17/07/2026,,,,,dupe với dòng 1
