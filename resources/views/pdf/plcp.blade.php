@@ -19,14 +19,16 @@
 
 {{-- ==== TRANG 1 ==== --}}
 <img src="{{ public_path('downloads/plcp-pages/page-01.png') }}" class="page-bg">
-{{-- Mã khách hàng --}}
-<div class="fill" style="left:47mm; top:48mm;">{{ $ma_kh }}</div>
-{{-- Ngày lập hồ sơ --}}
-<div class="fill" style="left:135mm; top:48mm;">{{ $ngay_lap }}</div>
-{{-- Cơ sở --}}
-<div class="fill" style="left:36mm; top:60mm;">{{ $co_so }}</div>
-{{-- Họ và tên (trong Phần 1) --}}
-<div class="fill" style="left:40mm; top:148mm;">{{ $ho_ten }}</div>
+{{-- Toạ độ (mm) đo từ PNG page-01 @180dpi bằng dò dòng dot-line.
+     Điều chỉnh 4 giá trị dưới đây nếu còn lệch. --}}
+{{-- Mã khách hàng (row 1 col trái, dots y≈37mm) --}}
+<div class="fill" style="left:40mm; top:33mm;">{{ $ma_kh }}</div>
+{{-- Ngày lập hồ sơ (row 1 col phải) --}}
+<div class="fill" style="left:135mm; top:33mm;">{{ $ngay_lap }}</div>
+{{-- Cơ sở (dòng full-width, dots y≈47mm) --}}
+<div class="fill" style="left:28mm; top:44mm;">{{ $co_so }}</div>
+{{-- Họ và tên (Phần 1, dots y≈107mm) --}}
+<div class="fill" style="left:40mm; top:104mm;">{{ $ho_ten }}</div>
 
 <pagebreak resetpagenum="1"/>
 <img src="{{ public_path('downloads/plcp-pages/page-02.png') }}" class="page-bg">
