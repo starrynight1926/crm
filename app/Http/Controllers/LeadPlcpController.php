@@ -4,18 +4,12 @@ namespace App\Http\Controllers;
 
 use App\Models\BookingLog;
 use App\Models\Lead;
-use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
+use Mpdf\Mpdf;
 
 /**
- * 2026-09-11 rev3 — Render PLCP bằng Blade + dompdf.
- *   Trước dùng FPDI overlay lên PDF template (image-based) — không đọc được toạ độ label,
- *   fill sai chỗ. Rewrite thành HTML template chủ động, fill 4 field:
- *     - Mã KH  (lead.code)
- *     - Ngày lập (booking_log.first_tiep_don_at || now)
- *     - Cơ sở (booking_log.facility.name)
- *     - Họ tên (lead.name)
- *   Guard: user hiện tại là CV1 (position=1) của booking log đó.
+ * 2026-09-11 rev4 — Render PLCP bằng mPDF (bỏ dompdf).
+ * mPDF hỗ trợ gradient CSS, Unicode Việt, @font-face — vẽ khớp PDF gốc hơn.
  */
 class LeadPlcpController extends Controller
 {
@@ -38,16 +32,28 @@ class LeadPlcpController extends Controller
             'co_so'    => (string) ($log->facility?->name ?? ''),
         ];
 
-        $pdf = Pdf::loadView('pdf.plcp', $data)
-            ->setPaper('a4', 'portrait')
-            ->setOptions([
-                'defaultFont'      => 'DejaVu Sans',
-                'isRemoteEnabled'  => false,
-                'isPhpEnabled'     => false,
-                'isHtml5ParserEnabled' => true,
-            ]);
+        $html = view('pdf.plcp', $data)->render();
+
+        $tmp = storage_path('app/mpdf-tmp');
+        if (! is_dir($tmp)) mkdir($tmp, 0775, true);
+
+        $mpdf = new Mpdf([
+            'mode' => 'utf-8',
+            'format' => 'A4',
+            'orientation' => 'P',
+            'margin_left' => 18,
+            'margin_right' => 15,
+            'margin_top' => 18,
+            'margin_bottom' => 15,
+            'default_font' => 'dejavusans',
+            'tempDir' => $tmp,
+        ]);
+        $mpdf->WriteHTML($html);
 
         $filename = 'PLCP_' . ($lead->code ?: $lead->id) . '.pdf';
-        return $pdf->download($filename);
+        return response($mpdf->Output($filename, 'S'), 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+        ]);
     }
 }
