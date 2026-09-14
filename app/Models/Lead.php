@@ -412,6 +412,7 @@ class Lead extends Model
 
     // Phase 6.6+ — trạng thái đặt lịch booking (khách đồng ý gặp)
     public const BOOKING_NOT_BOOKED = 'not_booked';
+    public const BOOKING_CHO_DUYET = 'cho_duyet'; // 2026-09-14: booking đã tạo, đang chờ admin sbooking duyệt
     public const BOOKING_BOOKED = 'booked';
     public const BOOKING_RESCHEDULED = 'rescheduled';
     // Phase 6.21 — 4 trạng thái sync từ lara-sbooking (trang_thai_khach + trang_thai=da_xong).
@@ -422,6 +423,7 @@ class Lead extends Model
 
     public const BOOKING_STATUSES = [
         self::BOOKING_NOT_BOOKED    => 'Chưa đặt',
+        self::BOOKING_CHO_DUYET     => 'Chờ duyệt',
         self::BOOKING_BOOKED        => 'Đã đặt',
         self::BOOKING_RESCHEDULED   => 'Hẹn lại',
         self::BOOKING_KHACH_DA_TOI  => 'Khách đã tới',
@@ -433,6 +435,7 @@ class Lead extends Model
     /** Emoji cho từng trạng thái booking (hiển thị badge — không cần font ngoài). */
     public const BOOKING_STATUS_ICONS = [
         self::BOOKING_NOT_BOOKED    => '🕐',
+        self::BOOKING_CHO_DUYET     => '⏳',
         self::BOOKING_BOOKED        => '📅',
         self::BOOKING_RESCHEDULED   => '🔄',
         self::BOOKING_KHACH_DA_TOI  => '✅',
@@ -444,6 +447,7 @@ class Lead extends Model
     /** Class Tailwind cho badge theo trạng thái. */
     public const BOOKING_STATUS_COLORS = [
         self::BOOKING_NOT_BOOKED    => 'bg-ink/5 text-ink/50 border-ink/10',
+        self::BOOKING_CHO_DUYET     => 'bg-amber-50 text-amber-700 border-amber-200',
         self::BOOKING_BOOKED        => 'bg-blue-100 text-blue-800 border-blue-200',
         self::BOOKING_RESCHEDULED   => 'bg-amber-100 text-amber-800 border-amber-200',
         self::BOOKING_KHACH_DA_TOI  => 'bg-green-100 text-green-800 border-green-200',

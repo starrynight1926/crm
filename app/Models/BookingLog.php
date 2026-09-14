@@ -182,7 +182,9 @@ class BookingLog extends Model
         if (! $latest) return;
         $map = [
             self::STATUS_DA_XAC_NHAN  => Lead::BOOKING_BOOKED,
-            self::STATUS_CHO_XAC_NHAN => Lead::BOOKING_NOT_BOOKED,
+            // 2026-09-14: 'cho_xac_nhan' = đã tạo booking, đang chờ admin sbooking duyệt.
+            // Trước đây map sang NOT_BOOKED làm dashboard hiển thị "Chưa đặt" — sai.
+            self::STATUS_CHO_XAC_NHAN => Lead::BOOKING_CHO_DUYET,
             self::STATUS_HUY_DOI_LICH => Lead::BOOKING_RESCHEDULED,
         ];
         $newStatus = $map[$latest->status] ?? null;
