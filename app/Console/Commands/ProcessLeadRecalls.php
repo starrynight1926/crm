@@ -16,7 +16,12 @@ class ProcessLeadRecalls extends Command
 {
     /** Booking status coi là "đã đặt lịch" (không recall theo điều kiện no_booking). */
     private const BOOKED_STATUSES = [
+        // 2026-09-14: thêm CHO_DUYET (booking đã tạo, chờ admin sbooking duyệt)
+        // + RESCHEDULED (hẹn lại — booking vẫn còn hiệu lực). Thiếu 2 cái này thì
+        // sale tạo booking xong 5' sau lead bị recall về kho oan.
+        Lead::BOOKING_CHO_DUYET,
         Lead::BOOKING_BOOKED,
+        Lead::BOOKING_RESCHEDULED,
         Lead::BOOKING_KHACH_DA_TOI,
         Lead::BOOKING_KHACH_TOI_TRE,
         Lead::BOOKING_DA_XONG,
