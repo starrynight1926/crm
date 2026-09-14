@@ -271,6 +271,9 @@ class OrgStaffSeeder extends Seeder
             ['email' => 'ntt2@longevity.com.vn', 'name' => 'Nguyễn Thị Thanh',    'job_title' => 'HC'],
             ['email' => 'nkc@longevity.com.vn',  'name' => 'Nguyễn Thị Kim Chi',  'job_title' => 'HC'],
             ['email' => 'lpd@longevity.com.vn',  'name' => 'Lê Phát Đạt',         'job_title' => 'SHC'],
+            // 2026-09-14: bổ sung 2 HC Team Ashley HCM.
+            ['email' => 'ntmc@longevity.com.vn', 'name' => 'Nguyễn Thị Minh Châu','job_title' => 'HC'],
+            ['email' => 'nat@longevity.com.vn',  'name' => 'Nguyễn Anh Thư',      'job_title' => 'HC'],
 
             // Nhân sự luồng 7 nguồn — không có job_title
             // Tài khoản Nhập Lead: mỗi cơ sở 1 account dùng chung cho team nhập lead.
@@ -396,6 +399,8 @@ class OrgStaffSeeder extends Seeder
             ['ntt2@longevity.com.vn', 'Sale', 'team-ashley-sale', Assignment::SCOPE_SELF, []],
             ['nkc@longevity.com.vn',  'Sale', 'team-ashley-sale', Assignment::SCOPE_SELF, []],
             ['lpd@longevity.com.vn',  'Sale', 'team-ashley-sale', Assignment::SCOPE_SELF, []],
+            ['ntmc@longevity.com.vn', 'Sale', 'team-ashley-sale', Assignment::SCOPE_SELF, []],
+            ['nat@longevity.com.vn',  'Sale', 'team-ashley-sale', Assignment::SCOPE_SELF, []],
 
             // Luồng 7 nguồn
             ['hn.trucpage@longevity.com.vn',  'Trực Page', 'team-nhap-lead',     Assignment::SCOPE_SELF, []],

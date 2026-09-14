@@ -94,6 +94,9 @@ class RealCmStaffSeeder extends Seeder
             ['ntt2@longevity.com.vn', 'Nguyễn Thị Thanh', $roleSale, OrgUnit::firstWhere('code','team-ashley-sale'), Assignment::SCOPE_SELF, [], 'HC'],
             ['nkc@longevity.com.vn', 'Nguyễn Thị Kim Chi', $roleSale, OrgUnit::firstWhere('code','team-ashley-sale'), Assignment::SCOPE_SELF, [], 'HC'],
             ['lpd@longevity.com.vn', 'Lê Phát Đạt', $roleSale, OrgUnit::firstWhere('code','team-ashley-sale'), Assignment::SCOPE_SELF, [], 'SHC'],
+            // 2026-09-14: bổ sung 2 HC Team Sale Ashley.
+            ['ntmc@longevity.com.vn', 'Nguyễn Thị Minh Châu', $roleSale, OrgUnit::firstWhere('code','team-ashley-sale'), Assignment::SCOPE_SELF, [], 'HC'],
+            ['nat@longevity.com.vn', 'Nguyễn Anh Thư', $roleSale, OrgUnit::firstWhere('code','team-ashley-sale'), Assignment::SCOPE_SELF, [], 'HC'],
         ];
 
         foreach ($staff as [$email, $name, $role, $org, $scope, $scopeNodes, $jobTitle]) {
