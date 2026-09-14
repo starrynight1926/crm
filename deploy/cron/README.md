@@ -13,16 +13,20 @@ chmod +x deploy/cron/queue-drain.sh
 
 Vào **cPanel → Advanced → Cron Jobs**, thêm entry:
 
-| Field   | Value |
-|---------|-------|
-| Minute  | `*`   |
-| Hour    | `*`   |
-| Day     | `*`   |
-| Month   | `*`   |
-| Weekday | `*`   |
+| Field   | Value  |
+|---------|--------|
+| Minute  | `*/15` |
+| Hour    | `*`    |
+| Day     | `*`    |
+| Month   | `*`    |
+| Weekday | `*`    |
 | Command | `/home/sweetsic/public_html/data.sweetsica.com/deploy/cron/queue-drain.sh` |
 
-Hoặc dùng preset **"Once per minute (*  *  *  *  *)"** rồi paste command.
+**Không dùng `* * * * *`** — shared host (cPanel) hay auto-throttle cron minute,
+rewrite thành `*/15` hoặc random interval để chống flood. Không phải bug script.
+
+Script tự loop bên trong (worker sống 14 phút, sleep 3s giữa lần pick job) →
+job đẩy trong 3-5s, không phụ thuộc cron interval.
 
 ## Kiểm tra
 
@@ -35,11 +39,26 @@ Thấy `START queue:work` mỗi phút → OK. Có `SKIP` = batch trước chưa 
 
 ## Đặc điểm
 
-- **Max 55s/batch** để cron minute tiếp không đụng nhau.
-- **flock** chống 2 instance chạy song song → an toàn khi batch kéo dài.
+- **Self-loop worker** sống ~14 phút (`--max-time=840`), tự thoát trước cron kế tiếp.
+- **`--sleep=3`**: khi hết job worker ngủ 3s rồi check lại → job mới đẩy trong 3-5s.
+- **flock** chống 2 instance chạy song song (nếu cron trigger sớm hơn) → an toàn.
 - **Log rotate tay** giữ 5 file × 2MB (không cần logrotate).
-- **PHP binary** default = `php`. Nếu host dùng path khác (VD `/usr/local/bin/php74`): export `PHP_BIN=...` trong entry hoặc sửa command.
+- **PHP binary** default = `php`. Đổi qua env: `PHP_BIN=/opt/cpanel/ea-php85/root/usr/bin/php`.
+- **Worker lifetime** đổi qua env: `WORKER_MAX_TIME=300` (5 phút) cho debug.
 
 ## Delay
 
-Job phải chờ **≤ 1 phút** để cron minute tiếp pick up. Với import lead + notification thì ok (không cần realtime tuyệt đối).
+- Job đẩy trong **~3-5 giây** khi worker đang sống (đa số thời gian).
+- Trường hợp worker vừa exit (max-time hết) + cron chưa gọi lại: delay tối đa =
+  cron interval (khuyến nghị 15 phút → worst-case 60s giữa 2 lần cron gọi vì
+  worker đã chạy 14/15 phút xong).
+
+## Reload code sau deploy
+
+Sau `git pull` có sửa Job/Service, worker đang sống vẫn giữ code cũ trong RAM. Chạy:
+
+```bash
+php artisan queue:restart
+```
+
+Worker sẽ tự thoát ở lần pick job kế tiếp, cron sau spawn worker mới với code mới.

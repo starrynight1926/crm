@@ -1,20 +1,28 @@
 #!/bin/bash
 # ------------------------------------------------------------------
-# Cron entry: gọi file này mỗi 1 phút trên cPanel Cron Jobs.
-#   * * * * * /home/sweetsic/public_html/data.sweetsica.com/deploy/cron/queue-drain.sh
+# Cron entry: gọi file này bất kỳ interval nào cPanel cho phép
+# (khuyến nghị mỗi 15 phút — nhiều shared host auto-throttle cron
+# minute về interval lớn hơn, nên đừng đấu tranh với */1).
 #
-# Chạy queue:work --stop-when-empty (max 55s để cron tiếp không đụng)
-# → drain hết ProcessRawLead + notification broadcast trong batch hiện tại,
-# thoát; cron minute tiếp lại chạy nếu có job mới.
+#   */15 * * * * /home/sweetsic/public_html/data.sweetsica.com/deploy/cron/queue-drain.sh
+#
+# Self-loop worker: mỗi lần cron gọi → spawn 1 worker sống ~14 phút,
+# bên trong queue:work tự loop pick job mỗi vài giây → job push sbooking
+# đẩy sang chỉ sau ~3-5 giây, không phải đợi 15 phút.
+# Lần cron kế tiếp: worker cũ đã tự exit (max-time=840), lần mới bắt tay.
+# Nếu cron chạy chồng vì host chạy sớm hơn: flock skip an toàn.
 #
 # Log rotate tay: giữ 5 file × 2MB.
-# Lock file chống chạy chồng (nếu batch trước chưa xong, batch mới skip).
 # ------------------------------------------------------------------
 
 APP_DIR="/home/sweetsic/public_html/data.sweetsica.com"
 LOG_FILE="$APP_DIR/storage/logs/queue.log"
 LOCK_FILE="$APP_DIR/storage/framework/queue.lock"
 PHP_BIN="${PHP_BIN:-php}"
+
+# Worker sống 14 phút = 840s (dưới cron interval 15 phút để lần sau bắt tay sạch).
+# Đổi biến này qua env nếu cần: WORKER_MAX_TIME=300 (5 phút) cho debug.
+MAX_TIME="${WORKER_MAX_TIME:-840}"
 
 cd "$APP_DIR" || exit 1
 
@@ -29,10 +37,12 @@ fi
 # flock: chỉ 1 instance chạy cùng lúc. -n = non-blocking (skip nếu đang chạy).
 (
     if ! flock -n 9; then
-        echo "[$(date '+%F %T')] SKIP — instance trước chưa xong." >> "$LOG_FILE"
+        echo "[$(date '+%F %T')] SKIP — worker trước còn sống (max-time chưa hết)." >> "$LOG_FILE"
         exit 0
     fi
-    echo "[$(date '+%F %T')] START queue:work" >> "$LOG_FILE"
-    "$PHP_BIN" artisan queue:work --stop-when-empty --max-time=55 --tries=3 --backoff=30 >> "$LOG_FILE" 2>&1
+    echo "[$(date '+%F %T')] START queue:work (self-loop ${MAX_TIME}s, sleep 3s)" >> "$LOG_FILE"
+    # KHÔNG dùng --stop-when-empty: worker giữ sống, tự sleep 3s giữa các lần pick job trống.
+    # --max-time=$MAX_TIME: worker tự exit sau khoảng thời gian đó → cron kế tiếp bắt tay.
+    "$PHP_BIN" artisan queue:work --sleep=3 --max-time="$MAX_TIME" --tries=3 --backoff=30 >> "$LOG_FILE" 2>&1
     echo "[$(date '+%F %T')] END exit=$?" >> "$LOG_FILE"
 ) 9>"$LOCK_FILE"
