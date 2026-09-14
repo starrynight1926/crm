@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\DB;
 return new class extends Migration
 {
     private array $map = [
-        'Hà Nội'  => 'Cơ sở 1: 59 Ngô Thì Nhậm, Hà Nội',
+        'Hà Nội'  => 'Cơ sở 1: số 59 Ngô Thì Nhậm, P. Hai Bà Trưng, TP. Hà Nội',
         'HCM'     => 'Cơ sở 2: 207 Nguyễn Văn Thụ, Hồ Chí Minh',
         'Đà Nẵng' => 'Cơ sở 3: Số 11 - 15 đường Trần Đăng Ninh, phường Hòa Cường, TP. Đà Nẵng',
     ];
