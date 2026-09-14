@@ -27,6 +27,8 @@
 <div class="fill" style="left:135mm; top:33mm;">{{ $ngay_lap }}</div>
 {{-- Cơ sở (dòng full-width, dots y≈47mm) --}}
 <div class="fill" style="left:28mm; top:44mm;">{{ $co_so }}</div>
+{{-- Bác sĩ phụ trách (row 3 col phải, cùng hàng với PHA) --}}
+<div class="fill" style="left:150mm; top:55mm;">{{ $bac_si }}</div>
 {{-- Họ và tên (Phần 1, dots y≈107mm) --}}
 <div class="fill" style="left:40mm; top:104mm;">{{ $ho_ten }}</div>
 

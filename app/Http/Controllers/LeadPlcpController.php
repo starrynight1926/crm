@@ -25,11 +25,20 @@ class LeadPlcpController extends Controller
         }
 
         $ngay = $log->first_tiep_don_at ?: now();
+
+        // Cơ sở: walk parent chain lên root (VD "Khối chuyên môn" là dept con,
+        // giấy tờ cần tên cơ sở vật lý ở root như "Cơ sở Hà Nội: 59 Ngô Thì Nhậm").
+        $fac = $log->facility;
+        while ($fac && $fac->parent_id) {
+            $fac = $fac->parent;
+        }
+
         $data = [
             'ma_kh'    => (string) ($lead->code ?? ''),
             'ho_ten'   => (string) ($lead->name ?? ''),
             'ngay_lap' => $ngay->format('d/m/Y'),
-            'co_so'    => (string) ($log->facility?->name ?? ''),
+            'co_so'    => (string) ($fac?->name ?? ''),
+            'bac_si'   => (string) ($log->doctor?->name ?? ''),
         ];
 
         $html = view('pdf.plcp', $data)->render();
