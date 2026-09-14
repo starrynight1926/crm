@@ -2016,7 +2016,7 @@ new class extends Component
         //   vào pool_unit trong scope. Trước đây tick skip cho MKT nên MKT không dính; các nguồn khác dính chưởng.
         if (! ($mktPoolAssigned ?? false) && ! $this->personId && str_starts_with($this->poolTarget, 'org:')
             && ! in_array((int) substr($this->poolTarget, 4), auth()->user()->visiblePoolUnitIds(), true)) {
-            $this->addError('poolTarget', 'Phòng/team không nằm trong phạm vi của bạn.');
+            $this->addError('poolTarget', 'Kho đã chọn nằm ngoài phạm vi của bạn — bỏ chọn hoặc chọn kho trong cơ sở bạn quản lý.');
             return;
         }
 
@@ -4485,9 +4485,23 @@ new class extends Component
                                         </div>
                                         <div>
                                             <label class="block text-[10px] text-ink/50 mb-1">Địa điểm</label>
+                                            @php
+                                                // 2026-09-14: filter branch theo visiblePoolUnitIds của user thao tác
+                                                // để không chọn được branch ngoài scope (chọn xong Save = báo lỗi
+                                                // "Phòng/team không nằm trong phạm vi của bạn" — bug UX kẹt).
+                                                // Admin có perm lead.distribute_all thấy hết.
+                                                $__visiblePoolIds = auth()->user()->visiblePoolUnitIds();
+                                                $__branchQuery = \App\Models\PoolUnit::where('is_active', true)
+                                                    ->where('kind', 'branch')
+                                                    ->orderBy('sort')->orderBy('name');
+                                                if (! auth()->user()->hasPermission('lead.distribute_all')) {
+                                                    $__branchQuery->whereIn('id', $__visiblePoolIds);
+                                                }
+                                                $__branches = $__branchQuery->get();
+                                            @endphp
                                             <select wire:model.live="poolBranchId" @disabled($selectedPerson || $poolCompanyMode) class="w-full border border-gold-200 rounded-md px-2 py-2 text-sm bg-white">
                                                 <option value="">— chọn địa điểm —</option>
-                                                @foreach (\App\Models\PoolUnit::where('is_active',true)->where('kind','branch')->orderBy('sort')->orderBy('name')->get() as $b)
+                                                @foreach ($__branches as $b)
                                                     <option value="{{ $b->id }}">{{ $b->name }}</option>
                                                 @endforeach
                                             </select>
