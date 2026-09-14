@@ -43,24 +43,37 @@ class RecallByColumnUpdates extends Command
         $day1Minutes = max(1, (int) $this->option('day1-minutes'));
         $day3Minutes = max(1, (int) $this->option('day3-minutes'));
 
+        // 2026-09-14: booking đang hiệu lực = "có tiến triển" — không recall dù chưa gọi.
+        // Sale nguồn BOD/MKT_BR/SA/BA/HL tự tạo lead + booking ngay là hợp lệ,
+        // không nên bị day1 recall oan vì "chưa có call_log".
+        $activeBookingStatuses = [
+            Lead::BOOKING_CHO_DUYET,
+            Lead::BOOKING_BOOKED,
+            Lead::BOOKING_RESCHEDULED,
+            Lead::BOOKING_KHACH_DA_TOI,
+            Lead::BOOKING_KHACH_TOI_TRE,
+            Lead::BOOKING_DA_XONG,
+        ];
+
         Lead::query()
             ->where('skip_recall', false)
             ->where('pool_level', Lead::POOL_PERSONAL)
             ->whereNotNull('assigned_at')
             ->with('orgUnit')
-            ->chunkById(200, function ($leads) use ($engine, &$recalled, $now, $day1Minutes, $day3Minutes) {
+            ->chunkById(200, function ($leads) use ($engine, &$recalled, $now, $day1Minutes, $day3Minutes, $activeBookingStatuses) {
                 foreach ($leads as $lead) {
                     $minutesSinceAssigned = $lead->assigned_at->diffInMinutes($now, false);
+                    $hasBooking = in_array($lead->booking_status, $activeBookingStatuses, true);
 
-                    // Day 1 — chưa có call_log nào có ghi nhận (note ≠ '').
-                    if ($minutesSinceAssigned >= $day1Minutes && ! $this->hasCallWithNote($lead)) {
-                        $this->recallLead($lead, $engine, "Thu hồi tự động (day1 ≥ {$day1Minutes}p): chưa có ghi nhận cuộc gọi nào.");
+                    // Day 1 — chưa có call_log nào có ghi nhận VÀ chưa có booking.
+                    if ($minutesSinceAssigned >= $day1Minutes && ! $this->hasCallWithNote($lead) && ! $hasBooking) {
+                        $this->recallLead($lead, $engine, "Thu hồi tự động (day1 ≥ {$day1Minutes}p): chưa có ghi nhận cuộc gọi + chưa có booking.");
                         $recalled['day1']++;
                         continue;
                     }
 
-                    // Day 3 — đủ điều kiện cột 4+5 + bước tiếp theo.
-                    if ($minutesSinceAssigned >= $day3Minutes) {
+                    // Day 3 — đủ điều kiện cột 4+5 + bước tiếp theo. Skip nếu đã có booking.
+                    if ($minutesSinceAssigned >= $day3Minutes && ! $hasBooking) {
                         $missing = $this->missingDay3Requirements($lead);
                         if ($missing !== []) {
                             $this->recallLead($lead, $engine, "Thu hồi tự động (day3 ≥ {$day3Minutes}p): thiếu " . implode(', ', $missing) . '.');
