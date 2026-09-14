@@ -30,3 +30,4 @@ public/Demo import*.xlsx
 /public/uploads/*
 !/public/uploads/.gitkeep
 public/logs.md
+scratchpad/
