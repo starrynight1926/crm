@@ -3876,8 +3876,8 @@ new class extends Component
                                 </div>
                                 <div class="text-xs text-ink/70 flex flex-wrap gap-x-4 gap-y-1">
                                     <span>🏥 <b>{{ $facLabel }}</b></span>
-                                    <span>👨‍⚕️ BS: <b>{{ $bl->doctor->name ?? '—' }}</b></span>
-                                    <span>💊 DV: <b>{{ $bl->service->name ?? '—' }}</b></span>
+                                    <span>👨‍⚕️ BS: <b>{{ $bl->doctorDisplayName() ?? '—' }}</b></span>
+                                    <span>💊 DV: <b>{{ $bl->serviceDisplayName() ?? '—' }}</b></span>
                                     <span>🧑‍💼 CV:
                                         @if ($bl->consultants->isNotEmpty())
                                             <b>{{ $bl->consultants->pluck('name')->implode(', ') }}</b>

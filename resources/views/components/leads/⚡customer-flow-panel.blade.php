@@ -430,8 +430,8 @@ new class extends Component
                                 <div class="flex-1">
                                     <div class="text-xs text-ink/50">
                                         Lịch: {{ $bl->scheduled_at?->format('d/m/Y H:i') ?? 'chưa đặt' }}
-                                        · BS: {{ $bl->doctor->name ?? '—' }}
-                                        · DV: {{ $bl->service->name ?? '—' }}
+                                        · BS: {{ $bl->doctorDisplayName() ?? '—' }}
+                                        · DV: {{ $bl->serviceDisplayName() ?? '—' }}
                                         · bởi {{ $bl->user->name ?? 'system' }}
                                     </div>
                                     @if ($bl->note)<div class="text-ink/80 mt-1">{{ $bl->note }}</div>@endif

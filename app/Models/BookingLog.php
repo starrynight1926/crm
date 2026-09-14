@@ -79,6 +79,36 @@ class BookingLog extends Model
         return $this->belongsTo(Service::class);
     }
 
+    // Phase C1.d+: booking mới lưu sb_bac_si_id / sb_dich_vu_id (theo sbooking_id),
+    // doctor_id / service_id giữ null → dùng 2 rel này cho hiển thị.
+    public function sbBacSi(): BelongsTo
+    {
+        return $this->belongsTo(SbBacSi::class, 'sb_bac_si_id', 'sbooking_id');
+    }
+
+    public function sbService(): BelongsTo
+    {
+        return $this->belongsTo(SbService::class, 'sb_dich_vu_id', 'sbooking_id');
+    }
+
+    /** Tên BS ưu tiên sb_bac_si (booking mới), fallback doctor_id (legacy). */
+    public function doctorDisplayName(): ?string
+    {
+        if ($this->sb_bac_si_id && $this->sbBacSi) {
+            return $this->sbBacSi->displayName();
+        }
+        return $this->doctor?->name;
+    }
+
+    /** Tên DV ưu tiên sb_service (booking mới), fallback service_id (legacy). */
+    public function serviceDisplayName(): ?string
+    {
+        if ($this->sb_dich_vu_id && $this->sbService) {
+            return $this->sbService->ten;
+        }
+        return $this->service?->name;
+    }
+
     public function facility(): BelongsTo
     {
         return $this->belongsTo(Facility::class);

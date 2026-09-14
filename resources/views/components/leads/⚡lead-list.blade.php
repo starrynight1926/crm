@@ -430,8 +430,8 @@ new class extends Component
                 default                => '-',
             };
             $fac = $bl->facility ? (($bl->facility->parent?->name ? $bl->facility->parent->name . ' › ' : '') . $bl->facility->name) : '-';
-            $bs = $bl->doctor?->name ?: '-';
-            $dv = $bl->service?->name ?: '-';
+            $bs = $bl->doctorDisplayName() ?: '-';
+            $dv = $bl->serviceDisplayName() ?: '-';
             $cv = $bl->consultants->isNotEmpty() ? $bl->consultants->pluck('name')->implode(', ') : '-';
             $status = \App\Models\BookingLog::STATUSES[$bl->status] ?? $bl->status;
             $sync = $syncLabels[$bl->sync_status] ?? '';
