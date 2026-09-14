@@ -16,7 +16,7 @@ use Illuminate\Support\Facades\DB;
  *   - MKT       → Trực Page (Admin/DM HCM để mgmt flex).
  *   - MKT_BR    → Tư vấn viên = mọi Sale role + CM sale + Manager + DM HCM.
  *   - SA        → như MKT_BR (bucket-gate lọc A/B/C/OFF khi runtime).
- *   - BA        → Tele (Team Tele + CM Tele) + Sale roles (Sale bucket MKT flex qua bucket-gate).
+ *   - BA        → Tele (Team Tele + CM Tele) + Sale roles + DM HCM (2026-09-14: DM cần thêm BA).
  *   - BDM/BOD   → CM cơ sở (CM sale + Admin cơ sở + DM HCM).
  *   - WI / HL   → Admin cơ sở + Admin.
  *
@@ -41,7 +41,7 @@ class SourcePermissionMatrixSeeder extends Seeder
             'Sale', 'Team Leader', 'Team sale', 'Team sale ĐN',
         ],
         'source.up.ba' => [
-            'Admin', 'Team Tele', 'CM Tele',
+            'Admin', 'DM HCM', 'Team Tele', 'CM Tele',
             'Sale', 'Team Leader', 'Team sale', 'Team sale ĐN',
         ],
         'source.up.bdm' => [
