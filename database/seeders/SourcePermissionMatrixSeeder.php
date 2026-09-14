@@ -16,9 +16,10 @@ use Illuminate\Support\Facades\DB;
  *   - MKT       → Trực Page (Admin/DM HCM để mgmt flex).
  *   - MKT_BR    → Tư vấn viên = mọi Sale role + CM sale + Manager + DM HCM.
  *   - SA        → như MKT_BR (bucket-gate lọc A/B/C/OFF khi runtime).
- *   - BA        → Tele (Team Tele + CM Tele) + Sale roles + DM HCM (2026-09-14: DM cần thêm BA).
+ *   - BA        → Tele + Sale roles + DM HCM + CM sale (2026-09-14: mở CM sale).
  *   - BDM/BOD   → CM cơ sở (CM sale + Admin cơ sở + DM HCM).
- *   - WI / HL   → Admin cơ sở + Admin.
+ *   - WI        → Admin/Admin cơ sở/DM HCM/CM sale + Sale + TL + Team sale (2026-09-14: mở toàn sale).
+ *   - HL        → Admin/Admin cơ sở/DM HCM/CM/CM Tele + Sale + TL + Team sale (2026-09-14: mở tư vấn viên).
  *
  * Admin (role "Admin") không cần grant riêng — có `lead.source_all` bypass toàn bộ.
  * Nhưng grant luôn cho tường minh (an toàn nếu ai đó bỏ nhầm perm bypass).
@@ -41,7 +42,8 @@ class SourcePermissionMatrixSeeder extends Seeder
             'Sale', 'Team Leader', 'Team sale', 'Team sale ĐN',
         ],
         'source.up.ba' => [
-            'Admin', 'DM HCM', 'Team Tele', 'CM Tele',
+            // 2026-09-14: thêm CM sale — CM cũng phải nhập được BA (booking appointment) trực tiếp.
+            'Admin', 'DM HCM', 'CM sale', 'Team Tele', 'CM Tele',
             'Sale', 'Team Leader', 'Team sale', 'Team sale ĐN',
         ],
         'source.up.bdm' => [
@@ -50,11 +52,17 @@ class SourcePermissionMatrixSeeder extends Seeder
         'source.up.bod' => [
             'Admin', 'Admin cơ sở', 'DM HCM', 'CM sale',
         ],
+        // 2026-09-14: mở WI cho toàn Sale + CM sale + TL — Walk-in khách tự tới,
+        // sale gặp trực tiếp thì nhập luôn (giống flow BDM/BOD). Cascade chia số ở UI.
         'source.up.wi' => [
-            'Admin', 'Admin cơ sở',
+            'Admin', 'Admin cơ sở', 'DM HCM', 'CM sale',
+            'Sale', 'Team Leader', 'Team sale', 'Team sale ĐN',
         ],
+        // 2026-09-14: mở HL cho tư vấn viên — Sale + Team sale + TL + CM sale + CM Tele.
+        // Trước đây chỉ Admin/Admin cơ sở → user báo "tư vấn viên không thêm được".
         'source.up.hl' => [
-            'Admin', 'Admin cơ sở',
+            'Admin', 'Admin cơ sở', 'DM HCM', 'CM sale', 'CM Tele',
+            'Sale', 'Team Leader', 'Team sale', 'Team sale ĐN',
         ],
     ];
 
