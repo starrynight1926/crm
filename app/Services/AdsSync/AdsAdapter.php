@@ -6,7 +6,7 @@ use App\Models\SourceConnection;
 
 /**
  * Adapter cho từng nền tảng Ads. Mỗi adapter kéo lead mới kể từ last_synced_at
- * và trả về mảng payload chuẩn (name, phone, camp, ad_source, ...).
+ * và trả về mảng payload chuẩn (name, phone, camp, ...).
  */
 interface AdsAdapter
 {

@@ -1,6 +1,7 @@
-# Lara-SCRM — ERD (thiết kế dữ liệu chi tiết)
+# Lara Data Source — ERD (thiết kế dữ liệu chi tiết)
 
 > Đi kèm `scope.md`. 2 connection Laravel: `pgsql` (raw) + `mysql` (clean, default).
+> Cập nhật 2026-07-15: mở rộng `leads` cho luồng 6 nguồn + bảng mới `recall_policies` / `system_settings` (xem B2, B3).
 
 ---
 
@@ -82,23 +83,98 @@ Nhật ký webhook/API call: id, source_type, connection_id (logic), http_status
 | classification | enum: `new` / `lead` / `follow` / `net` / `tai_chinh_yeu` / `quan_tam` / `tham_khao` / `tim_hieu` / `goi_lai_sau` / `klld` / `missed` / `booking` / `show` / `close` |
 | status_1 / status_2 | text — Ghi nhận tình trạng lần 1 / lần 2 |
 | note | text |
-| pool_level | enum: `common` / `team` / `personal` |
+| pool_level | enum: `common` / `booking` / `ctv` / `approval` / `team` / `personal` — mở rộng 2026-07-15 để phản ánh 6 luồng nguồn |
+| source_group | enum: `marketing` / `data_cold` / `bdm` / `referral` / `ctv` / `walk_in` — nhóm nguồn (6.3) |
+| approval_status | enum: `none` / `pending` / `approved` / `rejected` — dùng cho luồng "Khách tự đến" |
+| approval_by, approved_at | FK users, timestamp — ai duyệt, khi nào |
+| overdue_marked_at | timestamp nullable — đánh dấu lead từ chối quá hạn ở kho booking (không auto-delete) |
+| recall_at | timestamp nullable — mốc thu hồi (do CM chia đặt); null = chia vĩnh viễn |
+| is_permanent_assignment | bool default false — "Chia vĩnh viễn" (admin vẫn thu hồi được) |
+| booking_status | enum: `not_booked` / `booked` / `rescheduled` — trạng thái đặt lịch |
+| pipeline_phase | enum: `booking` / `sale` — giai đoạn lifecycle (Phase 6.8, legacy) |
+| pipeline_status | enum: `waiting_distribute` / `in_care` — trạng thái trong giai đoạn (Phase 6.8, legacy) |
+| **phase** | **tinyint 1..7 (Phase 6.21, 2026-07-30) — Customer Flow: 1 Thêm mới / 2 Chia số / 3 Gọi điện / 4 Booking / 5 Check-in / 6 Bán hàng / 7 Sử dụng DV. Index. Default 1.** |
+| **is_first_visit** | **bool default true (Phase 6.21) — "Đến lần đầu"; bỏ tick khi khách quay lại → reset `phase = 3`, giữ lịch sử `call_logs`/`booking_logs` cũ.** |
+| consultant_1_id, consultant_2_id, consultant_3_id | FK **users** (Phase 6.9, trước đó là staff_members) — chuyên viên tư vấn = user team sale |
+| doctor_id | FK staff_members — bác sĩ tư vấn (không đăng nhập) |
+| ~~performing_doctor_id, treatment_1..4, quality_rating~~ | **Đã drop Phase 6.11** — chuyển sang bảng `lead_treatments` (thẻ 1-N) |
+| ~~page, camp~~ | **Đã drop Phase 6.20** — chuyển sang `lead_custom_values` (custom field cấp công ty, key `page`/`camp`) |
 | owner_id | FK users, nullable (CHIA CHO) |
 | receiver_id | FK users, nullable (Người nhận LEAD / thu thập) |
 | org_unit_id | FK org_units, nullable — team đang giữ |
 | assigned_at, last_care_at | datetime — tính SLA thu hồi |
 | timestamps, soft delete | |
 
-Index: (`org_unit_id`,`classification`), (`owner_id`,`classification`), (`received_date`), (`camp`), (`ad_source`), (`pool_level`).
+Index: (`org_unit_id`,`classification`), (`owner_id`,`classification`), (`received_date`), (`camp`), (`ad_source`), (`pool_level`), (`pipeline_phase`,`pipeline_status`).
 
 Bổ sung 2026-07-03 (mã KH + trường tùy biến, xem scope.md 4.1–4.2):
 - **leads** thêm cột: `code` varchar unique (VD `KH-00123-MKT-FB`, sinh sau khi có id), `type_code` varchar(10) (`MKT`/`C`/`BDM`/`SI`/`N`), `source_code` varchar(10) nullable.
 - **custom_fields** — id, org_unit_id FK nullable (null = mức công ty), `key` (unique trong org), label, field_type (`text`/`number`/`date`/`select`), options JSON (cho select), required bool, position, active, timestamps. Quyền `field.manage`.
 - **lead_custom_values** — lead_id FK + custom_field_id FK (PK kép), value text. Bộ trường áp theo org_unit đang giữ lead + tổ tiên (path) + mức công ty.
 
-**lead_status_logs** — id, lead_id FK, user_id FK, field (`classification`/`status_1`/`status_2`/`note`), old_value, new_value, created_at. Nguồn cho lịch sử chăm sóc + audit.
+**staff_members** (Phase 6.12 — thêm cột `title`): id, `name` (tên riêng), `title` (chức vụ), facility_id FK, role (`doctor`/`consultant`), active, timestamps. `title` nullable — hiển thị "Tên\n(Chức vụ)" qua `displayName()`.
 
-**lead_distribution_logs** — id, lead_id FK, action (`distribute`/`recall`/`pull`/`manual_assign`), from_pool_level, to_pool_level, from_owner_id, to_owner_id, org_unit_id, rule_id nullable, actor_id nullable (null = hệ thống), created_at.
+**lead_treatments** (Phase 6.11) — id, lead_id FK (cascade), `sequence` (1,2,3...), `performed_at` date nullable, `performing_doctor_id` FK staff_members nullable, `quality_rating` text nullable, timestamps. Index `(lead_id, sequence)`. Mỗi row = 1 lần liệu trình, có bác sĩ + đánh giá riêng.
+
+**lead_status_logs** — id, lead_id FK, user_id FK, field (`classification`/`status_1`/`status_2`/`note`/`phase_close`/`phase_rollback`), old_value, new_value, created_at. Nguồn cho lịch sử chăm sóc + audit.
+
+**lead_phase_closures** (Phase 6.21, 2026-07-30) — 1 record khi 1 phase của khách được chốt
+| Cột | Ghi chú |
+|---|---|
+| id | PK |
+| lead_id | FK leads (cascade delete) |
+| phase | tinyint 1..7 |
+| closed_by | FK users |
+| closed_at | timestamp |
+| note | text nullable |
+| timestamps | |
+
+`UNIQUE(lead_id, phase)` — 1 phase chỉ chốt 1 lần (Admin lùi phase → xóa closure). `INDEX(lead_id, phase)`.
+
+**call_logs** (Phase 6.21) — mỗi lần Tele gọi khách = 1 record
+| Cột | Ghi chú |
+|---|---|
+| id | PK |
+| lead_id | FK leads (cascade) |
+| user_id | FK users — ai gọi |
+| status | varchar(20) — `thanh_cong` / `that_bai` / `khong_nghe_may` |
+| note | text nullable |
+| called_at | datetime |
+| timestamps | |
+
+`INDEX(lead_id, called_at desc)`, `INDEX(user_id)`. Ai được ghi log: owner + QL Sale (`lead.distribute_sale`) + Admin vận hành.
+
+**booking_logs** (Phase 6.21 → rework 2026-08-01) — mỗi lần đặt/đổi/hủy booking = 1 record. Từ 2026-08-01: mỗi record TỰ chứa cơ sở/BS/DV/CV — bỏ đọc cột `leads.facility_id/doctor_id/consultant_*` (cột DB giữ backward compat).
+| Cột | Ghi chú |
+|---|---|
+| id | PK |
+| lead_id | FK leads (cascade) |
+| facility_id | **FK facilities nullable** (2026-08-01) — cơ sở của lần booking này |
+| user_id | FK users — ai đặt |
+| type | varchar(20) nullable — `tham_kham` / `dich_vu` |
+| status | varchar(20) — `da_xac_nhan` / `cho_xac_nhan` / `huy_doi_lich` |
+| scheduled_at | datetime nullable |
+| doctor_id | FK staff_members nullable — bác sĩ của lần booking này |
+| service_id | FK services nullable — dịch vụ của lần booking này |
+| note | text nullable |
+| timestamps | |
+
+`INDEX(lead_id, scheduled_at desc)`, `INDEX(user_id)`. Khi thêm booking_log `da_xac_nhan` → sync `leads.booking_status = 'booked'` (compat với code cũ). Nếu record `da_xac_nhan` + có CV pivot position=1 + lead chưa có owner → auto handoff Sale.
+
+**booking_log_consultants** (2026-08-01) — pivot: mỗi booking có N chuyên viên tư vấn
+| Cột | Ghi chú |
+|---|---|
+| id | PK |
+| booking_log_id | FK booking_logs (cascade) |
+| user_id | FK users (cascade) |
+| position | tinyint default 1 — thứ tự (1 = CV chính = Sale phụ trách nếu booking duyệt) |
+| timestamps | |
+
+`UNIQUE(booking_log_id, user_id)`, `INDEX(user_id)`.
+
+**lead_distribution_logs** — id, lead_id FK, action (`distribute`/`recall`/`escalate`/`manual_assign`/`approve`/`reject`), from_pool_level, to_pool_level, from_owner_id, to_owner_id, org_unit_id, rule_id nullable, actor_id nullable (null = hệ thống), reason text nullable (dùng cho reject/escalate), created_at.
+
+> Ghi chú: action `pull` deprecated 2026-07-15 (bỏ cơ chế NV tự lấy lead). Migration mới không xóa dữ liệu lịch sử, chỉ không sinh mới.
 
 ### B3. Chia số
 
@@ -121,6 +197,28 @@ Bổ sung 2026-07-03 (mã KH + trường tùy biến, xem scope.md 4.1–4.2):
 **user_lead_settings** — user_id PK, receiving (bool bật/tắt nhận số), off_reason, off_until.
 
 **sla_policies** — id, org_unit_id nullable (null = mặc định toàn cty), mode (`auto`/`manual`/`off`), recall_after_hours, recall_to (`common`/`team`).
+
+> **Deprecated 2026-07-15**: bảng này giữ cho SLA "quá X giờ không chăm → thu hồi" (nghiệp vụ SLA chăm sóc). Cơ chế **recall theo mốc CM đặt lúc chia + escalate 2 tầng** dùng bảng `recall_policies` (mới) — 2 khái niệm khác nhau, không gộp.
+
+**recall_policies** (mới, 2026-07-15) — cấu hình recall + escalate theo cấp phòng ban/team, override từ trên xuống
+
+| Cột | Ghi chú |
+|---|---|
+| id | PK |
+| org_unit_id | FK org_units, unique. Cấu hình gắn với node (phòng ban hoặc team) |
+| recall_after_days | int nullable — mặc định "Thu hồi sau XX ngày" khi CM không nhập tay ở form chia |
+| escalate_after_days | int nullable — quá X ngày ở pool team CM → escalate lên kho CM cấp cha |
+| allow_permanent_assignment | bool default true — bật/tắt lựa chọn "Chia vĩnh viễn" trên form chia của cấp này |
+| set_by | FK users, updated_at | ai chỉnh, khi nào |
+
+**Quy tắc resolve** (từ trên xuống, cấp cha ghi đè cấp con):
+1. Tìm node cha gần nhất có `recall_policies` (theo path). Nếu có → dùng cấu hình đó (cấp con bị bắt buộc theo).
+2. Không có ở tổ tiên → dùng cấu hình của chính node đó (nếu có).
+3. Không có nữa → dùng mặc định hệ thống (config file / bảng `system_settings`).
+
+Viết thành `RecallPolicyResolver::for($orgUnit)` trả về `(recall_after_days, escalate_after_days, allow_permanent)`.
+
+**system_settings** (mới nếu chưa có) — key-value cấu hình chung: `default_recall_after_days`, `default_escalate_after_days`, `default_allow_permanent`, `sys_admin_can_bypass_permanent` (mặc định true).
 
 ### B4. Dịch vụ & tiền
 

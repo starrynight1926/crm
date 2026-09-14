@@ -49,8 +49,6 @@ class AdsSyncService
             $payloads = $this->adapterFor($connection->type)->fetchNewLeads($connection);
 
             foreach ($payloads as $payload) {
-                $payload['type_code'] ??= $connection->default_type_code;
-
                 $raw = RawLead::create([
                     'source_type' => RawLead::SOURCE_ADS_API,
                     'source_ref' => $connection->name,

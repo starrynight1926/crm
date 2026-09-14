@@ -82,7 +82,7 @@ new class extends Component
 };
 ?>
 
-<div class="max-w-5xl">
+<div>
     <div class="flex flex-wrap items-start justify-between gap-4 mb-8">
         <div>
             <div class="text-xs font-semibold tracking-[0.2em] text-gold-600 uppercase mb-2">An ninh tài khoản</div>
