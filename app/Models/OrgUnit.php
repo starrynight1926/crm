@@ -63,7 +63,7 @@ class OrgUnit extends Model
         return match ($this->code) {
             'branch-hn'  => 'CS1: 59NTN',
             'branch-hcm' => 'CS2: 207NVT',
-            'branch-dn'  => 'CS3: L23TĐN',
+            'branch-dn'  => 'CS3: 11-15TĐN',
             'ops-monitor' => 'Vận hành',
             default       => $this->name,
         };

@@ -39,7 +39,7 @@ class AdminCoSoSeeder extends Seeder
     public const ACCOUNTS = [
         ['username' => 'admin.hn',  'sb_username' => 'admin59ntn',  'name' => 'Admin Cơ sở Hà Nội',  'branch_codes' => ['branch-hn', 'hn', 'ha-noi']],
         ['username' => 'admin.hcm', 'sb_username' => 'admin207nvt', 'name' => 'Admin Cơ sở HCM',     'branch_codes' => ['branch-hcm', 'hcm', 'ho-chi-minh']],
-        ['username' => 'admin.dn',  'sb_username' => 'adminl23tdn', 'name' => 'Admin Cơ sở Đà Nẵng', 'branch_codes' => ['branch-dn', 'dn', 'da-nang']],
+        ['username' => 'admin.dn',  'sb_username' => 'admin11-15tdn', 'name' => 'Admin Cơ sở Đà Nẵng', 'branch_codes' => ['branch-dn', 'dn', 'da-nang']],
     ];
 
     public function run(): void
