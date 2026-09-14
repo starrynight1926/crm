@@ -1192,6 +1192,9 @@ class Lead extends Model
     {
         if (! $this->isVisibleTo($user)) return false;
         if ($user->hasPermission('phase.rollback')) return true;
+        // 2026-09-14: CM/DM/TL/Admin cơ sở (có lead.distribute) log call hộ team.
+        // Trước đây chỉ owner hoặc historical → CM không giúp được khi sale bận / lead vừa bị recall về kho.
+        if ($user->hasPermission('lead.distribute') && $user->hasPermission('phase.close.call')) return true;
         if ($this->owner_id !== null && $this->owner_id === $user->id) return true;
         return $this->hasHistoricalOwnership($user);
     }
@@ -1218,6 +1221,8 @@ class Lead extends Model
         if ($user->hasPermission('phase.rollback')) return true;
         if ($user->hasPermission('phase.close.checkin') && $user->hasPermission('lead.book_action')) return true;
         if (! $user->hasPermission('lead.book_action')) return false;
+        // 2026-09-14: CM/DM/TL/Admin cơ sở (có lead.distribute + book_action) tạo booking hộ team.
+        if ($user->hasPermission('lead.distribute')) return true;
         if ($this->owner_id !== null && $this->owner_id === $user->id) return true;
         return $this->hasHistoricalOwnership($user);
     }
