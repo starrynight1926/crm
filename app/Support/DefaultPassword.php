@@ -11,7 +11,7 @@ use App\Models\User;
  * Rule (2026-08-13):
  *   - Cơ sở HN  (branch-hn)  → 59@ntn   (59 Ngô Thì Nhậm)
  *   - Cơ sở HCM (branch-hcm) → 207@nvt  (207 Nguyễn Văn Thụ)
- *   - Cơ sở ĐN  (branch-dn)  → l23@tdn  (Lô 23 Trần Đăng Ninh)
+ *   - Cơ sở ĐN  (branch-dn)  → 11-15@tdn  (Số 11-15 Trần Đăng Ninh; đổi 2026-09-14, user cũ giữ pass cũ)
  *   - Vận hành  (ops-monitor / admin superadmin / vh.*) → 59ntn
  *
  * Cơ sở được resolve qua assignment.org_unit → tổ tiên đầu tiên có code branch-*.
@@ -21,7 +21,7 @@ class DefaultPassword
 {
     public const HN  = '59@ntn';
     public const HCM = '207@nvt';
-    public const DN  = 'l23@tdn';
+    public const DN  = '11-15@tdn';
     public const VH  = '59ntn';
 
     /** Ưu tiên: user → email fallback. Dùng cho reset password và seeder sau khi assignment đã có. */
