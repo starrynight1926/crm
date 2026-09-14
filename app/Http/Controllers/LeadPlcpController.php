@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\BookingLog;
 use App\Models\Lead;
+use App\Models\SbBacSi;
 use Illuminate\Http\Request;
 use Mpdf\Mpdf;
 
@@ -38,7 +39,7 @@ class LeadPlcpController extends Controller
             'ho_ten'   => (string) ($lead->name ?? ''),
             'ngay_lap' => $ngay->format('d/m/Y'),
             'co_so'    => (string) ($fac?->name ?? ''),
-            'bac_si'   => (string) ($log->doctor?->name ?? ''),
+            'bac_si'   => $this->resolveBacSi($log),
         ];
 
         $html = view('pdf.plcp', $data)->render();
@@ -64,5 +65,21 @@ class LeadPlcpController extends Controller
             'Content-Type' => 'application/pdf',
             'Content-Disposition' => 'attachment; filename="' . $filename . '"',
         ]);
+    }
+
+    /**
+     * Bác sĩ phụ trách = bác sĩ được gán khi admin cơ sở duyệt lịch.
+     * Ưu tiên `sb_bac_si_id` (bác sĩ Sbooking — nguồn thực tế đang dùng),
+     * fallback `doctor_id` (StaffMember cũ) nếu có.
+     */
+    private function resolveBacSi(BookingLog $log): string
+    {
+        if ($log->sb_bac_si_id) {
+            $bs = SbBacSi::find($log->sb_bac_si_id);
+            if ($bs) {
+                return trim(($bs->chuc_danh ? $bs->chuc_danh . ' ' : '') . $bs->ten);
+            }
+        }
+        return (string) ($log->doctor?->name ?? '');
     }
 }
