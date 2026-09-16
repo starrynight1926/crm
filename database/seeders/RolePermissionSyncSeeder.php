@@ -73,6 +73,11 @@ class RolePermissionSyncSeeder extends Seeder
             'ups.view', 'ups.checkin', 'ups.override', 'ups.confirm_daily',
             // 2026-08-11: Admin cơ sở xem + chia kho re-call (không import).
             'recall.view', 'recall.assign',
+            // 2026-09-16: Admin cơ sở cần thấy lead nguồn self-owned (SA/BA/HL/MKT_BR) của cơ sở.
+            //   User báo: đăng nhập admin.hcm không thấy lead SA do chính mình đặt. Nguyên nhân:
+            //   Lead::scopeVisibleTo() gate SOURCES_SELF_OWNED bằng perm này; trước đây role
+            //   Admin cơ sở không có → SA/BA/HL/MKT_BR bị lọc khỏi list dù cùng cơ sở.
+            'lead.view_self_owned',
         ],
         'CM sale' => [
             'lead.assign_direct',
