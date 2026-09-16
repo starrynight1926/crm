@@ -414,6 +414,7 @@ class Lead extends Model
     public const BOOKING_NOT_BOOKED = 'not_booked';
     public const BOOKING_CHO_DUYET = 'cho_duyet'; // 2026-09-14: booking đã tạo, đang chờ admin sbooking duyệt
     public const BOOKING_BOOKED = 'booked';
+    public const BOOKING_TU_CHOI = 'tu_choi'; // 2026-09-16: admin sbooking từ chối duyệt — booking hủy, KHÔNG trả lead về kho
     public const BOOKING_RESCHEDULED = 'rescheduled';
     // Phase 6.21 — 4 trạng thái sync từ lara-sbooking (trang_thai_khach + trang_thai=da_xong).
     public const BOOKING_KHACH_DA_TOI = 'khach_da_toi';
@@ -425,6 +426,7 @@ class Lead extends Model
         self::BOOKING_NOT_BOOKED    => 'Chưa đặt',
         self::BOOKING_CHO_DUYET     => 'Chờ duyệt',
         self::BOOKING_BOOKED        => 'Đã đặt',
+        self::BOOKING_TU_CHOI       => 'Bị từ chối',
         self::BOOKING_RESCHEDULED   => 'Hẹn lại',
         self::BOOKING_KHACH_DA_TOI  => 'Khách đã tới',
         self::BOOKING_KHACH_TOI_TRE => 'Khách tới trễ',
@@ -437,6 +439,7 @@ class Lead extends Model
         self::BOOKING_NOT_BOOKED    => '🕐',
         self::BOOKING_CHO_DUYET     => '⏳',
         self::BOOKING_BOOKED        => '📅',
+        self::BOOKING_TU_CHOI       => '⛔',
         self::BOOKING_RESCHEDULED   => '🔄',
         self::BOOKING_KHACH_DA_TOI  => '✅',
         self::BOOKING_KHACH_TOI_TRE => '⏰',
@@ -449,6 +452,7 @@ class Lead extends Model
         self::BOOKING_NOT_BOOKED    => 'bg-ink/5 text-ink/50 border-ink/10',
         self::BOOKING_CHO_DUYET     => 'bg-amber-50 text-amber-700 border-amber-200',
         self::BOOKING_BOOKED        => 'bg-blue-100 text-blue-800 border-blue-200',
+        self::BOOKING_TU_CHOI       => 'bg-red-100 text-red-800 border-red-200',
         self::BOOKING_RESCHEDULED   => 'bg-amber-100 text-amber-800 border-amber-200',
         self::BOOKING_KHACH_DA_TOI  => 'bg-green-100 text-green-800 border-green-200',
         self::BOOKING_KHACH_TOI_TRE => 'bg-amber-100 text-amber-800 border-amber-200',

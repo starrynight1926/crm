@@ -62,12 +62,18 @@ class BookingEventController extends Controller
         DB::transaction(function () use ($lead, $data, $bookingMa, $actorId) {
             switch ($data['type']) {
                 case 'status':
-                    // Ưu tiên: Đã xong > Khách hủy > Tới trễ > Đã tới > Booked.
+                    // Ưu tiên: Đã xong > Khách hủy > Tới trễ > Đã tới > (Admin duyệt/từ chối) > Booked.
+                    // 2026-09-16: thêm case tu_choi (badge đỏ "Bị từ chối") + cho_duyet + da_duyet
+                    //   để badge lead phản ánh đúng trạng thái admin sbooking; trước đây tất cả rơi
+                    //   default → BOOKING_BOOKED, sale không biết booking bị reject.
                     $newStatus = match (true) {
                         ($data['trang_thai'] ?? null) === 'da_xong'       => Lead::BOOKING_DA_XONG,
                         ($data['trang_thai_khach'] ?? null) === 'huy'     => Lead::BOOKING_KHACH_HUY,
                         ($data['trang_thai_khach'] ?? null) === 'toi_tre' => Lead::BOOKING_KHACH_TOI_TRE,
                         ($data['trang_thai_khach'] ?? null) === 'da_toi'  => Lead::BOOKING_KHACH_DA_TOI,
+                        ($data['trang_thai'] ?? null) === 'tu_choi'       => Lead::BOOKING_TU_CHOI,
+                        ($data['trang_thai'] ?? null) === 'cho_duyet'     => Lead::BOOKING_CHO_DUYET,
+                        ($data['trang_thai'] ?? null) === 'da_duyet'      => Lead::BOOKING_BOOKED,
                         default                                            => Lead::BOOKING_BOOKED,
                     };
                     $before = $lead->booking_status;

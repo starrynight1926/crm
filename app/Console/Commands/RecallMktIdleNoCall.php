@@ -20,6 +20,9 @@ use Illuminate\Console\Command;
  *   - assigned_at <= now() - 2 phút
  *   - KHÔNG có call_log nào (không phân biệt trạng thái) trong khoảng
  *     [assigned_at, now()].
+ *   - 2026-09-16: SKIP nếu booking_status đang "hiệu lực" (đã tạo booking/duyệt/…);
+ *     kể cả BOOKING_TU_CHOI cũng skip — theo rule "reject chỉ hủy booking + báo,
+ *     KHÔNG đụng lead / KHÔNG đưa về kho".
  */
 class RecallMktIdleNoCall extends Command
 {
@@ -33,12 +36,24 @@ class RecallMktIdleNoCall extends Command
         $threshold = now()->subMinutes($minutes);
         $recalled = 0;
 
+        // Đồng bộ với RecallByColumnUpdates: booking đang hiệu lực = "có tiến triển" → không recall.
+        $activeBookingStatuses = [
+            Lead::BOOKING_CHO_DUYET,
+            Lead::BOOKING_BOOKED,
+            Lead::BOOKING_TU_CHOI,
+            Lead::BOOKING_RESCHEDULED,
+            Lead::BOOKING_KHACH_DA_TOI,
+            Lead::BOOKING_KHACH_TOI_TRE,
+            Lead::BOOKING_DA_XONG,
+        ];
+
         Lead::query()
             ->where('source_group', Lead::SOURCE_MKT)
             ->where('pipeline_phase', Lead::PHASE_BOOKING)
             ->whereNotNull('owner_id')
             ->whereNotNull('assigned_at')
             ->where('assigned_at', '<=', $threshold)
+            ->whereNotIn('booking_status', $activeBookingStatuses)
             ->whereDoesntHave('callLogs') // chưa có call_log nào
             ->chunkById(200, function ($leads) use ($engine, &$recalled) {
                 foreach ($leads as $lead) {
