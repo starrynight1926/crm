@@ -18,6 +18,8 @@ new class extends Component
 
     public string $filterRole = '';
 
+    public string $viewMode = 'tree'; // tree | list
+
     // ----- Modal user -----
     public bool $showUserModal = false;
 
@@ -30,6 +32,8 @@ new class extends Component
     public string $uphone = '';
 
     public string $upassword = '';
+
+    public string $ujobTitle = '';
 
     public string $ustatus = User::STATUS_ACTIVE;
 
@@ -66,7 +70,7 @@ new class extends Component
 
     public function openCreateUser(): void
     {
-        $this->reset('editingUserId', 'uname', 'uemail', 'uphone', 'upassword');
+        $this->reset('editingUserId', 'uname', 'uemail', 'uphone', 'upassword', 'ujobTitle');
         $this->ustatus = User::STATUS_ACTIVE;
         $this->resetErrorBag();
         $this->showUserModal = true;
@@ -80,6 +84,7 @@ new class extends Component
         $this->uemail = $user->email;
         $this->uphone = $user->phone ?? '';
         $this->upassword = '';
+        $this->ujobTitle = $user->job_title ?? '';
         $this->ustatus = $user->status;
         $this->resetErrorBag();
         $this->showUserModal = true;
@@ -91,16 +96,18 @@ new class extends Component
             'uname' => 'required|string|max:100',
             'uemail' => ['required', 'email', Rule::unique('users', 'email')->ignore($this->editingUserId)],
             'uphone' => 'nullable|string|max:20',
-            'upassword' => $this->editingUserId ? 'nullable|string|min:8' : 'required|string|min:8',
+            'upassword' => $this->editingUserId ? 'nullable|string' : 'required|string',
+            'ujobTitle' => 'nullable|string|max:100',
             'ustatus' => 'required|in:active,locked',
         ], [], [
-            'uname' => 'họ tên', 'uemail' => 'email', 'uphone' => 'SĐT', 'upassword' => 'mật khẩu',
+            'uname' => 'họ tên', 'uemail' => 'email', 'uphone' => 'SĐT', 'upassword' => 'mật khẩu', 'ujobTitle' => 'chức danh',
         ]);
 
         $attributes = [
             'name' => $data['uname'],
             'email' => $data['uemail'],
             'phone' => $data['uphone'] ?: null,
+            'job_title' => $data['ujobTitle'] ?: null,
             'status' => $data['ustatus'],
         ];
         if ($data['upassword']) {
@@ -205,13 +212,70 @@ new class extends Component
             })
             ->when($this->filterRole, fn ($q) => $q->whereHas('assignments', fn ($qq) => $qq->where('role_id', $this->filterRole)))
             ->orderBy('name')
-            ->paginate(10);
+            ->paginate(30);
+
+        $allOrgUnits = OrgUnit::orderBy('path')->get();
+        $allRoles = Role::orderBy('name')->get();
+
+        $orgTree = [];
+        if ($this->viewMode === 'tree') {
+            $orgTree = $allOrgUnits->load(['children']);
+            $allAssignments = \App\Models\Assignment::with(['user', 'role'])
+                ->whereHas('user', fn ($q) => $q->where('status', User::STATUS_ACTIVE))
+                ->where('active', true)
+                ->get()
+                ->groupBy('org_unit_id');
+
+            $managersByUnit = \DB::table('org_unit_managers')
+                ->join('users', 'users.id', '=', 'org_unit_managers.user_id')
+                ->select('org_unit_managers.org_unit_id', 'users.id as user_id', 'users.name as user_name', 'users.job_title')
+                ->orderBy('users.name')
+                ->get()
+                ->groupBy('org_unit_id');
+
+            $orgTree = $allOrgUnits->map(function ($unit) use ($allAssignments, $managersByUnit) {
+                $members = ($allAssignments[$unit->id] ?? collect())->map(fn ($a) => [
+                    'user_id' => $a->user_id,
+                    'user_name' => $a->user->name,
+                    'user_email' => $a->user->email,
+                    'job_title' => $a->user->job_title,
+                    'role' => $a->role->name,
+                    'scope' => $a->data_scope,
+                    'locked' => $a->user->isLocked(),
+                ])->unique('user_id')->values()->all();
+
+                return [
+                    'id' => $unit->id,
+                    'name' => $unit->name,
+                    'depth' => $unit->depth,
+                    'parent_id' => $unit->parent_id,
+                    'active' => $unit->active,
+                    'members' => $members,
+                    'managers' => ($managersByUnit[$unit->id] ?? collect())->map(fn ($m) => [
+                        'user_id' => $m->user_id,
+                        'user_name' => $m->user_name,
+                        'job_title' => $m->job_title,
+                    ])->values()->all(),
+                ];
+            })->all();
+        }
+
+        $unassigned = [];
+        if ($this->viewMode === 'tree') {
+            $assignedUserIds = \App\Models\Assignment::where('active', true)->pluck('user_id')->unique();
+            $unassigned = User::where('status', User::STATUS_ACTIVE)
+                ->whereNotIn('id', $assignedUserIds)
+                ->orderBy('name')
+                ->get(['id', 'name', 'email']);
+        }
 
         return [
             'users' => $users,
-            'allRoles' => Role::orderBy('name')->get(),
-            'allOrgUnits' => OrgUnit::orderBy('path')->get(),
+            'allRoles' => $allRoles,
+            'allOrgUnits' => $allOrgUnits,
             'assignUser' => $this->assignUserId ? User::with(['assignments.role', 'assignments.orgUnit', 'assignments.scopeNodes'])->find($this->assignUserId) : null,
+            'orgTree' => $orgTree,
+            'unassigned' => $unassigned,
             'stats' => [
                 'total' => User::count(),
                 'active' => User::where('status', User::STATUS_ACTIVE)->count(),
@@ -238,6 +302,40 @@ new class extends Component
         <p class="mb-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-4 py-2">{{ session('error') }}</p>
     @endif
 
+    {{-- View mode tabs --}}
+    <div class="border-b border-gold-200 mb-5 flex gap-1 text-sm font-semibold uppercase tracking-wide">
+        <button wire:click="$set('viewMode', 'tree')" class="px-4 py-3 border-b-2 -mb-px {{ $viewMode === 'tree' ? 'border-gold-600 text-gold-700' : 'border-transparent text-ink/50 hover:text-gold-700' }}">Sơ đồ tổ chức</button>
+        <button wire:click="$set('viewMode', 'list')" class="px-4 py-3 border-b-2 -mb-px {{ $viewMode === 'list' ? 'border-gold-600 text-gold-700' : 'border-transparent text-ink/50 hover:text-gold-700' }}">Danh sách</button>
+    </div>
+
+    @if ($viewMode === 'tree')
+        {{-- Tree view --}}
+        <div class="bg-white border border-gold-200 rounded-xl shadow-card p-6" x-data="{ collapsed: {} }">
+            @php
+                $roots = collect($orgTree)->where('parent_id', null);
+                $byParent = collect($orgTree)->groupBy('parent_id');
+            @endphp
+
+            @foreach ($roots as $root)
+                @include('components.org._org-tree-node', ['node' => $root, 'byParent' => $byParent])
+            @endforeach
+
+            @if (count($unassigned))
+                <div class="mt-6 pt-4 border-t border-gold-100">
+                    <h3 class="text-sm font-bold text-ink/50 uppercase tracking-wider mb-3">Chưa gán đơn vị</h3>
+                    <div class="flex flex-wrap gap-2">
+                        @foreach ($unassigned as $u)
+                            <span class="inline-flex items-center gap-2 text-sm bg-gray-50 border border-gray-200 text-gray-600 px-3 py-1.5 rounded-lg">
+                                <span class="w-7 h-7 rounded bg-gray-200 text-gray-500 text-xs font-bold flex items-center justify-center">{{ mb_substr($u->name, 0, 1) }}</span>
+                                {{ $u->name }}
+                            </span>
+                        @endforeach
+                    </div>
+                </div>
+            @endif
+        </div>
+    @else
+
     <div class="bg-white border border-gold-200 rounded-xl shadow-card">
         {{-- Filter bar --}}
         <div class="px-5 py-4 border-b border-gold-100 flex flex-wrap items-center gap-3">
@@ -256,6 +354,20 @@ new class extends Component
             <div class="flex-1"></div>
             <input type="search" wire:model.live.debounce.300ms="search" placeholder="Tìm kiếm nhân viên..."
                    class="border border-gold-200 rounded-md px-3 py-2 text-sm w-64 focus:outline-none focus:border-gold-500">
+            @php
+                $exportQuery = array_filter([
+                    'org_unit' => $filterOrgUnit ?: null,
+                    'role'     => $filterRole ?: null,
+                    'q'        => $search ?: null,
+                ]);
+            @endphp
+            <a href="{{ route('org.users.export', $exportQuery) }}"
+               class="inline-flex items-center gap-1.5 border border-gold-300 bg-gold-50 hover:bg-gold-100 text-gold-800 rounded-md px-3 py-2 text-sm font-medium">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/>
+                </svg>
+                Xuất dữ liệu
+            </a>
         </div>
 
         {{-- Table --}}
@@ -264,6 +376,7 @@ new class extends Component
             <thead>
                 <tr class="text-left text-xs uppercase tracking-wider text-ink/50 bg-gold-50/60">
                     <th class="px-5 py-3 font-semibold">Nhân viên</th>
+                    <th class="px-5 py-3 font-semibold">Chức danh</th>
                     <th class="px-5 py-3 font-semibold">Vai trò @ Đơn vị</th>
                     <th class="px-5 py-3 font-semibold">Trạng thái</th>
                     <th class="px-5 py-3 font-semibold text-right">Hành động</th>
@@ -281,6 +394,7 @@ new class extends Component
                                 </div>
                             </div>
                         </td>
+                        <td class="px-5 py-4 text-sm text-ink/70">{{ $user->job_title ?: '—' }}</td>
                         <td class="px-5 py-4">
                             <div class="flex flex-wrap gap-1.5">
                                 @forelse ($user->assignments as $a)
@@ -310,7 +424,7 @@ new class extends Component
                         </td>
                     </tr>
                 @empty
-                    <tr><td colspan="4" class="px-5 py-10 text-center text-ink/40">Không tìm thấy nhân viên nào.</td></tr>
+                    <tr><td colspan="5" class="px-5 py-10 text-center text-ink/40">Không tìm thấy nhân viên nào.</td></tr>
                 @endforelse
             </tbody>
         </table>
@@ -338,6 +452,8 @@ new class extends Component
         </div>
     </div>
 
+    @endif {{-- end viewMode list/tree --}}
+
     {{-- Modal: user form --}}
     @if ($showUserModal)
         <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -360,6 +476,11 @@ new class extends Component
                             <label class="block text-xs font-semibold uppercase tracking-widest text-ink/60 mb-1.5">SĐT</label>
                             <input type="text" wire:model="uphone" class="w-full border border-gold-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-gold-500">
                         </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold uppercase tracking-widest text-ink/60 mb-1.5">Chức danh</label>
+                        <input type="text" wire:model="ujobTitle" placeholder="VD: Clinic Manager, Team Leader, SHC, HC..." class="w-full border border-gold-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-gold-500">
+                        @error('ujobTitle')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
                     </div>
                     <div class="grid grid-cols-2 gap-4">
                         <div>
@@ -467,11 +588,11 @@ new class extends Component
                         @error('aScopeNodes')<p class="text-xs text-red-600 mb-2">{{ $message }}</p>@enderror
                     @endif
 
-                    <button wire:click="addAssignment" class="bg-gold-600 hover:bg-gold-700 text-white font-semibold text-sm px-5 py-2 rounded-md">+ Thêm assignment</button>
                 </div>
 
-                <div class="flex justify-end mt-6">
+                <div class="flex justify-end items-center gap-3 mt-6 pt-5 border-t border-gold-100">
                     <button wire:click="$set('showAssignModal', false)" class="text-sm font-semibold text-ink/60 border border-gold-200 px-5 py-2 rounded-md hover:bg-gold-50">Đóng</button>
+                    <button wire:click="addAssignment" class="bg-gold-600 hover:bg-gold-700 text-white font-semibold text-sm px-6 py-2 rounded-md">Lưu phân quyền</button>
                 </div>
             </div>
         </div>

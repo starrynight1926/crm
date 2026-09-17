@@ -250,7 +250,7 @@ new class extends Component
                                 <span class="bg-blue-50 border border-blue-200 text-blue-700 px-2 py-0.5 rounded">Theo từng phase (trả đến đâu tính đến đó)</span>
                             @endif
                         </td>
-                        <td class="px-5 py-3.5 text-right font-mono">{{ number_format($service->listPrice()) }}₫</td>
+                        <td class="px-5 py-3.5 text-right font-mono">{{ number_format($service->listPrice(), 0, ',', '.') }}₫</td>
                         <td class="px-5 py-3.5 text-right">{{ $service->phases_count }}</td>
                         <td class="px-5 py-3.5 text-right">{{ $customerCounts[$service->id] ?? 0 }}</td>
                         <td class="px-5 py-3.5 text-right whitespace-nowrap">
