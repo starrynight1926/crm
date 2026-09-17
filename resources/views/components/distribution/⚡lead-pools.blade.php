@@ -108,12 +108,30 @@ new class extends Component
     {
         $user = auth()->user();
         $canDistribute = $user->hasAnyPermission(['lead.distribute', 'lead.distribute_to_team', 'lead.distribute_to_sale']);
-        if (! $canDistribute) {
-            // Sale cá nhân → chỉ Kho cá nhân.
-            return ['personal' => self::TAB_KINDS['personal']];
+        // 2026-09-17: Trực Page (không có distribute) vẫn cần thấy kho cấp cơ sở/phòng ban để
+        //   theo dõi lead mình vừa up + chọn được kho đích khi tạo. Mở tab theo perm view:
+        //   - view_pool       → tab company (kho chung công ty)
+        //   - view_team_pool  → tab branch / facility / department (kho cấp cơ sở)
+        //   - luôn có tab personal.
+        $tabs = ['personal' => self::TAB_KINDS['personal']];
+        if ($user->hasPermission('lead.view_team_pool')) {
+            $tabs = [
+                'branch'     => self::TAB_KINDS['branch'],
+                'facility'   => self::TAB_KINDS['facility'],
+                'department' => self::TAB_KINDS['department'],
+                'personal'   => self::TAB_KINDS['personal'],
+            ];
         }
-        $tabs = self::TAB_KINDS;
-        if (! $user->hasPermission('report.view_all')) {
+        if ($user->hasPermission('lead.view_pool')) {
+            $tabs = ['company' => self::TAB_KINDS['company']] + $tabs;
+        }
+        // Distribute-only: chỉ chia được, không có view riêng → giữ full tab (backward compat).
+        if ($canDistribute) {
+            $tabs = self::TAB_KINDS;
+        }
+        // Gate tab company theo report.view_all cho user CÓ distribute nhưng KHÔNG có view rộng
+        //   (giữ hành vi cũ để không lộ lead nationwide cho CM cơ sở).
+        if ($canDistribute && ! $user->hasPermission('report.view_all') && ! $user->hasPermission('lead.view_pool')) {
             unset($tabs['company']);
         }
         return $tabs;

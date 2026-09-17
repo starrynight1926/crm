@@ -168,6 +168,10 @@ class RolePermissionSyncSeeder extends Seeder
             'source.up.mkt',
             // 2026-08-11: Trực Page phụ trách kho re-call (import + chia).
             'recall.import', 'recall.view', 'recall.assign',
+            // 2026-09-17: Trực Page cần thấy kho công ty + kho cơ sở để nhập lead vào
+            //   đúng kho đích. User báo tài khoản Nhập Lead HCM chỉ thấy "Kho cá nhân" —
+            //   không có view_pool/view_team_pool nên tab kho cơ sở bị ẩn.
+            'lead.view_pool', 'lead.view_team_pool',
         ],
         'Trợ lý kinh doanh' => [
             'lead.view', 'report.view',
