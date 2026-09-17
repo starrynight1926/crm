@@ -172,6 +172,11 @@ class RolePermissionSyncSeeder extends Seeder
             //   đúng kho đích. User báo tài khoản Nhập Lead HCM chỉ thấy "Kho cá nhân" —
             //   không có view_pool/view_team_pool nên tab kho cơ sở bị ẩn.
             'lead.view_pool', 'lead.view_team_pool',
+            // 2026-09-17: chia lead từ kho chung → kho team/cơ sở (scope hạn chế bằng imported_by
+            //   trong Lead::scopeVisibleTo). Trực Page HCM báo "mất hành động chia" sau khi mở tabs
+            //   view — vì $canDistribute vẫn false, button chia bị ẩn. Cấp distribute_to_team để
+            //   họ chia được lead mình đã up.
+            'lead.distribute_to_team', 'lead.distribute_to_sale',
         ],
         'Trợ lý kinh doanh' => [
             'lead.view', 'report.view',
