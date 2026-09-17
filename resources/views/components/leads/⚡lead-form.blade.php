@@ -289,7 +289,8 @@ new class extends Component
             'newBookingScheduledAt'   => 'nullable|date',
             // 2026-08-18: bắt buộc ngày + khung giờ để tránh push sbooking mất khung giờ.
             // Trước cả 2 optional → user submit trống → scheduled_at=null → sbooking booking không có gio_thuc_hien.
-            'newBookingDate'          => 'required|date',
+            // 2026-09-17: khóa đặt lịch quá khứ (after_or_equal:today) — sbooking cũng validate cùng rule.
+            'newBookingDate'          => 'required|date|after_or_equal:today',
             'newBookingTime'          => 'required|string',
             'newBookingFacilityId'    => 'required|exists:facilities,id',
             // Đợt C.3.b (2026-08-25): DV có khong_can_phong=1 (vd STC Japan làm ở nước ngoài) → phòng nullable.
@@ -310,6 +311,7 @@ new class extends Component
             'newBookingType.required' => 'Chọn loại booking (Khám lâm sàng / Tư vấn / Dịch vụ).',
             'newBookingFacilityId.required' => 'Chọn cơ sở — booking phải gắn cơ sở để đẩy sang sbooking.',
             'newBookingDate.required' => 'Chọn ngày đặt — không được để trống, sbooking cần ngày để hiện lịch.',
+            'newBookingDate.after_or_equal' => 'Không đặt lịch cho ngày quá khứ. Ngày sớm nhất = hôm nay.',
             'newBookingTime.required' => 'Chọn khung giờ — không được để trống, sbooking cần khung giờ để check slot.',
         ]);
         // Đợt C.3.d (2026-08-25): DV 41 combo — validate variant YHPĐ (bỏ qua yêu cầu phòng).
@@ -3499,8 +3501,9 @@ new class extends Component
                             </div>
                             {{-- Phase C1.d rev2: Row 1 giữ Ngày (date only). Giờ chuyển xuống Row 3 sau khi có (phòng + dịch vụ). --}}
                             <input type="date" wire:model.live="newBookingDate"
+                                   min="{{ now()->toDateString() }}"
                                    class="border border-slate-300 rounded px-2 py-1.5 text-sm"
-                                   title="Chọn ngày">
+                                   title="Chọn ngày (không đặt được cho quá khứ)">
                         </div>
                         {{-- 2026-08-09 relayout: 3 cột — Cột 1 Địa điểm (Cơ sở/Phòng/BS) | Cột 2 Nội dung (Dịch vụ/Số lượng) | Cột 3 Thời gian (Khung giờ).
                              Thứ tự tương tác vẫn theo yêu cầu sbooking: user chọn cơ sở → phòng (cột 1) → dịch vụ (cột 2) → giờ (cột 3). --}}

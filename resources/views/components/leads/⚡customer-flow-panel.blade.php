@@ -120,10 +120,13 @@ new class extends Component
         }
         $this->validate([
             'newBookingStatus'      => 'required|in:' . implode(',', array_keys(BookingLog::STATUSES)),
-            'newBookingScheduledAt' => 'nullable|date',
+            // 2026-09-17: khóa đặt lịch quá khứ — đồng bộ với lead-form và sbooking.
+            'newBookingScheduledAt' => 'nullable|date|after_or_equal:today',
             'newBookingDoctorId'    => 'nullable|exists:staff_members,id',
             'newBookingServiceId'   => 'nullable|exists:services,id',
             'newBookingNote'        => 'nullable|string|max:1000',
+        ], [
+            'newBookingScheduledAt.after_or_equal' => 'Không đặt lịch cho ngày quá khứ.',
         ]);
         BookingLog::create([
             'lead_id'      => $this->lead->id,
@@ -450,7 +453,10 @@ new class extends Component
                                     <option value="{{ $k }}">{{ $lbl }}</option>
                                 @endforeach
                             </select>
-                            <input type="datetime-local" wire:model="newBookingScheduledAt" class="border border-slate-300 rounded px-2 py-1.5 text-sm">
+                            <input type="datetime-local" wire:model="newBookingScheduledAt"
+                                   min="{{ now()->format('Y-m-d\TH:i') }}"
+                                   class="border border-slate-300 rounded px-2 py-1.5 text-sm"
+                                   title="Không đặt lịch cho quá khứ">
                             <select wire:model="newBookingDoctorId" class="border border-slate-300 rounded px-2 py-1.5 text-sm">
                                 <option value="">— Bác sĩ —</option>
                                 @foreach ($doctors as $d)
