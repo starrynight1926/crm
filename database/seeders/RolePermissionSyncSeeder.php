@@ -184,6 +184,10 @@ class RolePermissionSyncSeeder extends Seeder
         'BO (Lễ Tân)' => [
             // 2026-08-08: BO chỉ dùng UPS list — bỏ 3 perm lead.* (không cần Dashboard/Khách hàng/Thiết lập).
             'ups.checkin', 'ups.confirm_daily', 'ups.override', 'ups.view',
+            // 2026-09-18: BO báo dashboard/khách hàng trống dù có khách chờ duyệt booking hôm nay.
+            //   BO là lễ tân — cần thấy khách có booking sắp tới để chuẩn bị đón. Cấp view scope
+            //   theo assignment.data_scope=TEAM (BoRoleSeeder), giới hạn ở facility BO trực.
+            'lead.view', 'lead.view_phone', 'lead.read_booking', 'lead.view_team_pool',
         ],
         'Observer' => [
             // 2026-08-08: thêm view_pool để Observer xem được kho số (kho chung/team chưa chia).
