@@ -1329,6 +1329,18 @@ class Lead extends Model
         $this->update(['is_first_visit' => false, 'phase' => $targetPhase]);
     }
 
+    /**
+     * Booking chỉ được ghi khi:
+     *  - Nguồn Walk-in (khách tự đến, không cần cuộc gọi trước), HOẶC
+     *  - Đã có ≥1 call_log status "Thành công" (rule 2026-09-19).
+     * Áp cho mọi nguồn còn lại (MKT/MKT_BR/BDM/BOD/SA/BA/HL).
+     */
+    public function canCreateBooking(): bool
+    {
+        if ($this->source_group === self::SOURCE_WI) return true;
+        return $this->callLogs()->where('status', CallLog::STATUS_THANH_CONG)->exists();
+    }
+
     /** Tele đã từng gọi khách này (có call_log), hoặc receiver, hoặc Admin có perm. */
     public function canRestartCall(User $user): bool
     {

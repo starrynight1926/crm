@@ -17,7 +17,8 @@ use Illuminate\Database\Seeder;
  * - 3 CM HCM (Trâm, Thư, Lan) — assignment tại Cơ sở HCM.
  * - 1 DM HCM (Ngân) — cao nhất HCM.
  * - 2 Team Leader (Đức @ Team Mr.Hợi, Quỳn @ Team Ms.Ashley), scope team.
- * - 1 Trợ lý kinh doanh (Tự) — assignment tại Công ty, scope custom = toàn công ty.
+ * - Lê Thị Phương Tự — từ 2026-08-13 chuyển role Sale, team-ashley-sale (HCM), scope self.
+ *   (Không còn giữ role "Trợ lý kinh doanh toàn công ty" như spec cũ.)
  * - 17 chuyên viên tư vấn (SHC/HC) — role Sale, scope self, assignment tại team tương ứng.
  *
  * Idempotent: updateOrCreate theo email; assignment chỉ tạo khi user chưa có assignment tương ứng role đó.

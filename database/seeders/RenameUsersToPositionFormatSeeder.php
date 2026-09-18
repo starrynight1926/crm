@@ -77,7 +77,10 @@ class RenameUsersToPositionFormatSeeder extends Seeder
         'Nguyễn Hoành Đức'          => 'hn.tl01',
         // 2026-08-26: Quỳnh base @ HN (team-quynh), assignment phụ TL @ team-ashley (HCM).
         'Phan Trần Khánh Quỳnh'     => 'hn.tl02',
-        'Lê Thị Phương Tự'          => 'hn.tlkd01',
+        // 2026-09-19: Phương Tự = HC Team Sale Ashley (HCM), format initials.branch (như admin.hcm/bo.hcm).
+        // Trước đó bị stuck ở 'hn.tlkd01' do RealCmStaffSeeder đã đổi role Sale/HCM từ 2026-08-13
+        // nhưng map này còn giữ format role tlkd + ROLE_FORCED_BRANCH=hn cũ.
+        'Lê Thị Phương Tự'          => 'lpt.hcm',
 
         // ---- Vận hành & Giám sát (Observer) ----
         'Huyền' => 'vh.obs01',

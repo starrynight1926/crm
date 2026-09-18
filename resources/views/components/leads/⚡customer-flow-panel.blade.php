@@ -118,6 +118,11 @@ new class extends Component
             session()->flash('cf_error', 'Bạn không có quyền ghi log booking cho lead này.');
             return;
         }
+        // Gate 2026-09-19: mọi nguồn (trừ Walk-in) phải có ≥1 cuộc gọi Thành công trước khi tạo booking.
+        if (! $this->lead->canCreateBooking()) {
+            session()->flash('cf_error', 'Chưa được đặt booking: phải ghi ít nhất 1 cuộc gọi "Thành công" ở Phase 2 trước.');
+            return;
+        }
         $this->validate([
             'newBookingStatus'      => 'required|in:' . implode(',', array_keys(BookingLog::STATUSES)),
             // 2026-09-17: khóa đặt lịch quá khứ — đồng bộ với lead-form và sbooking.
@@ -203,6 +208,7 @@ new class extends Component
             'services'       => Service::where('active', true)->orderBy('name')->get(),
             'canLogCall'     => $this->lead->canLogCall($user),
             'canLogBooking'  => $this->lead->canLogBooking($user),
+            'canCreateBooking' => $this->lead->canCreateBooking(),
             'canRollback'    => $user->hasPermission(Lead::CF_ROLLBACK_PERM),
             'isBulkOpen'     => $this->lead->isBulkOpen(),
             'startPhase'     => $this->lead->startPhase(),
@@ -471,7 +477,14 @@ new class extends Component
                             </select>
                         </div>
                         <input wire:model="newBookingNote" placeholder="Ghi chú sau booking..." class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm">
-                        <button wire:click="addBookingLog" class="text-sm bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-4 py-1.5 rounded">+ Ghi booking</button>
+                        @if ($canCreateBooking)
+                            <button wire:click="addBookingLog" class="text-sm bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-4 py-1.5 rounded">+ Ghi booking</button>
+                        @else
+                            <div class="flex items-center gap-2">
+                                <button type="button" disabled class="text-sm bg-slate-300 text-slate-500 font-semibold px-4 py-1.5 rounded cursor-not-allowed">+ Ghi booking</button>
+                                <span class="text-xs text-amber-700">⚠ Phải ghi ≥1 cuộc gọi "Thành công" ở Phase 2 trước.</span>
+                            </div>
+                        @endif
                     </div>
                 @else
                     <p class="text-xs text-ink/40 italic">Bạn không có quyền ghi log booking cho lead này.</p>
