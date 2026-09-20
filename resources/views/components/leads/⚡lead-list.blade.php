@@ -125,18 +125,33 @@ new class extends Component
         }
     }
 
+    /** Snapshot perPage cũ trước khi bị ghi đè — dùng để tính lại trang giữ vị trí. */
+    private ?int $oldPerPage = null;
+
+    public function updatingPerPage($value): void
+    {
+        $this->oldPerPage = (int) $this->perPage;
+    }
+
     public function updatedPerPage($value): void
     {
-        $v = (int) $value;
-        if (! in_array($v, [15, 50, 100], true)) {
-            $v = 15;
+        $new = (int) $value;
+        if (! in_array($new, [15, 50, 100], true)) {
+            $new = 15;
         }
-        $this->perPage = $v;
-        $this->resetPage();
+        $this->perPage = $new;
+
+        // Giữ vị trí bản ghi đầu tiên đang xem: newPage = ceil(firstItem / newPerPage).
+        $old = $this->oldPerPage ?: $new;
+        $curPage = (int) ($this->getPage() ?: 1);
+        $firstItem = ($curPage - 1) * $old + 1;
+        $newPage = max(1, (int) ceil($firstItem / $new));
+        $this->setPage($newPage);
+
         $this->reset('selected', 'selectAll');
         $user = auth()->user();
         $prefs = $user->report_prefs ?? [];
-        $prefs['lead_list_per_page'] = $v;
+        $prefs['lead_list_per_page'] = $new;
         $user->update(['report_prefs' => $prefs]);
     }
 
