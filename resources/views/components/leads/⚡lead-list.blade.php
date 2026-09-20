@@ -1086,40 +1086,43 @@ new class extends Component
             @php
                 $cur = $leads->currentPage();
                 $last = max(1, $leads->lastPage());
-                $window = 1; // số trang hai bên trang hiện tại
-                $pages = [];
-                $add = function ($p) use (&$pages, $last) {
-                    if ($p >= 1 && $p <= $last && ! in_array($p, $pages, true)) $pages[] = $p;
-                };
-                $add(1);
-                for ($i = $cur - $window; $i <= $cur + $window; $i++) $add($i);
-                $add($last);
-                sort($pages);
+                // Luôn hiện: 1, 2, cur-1, cur, cur+1, last-1, last (unique, sort).
+                $pages = collect([1, 2, $cur - 1, $cur, $cur + 1, $last - 1, $last])
+                    ->filter(fn ($p) => $p >= 1 && $p <= $last)
+                    ->unique()->sort()->values()->all();
             @endphp
 
             <div class="flex items-center gap-1"
-                 x-data="{ jump: '{{ $cur }}', last: {{ $last }} }"
-                 x-effect="jump = '{{ $cur }}'">
+                 x-data="{ jump: '', last: {{ $last }},
+                           go() { const n = Math.max(1, Math.min(this.last, parseInt(this.jump) || 0));
+                                  if (n) { $wire.gotoPage2(n); this.jump = ''; } } }">
                 <button wire:click="gotoPage2(1)" @if($cur <= 1) disabled @endif
                         class="px-2 py-1 rounded border border-gold-200 hover:bg-gold-50 disabled:opacity-40 disabled:cursor-not-allowed" title="Trang đầu">«</button>
                 <button wire:click="previousPage" @if($cur <= 1) disabled @endif
                         class="px-2 py-1 rounded border border-gold-200 hover:bg-gold-50 disabled:opacity-40 disabled:cursor-not-allowed" title="Trước">‹</button>
 
-                @php $prev = 0; @endphp
+                @php $prev = 0; $jumpInserted = false; @endphp
                 @foreach ($pages as $p)
                     @if ($prev && $p - $prev > 1)
-                        <span class="px-1 text-ink/40">…</span>
+                        {{-- Chèn ô jump vào khoảng trống lớn nhất (chỉ 1 lần) --}}
+                        @if (! $jumpInserted)
+                            <input type="number" min="1" :max="last" x-model="jump"
+                                   placeholder="…"
+                                   @keydown.enter.prevent="go()"
+                                   @blur="go()"
+                                   class="w-14 text-center px-1 py-1 border border-gold-300 rounded bg-white text-ink/70 placeholder-ink/30 focus:outline-none focus:border-gold-500 no-spinner"
+                                   title="Nhập số trang rồi Enter">
+                            @php $jumpInserted = true; @endphp
+                        @else
+                            <span class="px-1 text-ink/40">…</span>
+                        @endif
                     @endif
-                    @if ($p === $cur)
-                        <input type="number" min="1" :max="last" x-model="jump"
-                               @keydown.enter.prevent="$wire.gotoPage2(Math.max(1, Math.min(last, parseInt(jump) || 1)))"
-                               @blur="if (parseInt(jump) !== {{ $cur }}) $wire.gotoPage2(Math.max(1, Math.min(last, parseInt(jump) || 1)))"
-                               class="w-14 text-center px-1 py-1 border-2 border-gold-500 rounded bg-gold-50 font-semibold text-gold-800 focus:outline-none no-spinner"
-                               title="Nhập số trang rồi Enter">
-                    @else
-                        <button wire:click="gotoPage2({{ $p }})"
-                                class="min-w-[32px] px-2 py-1 rounded border border-gold-200 hover:bg-gold-50">{{ $p }}</button>
-                    @endif
+                    <button wire:click="gotoPage2({{ $p }})"
+                            @class([
+                                'min-w-[32px] px-2 py-1 rounded border',
+                                'border-gold-500 bg-gold-100 text-gold-800 font-semibold' => $p === $cur,
+                                'border-gold-200 hover:bg-gold-50' => $p !== $cur,
+                            ])>{{ $p }}</button>
                     @php $prev = $p; @endphp
                 @endforeach
 
