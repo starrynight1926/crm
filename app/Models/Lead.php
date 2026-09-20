@@ -732,6 +732,49 @@ class Lead extends Model
         return $f?->name;
     }
 
+    /**
+     * 2026-09-20: Nhãn cơ sở ngắn cho cột "Cơ sở" trong list lead.
+     * Map theo pool code (chỉ 4 facility đang có): HN 59ntn / DN / HCM207 / HCM137.
+     * Resolve theo priority: (1) pool_unit_id → walk up tới kind=facility,
+     * (2) org_unit_id → org_pool_map. Cache toàn bộ pool tree 1 lần / request.
+     */
+    public function facilityShortLabel(): string
+    {
+        static $facMap = [
+            'pool-cs-hn-1'  => 'HN: 59ntn',
+            'pool-cs-dn-1'  => 'DN',
+            'pool-cs-hcm-1' => 'HCM207',
+            'pool-cs-hcm-2' => 'HCM137',
+        ];
+        static $poolById = null;
+        static $orgToFacilityId = null;
+
+        if ($poolById === null) {
+            $poolById = PoolUnit::all()->keyBy('id');
+            $orgToFacilityId = [];
+            $rows = \DB::table('org_pool_map')->get();
+            foreach ($rows as $r) {
+                $p = $poolById->get($r->pool_unit_id);
+                while ($p && $p->kind !== 'facility') $p = $poolById->get($p->parent_id);
+                if ($p) $orgToFacilityId[$r->org_unit_id] = $p->id;
+            }
+        }
+
+        $facId = null;
+        if ($this->pool_unit_id) {
+            $p = $poolById->get($this->pool_unit_id);
+            while ($p && $p->kind !== 'facility') $p = $poolById->get($p->parent_id);
+            if ($p) $facId = $p->id;
+        }
+        if (! $facId && $this->org_unit_id) {
+            $facId = $orgToFacilityId[$this->org_unit_id] ?? null;
+        }
+        if (! $facId) return '';
+
+        $pool = $poolById->get($facId);
+        return $pool ? ($facMap[$pool->code] ?? $pool->name) : '';
+    }
+
     public function doctor(): BelongsTo
     {
         return $this->belongsTo(StaffMember::class, 'doctor_id');

@@ -35,6 +35,9 @@ new class extends Component
      */
     public string $fPhase = '';
 
+    /** Số dòng/trang — 15/50/100. Lưu trong report_prefs.lead_list_per_page. */
+    public int $perPage = 15;
+
     public bool $showExportModal = false;
 
     /** Key các cột được chọn để xuất (core: tên cột; custom: cf_{id}). */
@@ -63,7 +66,7 @@ new class extends Component
         'phone' => 'SĐT',
         'nguon' => 'Nguồn',
         'classification' => 'Phân loại',
-        'region' => 'Khu vực',
+        'region' => 'Cơ sở',
         'status' => 'Trạng thái',
         'tele' => 'Tele phụ trách',
         'sale' => 'Sale tiếp đón',
@@ -81,6 +84,11 @@ new class extends Component
         $prefs = $user->report_prefs ?? [];
         $saved = $prefs['lead_list_columns'] ?? null;
         $valid = array_keys(self::TABLE_COLUMNS);
+
+        $savedPer = (int) ($prefs['lead_list_per_page'] ?? 0);
+        if (in_array($savedPer, [15, 50, 100], true)) {
+            $this->perPage = $savedPer;
+        }
 
         if ($saved) {
             $this->visibleCols = array_values(array_intersect($saved, $valid));
@@ -115,6 +123,27 @@ new class extends Component
             $this->resetPage();
             $this->reset('selected', 'selectAll');
         }
+    }
+
+    public function updatedPerPage($value): void
+    {
+        $v = (int) $value;
+        if (! in_array($v, [15, 50, 100], true)) {
+            $v = 15;
+        }
+        $this->perPage = $v;
+        $this->resetPage();
+        $this->reset('selected', 'selectAll');
+        $user = auth()->user();
+        $prefs = $user->report_prefs ?? [];
+        $prefs['lead_list_per_page'] = $v;
+        $user->update(['report_prefs' => $prefs]);
+    }
+
+    /** Nhảy tới trang N — dùng cho ô input jump-to-page. */
+    public function gotoPage2(int $page): void
+    {
+        $this->setPage(max(1, $page));
     }
 
     public function updatedVisibleCols(): void
@@ -165,7 +194,7 @@ new class extends Component
     public function updatedSelectAll($value): void
     {
         $this->selected = $value
-            ? $this->filteredQuery()->paginate(15)->pluck('id')->map(fn ($id) => (string) $id)->all()
+            ? $this->filteredQuery()->paginate($this->perPage)->pluck('id')->map(fn ($id) => (string) $id)->all()
             : [];
     }
 
@@ -718,7 +747,7 @@ new class extends Component
     {
         $user = auth()->user();
 
-        $leads = $this->filteredQuery()->paginate(15);
+        $leads = $this->filteredQuery()->paginate($this->perPage);
 
         return [
             'leads' => $leads,
@@ -736,6 +765,7 @@ new class extends Component
 ?>
 
 <div wire:poll.5s>
+    <style>.no-spinner::-webkit-inner-spin-button,.no-spinner::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}.no-spinner{-moz-appearance:textfield}</style>
     @if (session('status'))
         <p class="mb-4 text-sm text-green-700 bg-green-50 border border-green-200 rounded-md px-4 py-2">{{ session('status') }}</p>
     @endif
@@ -928,7 +958,7 @@ new class extends Component
                     @if ($this->colVisible('phone'))       <th class="px-4 py-3 font-semibold">SĐT</th> @endif
                     @if ($this->colVisible('nguon'))       <th class="px-4 py-3 font-semibold">Nguồn</th> @endif
                     @if ($this->colVisible('classification'))<th class="px-4 py-3 font-semibold">Phân loại</th> @endif
-                    @if ($this->colVisible('region'))      <th class="px-4 py-3 font-semibold">Khu vực</th> @endif
+                    @if ($this->colVisible('region'))      <th class="px-4 py-3 font-semibold">Cơ sở</th> @endif
                     @if ($this->colVisible('status'))      <th class="px-4 py-3 font-semibold">Trạng thái</th> @endif
                     @if ($this->colVisible('tele'))        <th class="px-4 py-3 font-semibold">Tele phụ trách</th> @endif
                     @if ($this->colVisible('sale'))        <th class="px-4 py-3 font-semibold">Sale tiếp đón</th> @endif
@@ -993,7 +1023,7 @@ new class extends Component
                             </td>
                         @endif
                         @if ($this->colVisible('region'))
-                            <td class="px-4 py-3 text-ink/60">{{ $lead->region ?: '—' }}</td>
+                            <td class="px-4 py-3 text-ink/70 text-xs font-mono">{{ $lead->facilityShortLabel() ?: '—' }}</td>
                         @endif
                         @if ($this->colVisible('status'))
                             <td class="px-4 py-3">
@@ -1040,9 +1070,64 @@ new class extends Component
             </tbody>
         </table>
 
-        <div class="px-5 py-4 border-t border-gold-100 flex items-center justify-between text-sm text-ink/60">
-            <span>Hiển thị {{ $leads->count() }} trong tổng số {{ number_format($leads->total()) }} khách hàng</span>
-            {{ $leads->links() }}
+        <div class="px-5 py-4 border-t border-gold-100 flex flex-wrap items-center justify-between gap-3 text-sm text-ink/60">
+            <div class="flex items-center gap-3">
+                <span>Hiển thị {{ $leads->count() }} / {{ number_format($leads->total()) }} khách hàng</span>
+                <label class="flex items-center gap-1.5">
+                    <span class="text-xs text-ink/50">Số dòng/trang:</span>
+                    <select wire:model.live="perPage" class="border border-gold-200 rounded-md px-2 py-1 text-sm bg-white focus:outline-none focus:border-gold-500">
+                        <option value="15">15</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                    </select>
+                </label>
+            </div>
+
+            @php
+                $cur = $leads->currentPage();
+                $last = max(1, $leads->lastPage());
+                $window = 1; // số trang hai bên trang hiện tại
+                $pages = [];
+                $add = function ($p) use (&$pages, $last) {
+                    if ($p >= 1 && $p <= $last && ! in_array($p, $pages, true)) $pages[] = $p;
+                };
+                $add(1);
+                for ($i = $cur - $window; $i <= $cur + $window; $i++) $add($i);
+                $add($last);
+                sort($pages);
+            @endphp
+
+            <div class="flex items-center gap-1"
+                 x-data="{ jump: '{{ $cur }}', last: {{ $last }} }"
+                 x-effect="jump = '{{ $cur }}'">
+                <button wire:click="gotoPage2(1)" @if($cur <= 1) disabled @endif
+                        class="px-2 py-1 rounded border border-gold-200 hover:bg-gold-50 disabled:opacity-40 disabled:cursor-not-allowed" title="Trang đầu">«</button>
+                <button wire:click="previousPage" @if($cur <= 1) disabled @endif
+                        class="px-2 py-1 rounded border border-gold-200 hover:bg-gold-50 disabled:opacity-40 disabled:cursor-not-allowed" title="Trước">‹</button>
+
+                @php $prev = 0; @endphp
+                @foreach ($pages as $p)
+                    @if ($prev && $p - $prev > 1)
+                        <span class="px-1 text-ink/40">…</span>
+                    @endif
+                    @if ($p === $cur)
+                        <input type="number" min="1" :max="last" x-model="jump"
+                               @keydown.enter.prevent="$wire.gotoPage2(Math.max(1, Math.min(last, parseInt(jump) || 1)))"
+                               @blur="if (parseInt(jump) !== {{ $cur }}) $wire.gotoPage2(Math.max(1, Math.min(last, parseInt(jump) || 1)))"
+                               class="w-14 text-center px-1 py-1 border-2 border-gold-500 rounded bg-gold-50 font-semibold text-gold-800 focus:outline-none no-spinner"
+                               title="Nhập số trang rồi Enter">
+                    @else
+                        <button wire:click="gotoPage2({{ $p }})"
+                                class="min-w-[32px] px-2 py-1 rounded border border-gold-200 hover:bg-gold-50">{{ $p }}</button>
+                    @endif
+                    @php $prev = $p; @endphp
+                @endforeach
+
+                <button wire:click="nextPage" @if($cur >= $last) disabled @endif
+                        class="px-2 py-1 rounded border border-gold-200 hover:bg-gold-50 disabled:opacity-40 disabled:cursor-not-allowed" title="Sau">›</button>
+                <button wire:click="gotoPage2({{ $last }})" @if($cur >= $last) disabled @endif
+                        class="px-2 py-1 rounded border border-gold-200 hover:bg-gold-50 disabled:opacity-40 disabled:cursor-not-allowed" title="Trang cuối">»</button>
+            </div>
         </div>
     </div>
 
