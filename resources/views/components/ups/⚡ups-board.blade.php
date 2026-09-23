@@ -64,33 +64,17 @@ new class extends Component
         return PoolUnit::whereIn('id', array_keys($branchIds))->orderBy('sort')->get()->all();
     }
 
-    /** Sale user thuộc riêng 1 cơ sở (facility pool) — dựa org_pool_map cấp facility. */
+    /**
+     * Sale user thuộc riêng 1 cơ sở (facility pool).
+     *
+     * 2026-09-23: đổi từ heuristic match tên role (%ale%/%eader%/Trợ lý) sang
+     * danh sách admin tick tay ở /settings/ups-list (bảng ups_list_members).
+     * Lý do: cần chặn sale chưa đủ điều kiện / thêm case mới không theo tên role nữa.
+     */
     private function saleUsersOfFacility(PoolUnit $facility): \Illuminate\Support\Collection
     {
-        $orgIds = DB::table('org_pool_map')->where('pool_unit_id', $facility->id)->pluck('org_unit_id')->all();
-        if (! $orgIds) {
-            return collect();
-        }
-        $subtreeIds = [];
-        foreach (OrgUnit::whereIn('id', $orgIds)->get() as $org) {
-            $subtreeIds = array_merge($subtreeIds, $org->subtreeIds());
-        }
-        $subtreeIds = array_unique($subtreeIds);
-        if (! $subtreeIds) {
-            return collect();
-        }
-
-        // 2026-09-07: mở rộng — bao gồm Team Leader (VD Phan Trần Khánh Quỳnh) và
-        //   Trợ lý kinh doanh (assistant) vì họ vẫn tiếp khách. Trước lọc %ale% match
-        //   'Sale/Team Sale/CM sale' bỏ sót 'Team Leader', 'Trợ lý' → mất khỏi UPS list.
         return User::query()
-            ->whereHas('assignments', function ($q) use ($subtreeIds) {
-                $q->whereIn('org_unit_id', $subtreeIds)
-                    ->whereHas('role', fn ($r) => $r
-                        ->where('name', 'like', '%ale%')       // Sale / Team Sale / CM sale
-                        ->orWhere('name', 'like', '%eader%')   // Team Leader
-                        ->orWhere('name', 'like', '%Trợ lý%'));// Trợ lý kinh doanh
-            })
+            ->whereHas('upsListMemberships', fn ($q) => $q->where('facility_pool_unit_id', $facility->id))
             ->orderBy('name')->get();
     }
 

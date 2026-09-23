@@ -49,4 +49,10 @@ class User extends Authenticatable
             ->take(2)
             ->implode('');
     }
+
+    /** Cơ sở mà user được tick vào UPS List (Settings → Danh sách UPS List, chỉ super admin sửa). */
+    public function upsListMemberships()
+    {
+        return $this->hasMany(UpsListMember::class);
+    }
 }

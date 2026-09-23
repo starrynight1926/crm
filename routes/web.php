@@ -82,6 +82,8 @@ Route::middleware('auth')->group(function () {
     // UPS check-in đầu ngày (Phase 6.22)
     Route::view('/ups-list', 'ups.index')->middleware('permission:ups.view')->name('ups.list');
     Route::view('/ups-today', 'ups.today')->name('ups.today'); // read-only, cho mọi user có scope
+    // 2026-09-23: Danh sách UPS List — chỉ super admin (guard trong ⚡ups-list-manager mount()).
+    Route::view('/settings/ups-list', 'settings.ups-list')->name('settings.ups-list');
     // 2026-08-26: Import/Export DailyAttendance — chỉ admin@longevity.com.vn (guard trong controller).
     Route::get('/ups-today/export',  [\App\Http\Controllers\UpsAttendanceImportExportController::class, 'export'])->name('ups.today.export');
     Route::post('/ups-today/import', [\App\Http\Controllers\UpsAttendanceImportExportController::class, 'import'])->name('ups.today.import');

@@ -53,6 +53,10 @@
                 ['label'=>'Rule chia số','desc'=>'Cấu hình logic chia số theo cơ sở/nguồn/loại lead.','route'=>'distribution.rules','perm'=>'rule.manage','icon'=>'shield'],
                 ['label'=>'Kết nối Booking','desc'=>'Cấu hình endpoint/API kết nối hệ thống Booking.','route'=>'settings.booking-connection','perm'=>'connection.manage','icon'=>'plug'],
                 ['label'=>'Kết nối nguồn Ads','desc'=>'Kết nối các nguồn quảng cáo để tự động kéo lead về.','route'=>'sources.index','perm'=>'connection.manage','icon'=>'plug'],
+                // 2026-09-23: chỉ super admin — không gắn perm thường vì user chốt "chỉ Admin hệ thống".
+                ...(\App\Support\AdminScope::isSuperAdmin() ? [
+                    ['label'=>'Danh sách UPS List','desc'=>'Tick từng người vào UPS List theo cơ sở — người được tick mới hiện trong dropdown check-in UPS.','route'=>'settings.ups-list','perm'=>null,'icon'=>'check'],
+                ] : []),
             ],
         ],
         'system' => [

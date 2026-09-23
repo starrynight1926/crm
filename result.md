@@ -3104,3 +3104,29 @@ Nguồn: gom `lead_status_logs` (user_id) + `lead_distribution_logs` (actor_id),
 - `d19f816` avatar Chuyển sang Booking
 - `6cce168` dropdown cơ sở filter root + có lead
 - `0078e6c` (user commit) export thêm Username/Password/Team
+
+## 2026-09-23 — Danh sách UPS List (tick tay theo cơ sở) 🟢
+
+**Bối cảnh**: user cần chặn/thêm sale vào UPS check-in list theo ý (case sale chưa đủ điều kiện, hoặc lead mới phát sinh cần thêm người) — không thể tiếp tục suy luận qua tên role (`%ale%`/`%eader%`/`Trợ lý`) như heuristic cũ trong `saleUsersOfFacility()`.
+
+**Chốt thiết kế với user**:
+1. Chia theo **5 facility thực** (không phải 3 chi nhánh) — đúng đơn vị UPS đang vận hành (bucket/cutoff/round-robin đều khóa theo `facility_pool_unit_id`). UI group hiển thị theo 3 chi nhánh (Hà Nội/Đà Nẵng/HCM) cho gọn, nhưng data & checkbox tách riêng theo facility.
+2. Thay thế **hoàn toàn** heuristic role-name — dropdown check-in UPS giờ chỉ lấy user có trong `ups_list_members`.
+3. Quyền sửa: **chỉ Admin hệ thống** (`AdminScope::isSuperAdmin()`), không dùng `ops.manage`/`user.manage` — theo yêu cầu user, khác đề xuất ban đầu của tao.
+4. 1 user có thể tick vào nhiều facility (case 207 Nguyễn Văn Thủ ↔ 137 Nguyễn Chí Thanh hay đổi người qua lại) → bảng pivot, không phải cột đơn.
+
+**Đã làm**:
+- Migration `2026_09_23_090000_create_ups_list_members_table.php`: bảng `ups_list_members(facility_pool_unit_id, user_id, added_by)`, unique theo cặp. **Backfill trong `up()`** từ heuristic role-name cũ (37 dòng seed cho 3/5 facility có `org_pool_map`; CS2 Hoàng Ngân & 137 Nguyễn Chí Thanh chưa có map nên trống — admin tick tay bổ sung) để tránh danh sách rỗng đột ngột sau migrate.
+- Model `App\Models\UpsListMember` + relation `User::upsListMemberships()`.
+- Sửa `saleUsersOfFacility()` trong [⚡ups-board.blade.php](resources/views/components/ups/⚡ups-board.blade.php:67) — bỏ hẳn query match tên role, dùng `whereHas('upsListMemberships', ...)`.
+- Màn mới `/settings/ups-list` ([⚡ups-list-manager.blade.php](resources/views/components/ups/⚡ups-list-manager.blade.php)) — bảng ma trận Nhân viên × 5 Facility (group theo chi nhánh), checkbox tick/bỏ realtime qua Livewire, search theo tên. Gate `abort_unless(AdminScope::isSuperAdmin())` cả ở `mount()` lẫn `toggle()`.
+- Thêm module "Danh sách UPS List" vào tab Vận hành của `/settings` — chỉ render khi `AdminScope::isSuperAdmin()` (không qua cơ chế `perm` thường).
+- `.claude/launch.json`: thêm config `lara-scrm-serve` (`php artisan serve --port=8123`) vì config `lara-scrm` cũ (attach `127.0.0.1:1999`) không có server nào chạy sẵn trong session này.
+
+**QA đã làm (browser thật, không dùng admin để test permission)**:
+- Login `admin` / `59ntn` → `/settings/ups-list` render đúng ma trận 5 facility × 3 chi nhánh, checkbox pre-tick đúng theo backfill (VD Phan Trần Khánh Quỳnh tick sẵn ở 59 Ngô Thì Nhậm + 207 Nguyễn Văn Thủ).
+- Tick thêm checkbox 137 Nguyễn Chí Thanh cho Quỳnh → DB tạo row `added_by=1` ngay; bỏ tick → xóa row. Confirm qua tinker + JS `checkbox.checked`.
+- Vào `/ups-list` (UPS check-in thật) → dropdown "Chọn nhân viên" của từng facility khớp 100% với số lượng/tên trong `ups_list_members` (15 người CS1 59NTN, 9 người Trần Đăng Ninh, 13 người 207 NVT).
+- Impersonate **"Admin Cơ sở Hà Nội"** (admin cơ sở, không phải super admin) → `/settings` không còn hiện tab Vận hành (do thiếu `ops.manage`/`rule.manage`, module UPS List cũng ẩn theo); truy cập thẳng `/settings/ups-list` → **403 Forbidden** đúng như thiết kế.
+
+**Dời lại / lưu ý cho sau**: 2 facility CS2 Hoàng Ngân + 137 Nguyễn Chí Thanh chưa có `org_pool_map` nên backfill để trống — admin cần tick tay danh sách ban đầu cho 2 cơ sở này trước khi dùng UPS thật ở đó.
