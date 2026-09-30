@@ -2522,7 +2522,12 @@ new class extends Component
         $results = ($q === '' ? $users : $users->filter(fn ($u) => str_contains(mb_strtolower($u->name), mb_strtolower($q))))
             ->take(15)->values();
 
-        $facilities = Facility::with(['children' => fn ($q) => $q->active()])->roots()->active()->get();
+        // 2026-09-30: dropdown chọn cơ sở booking → loại các phòng nội bộ (VD "Phòng vận hành")
+        //   không phải cơ sở khám bệnh. Lọc children theo name (không chứa "vận hành").
+        $facilities = Facility::with(['children' => fn ($q) => $q->active()
+                ->whereRaw('LOWER(name) NOT LIKE ?', ['%vận hành%'])
+                ->whereRaw('LOWER(name) NOT LIKE ?', ['%van hanh%'])])
+            ->roots()->active()->get();
 
         $allStaff = StaffMember::with('facility.parent')->active()->orderBy('name')->get();
 
