@@ -2,6 +2,38 @@
 
 > Làm xong phase nào ghi vào đây: ngày hoàn thành, việc đã làm, việc dời lại/chưa xong, ghi chú & quyết định phát sinh. Mẫu bên dưới.
 
+## 2026-09-30 — Simple Booking (nháp lịch đặt kiểu Excel) ✅
+
+**Bối cảnh**: rule "phải có call thành công trước khi booking" (commit a6cf686, `Lead::canCreateBooking`) đúng cho luồng chuẩn nhưng cản lễ tân/telesale nhập bù, khách vãng lai. User yêu cầu 1 trang `/simple-booking` giống Excel: ai trong scope cơ sở cũng nhập/sửa được, KHÔNG chặn, chỉ đánh dấu 🟢🟡🔴 để dọn dần.
+
+### Đã làm
+- **Migration** `2026_09_30_100000_create_booking_drafts_table` — bảng phẳng độc lập với `booking_logs`, không hook side-effect (không transfer owner, không đẩy phase, không sync sbooking).
+- **Model** `App\Models\BookingDraft` với method `statusColor()` (green/yellow/red) + `warningReasons()`:
+  - 🔴 red: thiếu `ho_ten` / `sdt` / `ngay_dat_lich`
+  - 🟡 yellow: đủ tối thiểu nhưng thiếu `gio` / `sale` / `lieu_phap`
+  - 🟢 green: đủ hết
+- **Route** `GET /simple-booking` (perm `lead.view`) + wrapper blade + volt component `resources/views/components/booking/⚡simple-booking.blade.php`.
+- **Data scope**: super admin thấy all facilities; user thường thấy facility_ids từ `Lead::visibleTo($u)->distinct('facility_id')`.
+- **Inline edit**: click "Sửa" → biến row thành form, "💾" save, "✕" cancel. `canTouch()` guard theo scope.
+- **Menu sidebar**: item "⚡ Nhập nhanh (Simple)" trong nhóm Khách hàng, gate `lead.view`.
+- **Verify browser** (localhost:8123, tài khoản admin@longevity.com.vn):
+  - Row đủ 6 field bắt buộc → 🟢 ✓
+  - Row đủ ho_ten+sdt+ngay nhưng thiếu sale/liệu pháp → 🟡 ✓
+  - Row thiếu ho_ten → 🔴 ✓
+  - Checkbox "Chỉ hiện row có ⛔" ẩn row 🟢 ✓
+  - Dropdown filter cơ sở hoạt động ✓
+- Small fix: `normalize()` đổi '' → null để cột DATE/TIME không lưu 0000-00-00/00:00:00.
+
+### Dời lại
+- Chưa viết feature test PHPUnit (mới verify tay bằng browser).
+- Chưa có nút "Promote thành BookingLog chính thức" (Option B của plan) — làm khi user cần.
+- Nút "Chuyển sang chế độ simple" trên `/leads` (goc phai) — chưa gắn, menu sidebar đã có link.
+
+### Ghi chú
+- Tuyệt đối KHÔNG chạm `BookingLog` — `booted()` hooks (bumpMktRecallOnBooking, ownership transfer MKT/BA/BDM/BOD/WI, auto-close Phase 4, PushBookingLogJob) sẽ fire sai nếu draft rác vô nó. Draft là 1 bảng riêng.
+- `promoted_booking_log_id` cột sẵn cho Phase 2 (promote sau).
+- Deploy prod: `cd ~/aismemory/~/public_html/data.sweetsica.com && git pull && php artisan migrate --force && php artisan view:clear`.
+
 ## 2026-09-04 — Phase 6.26 (a-d) Sale Tiếp Đón thao tác bên SCRM 🚧 (còn test tay 6.26.e)
 
 **Bối cảnh**: user báo booking BKG-260904-000060 (nguồn SA, Hoài Như đặt) bị SCRM UPS override sang Bích Trâm khi khách check-in. Rework luồng: sale không vào sbooking, mọi thao tác làm bên SCRM. Đồng thời fix perm scope: sale HC thấy nhầm lead BOD kho team.
