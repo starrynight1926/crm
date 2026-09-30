@@ -193,6 +193,8 @@ class RolePermissionSyncSeeder extends Seeder
             // 2026-08-08: thêm view_pool để Observer xem được kho số (kho chung/team chưa chia).
             'lead.export', 'lead.view', 'lead.view_phone', 'lead.view_pool', 'lead.view_team_pool',
             'report.view', 'report.view_all',
+            // 2026-09-30: nhóm Giám sát vận hành xem UPS board TẤT CẢ cơ sở (read-only).
+            'ups.view', 'ups.view_all',
         ],
     ];
 

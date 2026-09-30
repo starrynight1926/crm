@@ -36,7 +36,9 @@ new class extends Component
     private function branchesForUser(): array
     {
         $user = auth()->user();
-        if ($user->hasPermission('user.manage')) {
+        // 2026-09-30: nhóm Giám sát vận hành (Observer) cần thấy tất cả cơ sở nhưng không có
+        //   user.manage → thêm ups.view_all làm cửa riêng để bypass mapping.
+        if ($user->hasPermission('user.manage') || $user->hasPermission('ups.view_all')) {
             return PoolUnit::where('kind', 'branch')->orderBy('sort')->get()->all();
         }
         // 2026-08-05 fix: trước chỉ check direct assignment.org_unit_id → user assignment ở team-nhap-lead

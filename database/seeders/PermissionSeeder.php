@@ -92,6 +92,7 @@ class PermissionSeeder extends Seeder
         ],
         'ups' => [
             'ups.view' => 'Xem bảng UPS check-in',
+            'ups.view_all' => 'Xem UPS check-in TẤT CẢ cơ sở (giám sát/BOD)',
             'ups.checkin' => 'Bấm check-in sale đầu ngày',
             'ups.override' => 'Sửa bucket / bỏ OFF LIST (BO only)',
             'ups.confirm_daily' => 'Chốt UPS hôm nay (mở khóa chia số)',
