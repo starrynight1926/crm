@@ -528,10 +528,19 @@ new class extends Component
                     Lưu — chốt {{ $startPhase - $openFrom + 1 }} phase (từ {{ $openFrom }} đến {{ $startPhase }})
                 </button>
             @elseif (! $isBulkOpen && $activePhase === (int) $lead->phase && $activePhase <= 4)
-                <button wire:click="closePhase({{ $activePhase }})"
-                        class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm px-4 py-2 rounded">
-                    Kết thúc phase {{ $activePhase }} — {{ $phases[$activePhase] }}
-                </button>
+                @php
+                    // 2026-09-30: phase 2 (Gọi điện) — ẩn nút "Kết thúc" khi chưa có call log nào,
+                    //   tránh sale chốt trắng phase mà không ghi lịch sử gọi.
+                    $hideClosePhase2 = $activePhase === \App\Models\Lead::CF_PHASE_CALL && $callLogs->isEmpty();
+                @endphp
+                @if (! $hideClosePhase2)
+                    <button wire:click="closePhase({{ $activePhase }})"
+                            class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm px-4 py-2 rounded">
+                        Kết thúc phase {{ $activePhase }} — {{ $phases[$activePhase] }}
+                    </button>
+                @else
+                    <span class="text-xs text-ink/50 italic">Ghi ít nhất 1 cuộc gọi ở trên trước khi kết thúc phase 2.</span>
+                @endif
             @endif
 
             @if ($canRollback && $activePhase < (int) $lead->phase && $closures->has($activePhase))
