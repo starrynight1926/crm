@@ -47,13 +47,23 @@ new class extends Component
     /** Facilities user được thấy. Super admin: all; user thường: các facility_id đã từng có lead visible. */
     public function visibleFacilities()
     {
+        // Chỉ hiển thị các cơ sở gốc (parent_id=null) — không lôi phòng con / khối chuyên môn.
+        $q = Facility::whereNull('parent_id');
         if (AdminScope::isSuperAdmin()) {
-            return Facility::orderBy('parent_id')->orderBy('name')->get();
+            return $q->orderBy('name')->get();
         }
         $u = auth()->user();
-        $ids = Lead::visibleTo($u)->whereNotNull('facility_id')->distinct()->pluck('facility_id')->all();
-        if (! $ids) return collect();
-        return Facility::whereIn('id', $ids)->orderBy('parent_id')->orderBy('name')->get();
+        $leafIds = Lead::visibleTo($u)->whereNotNull('facility_id')->distinct()->pluck('facility_id')->all();
+        if (! $leafIds) return collect();
+        // Đi lên tới root facility cho mỗi facility user thấy được.
+        $rootIds = [];
+        foreach (Facility::whereIn('id', $leafIds)->get() as $f) {
+            $n = $f;
+            while ($n && $n->parent_id) $n = $n->parent;
+            if ($n) $rootIds[$n->id] = true;
+        }
+        if (! $rootIds) return collect();
+        return $q->whereIn('id', array_keys($rootIds))->orderBy('name')->get();
     }
 
     protected function visibleFacilityIds(): array
