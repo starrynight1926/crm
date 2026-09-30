@@ -792,10 +792,12 @@ new class extends Component
             <p class="text-xs md:text-sm text-ink/60 hidden sm:block">Quản lý và theo dõi các khách hàng tiềm năng trên tất cả các kênh.</p>
         </div>
         <div class="flex flex-wrap items-center gap-2 md:gap-3">
-            <a href="{{ route('simple-booking') }}"
-               class="text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 px-3 md:px-4 py-2 md:py-2.5 rounded-md">
-                ⚡ Chuyển sang chế độ Simple
-            </a>
+            @if (auth()->user()->is_admin || auth()->user()->email === 'admin@longevity.com.vn')
+                <a href="{{ route('simple-booking') }}"
+                   class="text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 px-3 md:px-4 py-2 md:py-2.5 rounded-md">
+                    ⚡ Chuyển sang chế độ Simple
+                </a>
+            @endif
             @if (auth()->user()->hasPermission('lead.import'))
                 <a href="{{ route('leads.failed') }}" class="text-sm font-semibold text-ink/60 border border-gold-200 px-3 md:px-4 py-2 md:py-2.5 rounded-md hover:bg-gold-50">Lead lỗi</a>
                 <a href="{{ route('leads.import') }}" class="text-sm font-semibold text-gold-700 border border-gold-300 px-3 md:px-4 py-2 md:py-2.5 rounded-md hover:bg-gold-50">⬆ Import</a>

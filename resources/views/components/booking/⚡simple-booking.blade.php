@@ -36,7 +36,8 @@ new class extends Component
 
     public function mount(): void
     {
-        abort_unless(auth()->check(), 403);
+        // 2026-09-30: tạm ẩn feature — chỉ super admin thấy.
+        abort_unless(AdminScope::isSuperAdmin(), 403);
         $facilities = $this->visibleFacilities();
         // Mặc định facility_id draft = facility đầu tiên user thấy (1 cơ sở → chọn luôn).
         if ($facilities->count() >= 1) {

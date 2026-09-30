@@ -12,7 +12,7 @@
         $customerChildren = array_values(array_filter([
             ['label' => 'Danh sách khách hàng', 'route' => $u->hasAnyPermission(['lead.view', 'lead.import']) ? 'leads.index' : null, 'match' => 'leads.index'],
             ['label' => 'Thêm khách hàng', 'route' => $u->hasPermission('lead.create') ? 'leads.create' : null, 'match' => 'leads.create'],
-            ['label' => '⚡ Nhập nhanh (Simple)', 'route' => $u->hasPermission('lead.view') ? 'simple-booking' : null, 'match' => 'simple-booking'],
+            ['label' => '⚡ Nhập nhanh (Simple)', 'route' => ($u->is_admin || $u->email === 'admin@longevity.com.vn') ? 'simple-booking' : null, 'match' => 'simple-booking'],
             ['label' => 'Kho lead', 'route' => $u->hasPermission('lead.view') ? 'distribution.pools' : null, 'match' => 'distribution.pools'],
             ['label' => 'Duyệt Lead', 'route' => $u->hasPermission('lead.approve_source') ? 'leads.approvals' : null, 'match' => 'leads.approvals'],
         ], fn ($i) => $i['route']));

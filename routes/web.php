@@ -103,7 +103,8 @@ Route::middleware('auth')->group(function () {
     Route::view('/leads/create', 'leads.create')->middleware('permission:lead.create')->name('leads.create');
 
     // Simple Booking — sheet nhập nhanh dạng Excel, không đụng hook BookingLog.
-    Route::view('/simple-booking', 'simple-booking.index')->middleware('permission:lead.view')->name('simple-booking');
+    // 2026-09-30: tạm ẩn — chỉ super admin thấy (guard trong ⚡simple-booking mount()).
+    Route::view('/simple-booking', 'simple-booking.index')->name('simple-booking');
 
     Route::prefix('leads')->middleware('permission:lead.view,lead.import')->group(function () {
         Route::view('/', 'leads.index')->name('leads.index');
