@@ -3705,10 +3705,16 @@ new class extends Component
                              2026-08-19: nguồn self-owned (SA/BA/MKT_BR/HL) — sale = người nhập lead,
                                không cần UPS auto, hiển thị dòng cố định thay vì block chia UPS. --}}
                         @if (\App\Models\Lead::isSelfOwnedSource($sourceGroup))
+                            @php
+                                // 2026-09-30 fix: hiện owner của lead (sale gốc đã nhập), không phải người
+                                //   đang thao tác. Trước đây admin vào tạo booking hộ → hiện tên admin, sai.
+                                //   Backend đã dùng $lead->owner_id (line ~352), UI phải khớp.
+                                $__saleGoc = optional($this->lead->owner)->name ?? auth()->user()->name;
+                            @endphp
                             <div class="space-y-1.5">
                                 <div class="text-xs font-semibold text-ink/60">Nhân viên tiếp đón</div>
                                 <div class="flex-1 border border-amber-300 bg-amber-50 rounded px-3 py-1.5 text-sm text-amber-900">
-                                    ✓ {{ auth()->user()->name }}
+                                    ✓ {{ $__saleGoc }}
                                     <span class="text-[10px] text-amber-700">(sale gốc — theo nguồn tự nhập)</span>
                                 </div>
                             </div>
