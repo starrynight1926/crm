@@ -171,7 +171,10 @@ new class extends Component
                 <span class="text-green-600 font-medium">🟢 xanh</span> = đủ.
             </p>
         </div>
-        <a href="{{ route('leads.index') }}" class="text-sm text-gray-600 hover:text-blue-600">← Về danh sách khách hàng</a>
+        <a href="{{ route('leads.index') }}"
+           class="text-sm font-semibold text-white bg-gray-600 hover:bg-gray-700 px-4 py-2 rounded-md">
+            ← Về chế độ chuẩn (Danh sách KH)
+        </a>
     </div>
 
     <div class="flex gap-3 items-center mb-3 text-sm">
