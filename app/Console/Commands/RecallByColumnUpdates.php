@@ -7,7 +7,6 @@ use App\Models\CustomField;
 use App\Models\Lead;
 use App\Models\LeadCustomValue;
 use App\Models\LeadStatusLog;
-use App\Models\LeadPhaseClosure;
 use App\Services\DistributionEngine;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
@@ -22,7 +21,8 @@ use Illuminate\Support\Facades\Log;
  *
  *   Cột 4,5 (day 3, ≥72h): thêm Phân loại + Kết quả.
  *     → CustomField `phan_loai` + `ket_qua` (đã đưa về scope Công ty ở migration 2026-08-07)
- *       phải có value; và LeadPhaseClosure phase=2 đã đóng (Bước tiếp theo được chốt).
+ *       phải có value. (2026-10-01: bỏ yêu cầu đóng phase 2 — điền đủ thông tin + lưu là đủ,
+ *       không cần bấm "Kết thúc phase 2" nữa.)
  *
  * Mặc định áp cho MỌI lead cá nhân. Ô tick "Không thu hồi" (skip_recall=true) ở form
  * chia số dùng để exempt lead khỏi luật (VD lead đặc biệt CM giữ tay).
@@ -34,7 +34,7 @@ class RecallByColumnUpdates extends Command
 {
     protected $signature = 'leads:recall-by-columns {--dry-run} {--day1-minutes=1440 : Ngưỡng day 1 tính bằng phút (mặc định 1440 = 24h)} {--day3-minutes=4320 : Ngưỡng day 3 tính bằng phút (mặc định 4320 = 72h)}';
 
-    protected $description = 'Thu hồi lead cá nhân theo quy tắc PKD (day1: có ghi nhận cuộc gọi; day3: đủ phân loại + kết quả + đóng phase 2). Ngưỡng cấu hình qua --day1-minutes / --day3-minutes.';
+    protected $description = 'Thu hồi lead cá nhân theo quy tắc PKD (day1: có ghi nhận cuộc gọi; day3: đủ phân loại + kết quả). Ngưỡng cấu hình qua --day1-minutes / --day3-minutes.';
 
     public function handle(DistributionEngine $engine): int
     {
@@ -120,9 +120,6 @@ class RecallByColumnUpdates extends Command
                 ->exists();
             if (! $filled) $missing[] = $label;
         }
-
-        $phase2Closed = LeadPhaseClosure::where('lead_id', $lead->id)->where('phase', 2)->exists();
-        if (! $phase2Closed) $missing[] = 'đóng phase 2 (Bước tiếp theo)';
 
         return $missing;
     }
