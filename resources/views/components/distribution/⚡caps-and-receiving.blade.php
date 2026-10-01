@@ -154,7 +154,7 @@ new class extends Component
             </div>
             <div>
                 <label class="block text-xs font-semibold text-ink/50 mb-1">Nghỉ đến hết</label>
-                <input type="date" wire:model="offUntil" class="border border-gold-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-gold-500">
+                <x-date-input field="offUntil" class="px-3 py-2" />
                 @error('offUntil')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
             </div>
             <button wire:click="setOff" class="bg-gold-600 hover:bg-gold-700 text-white font-semibold text-sm px-4 py-2 rounded-md">Đặt nghỉ</button>

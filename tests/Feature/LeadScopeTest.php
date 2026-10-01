@@ -74,17 +74,30 @@ class LeadScopeTest extends TestCase
 
     public function test_team_scope_sees_all_leads_in_subtree(): void
     {
+        // Phase 6.22 — Manager có scope team + KHÔNG có quyền distribute*: không thấy kho chung công ty.
         $manager = $this->makeSale($this->root, Assignment::SCOPE_TEAM);
 
         $inA = $this->makeLead(['org_unit_id' => $this->teamA->id]);
         $inB = $this->makeLead(['org_unit_id' => $this->teamB->id]);
-        $noOrg = $this->makeLead(); // kho chung, chưa gán team
+        $noOrgCommon = $this->makeLead(); // kho chung công ty
 
         $visible = Lead::visibleTo($manager)->pluck('id')->all();
 
         $this->assertContains($inA->id, $visible);
         $this->assertContains($inB->id, $visible);
-        $this->assertNotContains($noOrg->id, $visible);
+        $this->assertNotContains($noOrgCommon->id, $visible, 'Không có quyền distribute → không thấy kho chung');
+    }
+
+    public function test_pool_visible_only_for_user_with_view_pool_permission(): void
+    {
+        // Manager có quyền lead.view_pool → thấy kho chung công ty.
+        $manager = $this->makeSale($this->root, Assignment::SCOPE_TEAM);
+        $perm = \App\Models\Permission::firstOrCreate(['key' => 'lead.view_pool'], ['label' => 'Xem kho số', 'group' => 'distribution']);
+        $this->saleRole->permissions()->syncWithoutDetaching([$perm->id]);
+
+        $noOrgCommon = $this->makeLead();
+        $visible = Lead::visibleTo($manager)->pluck('id')->all();
+        $this->assertContains($noOrgCommon->id, $visible, 'User có quyền view_pool → thấy kho chung công ty');
     }
 
     public function test_team_scope_does_not_leak_other_branch(): void

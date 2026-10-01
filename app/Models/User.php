@@ -12,7 +12,7 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 
-#[Fillable(['name', 'email', 'phone', 'avatar', 'status', 'password', 'last_login_at'])]
+#[Fillable(['username', 'name', 'email', 'phone', 'job_title', 'avatar', 'status', 'password', 'last_login_at', 'report_prefs', 'api_token', 'sbooking_user_id'])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
 {
@@ -33,6 +33,7 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'last_login_at' => 'datetime',
             'password' => 'hashed',
+            'report_prefs' => 'array',
         ];
     }
 
@@ -47,5 +48,11 @@ class User extends Authenticatable
             ->map(fn ($word) => mb_substr($word, 0, 1))
             ->take(2)
             ->implode('');
+    }
+
+    /** Cơ sở mà user được tick vào UPS List (Settings → Danh sách UPS List, chỉ super admin sửa). */
+    public function upsListMemberships()
+    {
+        return $this->hasMany(UpsListMember::class);
     }
 }

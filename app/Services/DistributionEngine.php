@@ -12,6 +12,8 @@ use App\Models\RuleTarget;
 use App\Models\User;
 use App\Models\UserLeadSetting;
 use App\Notifications\LeadAssigned;
+use App\Support\NotificationEvents;
+use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -27,13 +29,93 @@ class DistributionEngine
     /** Chia 1 lead từ vị trí hiện tại xuống sâu nhất có thể. */
     public function distribute(Lead $lead): void
     {
+        // 2026-08-26 — MKT là logic cứng: chia round-robin theo UPS list của cơ sở người up,
+        // không phụ thuộc distribution_rules (bảng đó dành cho MKT_BR / SA / BA / BDM cần rule config).
+        if ($lead->source_group === Lead::SOURCE_MKT && $lead->owner_id === null) {
+            if ($this->assignMktByUps($lead)) {
+                return; // Đã pick sale + gán owner. Không chạy rule engine nữa.
+            }
+            // pickMkt trả null (UPS list rỗng hoặc chưa chốt UPS) → fallthrough: giữ lead ở pool để CM chia tay.
+        }
+
+        // Phase 6.20 — eager load customValues để accessor page/camp không N+1 khi match rule
+        $lead->loadMissing('customValues');
         if ($lead->pool_level === Lead::POOL_COMMON) {
             $this->runLevel($lead, DistributionRule::LEVEL_POOL_TO_TEAM);
         }
 
         if ($lead->refresh()->pool_level === Lead::POOL_TEAM) {
+            $lead->loadMissing('customValues');
             $this->runLevel($lead, DistributionRule::LEVEL_TEAM_TO_USER);
         }
+    }
+
+    /**
+     * MKT auto-assign: suy facility từ user Trực Page (imported_by) → UpsDispatcher::pickMkt round-robin.
+     * Trả true nếu đã gán owner, false nếu không pick được (list rỗng / UPS chưa chốt / không suy được facility).
+     */
+    private function assignMktByUps(Lead $lead): bool
+    {
+        $importerId = $lead->imported_by;
+        if (! $importerId) {
+            return false;
+        }
+        $facilityPoolUnitId = $this->resolvePoolUnitIdFromUser($importerId);
+        if (! $facilityPoolUnitId) {
+            return false;
+        }
+        $sale = app(\App\Services\Ups\UpsDispatcher::class)->pickMkt($facilityPoolUnitId);
+        if (! $sale) {
+            return false;
+        }
+        // 2026-09-07: Suy org_unit_id của sale — PHẢI chọn assignment nằm trong cây
+        //   của facility đích (không random first). Trước: sale multi-facility (VD
+        //   Quỳnh: PKD1 HN + team-ashley HCM) → first() có thể trả HCM khi UPS
+        //   đang chia lead HN → lead 866 gắn org PKD1 HCM sai branch.
+        $facilityOrgIds = \DB::table('org_pool_map')
+            ->where('pool_unit_id', $facilityPoolUnitId)
+            ->pluck('org_unit_id')->all();
+        $facilitySubtreeIds = [];
+        if ($facilityOrgIds) {
+            $paths = \App\Models\OrgUnit::whereIn('id', $facilityOrgIds)->pluck('path')->all();
+            $q = \App\Models\OrgUnit::query();
+            foreach ($paths as $i => $p) {
+                $q->{$i === 0 ? 'where' : 'orWhere'}('path', 'like', $p . '%');
+            }
+            $facilitySubtreeIds = $q->pluck('id')->all();
+        }
+        $saleOrgId = null;
+        if ($facilitySubtreeIds) {
+            $saleOrgId = $sale->assignments()
+                ->whereIn('org_unit_id', $facilitySubtreeIds)
+                ->value('org_unit_id');
+        }
+        // Fallback: first assignment (giữ hành vi cũ nếu không tìm được match).
+        $saleOrgId ??= $sale->assignments()->first()?->org_unit_id;
+        $lead->update([
+            'owner_id'        => $sale->id,
+            'org_unit_id'     => $saleOrgId,
+            'pool_level'      => Lead::POOL_PERSONAL,
+            'assigned_at'     => now(),
+            'pipeline_status' => Lead::PSTATUS_IN_CARE,
+        ]);
+        LeadDistributionLog::create([
+            'lead_id'         => $lead->id,
+            'action'          => LeadDistributionLog::ACTION_DISTRIBUTE,
+            'from_pool_level' => Lead::POOL_COMMON,
+            'to_pool_level'   => Lead::POOL_PERSONAL,
+            'to_owner_id'     => $sale->id,
+            'org_unit_id'     => $saleOrgId,
+            'actor_id'        => null,        // system (UPS auto)
+            'reason'          => 'MKT auto UPS round-robin',
+            'created_at'      => now(),
+        ]);
+        try {
+            $sale->notify(new LeadAssigned($lead));
+        } catch (\Throwable $e) {
+            // Notification lỗi không rollback assignment.
+        }
+        return true;
     }
 
     private function runLevel(Lead $lead, string $level): void
@@ -237,8 +319,14 @@ class DistributionEngine
                 'created_at' => now(),
             ]);
 
+            // 2026-08-13: resolve pool_unit_id (facility) từ org_unit target để lead
+            //   hiện đúng tab facility trong /distribution/pools. Trước đây thiếu
+            //   pool_unit_id → filtered() dùng whereHas('poolUnit', kind=X) không match.
+            $targetPoolUnitId = $this->resolvePoolUnitIdFromOrgId((int) $target->target_id);
+
             $lead->update([
                 'org_unit_id' => $target->target_id,
+                'pool_unit_id' => $targetPoolUnitId ?: $lead->pool_unit_id,
                 'pool_level' => Lead::POOL_TEAM,
             ]);
 
@@ -261,17 +349,66 @@ class DistributionEngine
             'owner_id' => $target->target_id,
             'pool_level' => Lead::POOL_PERSONAL,
             'assigned_at' => now(),
+            // Đồng bộ với manualAssign: có owner thì chuyển WAITING → IN_CARE để badge
+            // không kẹt "Chờ CM ... chia" sau khi đã chia (bug Wave 1 #6, 2026-07-31).
+            'pipeline_status' => $lead->pipeline_status === Lead::PSTATUS_WAITING
+                ? Lead::PSTATUS_IN_CARE
+                : $lead->pipeline_status,
         ]);
 
-        User::find($target->target_id)?->notify(new LeadAssigned($lead));
+        $this->autoClosePhase($lead, Lead::CF_PHASE_NEW, null);
+        $this->notifyAssigned($lead, (int) $target->target_id);
+    }
+
+    protected function notifyAssigned(Lead $lead, int $userId, ?int $fromOwnerId = null): void
+    {
+        $payload = [
+            'tieu_de'    => 'Bạn vừa nhận lead mới',
+            'noi_dung'   => $lead->name.($lead->code ? " ({$lead->code})" : ''),
+            'link'       => '/leads/'.$lead->id,
+            'lead_id'    => $lead->id,
+            'lead_code'  => $lead->code,
+            'lead_name'  => $lead->name,
+        ];
+        App::make(NotificationDispatcher::class)
+            ->send(NotificationEvents::LEAD_ASSIGNED, [$userId], $payload);
+
+        if ($fromOwnerId && $fromOwnerId !== $userId) {
+            App::make(NotificationDispatcher::class)->send(
+                NotificationEvents::LEAD_TRANSFERRED,
+                [$fromOwnerId, $userId],
+                [
+                    'tieu_de'  => 'Lead đã được chuyển',
+                    'noi_dung' => $lead->name.($lead->code ? " ({$lead->code})" : ''),
+                    'link'     => '/leads/'.$lead->id,
+                    'lead_id'  => $lead->id,
+                    'from_owner_id' => $fromOwnerId,
+                    'to_owner_id'   => $userId,
+                ]
+            );
+        }
     }
 
     // ---------- Thao tác ngoài luồng tự động ----------
 
-    /** Thu hồi lead khỏi sale: về kho team hoặc kho chung. $actorId null = hệ thống (SLA). */
+    /** Thu hồi lead khỏi sale: về kho cơ sở (facility) hoặc kho chung. $actorId null = hệ thống (SLA). */
     public function recall(Lead $lead, string $recallTo = Lead::POOL_TEAM, ?int $actorId = null): void
     {
-        $toCommon = $recallTo === Lead::POOL_COMMON || $lead->org_unit_id === null;
+        $prevOwnerId = $lead->owner_id;
+        $orgUnitId = $lead->org_unit_id;
+
+        // 2026-08-12: nếu recall về TEAM, cần bảo đảm lead có pool_unit_id (Phase 6.24 dùng
+        // pool_unit_id để phân tab facility/branch/department). Ưu tiên pool_unit_id sẵn có;
+        // fallback suy từ owner cũ (org_pool_map). Không suy được → fallback về POOL_COMMON.
+        $poolUnitId = null;
+        if ($recallTo === Lead::POOL_TEAM) {
+            $poolUnitId = $lead->pool_unit_id;
+            if (! $poolUnitId && $prevOwnerId) {
+                $poolUnitId = $this->resolvePoolUnitIdFromUser($prevOwnerId);
+            }
+        }
+        $toCommon = $recallTo === Lead::POOL_COMMON
+            || ($recallTo === Lead::POOL_TEAM && ! $poolUnitId && $lead->org_unit_id === null);
 
         LeadDistributionLog::create([
             'lead_id' => $lead->id,
@@ -284,17 +421,110 @@ class DistributionEngine
             'created_at' => now(),
         ]);
 
-        $lead->update([
+        $update = [
             'owner_id' => null,
             'assigned_at' => null,
             'pool_level' => $toCommon ? Lead::POOL_COMMON : Lead::POOL_TEAM,
             'org_unit_id' => $toCommon ? null : $lead->org_unit_id,
+            // 2026-08-12: nếu lead đã tiến vào phase Sale (đã gán CV1), reset về "chờ chia"
+            //   để CM có thể chia lại từ đầu. Không reset → lead stuck vì visibility vẫn
+            //   cho CV1 cũ thấy, pipeline_status='in_care' che khỏi kho chờ.
+            'consultant_1_id' => null,
+            'consultant_2_id' => null,
+            'consultant_3_id' => null,
+            'pipeline_status' => Lead::PSTATUS_WAITING,
+        ];
+        if (! $toCommon && $poolUnitId) $update['pool_unit_id'] = $poolUnitId;
+        if ($toCommon) $update['pool_unit_id'] = null;
+        $lead->update($update);
+
+        $payload = [
+            'tieu_de'    => 'Lead bị thu hồi về kho',
+            'noi_dung'   => $lead->name.($lead->code ? " ({$lead->code})" : '').' — quá hạn xử lý',
+            'link'       => '/leads/'.$lead->id,
+            'lead_id'    => $lead->id,
+            'from_owner_id' => $prevOwnerId,
+        ];
+        $dispatcher = App::make(NotificationDispatcher::class);
+        if ($prevOwnerId) {
+            $dispatcher->send(NotificationEvents::LEAD_RECALLED, [$prevOwnerId], $payload);
+        }
+        $dispatcher->sendToRoles(NotificationEvents::LEAD_RECALLED, $payload, [
+            'owner_id'    => $prevOwnerId,
+            'org_unit_id' => $orgUnitId,
         ]);
     }
 
-    /** Chia tay cho 1 sale cụ thể (quyền lead.distribute). */
+    /**
+     * 2026-08-12 — Suy pool_unit_id (kind=facility) từ assignments của user qua org_pool_map.
+     * Dùng khi recall lead PERSONAL về TEAM mà lead chưa có pool_unit_id. Trả null nếu không map được.
+     */
+    /** 2026-08-13 — Suy pool_unit_id (facility) từ org_unit_id qua ancestors + org_pool_map. */
+    private function resolvePoolUnitIdFromOrgId(int $orgUnitId): ?int
+    {
+        $orgUnit = \App\Models\OrgUnit::find($orgUnitId);
+        if (! $orgUnit) return null;
+        $ancestors = [];
+        foreach (array_filter(explode('/', trim($orgUnit->path, '/'))) as $seg) {
+            $ancestors[(int) $seg] = true;
+        }
+        return \App\Models\PoolUnit::where('kind', 'facility')->where('is_active', true)
+            ->whereIn('id', function ($q) use ($ancestors) {
+                $q->select('pool_unit_id')->from('org_pool_map')->whereIn('org_unit_id', array_keys($ancestors));
+            })->orderBy('depth')->value('id');
+    }
+
+    private function resolvePoolUnitIdFromUser(int $userId): ?int
+    {
+        $user = \App\Models\User::find($userId);
+        if (! $user) return null;
+        $ancestorOrgIds = [];
+        foreach ($user->effectiveAssignments() as $assignment) {
+            foreach (array_filter(explode('/', trim((string) $assignment->orgUnit?->path, '/'))) as $seg) {
+                $ancestorOrgIds[(int) $seg] = true;
+            }
+        }
+        if ($ancestorOrgIds === []) return null;
+        $poolUnit = \App\Models\PoolUnit::where('kind', 'facility')
+            ->where('is_active', true)
+            ->whereIn('id', function ($q) use ($ancestorOrgIds) {
+                $q->select('pool_unit_id')->from('org_pool_map')->whereIn('org_unit_id', array_keys($ancestorOrgIds));
+            })
+            ->orderBy('depth')
+            ->first();
+        return $poolUnit?->id;
+    }
+
+    /**
+     * Phase 6.24 — Chuyển lead vào kho pool cụ thể (chi nhánh / cơ sở / phòng KD).
+     * Tham số $poolUnitId là id của PoolUnit (cây Kho số mới), không còn là org_unit.
+     */
+    public function moveToTeam(Lead $lead, int $poolUnitId, int $actorId): void
+    {
+        LeadDistributionLog::create([
+            'lead_id' => $lead->id,
+            'action' => LeadDistributionLog::ACTION_RECALL,
+            'from_pool_level' => $lead->pool_level,
+            'to_pool_level' => Lead::POOL_TEAM,
+            'from_owner_id' => $lead->owner_id,
+            'org_unit_id' => null,
+            'actor_id' => $actorId,
+            'created_at' => now(),
+        ]);
+
+        $lead->update([
+            'owner_id' => null,
+            'assigned_at' => null,
+            'pool_level' => Lead::POOL_TEAM,
+            'pool_unit_id' => $poolUnitId,
+        ]);
+    }
+
+    /** Chia thủ công cho 1 sale cụ thể (quyền lead.distribute). */
     public function manualAssign(Lead $lead, User $user, int $actorId): void
     {
+        $prevOwnerId = $lead->owner_id;
+
         LeadDistributionLog::create([
             'lead_id' => $lead->id,
             'action' => LeadDistributionLog::ACTION_MANUAL,
@@ -307,13 +537,56 @@ class DistributionEngine
             'created_at' => now(),
         ]);
 
+        // 2026-08-12: sync org_unit_id + pool_unit_id theo sale để CM/Team Leader
+        // (SCOPE_TEAM, subtree bao gồm team của sale) thấy được lead trong kho cá nhân.
+        // Trước đây chỉ update owner_id → lead giữ org_unit_id cũ (có thể null nếu
+        // trước chia thuộc kho công ty) → visibleTo scope không match cho CM.
+        $saleOrgId = \App\Models\Assignment::where('user_id', $user->id)
+            ->orderBy('created_at')->value('org_unit_id');
+        $salePoolUnitId = $this->resolvePoolUnitIdFromUser($user->id);
+
         $lead->update([
             'owner_id' => $user->id,
             'pool_level' => Lead::POOL_PERSONAL,
             'assigned_at' => now(),
+            'org_unit_id' => $saleOrgId ?: $lead->org_unit_id,
+            'pool_unit_id' => $salePoolUnitId ?: $lead->pool_unit_id,
+            // Chuyển từ WAITING → IN_CARE khi đã có owner: badge hiển thị đúng
+            // trạng thái "Đang chăm sóc" thay vì "Chờ CM chia".
+            'pipeline_status' => $lead->pipeline_status === Lead::PSTATUS_WAITING
+                ? Lead::PSTATUS_IN_CARE
+                : $lead->pipeline_status,
         ]);
 
-        $user->notify(new LeadAssigned($lead));
+        $this->autoClosePhase($lead, Lead::CF_PHASE_NEW, $actorId);
+        $this->notifyAssigned($lead, $user->id, $prevOwnerId);
+    }
+
+    /**
+     * Auto-chốt phase khi có sự kiện chuẩn (chia số → P2 done, booked → P4 done, …).
+     * Bỏ qua nếu phase đã closed trước đó, hoặc lead đang bulk-open (để user tự bấm
+     * "Lưu — chốt N phase" bulk 1 phát). Fix Wave 1 #5-UI (2026-07-31).
+     */
+    protected function autoClosePhase(Lead $lead, int $phase, ?int $actorId): void
+    {
+        // closed_by NOT NULL → fallback: actor > owner > imported_by > first user.
+        $closer = $actorId
+            ?? $lead->owner_id
+            ?? $lead->imported_by
+            ?? $lead->receiver_id
+            ?? \App\Models\User::orderBy('id')->value('id');
+        if (! $closer) return; // Không tìm được user nào — skip (env test trống)
+        for ($p = 1; $p <= $phase; $p++) {
+            if (\App\Models\LeadPhaseClosure::where('lead_id', $lead->id)->where('phase', $p)->exists()) continue;
+            \App\Models\LeadPhaseClosure::create([
+                'lead_id' => $lead->id, 'phase' => $p,
+                'closed_by' => $closer, 'closed_at' => now(),
+                'note' => 'Auto-close (event)',
+            ]);
+        }
+        if ((int) $lead->phase <= $phase) {
+            $lead->update(['phase' => min($phase + 1, 5)]);
+        }
     }
 
     /** Sale tự kéo lead từ kho về mình (quyền lead.pull_pool). */
