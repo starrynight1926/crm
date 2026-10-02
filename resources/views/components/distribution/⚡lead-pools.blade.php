@@ -438,6 +438,44 @@ new class extends Component
             . ($this->bulkOrgId === 'common' ? 'kho chung công ty.' : 'kho phòng/team.'));
     }
 
+    /**
+     * 2026-10-02 — Tập facility_pool_unit_id để lọc UPS list members cho dropdown chia số.
+     * - null = union toàn bộ UPS list (lead POOL_COMMON, lead ở branch, hoặc chưa chọn lead).
+     * - array = chỉ UPS list của các facility này.
+     * Khi assign per-lead → lấy facility của lead đó; khi bulk → gom facility của các lead đã tick.
+     */
+    private function resolveUpsFacilityScope(): ?array
+    {
+        $leadIds = [];
+        if ($this->assigningLeadId) {
+            $leadIds[] = $this->assigningLeadId;
+        } elseif ($this->bulkMode === 'assign' && $this->selected) {
+            $leadIds = $this->selected;
+        }
+        if (! $leadIds) return null;
+
+        $leads = Lead::whereIn('id', $leadIds)->get(['id', 'pool_unit_id', 'pool_level']);
+        $facilityIds = [];
+        foreach ($leads as $lead) {
+            if ($lead->pool_level === Lead::POOL_COMMON || ! $lead->pool_unit_id) {
+                return null; // có lead common → union toàn bộ
+            }
+            $fid = $this->leadFacilityPoolUnitId($lead);
+            if ($fid === null) return null; // branch level → union toàn bộ
+            $facilityIds[$fid] = true;
+        }
+        return array_keys($facilityIds);
+    }
+
+    private function leadFacilityPoolUnitId(Lead $lead): ?int
+    {
+        $pu = \App\Models\PoolUnit::find($lead->pool_unit_id);
+        if (! $pu) return null;
+        if ($pu->kind === 'facility') return (int) $pu->id;
+        if ($pu->kind === 'department') return (int) $pu->parent_id; // leo lên facility
+        return null; // branch (địa điểm) không có facility cụ thể
+    }
+
     public function showDetail(int $leadId): void
     {
         $lead = Lead::findOrFail($leadId);
@@ -463,56 +501,23 @@ new class extends Component
             'visibleTabs' => $this->visibleTabs(),
             'teamOptions' => \App\Models\PoolUnit::where('is_active', true)->where('depth', '>', 0)->orderBy('path')->get(),
             'poolOrgs' => $this->poolOrgs(),
-            'assignableUsers' => (function () use ($user) {
-                // 2026-08-19: siết scope — CM/TL/DM cơ sở chỉ chia được cho nhân sự trong
-                //   phạm vi org của mình. Trước đây trả full list nationwide → CM ĐN thấy sale HN/HCM.
-                //   Super admin (visibleOrgIds rỗng do scope tất cả) → không filter, thấy toàn công ty.
-                // 2026-09-07: khi đang chia 1 lead cụ thể (assigningLeadId), thêm 1 tầng scope
-                //   theo CƠ SỞ của lead (lead.pool_unit_id → org_pool_map → org_unit_ids của
-                //   cơ sở đó). Trực Page ở CN HCM up lead vào cơ sở 207NVT → dropdown chỉ hiện
-                //   sale của 207NVT, không bung sang cơ sở khác cùng chi nhánh.
-                $visibleOrgIds = $user->visibleOrgUnitIds();
-                $facilityOrgIds = null;
-                if ($this->assigningLeadId) {
-                    $lead = Lead::find($this->assigningLeadId);
-                    if ($lead && $lead->pool_unit_id) {
-                        $poolUnit = \App\Models\PoolUnit::find($lead->pool_unit_id);
-                        if ($poolUnit && $poolUnit->kind === 'facility') {
-                            $facilityOrgIds = \DB::table('org_pool_map')
-                                ->where('pool_unit_id', $poolUnit->id)
-                                ->pluck('org_unit_id')->all();
-                            // Bung subtree các org_unit này (facility có team con dưới).
-                            if ($facilityOrgIds !== []) {
-                                $paths = \App\Models\OrgUnit::whereIn('id', $facilityOrgIds)->pluck('path')->all();
-                                $q = \App\Models\OrgUnit::query();
-                                foreach ($paths as $i => $p) {
-                                    $q->{$i === 0 ? 'where' : 'orWhere'}('path', 'like', $p . '%');
-                                }
-                                $facilityOrgIds = $q->pluck('id')->all();
-                            }
-                        }
-                    }
+            'assignableUsers' => (function () {
+                // 2026-10-02: nguồn dropdown chia số = UPS list members của cơ sở lead.
+                //   Admin tick ai vào /settings/ups-list thì người đó hiện ở đây — kể cả DM,
+                //   CM, Observer… không còn blacklist role / scope visibleOrg nữa.
+                //   - Chia 1 lead ở team pool → UPS list của facility của lead đó.
+                //   - Chia 1 lead POOL_COMMON hoặc lead ở kho địa điểm (branch) → union UPS list toàn bộ.
+                //   - Bulk assign: nếu các lead cùng 1 facility → list của facility đó;
+                //     khác facility hoặc có lead common → union toàn bộ.
+                $facilityIds = $this->resolveUpsFacilityScope();
+                $q = \App\Models\UpsListMember::query();
+                if ($facilityIds !== null) {
+                    $q->whereIn('facility_pool_unit_id', $facilityIds);
                 }
-                // Giao 2 scope: user's visible + lead's facility (nếu có).
-                $finalScope = $visibleOrgIds;
-                if ($facilityOrgIds !== null && $facilityOrgIds !== []) {
-                    $finalScope = $visibleOrgIds === []
-                        ? $facilityOrgIds // super admin → dùng scope cơ sở
-                        : array_values(array_intersect($visibleOrgIds, $facilityOrgIds));
-                }
-                // 2026-09-07: đổi từ blacklist perm sang blacklist role name.
-                //   Perm-based loại nhầm Team Leader (VD Phan Trần Khánh Quỳnh) vì TL có
-                //   lead.distribute — nhưng TL vẫn phải nhận lead trực tiếp (leaf-team).
-                //   Blacklist theo role name: chỉ loại manager cấp cao/CM/DM/quan sát/trực page.
-                return User::where('status', 'active')
-                    ->whereHas('assignments.role.permissions', fn ($q) => $q->where('key', 'lead.update'))
-                    ->whereDoesntHave('assignments.role', fn ($r) => $r->whereIn('name', [
-                        'Admin', 'Manager', 'DM HCM',
-                        'CM booking', 'CM sale',
-                        'Observer', 'Trực Page',
-                    ]))
-                    ->when($finalScope !== [], fn ($q) => $q->whereHas('assignments', fn ($qq) => $qq
-                        ->effective()->whereIn('org_unit_id', $finalScope)))
+                $userIds = $q->distinct()->pluck('user_id')->all();
+                if ($userIds === []) return collect();
+                return User::whereIn('id', $userIds)
+                    ->where('status', 'active')
                     ->orderBy('name')
                     ->get();
             })(),

@@ -3162,3 +3162,24 @@ Nguồn: gom `lead_status_logs` (user_id) + `lead_distribution_logs` (actor_id),
 - Impersonate **"Admin Cơ sở Hà Nội"** (admin cơ sở, không phải super admin) → `/settings` không còn hiện tab Vận hành (do thiếu `ops.manage`/`rule.manage`, module UPS List cũng ẩn theo); truy cập thẳng `/settings/ups-list` → **403 Forbidden** đúng như thiết kế.
 
 **Dời lại / lưu ý cho sau**: 2 facility CS2 Hoàng Ngân + 137 Nguyễn Chí Thanh chưa có `org_pool_map` nên backfill để trống — admin cần tick tay danh sách ban đầu cho 2 cơ sở này trước khi dùng UPS thật ở đó.
+
+## 2026-10-02 — Chia số kho lead dùng chung UPS list 🟢
+
+**Bối cảnh**: user muốn dropdown "— chọn sale —" ở `/distribution/pools` (Quản lý Kho Lead tập trung) dùng chung nguồn với UPS check-in — tức là ai được tick vào `/settings/ups-list` của 1 cơ sở thì mới hiện trong dropdown chia số của lead thuộc cơ sở đó. Admin chủ động bật/tắt người nhận lead qua UPS list, không còn blacklist role / scope visibleOrg như cũ. Mục tiêu: tick DM vào UPS list → DM cũng được chia lead luôn.
+
+**Chốt thiết kế**:
+1. Nguồn `$assignableUsers` = `UpsListMember` thay cho query cũ (perm `lead.update` + blacklist role name + scope `visibleOrgIds` + subtree facility).
+2. Scope facility của dropdown:
+   - Chia 1 lead ở team pool (facility/department) → UPS list của facility của lead đó.
+   - Lead POOL_COMMON, lead ở branch (địa điểm), lead không có `pool_unit_id` → **union toàn bộ UPS list** (mọi facility).
+   - Bulk assign: nếu các lead đã tick cùng 1 facility → UPS list facility đó; khác facility hoặc có lead common → union toàn bộ.
+3. UPS list facility rỗng → dropdown rỗng (báo rõ chứ không fallback) — đúng tinh thần "admin tự chủ".
+
+**Đã làm**:
+- Rewrite `$assignableUsers` trong [⚡lead-pools.blade.php](resources/views/components/distribution/⚡lead-pools.blade.php:466) — truy vấn thẳng `UpsListMember` theo scope facility, bỏ hẳn perm/role/org filter cũ.
+- Thêm helper `resolveUpsFacilityScope()` + `leadFacilityPoolUnitId()` — gom facility của lead đang chia (per-lead hoặc bulk), department leo lên parent facility, branch/common → `null` (union all).
+
+**QA đã làm (browser lara-scrm.test:81)**:
+- Login `admin` / `59ntn` → tab Kho cá nhân → bấm "Chuyển người" lead #32 (pool_unit=8 "CS Lô 2 & 3 Trần Đăng Ninh").
+- Dropdown "— chọn sale —" hiển thị đúng 9 user. Verify bằng tinker: `UpsListMember::where('facility_pool_unit_id', 8)->pluck('user_id')` trả về đúng 9 user id khớp 100% với dropdown.
+- Trước fix: dropdown filter theo role name + scope → loại nhầm DM/CM nếu admin muốn cho họ nhận lead. Sau fix: tick DM vào `/settings/ups-list` facility đó là DM hiện ngay.
