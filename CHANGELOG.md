@@ -2,6 +2,15 @@
 
 Format: mỗi lần chốt tạo 1 block `## vX.Y.Z — YYYY-MM-DD` + bullets. Mới nhất ở trên cùng.
 
+## v0.16.4 — 2026-10-05
+
+- **Dropdown dịch vụ ở lead-form Phase 4** cập nhật theo sbooking v0.17.2:
+  - `TruAge` → `TrueAge` (sửa chính tả — áp cả 3 variant).
+  - Thêm `MetaBoost 150` + `MetaBoost 300` (120 phút) ở cơ sở có phòng Metaboost.
+  - BS Ngà link vào phòng Metaboost → admin thấy trong dropdown khi duyệt.
+  - Approve modal (sbooking): option 🎲 Random trong Hỗ trợ y tế + Sale hỗ trợ.
+- Cập nhật mirror `sb_services` / `sb_dich_vu_phong` / `sb_bac_si` qua lệnh sync (host chạy sau khi sbooking migrate).
+
 ## v0.16.3 — 2026-10-05
 
 - **Quick Sheets** (`/settings/quick-sheets`) — Super admin only, chỉnh nhanh 5 entity cùng chỗ, UI Google-Sheets:
