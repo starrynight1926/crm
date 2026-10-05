@@ -126,7 +126,7 @@ new class extends Component
 
     public function updated($property): void
     {
-        if (in_array($property, ['search', 'fClassification', 'fNguon', 'fDateFrom', 'fDateTo', 'fPhase'])) {
+        if (in_array($property, ['search', 'fClassification', 'fNguon', 'fDateFrom', 'fDateTo', 'fPhase', 'fBookingStatus'])) {
             $this->resetPage();
             $this->reset('selected', 'selectAll');
         }
@@ -722,7 +722,9 @@ new class extends Component
     private function statsWidgets(): array
     {
         $savedPhase = $this->fPhase;
+        $savedBooking = $this->fBookingStatus;
         $this->fPhase = '';
+        $this->fBookingStatus = '';
         try {
             $base = $this->filteredQuery()->reorder(); // bỏ orderBy để count nhanh
             $sql = clone $base;
@@ -730,8 +732,11 @@ new class extends Component
                 ->selectRaw('phase, COUNT(*) as c')
                 ->groupBy('phase')
                 ->pluck('c', 'phase');
+            // 2026-10-05: count booking_status=rescheduled trong cùng phạm vi filter.
+            $rescheduledCount = (int) (clone $sql)->where('booking_status', Lead::BOOKING_RESCHEDULED)->count();
         } finally {
             $this->fPhase = $savedPhase;
+            $this->fBookingStatus = $savedBooking;
         }
 
         return [
@@ -740,21 +745,32 @@ new class extends Component
                 'desc'  => 'Phase 1 (Tạo mới & Chia số)',
                 'value' => (int) ($counts[Lead::CF_PHASE_NEW] ?? 0),
                 'color' => 'blue',
-                'phase' => Lead::CF_PHASE_NEW,
+                'kind'  => 'phase',
+                'key'   => (string) Lead::CF_PHASE_NEW,
             ],
             [
                 'label' => 'Lead Tele chăm sóc',
                 'desc'  => 'Phase 2 (Gọi điện) — Tele care',
                 'value' => (int) ($counts[Lead::CF_PHASE_CALL] ?? 0),
                 'color' => 'amber',
-                'phase' => Lead::CF_PHASE_CALL,
+                'kind'  => 'phase',
+                'key'   => (string) Lead::CF_PHASE_CALL,
             ],
             [
                 'label' => 'Lead đang booking',
                 'desc'  => 'Phase 3 (Booking thăm khám)',
                 'value' => (int) ($counts[Lead::CF_PHASE_BOOKING] ?? 0),
                 'color' => 'emerald',
-                'phase' => Lead::CF_PHASE_BOOKING,
+                'kind'  => 'phase',
+                'key'   => (string) Lead::CF_PHASE_BOOKING,
+            ],
+            [
+                'label' => 'Đặt lịch lại',
+                'desc'  => 'Khách đã hẹn lại — chờ booking lại',
+                'value' => $rescheduledCount,
+                'color' => 'rose',
+                'kind'  => 'booking',
+                'key'   => Lead::BOOKING_RESCHEDULED,
             ],
         ];
     }
@@ -763,6 +779,15 @@ new class extends Component
     public function setPhaseFilter(int $phase): void
     {
         $this->fPhase = $this->fPhase === (string) $phase ? '' : (string) $phase;
+        $this->fBookingStatus = '';
+        $this->resetPage();
+    }
+
+    /** 2026-10-05: Click card "Đặt lịch lại" → toggle fBookingStatus. */
+    public function setBookingStatusFilter(string $status): void
+    {
+        $this->fBookingStatus = $this->fBookingStatus === $status ? '' : $status;
+        $this->fPhase = '';
         $this->resetPage();
     }
 
@@ -831,17 +856,26 @@ new class extends Component
             'blue'    => 'bg-blue-50 border-blue-200 hover:border-blue-400 text-blue-800',
             'amber'   => 'bg-amber-50 border-amber-200 hover:border-amber-400 text-amber-800',
             'emerald' => 'bg-emerald-50 border-emerald-200 hover:border-emerald-400 text-emerald-800',
+            'rose'    => 'bg-rose-50 border-rose-200 hover:border-rose-400 text-rose-800',
         ];
         $statColorActive = [
             'blue'    => 'ring-2 ring-blue-500',
             'amber'   => 'ring-2 ring-amber-500',
             'emerald' => 'ring-2 ring-emerald-500',
+            'rose'    => 'ring-2 ring-rose-500',
         ];
     @endphp
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
         @foreach ($statsWidgets as $w)
-            @php $isActive = $fPhase === (string) $w['phase']; @endphp
-            <button type="button" wire:click="setPhaseFilter({{ $w['phase'] }})"
+            @php
+                $isActive = $w['kind'] === 'phase'
+                    ? $fPhase === $w['key']
+                    : $fBookingStatus === $w['key'];
+                $clickExpr = $w['kind'] === 'phase'
+                    ? "setPhaseFilter({$w['key']})"
+                    : "setBookingStatusFilter('{$w['key']}')";
+            @endphp
+            <button type="button" wire:click="{{ $clickExpr }}"
                 class="text-left block border-2 rounded-xl p-4 shadow-card transition-all {{ $statColorMap[$w['color']] }} {{ $isActive ? $statColorActive[$w['color']] : '' }}">
                 <div class="text-3xl font-extrabold tabular-nums leading-none mb-1">{{ number_format($w['value']) }}</div>
                 <div class="font-bold text-sm">{{ $w['label'] }}</div>
