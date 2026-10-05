@@ -9,6 +9,8 @@ Format: mỗi lần chốt tạo 1 block `## vX.Y.Z — YYYY-MM-DD` + bullets. M
   - Ở `/leads` → toggle `fBookingStatus` tại chỗ, loại trừ với filter 3 phase để tránh combo rỗng.
 - Grid stat 3 → 4 card responsive (1/2/4 cột).
 - **Fix lead-form — checkbox "Không áp dụng luật thu hồi"** trước nằm trong grid cascade kho; khi chọn `mktMode=auto|manual` grid bị `hidden` → checkbox biến mất. Giờ tách ra ngoài grid, hiện luôn khi mở section "Chia số" bất kể mode nào.
+- **Dropdown cơ sở ở navbar — sort theo short_name** (CS1 → CS2 → CS3 → Vận hành). Trước sort theo `position` (toàn 0) → `name` → thứ tự Đà Nẵng/Hà Nội/HCM/Vận hành khó đọc.
+- **Lead-list respect scope cơ sở của super admin** — chọn CS1 ở navbar thì `/leads` chỉ hiện lead thuộc subtree CS1 (whereIn `org_unit_id`). User thường không bị double-restrict.
 
 ## v0.16.0 — 2026-09-04
 

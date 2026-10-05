@@ -55,12 +55,16 @@ class AdminScope
         return $u->memberOrgUnitIds();
     }
 
-    /** Nhánh dropdown chọn — depth=1 (cơ sở/chi nhánh trực thuộc công ty). */
+    /** Nhánh dropdown chọn — depth=1 (cơ sở/chi nhánh trực thuộc công ty).
+     *  2026-10-05: sort theo short_name (CS1 < CS2 < CS3 < Vận hành) thay vì position (toàn 0) + name,
+     *  khớp thứ tự nghiệp vụ user muốn thấy.
+     */
     public static function branchOptions()
     {
         return OrgUnit::where('depth', 1)
-            ->orderBy('position')->orderBy('name')
-            ->get(['id', 'name', 'code']);
+            ->get(['id', 'name', 'code', 'position'])
+            ->sortBy(fn ($b) => $b->short_name)
+            ->values();
     }
 
     private static function subtreeOrgIds(int $branchId): array

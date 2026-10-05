@@ -560,8 +560,17 @@ new class extends Component
     {
         $user = auth()->user();
 
+        // 2026-10-05: super admin chọn cơ sở ở navbar → filter lead-list theo subtree org_unit_id của branch đó.
+        //   Chỉ áp cho super admin VÀ chỉ khi họ chọn 1 branch cụ thể (currentBranchId !== null);
+        //   user thường giữ nguyên visibleTo gốc để không bị double-restrict (vd lead trong pool_unit nhưng
+        //   org_unit_id ngoài member orgs vẫn phải thấy).
+        $adminBranchScope = \App\Support\AdminScope::isSuperAdmin() && \App\Support\AdminScope::currentBranchId()
+            ? \App\Support\AdminScope::orgUnitIds()
+            : null;
+
         return Lead::query()
             ->visibleTo($user)
+            ->when(is_array($adminBranchScope) && $adminBranchScope !== [], fn ($q) => $q->whereIn('org_unit_id', $adminBranchScope))
             ->with(['owner', 'receiver', 'orgUnit', 'customValues'])
             ->when($this->search, function ($q) {
                 $normalized = Lead::normalizePhone($this->search);
