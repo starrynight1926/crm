@@ -230,6 +230,16 @@ new class extends Component
                 'icon' => 'M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75',
                 'link' => route('leads.index') . '?phase=' . Lead::CF_PHASE_BOOKING,
             ],
+            // 2026-10-05: widget "Đặt lịch lại" — không filter theo received_date hôm nay
+            // vì lead hẹn lại thường là lead cũ, lịch đặt lại ở tương lai.
+            [
+                'label' => 'Đặt lịch lại',
+                'desc' => 'Khách đã hẹn lại — chờ booking lại',
+                'value' => $this->reportLeadQuery()->where('booking_status', Lead::BOOKING_RESCHEDULED)->count(),
+                'color' => 'rose',
+                'icon' => 'M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99',
+                'link' => route('leads.index') . '?booking=rescheduled',
+            ],
         ];
     }
 
@@ -292,9 +302,10 @@ new class extends Component
             'blue'    => 'bg-blue-50 border-blue-200 hover:border-blue-400 text-blue-800',
             'amber'   => 'bg-amber-50 border-amber-200 hover:border-amber-400 text-amber-800',
             'emerald' => 'bg-emerald-50 border-emerald-200 hover:border-emerald-400 text-emerald-800',
+            'rose'    => 'bg-rose-50 border-rose-200 hover:border-rose-400 text-rose-800',
         ];
     @endphp
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         @foreach ($widgets as $w)
             <a href="{{ $w['link'] }}" class="block border-2 rounded-xl p-5 shadow-card transition-all {{ $colorMap[$w['color']] }}">
                 <div class="flex items-start justify-between mb-3">

@@ -35,6 +35,9 @@ new class extends Component
      */
     public string $fPhase = '';
 
+    /** 2026-10-05: filter theo booking_status (từ widget dashboard "Đặt lịch lại"). */
+    public string $fBookingStatus = '';
+
     /** Số dòng/trang — 15/50/100. Lưu trong report_prefs.lead_list_per_page. */
     public int $perPage = 15;
 
@@ -109,6 +112,10 @@ new class extends Component
         if ($req->filled('source')) {
             $s = (string) $req->query('source');
             if (array_key_exists($s, \App\Models\Lead::SOURCE_GROUPS)) $this->fNguon = $s;
+        }
+        if ($req->filled('booking')) {
+            $b = (string) $req->query('booking');
+            if (array_key_exists($b, \App\Models\Lead::BOOKING_STATUSES)) $this->fBookingStatus = $b;
         }
         if ($req->query('received') === 'today') {
             $today = now()->toDateString();
@@ -571,6 +578,7 @@ new class extends Component
             ->when($this->fDateFrom, fn ($q) => $q->where('received_date', '>=', $this->fDateFrom))
             ->when($this->fDateTo, fn ($q) => $q->where('received_date', '<=', $this->fDateTo))
             ->when($this->fPhase !== '' && is_numeric($this->fPhase), fn ($q) => $q->where('phase', (int) $this->fPhase))
+            ->when($this->fBookingStatus !== '', fn ($q) => $q->where('booking_status', $this->fBookingStatus))
             ->orderByDesc('received_date')
             ->orderByDesc('id');
     }
