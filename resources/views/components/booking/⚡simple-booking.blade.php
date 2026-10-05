@@ -74,6 +74,22 @@ new class extends Component
 
     public function save(): void
     {
+        // 2026-10-05: UI mới dùng tab footer thay cho dropdown cơ sở trong draft row.
+        //   Tab đang chọn → auto gán facility_id cho draft. "Tất cả" (null) + >1 facility → bắt chọn tab trước.
+        if (! $this->draft['facility_id']) {
+            if ($this->filterFacilityId) {
+                $this->draft['facility_id'] = (int) $this->filterFacilityId;
+            } else {
+                $facilities = $this->visibleFacilities();
+                if ($facilities->count() === 1) {
+                    $this->draft['facility_id'] = $facilities->first()->id;
+                } else {
+                    $this->addError('draft.facility_id', 'Chọn tab cơ sở ở dưới trước khi lưu.');
+                    return;
+                }
+            }
+        }
+
         $facilityIds = $this->visibleFacilityIds();
         $fid = (int) ($this->draft['facility_id'] ?? 0);
         if (! in_array($fid, $facilityIds, true) && ! AdminScope::isSuperAdmin()) {
@@ -137,7 +153,12 @@ new class extends Component
         return in_array((int) $row->facility_id, $this->visibleFacilityIds(), true);
     }
 
-    public function updatedFilterFacilityId(): void { $this->resetPage(); }
+    public function updatedFilterFacilityId(): void
+    {
+        // 2026-10-05: tab footer đổi → draft row gắn luôn vào tab đó (không bắt user chọn 2 lần).
+        if ($this->filterFacilityId) $this->draft['facility_id'] = (int) $this->filterFacilityId;
+        $this->resetPage();
+    }
     public function updatedOnlyWarning(): void { $this->resetPage(); }
 
     public function with(): array
@@ -171,88 +192,72 @@ new class extends Component
     }
 }; ?>
 
-<div class="p-4 max-w-full" x-data>
-    <div class="flex items-center justify-between mb-3">
-        <div>
-            <h1 class="text-xl font-semibold">⚡ Nháp lịch đặt (Simple Booking)</h1>
-            <p class="text-sm text-gray-500">
-                Sheet nhập nhanh — ai trong scope cơ sở cũng xem/sửa. Row
-                <span class="text-red-600 font-medium">🔴 đỏ</span> = thiếu bắt buộc,
-                <span class="text-yellow-600 font-medium">🟡 vàng</span> = thiếu phụ,
-                <span class="text-green-600 font-medium">🟢 xanh</span> = đủ.
-            </p>
+{{-- 2026-10-05: redesign UI giống Google Sheets — full width, cell sát nhau, font Arial-ish,
+     dropdown "Cơ sở" đổi thành tab ở footer. --}}
+<div class="-mx-4 md:-mx-6 -my-6 md:-my-8 bg-[#f8f9fa] min-h-[calc(100vh-5rem)] flex flex-col" x-data style="font-family: Arial, Roboto, 'Helvetica Neue', sans-serif;">
+
+    {{-- Header gọn — kiểu toolbar sheet --}}
+    <div class="flex items-center justify-between gap-3 px-3 py-1.5 border-b border-gray-300 bg-white">
+        <div class="flex items-center gap-3">
+            <span class="text-sm font-semibold text-gray-800">⚡ Simple Booking</span>
+            <span class="text-[11px] text-gray-500">Nháp lịch — Enter là chuyển ô, dòng xanh dương trên cùng để nhập mới.</span>
         </div>
-        <a href="{{ route('leads.index') }}"
-           class="text-sm font-semibold text-white bg-gray-600 hover:bg-gray-700 px-4 py-2 rounded-md">
-            ← Về chế độ chuẩn (Danh sách KH)
-        </a>
-    </div>
-
-    <div class="flex gap-3 items-center mb-3 text-sm">
-        @if ($facilities->count() > 1)
-            <label class="flex items-center gap-2">
-                <span>Cơ sở:</span>
-                <select wire:model.live="filterFacilityId" class="border rounded px-2 py-1">
-                    <option value="">— Tất cả —</option>
-                    @foreach ($facilities as $f)
-                        <option value="{{ $f->id }}">{{ $f->name }}</option>
-                    @endforeach
-                </select>
+        <div class="flex items-center gap-3 text-[12px]">
+            <label class="flex items-center gap-1.5 text-gray-700">
+                <input type="checkbox" wire:model.live="onlyWarning" class="w-3.5 h-3.5">
+                Chỉ hiện dòng thiếu
             </label>
-        @endif
-        <label class="flex items-center gap-2">
-            <input type="checkbox" wire:model.live="onlyWarning">
-            <span>Chỉ hiện row có ⛔</span>
-        </label>
+            <a href="{{ route('leads.index') }}" class="text-gray-600 hover:text-gray-900 underline">← Danh sách KH</a>
+        </div>
     </div>
 
-    <div class="overflow-x-auto border rounded">
-        <table class="min-w-[1400px] w-full text-sm">
-            <thead class="bg-gray-100 text-left">
-                <tr>
-                    <th class="p-2 w-12">⛔</th>
-                    <th class="p-2">Dấu thời gian</th>
-                    <th class="p-2">Cơ sở</th>
-                    <th class="p-2">Ngày đặt</th>
-                    <th class="p-2">Giờ</th>
-                    <th class="p-2">Nguồn</th>
-                    <th class="p-2">Họ tên KH</th>
-                    <th class="p-2">SĐT</th>
-                    <th class="p-2">Sale</th>
-                    <th class="p-2">Liệu pháp</th>
-                    <th class="p-2">Số lô</th>
-                    <th class="p-2">Điều dưỡng</th>
-                    <th class="p-2">Bác sĩ</th>
-                    <th class="p-2">Ghi chú</th>
-                    <th class="p-2 w-32">Thao tác</th>
+    {{-- Khối sheet (scrollable). Chiếm hết chiều cao còn lại, tabs cơ sở nằm dưới. --}}
+    <div class="flex-1 overflow-auto bg-white">
+        <table class="w-full border-collapse" style="font-size: 12px;">
+            <thead class="sticky top-0 z-10">
+                <tr class="bg-[#f1f3f4] text-gray-700">
+                    @php
+                        $thCls = 'border border-gray-300 px-2 py-1 font-semibold text-left whitespace-nowrap';
+                    @endphp
+                    <th class="{{ $thCls }} w-10 text-center">●</th>
+                    <th class="{{ $thCls }}">Dấu thời gian</th>
+                    <th class="{{ $thCls }}">Ngày</th>
+                    <th class="{{ $thCls }}">Giờ</th>
+                    <th class="{{ $thCls }}">Nguồn</th>
+                    <th class="{{ $thCls }}">Họ tên KH</th>
+                    <th class="{{ $thCls }}">SĐT</th>
+                    <th class="{{ $thCls }}">Sale</th>
+                    <th class="{{ $thCls }}">Liệu pháp</th>
+                    <th class="{{ $thCls }} w-14 text-center">Số lọ</th>
+                    <th class="{{ $thCls }}">Điều dưỡng</th>
+                    <th class="{{ $thCls }}">Bác sĩ</th>
+                    <th class="{{ $thCls }}">Khách tặng & ghi chú</th>
+                    <th class="{{ $thCls }} w-24 text-center">Thao tác</th>
                 </tr>
             </thead>
             <tbody>
-                {{-- Row nhập mới --}}
-                <tr class="bg-blue-50" wire:key="draft-input">
-                    <td class="p-1 text-center">✏️</td>
-                    <td class="p-1 text-gray-400 italic">nháp</td>
-                    <td class="p-1">
-                        <select wire:model="draft.facility_id" class="border rounded px-1 py-0.5 w-full">
-                            <option value="">—</option>
-                            @foreach ($facilities as $f)
-                                <option value="{{ $f->id }}">{{ $f->name }}</option>
-                            @endforeach
-                        </select>
-                    </td>
-                    <td class="p-1"><input type="date" wire:model="draft.ngay_dat_lich" class="border rounded px-1 py-0.5 w-32"></td>
-                    <td class="p-1"><input type="time" wire:model="draft.gio" class="border rounded px-1 py-0.5 w-24"></td>
-                    <td class="p-1"><input type="text" wire:model="draft.nguon" placeholder="MKT/SR/Cali…" class="border rounded px-1 py-0.5 w-24"></td>
-                    <td class="p-1"><input type="text" wire:model="draft.ho_ten" class="border rounded px-1 py-0.5 w-40"></td>
-                    <td class="p-1"><input type="text" wire:model="draft.sdt" class="border rounded px-1 py-0.5 w-32"></td>
-                    <td class="p-1"><input type="text" wire:model="draft.sale" class="border rounded px-1 py-0.5 w-32"></td>
-                    <td class="p-1"><input type="text" wire:model="draft.lieu_phap" class="border rounded px-1 py-0.5 w-40"></td>
-                    <td class="p-1"><input type="text" wire:model="draft.so_lo" class="border rounded px-1 py-0.5 w-16"></td>
-                    <td class="p-1"><input type="text" wire:model="draft.dieu_duong" class="border rounded px-1 py-0.5 w-32"></td>
-                    <td class="p-1"><input type="text" wire:model="draft.bac_si" class="border rounded px-1 py-0.5 w-32"></td>
-                    <td class="p-1"><input type="text" wire:model="draft.ghi_chu" class="border rounded px-1 py-0.5 w-40"></td>
-                    <td class="p-1">
-                        <button wire:click="save" class="bg-blue-600 text-white text-xs px-2 py-1 rounded hover:bg-blue-700">+ Lưu</button>
+                @php
+                    $tdCls = 'border border-gray-300 px-2 py-0.5 whitespace-nowrap';
+                    $inpCls = 'w-full px-1 py-0 border-0 bg-transparent focus:outline-none focus:ring-1 focus:ring-blue-500 focus:bg-white';
+                @endphp
+
+                {{-- Row nhập mới — xanh dương nhạt --}}
+                <tr class="bg-[#e8f0fe]" wire:key="draft-input">
+                    <td class="{{ $tdCls }} text-center text-blue-600">+</td>
+                    <td class="{{ $tdCls }} text-gray-400 italic">(nháp)</td>
+                    <td class="{{ $tdCls }}"><input type="date" wire:model="draft.ngay_dat_lich" class="{{ $inpCls }}"></td>
+                    <td class="{{ $tdCls }}"><input type="time" wire:model="draft.gio" class="{{ $inpCls }}"></td>
+                    <td class="{{ $tdCls }}"><input type="text" wire:model="draft.nguon" placeholder="MKT/SR…" class="{{ $inpCls }}"></td>
+                    <td class="{{ $tdCls }}"><input type="text" wire:model="draft.ho_ten" class="{{ $inpCls }}"></td>
+                    <td class="{{ $tdCls }}"><input type="text" wire:model="draft.sdt" class="{{ $inpCls }}"></td>
+                    <td class="{{ $tdCls }}"><input type="text" wire:model="draft.sale" class="{{ $inpCls }}"></td>
+                    <td class="{{ $tdCls }}"><input type="text" wire:model="draft.lieu_phap" class="{{ $inpCls }}"></td>
+                    <td class="{{ $tdCls }}"><input type="text" wire:model="draft.so_lo" class="{{ $inpCls }} text-center"></td>
+                    <td class="{{ $tdCls }}"><input type="text" wire:model="draft.dieu_duong" class="{{ $inpCls }}"></td>
+                    <td class="{{ $tdCls }}"><input type="text" wire:model="draft.bac_si" class="{{ $inpCls }}"></td>
+                    <td class="{{ $tdCls }}"><input type="text" wire:model="draft.ghi_chu" class="{{ $inpCls }}"></td>
+                    <td class="{{ $tdCls }} text-center">
+                        <button wire:click="save" class="text-[11px] font-semibold text-white bg-blue-600 hover:bg-blue-700 px-2 py-0.5 rounded">+ Lưu</button>
                     </td>
                 </tr>
 
@@ -260,64 +265,84 @@ new class extends Component
                 @forelse ($rows as $r)
                     @php
                         $color = $r->statusColor();
-                        $badge = ['green' => '🟢', 'yellow' => '🟡', 'red' => '🔴'][$color];
+                        // Row bg theo trạng thái — khớp screenshot sheet Google.
+                        $rowBg = match ($color) {
+                            'red'    => 'bg-[#f4c7c3]',   // đỏ nhạt — thiếu bắt buộc (ho_ten/sdt/ngay)
+                            'yellow' => 'bg-[#fff2cc]',   // vàng — thiếu phụ (gio/sale/liệu pháp)
+                            default  => 'bg-[#b7e1cd]',   // xanh — đủ
+                        };
                         $reasons = $r->warningReasons();
                         $isEdit = isset($editing[$r->id]);
                     @endphp
-                    <tr wire:key="row-{{ $r->id }}" class="border-t hover:bg-gray-50">
-                        <td class="p-1 text-center" title="{{ implode(' · ', $reasons) ?: 'Đủ điều kiện' }}">{{ $badge }}</td>
-                        <td class="p-1 text-xs text-gray-500 whitespace-nowrap">
-                            {{ $r->created_at?->format('d/m/Y H:i') }}<br>
-                            <span class="text-gray-400">{{ $r->creator?->name }}</span>
+                    <tr wire:key="row-{{ $r->id }}" class="{{ $rowBg }}" title="{{ implode(' · ', $reasons) ?: 'Đủ điều kiện' }}">
+                        <td class="{{ $tdCls }} text-center">{{ ['red'=>'🔴','yellow'=>'🟡','green'=>'🟢'][$color] }}</td>
+                        <td class="{{ $tdCls }} text-[11px] text-gray-700">
+                            {{ $r->created_at?->format('d/m/Y H:i:s') }}
+                            @if ($r->creator?->name) <span class="text-gray-500">· {{ $r->creator->name }}</span>@endif
                         </td>
                         @if ($isEdit)
-                            <td class="p-1"><select wire:model="editing.{{ $r->id }}.facility_id" class="border rounded px-1 py-0.5 w-full">
-                                @foreach ($facilities as $f)<option value="{{ $f->id }}">{{ $f->name }}</option>@endforeach
-                            </select></td>
-                            <td class="p-1"><input type="date" wire:model="editing.{{ $r->id }}.ngay_dat_lich" class="border rounded px-1 py-0.5 w-32"></td>
-                            <td class="p-1"><input type="time" wire:model="editing.{{ $r->id }}.gio" class="border rounded px-1 py-0.5 w-24"></td>
-                            <td class="p-1"><input type="text" wire:model="editing.{{ $r->id }}.nguon" class="border rounded px-1 py-0.5 w-24"></td>
-                            <td class="p-1"><input type="text" wire:model="editing.{{ $r->id }}.ho_ten" class="border rounded px-1 py-0.5 w-40"></td>
-                            <td class="p-1"><input type="text" wire:model="editing.{{ $r->id }}.sdt" class="border rounded px-1 py-0.5 w-32"></td>
-                            <td class="p-1"><input type="text" wire:model="editing.{{ $r->id }}.sale" class="border rounded px-1 py-0.5 w-32"></td>
-                            <td class="p-1"><input type="text" wire:model="editing.{{ $r->id }}.lieu_phap" class="border rounded px-1 py-0.5 w-40"></td>
-                            <td class="p-1"><input type="text" wire:model="editing.{{ $r->id }}.so_lo" class="border rounded px-1 py-0.5 w-16"></td>
-                            <td class="p-1"><input type="text" wire:model="editing.{{ $r->id }}.dieu_duong" class="border rounded px-1 py-0.5 w-32"></td>
-                            <td class="p-1"><input type="text" wire:model="editing.{{ $r->id }}.bac_si" class="border rounded px-1 py-0.5 w-32"></td>
-                            <td class="p-1"><input type="text" wire:model="editing.{{ $r->id }}.ghi_chu" class="border rounded px-1 py-0.5 w-40"></td>
-                            <td class="p-1 flex gap-1">
-                                <button wire:click="saveEdit({{ $r->id }})" class="bg-green-600 text-white text-xs px-2 py-1 rounded">💾</button>
-                                <button wire:click="cancelEdit({{ $r->id }})" class="bg-gray-300 text-xs px-2 py-1 rounded">✕</button>
+                            <td class="{{ $tdCls }}"><input type="date" wire:model="editing.{{ $r->id }}.ngay_dat_lich" class="{{ $inpCls }}"></td>
+                            <td class="{{ $tdCls }}"><input type="time" wire:model="editing.{{ $r->id }}.gio" class="{{ $inpCls }}"></td>
+                            <td class="{{ $tdCls }}"><input type="text" wire:model="editing.{{ $r->id }}.nguon" class="{{ $inpCls }}"></td>
+                            <td class="{{ $tdCls }}"><input type="text" wire:model="editing.{{ $r->id }}.ho_ten" class="{{ $inpCls }}"></td>
+                            <td class="{{ $tdCls }}"><input type="text" wire:model="editing.{{ $r->id }}.sdt" class="{{ $inpCls }}"></td>
+                            <td class="{{ $tdCls }}"><input type="text" wire:model="editing.{{ $r->id }}.sale" class="{{ $inpCls }}"></td>
+                            <td class="{{ $tdCls }}"><input type="text" wire:model="editing.{{ $r->id }}.lieu_phap" class="{{ $inpCls }}"></td>
+                            <td class="{{ $tdCls }}"><input type="text" wire:model="editing.{{ $r->id }}.so_lo" class="{{ $inpCls }} text-center"></td>
+                            <td class="{{ $tdCls }}"><input type="text" wire:model="editing.{{ $r->id }}.dieu_duong" class="{{ $inpCls }}"></td>
+                            <td class="{{ $tdCls }}"><input type="text" wire:model="editing.{{ $r->id }}.bac_si" class="{{ $inpCls }}"></td>
+                            <td class="{{ $tdCls }}"><input type="text" wire:model="editing.{{ $r->id }}.ghi_chu" class="{{ $inpCls }}"></td>
+                            <td class="{{ $tdCls }} text-center">
+                                <button wire:click="saveEdit({{ $r->id }})" class="text-[11px] text-green-700 hover:underline">💾 Lưu</button>
+                                <button wire:click="cancelEdit({{ $r->id }})" class="text-[11px] text-gray-600 hover:underline ml-1">✕</button>
                             </td>
                         @else
-                            <td class="p-1">{{ $r->facility?->name }}</td>
-                            <td class="p-1 whitespace-nowrap">{{ $r->ngay_dat_lich?->format('d/m/Y') }}</td>
-                            <td class="p-1">{{ $r->gio }}</td>
-                            <td class="p-1">{{ $r->nguon }}</td>
-                            <td class="p-1">{{ $r->ho_ten }}</td>
-                            <td class="p-1">{{ $r->sdt }}</td>
-                            <td class="p-1">{{ $r->sale }}</td>
-                            <td class="p-1">{{ $r->lieu_phap }}</td>
-                            <td class="p-1">{{ $r->so_lo }}</td>
-                            <td class="p-1">{{ $r->dieu_duong }}</td>
-                            <td class="p-1">{{ $r->bac_si }}</td>
-                            <td class="p-1">{{ $r->ghi_chu }}</td>
-                            <td class="p-1 flex gap-1">
-                                <button wire:click="startEdit({{ $r->id }})" class="text-xs text-blue-600 hover:underline">Sửa</button>
-                                <button wire:click="deleteRow({{ $r->id }})"
-                                        wire:confirm="Xoá row này?"
-                                        class="text-xs text-red-600 hover:underline">Xoá</button>
+                            <td class="{{ $tdCls }} text-center">{{ $r->ngay_dat_lich?->format('d/m/Y') }}</td>
+                            <td class="{{ $tdCls }} text-center">{{ $r->gio ? \Illuminate\Support\Str::of($r->gio)->before(':') . ':' . substr($r->gio, 3, 2) : '' }}</td>
+                            <td class="{{ $tdCls }} text-center">{{ $r->nguon }}</td>
+                            <td class="{{ $tdCls }}">{{ $r->ho_ten }}</td>
+                            <td class="{{ $tdCls }}">{{ $r->sdt }}</td>
+                            <td class="{{ $tdCls }}">{{ $r->sale }}</td>
+                            <td class="{{ $tdCls }}">{{ $r->lieu_phap }}</td>
+                            <td class="{{ $tdCls }} text-center">{{ $r->so_lo }}</td>
+                            <td class="{{ $tdCls }}">{{ $r->dieu_duong }}</td>
+                            <td class="{{ $tdCls }}">{{ $r->bac_si }}</td>
+                            <td class="{{ $tdCls }}">{{ $r->ghi_chu }}</td>
+                            <td class="{{ $tdCls }} text-center">
+                                <button wire:click="startEdit({{ $r->id }})" class="text-[11px] text-blue-700 hover:underline">Sửa</button>
+                                <button wire:click="deleteRow({{ $r->id }})" wire:confirm="Xoá row này?" class="text-[11px] text-red-700 hover:underline ml-1">Xoá</button>
                             </td>
                         @endif
                     </tr>
                 @empty
-                    <tr><td colspan="15" class="p-4 text-center text-gray-400">Chưa có row nào. Nhập ở dòng trên.</td></tr>
+                    <tr><td colspan="14" class="border border-gray-300 p-6 text-center text-gray-400 italic">Chưa có row nào — nhập ở dòng xanh dương phía trên.</td></tr>
                 @endforelse
             </tbody>
         </table>
+
+        <div class="px-3 py-2 bg-white border-t border-gray-200">{{ $rows->links() }}</div>
     </div>
 
-    <div class="mt-3">
-        {{ $rows->links() }}
+    {{-- Tab footer theo cơ sở — kiểu Google Sheets --}}
+    <div class="flex items-center gap-0.5 border-t border-gray-300 bg-[#f8f9fa] px-2 py-1 overflow-x-auto">
+        <span class="text-[11px] text-gray-500 mr-2 shrink-0">Cơ sở:</span>
+        {{-- Tab "Tất cả" khi super admin có nhiều hơn 1 cơ sở --}}
+        @if ($facilities->count() > 1)
+            <button type="button" wire:click="$set('filterFacilityId', null)"
+                    class="text-[12px] px-3 py-1 rounded-t border-x border-t border-gray-300 shrink-0
+                           {{ $filterFacilityId === null ? 'bg-white text-gray-900 font-semibold border-b-white -mb-px' : 'bg-[#e8eaed] text-gray-600 hover:bg-gray-200' }}">
+                📋 Tất cả
+            </button>
+        @endif
+        @foreach ($facilities as $f)
+            <button type="button" wire:click="$set('filterFacilityId', {{ $f->id }})"
+                    class="text-[12px] px-3 py-1 rounded-t border-x border-t border-gray-300 shrink-0
+                           {{ (int) $filterFacilityId === $f->id ? 'bg-white text-gray-900 font-semibold border-b-white -mb-px' : 'bg-[#e8eaed] text-gray-600 hover:bg-gray-200' }}">
+                {{ $f->name }}
+            </button>
+        @endforeach
+        <span class="ml-auto text-[11px] text-gray-500 shrink-0">
+            {{ $rows->total() ?? $rows->count() }} dòng · 🔴 thiếu KH/SĐT/ngày · 🟡 thiếu giờ/sale/liệu pháp · 🟢 đủ
+        </span>
     </div>
 </div>

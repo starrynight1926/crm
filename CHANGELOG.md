@@ -2,6 +2,14 @@
 
 Format: mỗi lần chốt tạo 1 block `## vX.Y.Z — YYYY-MM-DD` + bullets. Mới nhất ở trên cùng.
 
+## v0.16.2 — 2026-10-05
+
+- **Simple Booking redesign kiểu Google Sheets** (`/simple-booking`):
+  - Full-width (cancel padding layout gốc), font Arial, cell `border-collapse` sát nhau, input không viền (focus-only), header xám `#f1f3f4`.
+  - Bỏ dropdown "Cơ sở" trên toolbar → tab footer kiểu sheet (📋 Tất cả · CS1 · CS2 · CS3), click chuyển scope + auto gán draft.facility_id.
+  - Row bg theo trạng thái: 🔴 đỏ nhạt (thiếu KH/SĐT/ngày), 🟡 vàng (thiếu giờ/sale/liệu pháp), 🟢 xanh (đủ) — khớp palette sheet Google.
+  - Toolbar footer có legend 3 màu + tổng số dòng.
+
 ## v0.16.1 — 2026-10-05
 
 - **Dashboard + /leads thêm widget "Đặt lịch lại"** — card thứ 4 (màu rose) đếm `booking_status=rescheduled` trong scope user (seesAllReports / isPersonalScopeOnly / visibleTo). Click:
