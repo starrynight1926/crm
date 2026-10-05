@@ -2,6 +2,13 @@
 
 Format: mỗi lần chốt tạo 1 block `## vX.Y.Z — YYYY-MM-DD` + bullets. Mới nhất ở trên cùng.
 
+## v0.16.1 — 2026-10-05
+
+- **Dashboard + /leads thêm widget "Đặt lịch lại"** — card thứ 4 (màu rose) đếm `booking_status=rescheduled` trong scope user (seesAllReports / isPersonalScopeOnly / visibleTo). Click:
+  - Ở dashboard → `/leads?booking=rescheduled` (filter URL mới).
+  - Ở `/leads` → toggle `fBookingStatus` tại chỗ, loại trừ với filter 3 phase để tránh combo rỗng.
+- Grid stat 3 → 4 card responsive (1/2/4 cột).
+
 ## v0.16.0 — 2026-09-04
 
 - **Phase 6.26 — Sale Tiếp Đón thao tác bên SCRM** (không phải sbooking):
