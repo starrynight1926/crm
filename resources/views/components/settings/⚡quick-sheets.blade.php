@@ -51,6 +51,23 @@ new class extends Component
         $this->resetErrorBag();
     }
 
+    /** 2026-10-05: Sync từ sbooking — pull toàn bộ mirror dữ liệu (dịch vụ, bác sĩ, phòng, mapping). */
+    public function syncFromSbooking(): void
+    {
+        abort_unless(AdminScope::isSuperAdmin(), 403);
+        $results = [];
+        foreach (['sb:sync-services', 'sb:sync-bac-si', 'sb:sync-dich-vu-phong', 'sb:sync-rooms'] as $cmd) {
+            try {
+                \Artisan::call($cmd);
+                $out = trim(\Artisan::output());
+                $results[] = "✓ {$cmd}: " . (\Illuminate\Support\Str::of($out)->explode("\n")->last() ?: 'done');
+            } catch (\Throwable $e) {
+                $results[] = "✗ {$cmd}: " . $e->getMessage();
+            }
+        }
+        session()->flash('sync_ok', implode(' | ', $results));
+    }
+
     public function updatedSearch(): void { $this->resetPage(); }
 
     protected function resetDraft(): void
@@ -329,8 +346,20 @@ new class extends Component
         <div class="flex items-center gap-3 text-[12px]">
             <input type="search" wire:model.live.debounce.300ms="search" placeholder="🔍 Tìm trong tab này"
                    class="border border-gray-300 rounded px-2 py-0.5 text-[12px] w-56">
+            <button wire:click="syncFromSbooking" wire:loading.attr="disabled" wire:target="syncFromSbooking"
+                    class="text-[12px] font-semibold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 px-3 py-1 rounded inline-flex items-center gap-1"
+                    title="Chạy 4 lệnh: sb:sync-services, sb:sync-bac-si, sb:sync-dich-vu-phong, sb:sync-rooms">
+                <span wire:loading.remove wire:target="syncFromSbooking">⚡ Sync từ sbooking</span>
+                <span wire:loading wire:target="syncFromSbooking">⏳ Đang sync…</span>
+            </button>
             <a href="{{ route('settings.index') }}" class="text-gray-600 hover:text-gray-900 underline">← Thiết lập</a>
         </div>
+    </div>
+    @if (session('sync_ok'))
+        <div class="bg-emerald-50 border-b border-emerald-200 text-emerald-800 text-[11px] px-3 py-1.5">
+            ✓ Sync xong: {{ session('sync_ok') }}
+        </div>
+    @endif
     </div>
 
     {{-- Sheet area --}}

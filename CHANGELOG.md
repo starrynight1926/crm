@@ -2,6 +2,10 @@
 
 Format: mỗi lần chốt tạo 1 block `## vX.Y.Z — YYYY-MM-DD` + bullets. Mới nhất ở trên cùng.
 
+## v0.16.6 — 2026-10-05
+
+- **Quick Sheets — nút "⚡ Sync từ sbooking"** trong toolbar. Click chạy 4 lệnh artisan: `sb:sync-services`, `sb:sync-bac-si`, `sb:sync-dich-vu-phong`, `sb:sync-rooms`. Kết quả in banner xanh ở đầu bảng.
+
 ## v0.16.5 — 2026-10-05
 
 - **Quick Sheets — 3 tab dịch vụ chuyển sang mirror `sb_services` (có `sbooking_co_so_id`)**:
