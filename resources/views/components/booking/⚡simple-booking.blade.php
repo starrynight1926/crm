@@ -31,6 +31,19 @@ new class extends Component
     public ?int $filterFacilityId = null;
     public bool $onlyWarning = false;
 
+    /** 2026-10-05: khoảng ngày lọc theo cột `ngay_dat_lich`. Default = hôm nay. */
+    public string $fromDate = '';
+    public string $toDate = '';
+    /** Tick → bỏ qua khoảng ngày, hiện tất cả mới → cũ. */
+    public bool $allDates = false;
+
+    /** Mã rút gọn hiển thị trên tab theo slug sbooking (đồng bộ với navbar). */
+    public const SHORT_NAMES = [
+        '59ntn'     => 'CS1: 59NTN',
+        '207nvt'    => 'CS2: 207NVT',
+        '11-15tdn'  => 'CS3: 11&15TDN',
+    ];
+
     /** Row đang được edit inline (id => field array) */
     public array $editing = [];
 
@@ -43,15 +56,22 @@ new class extends Component
         if ($facilities->count() >= 1) {
             $this->draft['facility_id'] = $facilities->first()->id;
         }
+        // 2026-10-05: default khoảng ngày = hôm nay.
+        $today = now()->toDateString();
+        $this->fromDate = $today;
+        $this->toDate = $today;
     }
 
-    /** Facilities user được thấy. Super admin: all; user thường: các facility_id đã từng có lead visible. */
+    /** Facilities user được thấy. Super admin: 3 cơ sở có slug sbooking (CS1/CS2/CS3);
+     *  user thường: các facility_id đã từng có lead visible. */
     public function visibleFacilities()
     {
-        // Chỉ hiển thị các cơ sở gốc (parent_id=null) — không lôi phòng con / khối chuyên môn.
-        $q = Facility::whereNull('parent_id');
+        // Chỉ hiển thị các cơ sở gốc (parent_id=null) có `booking_co_so_slug` — loại cơ sở dummy chưa map sbooking.
+        $q = Facility::whereNull('parent_id')
+            ->where('active', true)
+            ->whereNotNull('booking_co_so_slug');
         if (AdminScope::isSuperAdmin()) {
-            return $q->orderBy('name')->get();
+            return $q->orderBy('booking_co_so_slug')->get();
         }
         $u = auth()->user();
         $leafIds = Lead::visibleTo($u)->whereNotNull('facility_id')->distinct()->pluck('facility_id')->all();
@@ -64,7 +84,13 @@ new class extends Component
             if ($n) $rootIds[$n->id] = true;
         }
         if (! $rootIds) return collect();
-        return $q->whereIn('id', array_keys($rootIds))->orderBy('name')->get();
+        return $q->whereIn('id', array_keys($rootIds))->orderBy('booking_co_so_slug')->get();
+    }
+
+    /** 2026-10-05: label tab footer — ưu tiên map theo slug sbooking, fallback name. */
+    public function facilityShortLabel(Facility $f): string
+    {
+        return self::SHORT_NAMES[$f->booking_co_so_slug] ?? $f->name;
     }
 
     protected function visibleFacilityIds(): array
@@ -160,6 +186,9 @@ new class extends Component
         $this->resetPage();
     }
     public function updatedOnlyWarning(): void { $this->resetPage(); }
+    public function updatedFromDate(): void { $this->resetPage(); }
+    public function updatedToDate(): void { $this->resetPage(); }
+    public function updatedAllDates(): void { $this->resetPage(); }
 
     public function with(): array
     {
@@ -177,6 +206,12 @@ new class extends Component
             $q->where('facility_id', $this->filterFacilityId);
         }
 
+        // 2026-10-05: filter khoảng ngày đặt lịch. Tick "Tất cả" → bỏ qua, mới → cũ.
+        if (! $this->allDates) {
+            if ($this->fromDate !== '') $q->whereDate('ngay_dat_lich', '>=', $this->fromDate);
+            if ($this->toDate !== '')   $q->whereDate('ngay_dat_lich', '<=', $this->toDate);
+        }
+
         $rows = $q->paginate(30);
 
         if ($this->onlyWarning) {
@@ -188,6 +223,9 @@ new class extends Component
         return [
             'rows' => $rows,
             'facilities' => $facilities,
+            // 2026-10-05: dropdown nguồn — tái dùng SOURCE_GROUPS của Lead cho đồng bộ.
+            'sourceOptions' => Lead::SOURCE_GROUPS,
+            'sourceCodes'   => Lead::SOURCE_GROUP_CODES,
         ];
     }
 }; ?>
@@ -203,6 +241,22 @@ new class extends Component
             <span class="text-[11px] text-gray-500">Nháp lịch — Enter là chuyển ô, dòng xanh dương trên cùng để nhập mới.</span>
         </div>
         <div class="flex items-center gap-3 text-[12px]">
+            {{-- 2026-10-05: khoảng ngày lọc theo ngày_đặt_lịch --}}
+            <label class="flex items-center gap-1.5 text-gray-700">
+                <span>Từ</span>
+                <input type="date" wire:model.live="fromDate" @disabled($allDates)
+                       class="border border-gray-300 rounded px-1.5 py-0.5 text-[12px] disabled:bg-gray-100 disabled:text-gray-400">
+            </label>
+            <label class="flex items-center gap-1.5 text-gray-700">
+                <span>đến</span>
+                <input type="date" wire:model.live="toDate" @disabled($allDates)
+                       class="border border-gray-300 rounded px-1.5 py-0.5 text-[12px] disabled:bg-gray-100 disabled:text-gray-400">
+            </label>
+            <label class="flex items-center gap-1.5 text-gray-700">
+                <input type="checkbox" wire:model.live="allDates" class="w-3.5 h-3.5">
+                Tất cả (mới → cũ)
+            </label>
+            <span class="text-gray-300">│</span>
             <label class="flex items-center gap-1.5 text-gray-700">
                 <input type="checkbox" wire:model.live="onlyWarning" class="w-3.5 h-3.5">
                 Chỉ hiện dòng thiếu
@@ -244,10 +298,17 @@ new class extends Component
                 {{-- Row nhập mới — xanh dương nhạt --}}
                 <tr class="bg-[#e8f0fe]" wire:key="draft-input">
                     <td class="{{ $tdCls }} text-center text-blue-600">+</td>
-                    <td class="{{ $tdCls }} text-gray-400 italic">(nháp)</td>
+                    <td class="{{ $tdCls }} text-gray-400 italic">(tự động)</td>
                     <td class="{{ $tdCls }}"><input type="date" wire:model="draft.ngay_dat_lich" class="{{ $inpCls }}"></td>
                     <td class="{{ $tdCls }}"><input type="time" wire:model="draft.gio" class="{{ $inpCls }}"></td>
-                    <td class="{{ $tdCls }}"><input type="text" wire:model="draft.nguon" placeholder="MKT/SR…" class="{{ $inpCls }}"></td>
+                    <td class="{{ $tdCls }}">
+                        <select wire:model="draft.nguon" class="{{ $inpCls }}">
+                            <option value="">—</option>
+                            @foreach ($sourceOptions as $k => $v)
+                                <option value="{{ $k }}">{{ $sourceCodes[$k] ?? strtoupper($k) }}</option>
+                            @endforeach
+                        </select>
+                    </td>
                     <td class="{{ $tdCls }}"><input type="text" wire:model="draft.ho_ten" class="{{ $inpCls }}"></td>
                     <td class="{{ $tdCls }}"><input type="text" wire:model="draft.sdt" class="{{ $inpCls }}"></td>
                     <td class="{{ $tdCls }}"><input type="text" wire:model="draft.sale" class="{{ $inpCls }}"></td>
@@ -283,7 +344,14 @@ new class extends Component
                         @if ($isEdit)
                             <td class="{{ $tdCls }}"><input type="date" wire:model="editing.{{ $r->id }}.ngay_dat_lich" class="{{ $inpCls }}"></td>
                             <td class="{{ $tdCls }}"><input type="time" wire:model="editing.{{ $r->id }}.gio" class="{{ $inpCls }}"></td>
-                            <td class="{{ $tdCls }}"><input type="text" wire:model="editing.{{ $r->id }}.nguon" class="{{ $inpCls }}"></td>
+                            <td class="{{ $tdCls }}">
+                                <select wire:model="editing.{{ $r->id }}.nguon" class="{{ $inpCls }}">
+                                    <option value="">—</option>
+                                    @foreach ($sourceOptions as $k => $v)
+                                        <option value="{{ $k }}">{{ $sourceCodes[$k] ?? strtoupper($k) }}</option>
+                                    @endforeach
+                                </select>
+                            </td>
                             <td class="{{ $tdCls }}"><input type="text" wire:model="editing.{{ $r->id }}.ho_ten" class="{{ $inpCls }}"></td>
                             <td class="{{ $tdCls }}"><input type="text" wire:model="editing.{{ $r->id }}.sdt" class="{{ $inpCls }}"></td>
                             <td class="{{ $tdCls }}"><input type="text" wire:model="editing.{{ $r->id }}.sale" class="{{ $inpCls }}"></td>
@@ -299,7 +367,7 @@ new class extends Component
                         @else
                             <td class="{{ $tdCls }} text-center">{{ $r->ngay_dat_lich?->format('d/m/Y') }}</td>
                             <td class="{{ $tdCls }} text-center">{{ $r->gio ? \Illuminate\Support\Str::of($r->gio)->before(':') . ':' . substr($r->gio, 3, 2) : '' }}</td>
-                            <td class="{{ $tdCls }} text-center">{{ $r->nguon }}</td>
+                            <td class="{{ $tdCls }} text-center uppercase">{{ $sourceCodes[$r->nguon] ?? $r->nguon }}</td>
                             <td class="{{ $tdCls }}">{{ $r->ho_ten }}</td>
                             <td class="{{ $tdCls }}">{{ $r->sdt }}</td>
                             <td class="{{ $tdCls }}">{{ $r->sale }}</td>
@@ -337,8 +405,9 @@ new class extends Component
         @foreach ($facilities as $f)
             <button type="button" wire:click="$set('filterFacilityId', {{ $f->id }})"
                     class="text-[12px] px-3 py-1 rounded-t border-x border-t border-gray-300 shrink-0
-                           {{ (int) $filterFacilityId === $f->id ? 'bg-white text-gray-900 font-semibold border-b-white -mb-px' : 'bg-[#e8eaed] text-gray-600 hover:bg-gray-200' }}">
-                {{ $f->name }}
+                           {{ (int) $filterFacilityId === $f->id ? 'bg-white text-gray-900 font-semibold border-b-white -mb-px' : 'bg-[#e8eaed] text-gray-600 hover:bg-gray-200' }}"
+                    title="{{ $f->name }}">
+                {{ $this->facilityShortLabel($f) }}
             </button>
         @endforeach
         <span class="ml-auto text-[11px] text-gray-500 shrink-0">

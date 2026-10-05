@@ -6,9 +6,11 @@ Format: mỗi lần chốt tạo 1 block `## vX.Y.Z — YYYY-MM-DD` + bullets. M
 
 - **Simple Booking redesign kiểu Google Sheets** (`/simple-booking`):
   - Full-width (cancel padding layout gốc), font Arial, cell `border-collapse` sát nhau, input không viền (focus-only), header xám `#f1f3f4`.
-  - Bỏ dropdown "Cơ sở" trên toolbar → tab footer kiểu sheet (📋 Tất cả · CS1 · CS2 · CS3), click chuyển scope + auto gán draft.facility_id.
-  - Row bg theo trạng thái: 🔴 đỏ nhạt (thiếu KH/SĐT/ngày), 🟡 vàng (thiếu giờ/sale/liệu pháp), 🟢 xanh (đủ) — khớp palette sheet Google.
+  - Bỏ dropdown "Cơ sở" trên toolbar → tab footer kiểu sheet (📋 Tất cả · CS1: 59NTN · CS2: 207NVT · CS3: 11&15TDN), lọc theo `booking_co_so_slug`, click chuyển scope + auto gán draft.facility_id.
+  - Row bg theo trạng thái: 🔴 đỏ nhạt (thiếu KH/SĐT/ngày), 🟡 vàng (thiếu giờ/sale/liệu pháp), 🟢 xanh (đủ).
   - Toolbar footer có legend 3 màu + tổng số dòng.
+  - Draft row: "(nháp)" → "(tự động)"; cột Nguồn chuyển từ input tự do → `<select>` lấy 8 nhóm từ `Lead::SOURCE_GROUPS` (MKT/MKTBR/BDM/BOD/SA/BA/WI/HL).
+  - Thêm filter khoảng ngày đặt lịch ở toolbar (Từ / Đến) + checkbox **Tất cả (mới → cũ)** để override. Mặc định hôm nay.
 
 ## v0.16.1 — 2026-10-05
 
