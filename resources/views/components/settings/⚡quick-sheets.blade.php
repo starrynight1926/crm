@@ -360,7 +360,6 @@ new class extends Component
             ✓ Sync xong: {{ session('sync_ok') }}
         </div>
     @endif
-    </div>
 
     {{-- Sheet area --}}
     <div class="flex-1 overflow-auto bg-white">
