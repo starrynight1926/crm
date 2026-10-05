@@ -1,7 +1,8 @@
 <?php
 
+use App\Models\Facility;
 use App\Models\OrgUnit;
-use App\Models\Service;
+use App\Models\SbService;
 use App\Models\User;
 use App\Support\AdminScope;
 use Livewire\Component;
@@ -11,10 +12,15 @@ use Livewire\WithPagination;
  * 2026-10-05 — Quick Sheets: trang chỉnh nhanh nhiều entity cùng chỗ (Google-Sheets style).
  *   Super admin only. 5 tab:
  *     - users     : Nhân sự
- *     - dich_vu   : Dịch vụ        (services.service_type = 'dich_vu')
- *     - lam_sang  : Dịch vụ lâm sàng (services.service_type = 'tham_kham')
- *     - tu_van    : Tư vấn         (services.service_type = 'tu_van')
+ *     - dich_vu   : Dịch vụ        (sb_services la_dich_vu=1)
+ *     - lam_sang  : Dịch vụ lâm sàng (sb_services la_dich_vu=0, thuoc_nhom='kham_ls')
+ *     - tu_van    : Tư vấn         (sb_services la_dich_vu=0, thuoc_nhom='tu_van')
  *     - org       : Cơ sở & phòng ban (OrgUnit, dropdown parent)
+ *
+ * 2026-10-05 (rev2): 3 tab service đổi từ bảng `services` (local, không có co_so_id) sang
+ * `sb_services` (mirror sbooking, có sbooking_co_so_id). Lọc theo AdminScope branch;
+ * nếu Toàn công ty hiện thêm cột "Cơ sở". READ-ONLY: dịch vụ do sbooking làm master,
+ * sửa ở sbooking rồi `php artisan sb:sync-services` để sb_services cập nhật.
  */
 new class extends Component
 {
@@ -58,15 +64,27 @@ new class extends Component
         };
     }
 
-    /** Map tab → service_type khi tab là service-based. */
-    protected function serviceTypeOfTab(): ?string
+    /** Map OrgUnit branch code → sbooking_co_so_id. Khớp Facility.booking_co_so_slug. */
+    public const BRANCH_TO_SB_COSO = [
+        'branch-hn'  => 1,  // CS1: 59NTN
+        'branch-hcm' => 2,  // CS2: 207NVT
+        'branch-dn'  => 3,  // CS3: 11-15TĐN
+    ];
+
+    /** Short label hiển thị cột "Cơ sở" trong bảng. */
+    public const SB_COSO_LABELS = [
+        1 => 'CS1: 59NTN',
+        2 => 'CS2: 207NVT',
+        3 => 'CS3: 11&15TDN',
+    ];
+
+    /** sbooking_co_so_id scope hiện tại (null = toàn công ty, int = 1 cơ sở). */
+    protected function currentSbCoSoId(): ?int
     {
-        return match ($this->tab) {
-            'dich_vu'  => 'dich_vu',
-            'lam_sang' => 'tham_kham',
-            'tu_van'   => 'tu_van',
-            default    => null,
-        };
+        $branchId = AdminScope::currentBranchId();
+        if (! $branchId) return null;
+        $code = OrgUnit::where('id', $branchId)->value('code');
+        return self::BRANCH_TO_SB_COSO[$code] ?? null;
     }
 
     public function addRow(): void
@@ -74,8 +92,9 @@ new class extends Component
         try {
             match ($this->tab) {
                 'users'    => $this->addUser(),
-                'dich_vu', 'lam_sang', 'tu_van' => $this->addService(),
                 'org'      => $this->addOrg(),
+                // 3 tab service đọc từ sb_services (mirror sbooking) → read-only.
+                'dich_vu', 'lam_sang', 'tu_van' => throw new \Exception('Dịch vụ do sbooking làm master — thêm/sửa ở sbooking rồi chạy sync.'),
                 default    => null,
             };
         } catch (\Throwable $e) {
@@ -103,21 +122,7 @@ new class extends Component
         ]);
     }
 
-    protected function addService(): void
-    {
-        $data = $this->draft;
-        if (! $data['name']) throw new \Exception('Thiếu tên dịch vụ');
-        Service::create([
-            'name'          => $data['name'],
-            'code'          => $data['code'] ?: null,
-            'service_type'  => $this->serviceTypeOfTab(),
-            'pricing_type'  => $data['pricing_type'] ?: 'package',
-            'package_price' => $data['package_price'] !== null && $data['package_price'] !== '' ? (int) $data['package_price'] : null,
-            'price_usd'     => $data['price_usd'] !== null && $data['price_usd'] !== '' ? (float) $data['price_usd'] : null,
-            'active'        => (bool) $data['active'],
-            'notes'         => $data['notes'] ?: null,
-        ]);
-    }
+    // 2026-10-05 (rev2): addService() đã bỏ — sb_services là mirror, không ghi được.
 
     protected function addOrg(): void
     {
@@ -162,15 +167,7 @@ new class extends Component
                     'username'  => $data['username'] ?: null,
                     'status'    => $data['status'] ?: $row->status,
                 ]),
-                'dich_vu', 'lam_sang', 'tu_van' => $row->update([
-                    'name'          => $data['name'] ?: $row->name,
-                    'code'          => $data['code'] ?: null,
-                    'pricing_type'  => $data['pricing_type'] ?: 'package',
-                    'package_price' => $data['package_price'] !== null && $data['package_price'] !== '' ? (int) $data['package_price'] : null,
-                    'price_usd'     => $data['price_usd'] !== null && $data['price_usd'] !== '' ? (float) $data['price_usd'] : null,
-                    'active'        => (bool) $data['active'],
-                    'notes'         => $data['notes'] ?: null,
-                ]),
+                'dich_vu', 'lam_sang', 'tu_van' => throw new \Exception('Dịch vụ do sbooking làm master — sửa ở sbooking rồi chạy sync.'),
                 'org'      => $this->saveOrgEdit($row, $data),
                 default    => null,
             };
@@ -222,7 +219,6 @@ new class extends Component
     {
         return match ($this->tab) {
             'users'    => User::find($id),
-            'dich_vu', 'lam_sang', 'tu_van' => Service::find($id),
             'org'      => OrgUnit::find($id),
             default    => null,
         };
@@ -232,7 +228,6 @@ new class extends Component
     {
         return match ($this->tab) {
             'users'    => $row->only(['name','email','phone','job_title','username','status']),
-            'dich_vu', 'lam_sang', 'tu_van' => $row->only(['code','name','pricing_type','package_price','price_usd','active','notes']),
             'org'      => $row->only(['name','code','parent_id','position','active']),
             default    => [],
         };
@@ -252,6 +247,10 @@ new class extends Component
             'orgOptions'     => $this->tab === 'org' ? OrgUnit::orderBy('path')->get(['id','name','depth','path']) : collect(),
             'statusOptions'  => ['active' => '🟢 Active', 'inactive' => '⚪ Inactive', 'banned' => '🔴 Banned'],
             'pricingOptions' => ['package' => 'Trọn gói', 'phase' => 'Theo buổi'],
+            // 2026-10-05: scope hiện tại + label để template biết có cột "Cơ sở" hay không.
+            'currentSbCoSoId' => $this->currentSbCoSoId(),
+            'sbCoSoLabels'    => self::SB_COSO_LABELS,
+            'currentBranchName' => AdminScope::currentBranchName(),
         ];
     }
 
@@ -270,12 +269,25 @@ new class extends Component
 
     protected function serviceQuery()
     {
-        $q = Service::query()->where('service_type', $this->serviceTypeOfTab())->orderByDesc('id');
+        // Filter theo tab → group dịch vụ.
+        $q = SbService::query();
+        if ($this->tab === 'dich_vu') {
+            $q->where('la_dich_vu', true);
+        } elseif ($this->tab === 'lam_sang') {
+            $q->where('la_dich_vu', false)->where('thuoc_nhom', 'kham_ls');
+        } elseif ($this->tab === 'tu_van') {
+            $q->where('la_dich_vu', false)->where('thuoc_nhom', 'tu_van');
+        }
+
+        // AdminScope branch → sbooking_co_so_id. null = toàn công ty, không filter.
+        $sbCoSoId = $this->currentSbCoSoId();
+        if ($sbCoSoId) $q->where('sbooking_co_so_id', $sbCoSoId);
+
         if ($this->search !== '') {
             $s = trim($this->search);
-            $q->where(fn ($qq) => $qq->where('name', 'like', "%$s%")->orWhere('code', 'like', "%$s%"));
+            $q->where('ten', 'like', "%$s%");
         }
-        return $q->paginate(30);
+        return $q->orderBy('sbooking_co_so_id')->orderBy('ten')->paginate(30);
     }
 
     protected function orgQuery()
@@ -400,78 +412,49 @@ new class extends Component
                 </tbody>
                 @break
 
-            {{-- ========== TAB: SERVICE (3 variants dùng chung UI) ========== --}}
+            {{-- ========== TAB: SERVICE (3 variants dùng chung UI — read-only từ sb_services) ========== --}}
             @case('dich_vu')
             @case('lam_sang')
             @case('tu_van')
+                @php $showCoSoCol = $currentSbCoSoId === null; $colCount = $showCoSoCol ? 7 : 6; @endphp
                 <thead class="sticky top-0 z-10"><tr class="bg-[#f1f3f4] text-gray-700">
                     <th class="{{ $thCls }} w-14 text-center">ID</th>
-                    <th class="{{ $thCls }} w-28">Mã</th>
+                    @if ($showCoSoCol)
+                        <th class="{{ $thCls }} w-36">Cơ sở</th>
+                    @endif
                     <th class="{{ $thCls }}">Tên dịch vụ</th>
-                    <th class="{{ $thCls }} w-32">Kiểu giá</th>
-                    <th class="{{ $thCls }} w-32">Giá gói (VND)</th>
-                    <th class="{{ $thCls }} w-28">Giá USD</th>
+                    <th class="{{ $thCls }} w-24 text-center">Thời lượng</th>
+                    <th class="{{ $thCls }} w-28">Thuộc nhóm</th>
+                    <th class="{{ $thCls }} w-20 text-center">Loại</th>
                     <th class="{{ $thCls }} w-20 text-center">Hoạt động</th>
-                    <th class="{{ $thCls }}">Ghi chú</th>
-                    <th class="{{ $thCls }} w-28 text-center">Thao tác</th>
                 </tr></thead>
                 <tbody>
-                    <tr class="bg-[#e8f0fe]" wire:key="draft-svc-{{ $tab }}">
-                        <td class="{{ $tdCls }} text-center text-blue-600">+</td>
-                        <td class="{{ $tdCls }}"><input wire:model="draft.code" class="{{ $inpCls }}"></td>
-                        <td class="{{ $tdCls }}"><input wire:model="draft.name" placeholder="Tên dịch vụ *" class="{{ $inpCls }}"></td>
-                        <td class="{{ $tdCls }}">
-                            <select wire:model="draft.pricing_type" class="{{ $inpCls }}">
-                                @foreach ($pricingOptions as $k => $v)<option value="{{ $k }}">{{ $v }}</option>@endforeach
-                            </select>
-                        </td>
-                        <td class="{{ $tdCls }}"><input type="number" wire:model="draft.package_price" class="{{ $inpCls }} text-right"></td>
-                        <td class="{{ $tdCls }}"><input type="number" step="0.01" wire:model="draft.price_usd" class="{{ $inpCls }} text-right"></td>
-                        <td class="{{ $tdCls }} text-center"><input type="checkbox" wire:model="draft.active"></td>
-                        <td class="{{ $tdCls }}"><input wire:model="draft.notes" class="{{ $inpCls }}"></td>
-                        <td class="{{ $tdCls }} text-center">
-                            <button wire:click="addRow" class="text-[11px] font-semibold text-white bg-blue-600 hover:bg-blue-700 px-2 py-0.5 rounded">+ Thêm</button>
+                    <tr>
+                        <td colspan="{{ $colCount }}" class="bg-amber-50 border border-amber-200 text-amber-800 text-[11px] px-3 py-1.5">
+                            ⚠ Dịch vụ do <b>sbooking</b> làm master — bảng này read-only mirror.
+                            Sửa ở <code class="bg-white px-1 rounded">sbooking.sweetsica.com</code>, rồi chạy
+                            <code class="bg-white px-1 rounded">php artisan sb:sync-services</code> để cập nhật.
+                            @if ($currentBranchName)
+                                · Đang lọc: <b>{{ $currentBranchName }}</b> (sbooking_co_so_id={{ $currentSbCoSoId }}).
+                            @else
+                                · Đang xem <b>toàn công ty</b> — chọn cơ sở ở navbar để lọc 1 CS.
+                            @endif
                         </td>
                     </tr>
                     @forelse ($rows as $s)
-                        @php $isEdit = isset($editing[$s->id]); @endphp
                         <tr wire:key="svc-{{ $s->id }}" class="{{ $s->active ? '' : 'bg-gray-50 text-gray-500' }} hover:bg-[#f8f9fa]">
                             <td class="{{ $tdCls }} text-center text-gray-500">{{ $s->id }}</td>
-                            @if ($isEdit)
-                                <td class="{{ $tdCls }}"><input wire:model="editing.{{ $s->id }}.code" class="{{ $inpCls }}"></td>
-                                <td class="{{ $tdCls }}"><input wire:model="editing.{{ $s->id }}.name" class="{{ $inpCls }}"></td>
-                                <td class="{{ $tdCls }}">
-                                    <select wire:model="editing.{{ $s->id }}.pricing_type" class="{{ $inpCls }}">
-                                        @foreach ($pricingOptions as $k => $v)<option value="{{ $k }}">{{ $v }}</option>@endforeach
-                                    </select>
-                                </td>
-                                <td class="{{ $tdCls }}"><input type="number" wire:model="editing.{{ $s->id }}.package_price" class="{{ $inpCls }} text-right"></td>
-                                <td class="{{ $tdCls }}"><input type="number" step="0.01" wire:model="editing.{{ $s->id }}.price_usd" class="{{ $inpCls }} text-right"></td>
-                                <td class="{{ $tdCls }} text-center"><input type="checkbox" wire:model="editing.{{ $s->id }}.active"></td>
-                                <td class="{{ $tdCls }}"><input wire:model="editing.{{ $s->id }}.notes" class="{{ $inpCls }}"></td>
-                                <td class="{{ $tdCls }} text-center">
-                                    <button wire:click="saveEdit({{ $s->id }})" class="text-[11px] text-green-700 hover:underline">💾 Lưu</button>
-                                    <button wire:click="cancelEdit({{ $s->id }})" class="text-[11px] text-gray-600 hover:underline ml-1">✕</button>
-                                </td>
-                            @else
-                                <td class="{{ $tdCls }} font-mono text-[11px]">{{ $s->code }}</td>
-                                <td class="{{ $tdCls }}">{{ $s->name }}</td>
-                                <td class="{{ $tdCls }}">{{ $pricingOptions[$s->pricing_type] ?? $s->pricing_type }}</td>
-                                <td class="{{ $tdCls }} text-right tabular-nums">{{ $s->package_price !== null ? number_format($s->package_price) : '—' }}</td>
-                                <td class="{{ $tdCls }} text-right tabular-nums">{{ $s->price_usd !== null ? number_format($s->price_usd, 2) : '—' }}</td>
-                                <td class="{{ $tdCls }} text-center">{{ $s->active ? '✓' : '—' }}</td>
-                                <td class="{{ $tdCls }} text-gray-600 text-[11px]">{{ $s->notes }}</td>
-                                <td class="{{ $tdCls }} text-center">
-                                    <button wire:click="startEdit({{ $s->id }})" class="text-[11px] text-blue-700 hover:underline">Sửa</button>
-                                    <button wire:click="deleteRow({{ $s->id }})" wire:confirm="Xóa dịch vụ '{{ $s->name }}'? Không hoàn tác." class="text-[11px] text-red-700 hover:underline ml-1">Xóa</button>
-                                </td>
+                            @if ($showCoSoCol)
+                                <td class="{{ $tdCls }} text-[11px] font-semibold">{{ $sbCoSoLabels[$s->sbooking_co_so_id] ?? ('#' . $s->sbooking_co_so_id) }}</td>
                             @endif
+                            <td class="{{ $tdCls }}">{{ $s->ten }}</td>
+                            <td class="{{ $tdCls }} text-center tabular-nums">{{ $s->thoi_gian_phut }}'</td>
+                            <td class="{{ $tdCls }} text-[11px] uppercase">{{ $s->thuoc_nhom }}</td>
+                            <td class="{{ $tdCls }} text-center">{{ $s->la_dich_vu ? '💆 DV' : '🩺 TK' }}</td>
+                            <td class="{{ $tdCls }} text-center">{{ $s->active ? '✓' : '—' }}</td>
                         </tr>
-                        @if ($errors->has('row_' . $s->id))
-                            <tr><td colspan="9" class="bg-red-50 text-red-700 text-xs px-3 py-1">⚠ {{ $errors->first('row_' . $s->id) }}</td></tr>
-                        @endif
                     @empty
-                        <tr><td colspan="9" class="border border-gray-300 p-6 text-center text-gray-400 italic">Chưa có mục nào. Thêm ở dòng xanh dương phía trên.</td></tr>
+                        <tr><td colspan="{{ $colCount }}" class="border border-gray-300 p-6 text-center text-gray-400 italic">Không có dịch vụ nào khớp.</td></tr>
                     @endforelse
                 </tbody>
                 @break

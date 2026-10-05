@@ -2,6 +2,14 @@
 
 Format: mỗi lần chốt tạo 1 block `## vX.Y.Z — YYYY-MM-DD` + bullets. Mới nhất ở trên cùng.
 
+## v0.16.5 — 2026-10-05
+
+- **Quick Sheets — 3 tab dịch vụ chuyển sang mirror `sb_services` (có `sbooking_co_so_id`)**:
+  - Trước đọc/ghi bảng `services` local (không có co_so, dropdown lead-form không thấy) → giờ đọc đúng bảng mirror được lead-form Phase 4 sử dụng.
+  - Lọc theo cơ sở ở navbar: pick CS1/CS2/CS3 → chỉ hiện dịch vụ cơ sở đó. Để "Toàn công ty" → hiện cột **Cơ sở** trong bảng.
+  - Read-only + banner nhắc: muốn sửa thật phải vào sbooking rồi `php artisan sb:sync-services`.
+  - Phân loại tab theo `la_dich_vu` + `thuoc_nhom`: Dịch vụ (la_dich_vu=1) / Lâm sàng (la_dich_vu=0, kham_ls) / Tư vấn (la_dich_vu=0, tu_van).
+
 ## v0.16.4 — 2026-10-05
 
 - **Dropdown dịch vụ ở lead-form Phase 4** cập nhật theo sbooking v0.17.2:
