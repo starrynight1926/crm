@@ -6,6 +6,7 @@ use App\Models\SbService;
 use App\Models\User;
 use App\Support\AdminScope;
 use Livewire\Component;
+use Livewire\WithFileUploads;
 use Livewire\WithPagination;
 
 /**
@@ -24,12 +25,13 @@ use Livewire\WithPagination;
  */
 new class extends Component
 {
-    use WithPagination;
+    use WithPagination, WithFileUploads;
 
     public string $tab = 'users';
     public string $search = '';
     public array $draft = [];
     public array $editing = []; // [row_id => fields]
+    public $importFile = null;
 
     protected function queryString(): array
     {
@@ -250,6 +252,92 @@ new class extends Component
         };
     }
 
+    /* ============== EXPORT / IMPORT CSV (2026-10-05) ============== */
+
+    public function exportCsv()
+    {
+        $cols = $this->exportColumns();
+        $rows = $this->exportQuery()->get();
+        $csv = implode(',', $cols) . "\n";
+        foreach ($rows as $r) {
+            $csv .= implode(',', array_map(fn ($c) => '"' . str_replace('"', '""', (string) ($r->$c ?? '')) . '"', $cols)) . "\n";
+        }
+        $filename = "quick-sheets-{$this->tab}-" . now()->format('Ymd-His') . '.csv';
+        return response()->streamDownload(fn () => print($csv), $filename, ['Content-Type' => 'text/csv; charset=utf-8']);
+    }
+
+    public function importCsv(): void
+    {
+        if (! in_array($this->tab, ['users', 'org'], true)) {
+            session()->flash('sync_err', 'Tab này read-only — không import được. Sửa ở sbooking rồi sync.');
+            return;
+        }
+        if (! $this->importFile) { $this->addError('importFile', 'Chọn file CSV trước.'); return; }
+        $fh = fopen($this->importFile->getRealPath(), 'r');
+        if (! $fh) { $this->addError('importFile', 'Không đọc được file.'); return; }
+
+        $header = fgetcsv($fh);
+        if (! $header) { fclose($fh); $this->addError('importFile', 'File rỗng.'); return; }
+
+        $modelClass = $this->tab === 'users' ? User::class : OrgUnit::class;
+        $created = 0; $updated = 0; $errors = 0;
+        while (($row = fgetcsv($fh)) !== false) {
+            $data = @array_combine($header, $row);
+            if (! $data) { $errors++; continue; }
+            try {
+                $id = (int) ($data['id'] ?? 0);
+                unset($data['id']);
+                if ($this->tab === 'users' && empty($data['password']) && ! $id) {
+                    $data['password'] = bcrypt(\Illuminate\Support\Str::random(20));
+                }
+                if ($id && $existing = $modelClass::find($id)) {
+                    $existing->update(array_filter($data, fn ($v) => $v !== null && $v !== ''));
+                    $updated++;
+                } else {
+                    $modelClass::create($data);
+                    $created++;
+                }
+            } catch (\Throwable $e) {
+                $errors++;
+            }
+        }
+        fclose($fh);
+        $this->importFile = null;
+        session()->flash('sync_ok', "Import {$this->tab}: tạo {$created}, cập nhật {$updated}, lỗi {$errors}.");
+    }
+
+    protected function exportColumns(): array
+    {
+        return match ($this->tab) {
+            'users'    => ['id', 'name', 'email', 'phone', 'job_title', 'username', 'status'],
+            'org'      => ['id', 'name', 'code', 'parent_id', 'depth', 'position', 'active', 'path'],
+            'dich_vu', 'lam_sang', 'tu_van' => ['id', 'sbooking_id', 'sbooking_co_so_id', 'ten', 'thoi_gian_phut', 'thuoc_nhom', 'la_dich_vu', 'active'],
+            default    => [],
+        };
+    }
+
+    protected function exportQuery()
+    {
+        return match ($this->tab) {
+            'users'    => User::query()->orderByDesc('id'),
+            'dich_vu', 'lam_sang', 'tu_van' => $this->serviceBaseQuery(),
+            'org'      => OrgUnit::query()->orderBy('path'),
+            default    => OrgUnit::query()->whereRaw('1=0'),
+        };
+    }
+
+    /** Base query cho export service (bỏ paginate + search để lấy full). */
+    protected function serviceBaseQuery()
+    {
+        $q = SbService::query();
+        if ($this->tab === 'dich_vu') $q->where('la_dich_vu', true);
+        elseif ($this->tab === 'lam_sang') $q->where('la_dich_vu', false)->where('thuoc_nhom', 'kham_ls');
+        elseif ($this->tab === 'tu_van') $q->where('la_dich_vu', false)->where('thuoc_nhom', 'tu_van');
+        $sbCoSoId = $this->currentSbCoSoId();
+        if ($sbCoSoId) $q->where('sbooking_co_so_id', $sbCoSoId);
+        return $q->orderBy('sbooking_co_so_id')->orderBy('ten');
+    }
+
     public function with(): array
     {
         $rows = match ($this->tab) {
@@ -346,6 +434,16 @@ new class extends Component
         <div class="flex items-center gap-3 text-[12px]">
             <input type="search" wire:model.live.debounce.300ms="search" placeholder="🔍 Tìm trong tab này"
                    class="border border-gray-300 rounded px-2 py-0.5 text-[12px] w-56">
+            <button wire:click="exportCsv" class="text-[12px] font-semibold text-sky-700 border border-sky-300 hover:bg-sky-50 px-2 py-1 rounded">⬇ Export CSV</button>
+            @if (in_array($tab, ['users','org'], true))
+                <label class="text-[12px] font-semibold text-amber-700 border border-amber-300 hover:bg-amber-50 px-2 py-1 rounded cursor-pointer">
+                    ⬆ Import CSV
+                    <input type="file" wire:model="importFile" accept=".csv" class="hidden">
+                </label>
+                @if ($importFile)
+                    <button wire:click="importCsv" class="text-[12px] font-semibold text-white bg-amber-600 hover:bg-amber-700 px-2 py-1 rounded">Chạy import</button>
+                @endif
+            @endif
             <button wire:click="syncFromSbooking" wire:loading.attr="disabled" wire:target="syncFromSbooking"
                     class="text-[12px] font-semibold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 px-3 py-1 rounded inline-flex items-center gap-1"
                     title="Chạy 4 lệnh: sb:sync-services, sb:sync-bac-si, sb:sync-dich-vu-phong, sb:sync-rooms">
