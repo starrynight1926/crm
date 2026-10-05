@@ -49,7 +49,11 @@ Route::middleware('auth')->group(function () {
             abort_unless($exists, 422);
             session([\App\Support\AdminScope::SESSION_KEY => (int) $val]);
         }
-        return back();
+        // 2026-10-05: back() giữ nguyên query string (vd ?booking=rescheduled) → đổi cơ sở
+        // xong bị kẹt filter cũ, lead-list trống. Strip query, chỉ giữ path của referer.
+        $back = $r->headers->get('referer');
+        $path = $back ? parse_url($back, PHP_URL_PATH) : null;
+        return redirect($path ?: '/dashboard');
     })->name('admin.scope');
     Route::view('/dashboard', 'dashboard')->name('dashboard');
     Route::view('/settings/sessions', 'settings.sessions')->name('sessions.index');
