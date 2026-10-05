@@ -8,6 +8,7 @@ Format: mỗi lần chốt tạo 1 block `## vX.Y.Z — YYYY-MM-DD` + bullets. M
   - Ở dashboard → `/leads?booking=rescheduled` (filter URL mới).
   - Ở `/leads` → toggle `fBookingStatus` tại chỗ, loại trừ với filter 3 phase để tránh combo rỗng.
 - Grid stat 3 → 4 card responsive (1/2/4 cột).
+- **Fix lead-form — checkbox "Không áp dụng luật thu hồi"** trước nằm trong grid cascade kho; khi chọn `mktMode=auto|manual` grid bị `hidden` → checkbox biến mất. Giờ tách ra ngoài grid, hiện luôn khi mở section "Chia số" bất kể mode nào.
 
 ## v0.16.0 — 2026-09-04
 

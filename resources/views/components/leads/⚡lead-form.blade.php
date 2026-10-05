@@ -4545,21 +4545,6 @@ new class extends Component
                                     @else Cấp thấp nhất được chọn = kho áp dụng. Nhân sự trong phạm vi kho đó thấy được lead. @endif
                                 </p>
                                 @error('poolTarget')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
-
-                                {{-- 2026-08-07: Flip mặc định — mọi lead đều áp thu hồi. Tick ô này = exempt (VD lead đặc biệt CM giữ tay). --}}
-                                <label class="mt-3 flex items-start gap-2 text-sm bg-amber-50 border border-amber-200 rounded-md px-3 py-2 cursor-pointer">
-                                    <input type="checkbox" wire:model="skipRecall" class="rounded border-amber-300 mt-0.5">
-                                    <span>
-                                        <span class="font-semibold text-amber-900">Không áp dụng luật thu hồi</span>
-                                        <span class="block text-xs text-amber-700 mt-0.5">
-                                            Luật thu hồi mặc định (áp cho lead cá nhân):
-                                            <br>• Sau <b>1 ngày</b> chưa có ghi nhận cuộc gọi → thu hồi về <b>kho cơ sở</b>.
-                                            <br>• Sau <b>3 ngày</b> chưa đủ <b>Phân loại + Kết quả</b> → thu hồi về <b>kho cơ sở</b>.
-                                            <br>Tick ô này để <b>miễn</b> 2 luật trên cho lead đặc biệt (CM giữ tay).
-                                            <br><span class="text-[10px] text-amber-600 italic">Riêng luật MKT — Tele không ghi cuộc gọi trong 10 phút → thu hồi — KHÔNG bị bỏ qua bởi ô này.</span>
-                                        </span>
-                                    </span>
-                                </label>
                             </div>
                             {{-- 2026-08-19: default open=true — dropdown 7 người trong scope hiện luôn khi
                                  chưa chọn ai, khỏi bắt user phải click ô search mới thấy list. --}}
@@ -4591,6 +4576,21 @@ new class extends Component
                                 @endif
                             </div>
                         </div>
+                        {{-- 2026-10-05: skip_recall tách ra khỏi grid cascade — trước bị ẩn khi chọn mktMode=auto|manual
+                             (grid cascade được hidden) → user tưởng mất feature. Giờ hiện LUÔN trong Chia số section. --}}
+                        <label class="mt-3 flex items-start gap-2 text-sm bg-amber-50 border border-amber-200 rounded-md px-3 py-2 cursor-pointer">
+                            <input type="checkbox" wire:model="skipRecall" class="rounded border-amber-300 mt-0.5">
+                            <span>
+                                <span class="font-semibold text-amber-900">Không áp dụng luật thu hồi</span>
+                                <span class="block text-xs text-amber-700 mt-0.5">
+                                    Luật thu hồi mặc định (áp cho lead cá nhân):
+                                    <br>• Sau <b>1 ngày</b> chưa có ghi nhận cuộc gọi → thu hồi về <b>kho cơ sở</b>.
+                                    <br>• Sau <b>3 ngày</b> chưa đủ <b>Phân loại + Kết quả</b> → thu hồi về <b>kho cơ sở</b>.
+                                    <br>Tick ô này để <b>miễn</b> 2 luật trên cho lead đặc biệt (CM giữ tay).
+                                    <br><span class="text-[10px] text-amber-600 italic">Riêng luật MKT — Tele không ghi cuộc gọi trong 10 phút → thu hồi — KHÔNG bị bỏ qua bởi ô này.</span>
+                                </span>
+                            </span>
+                        </label>
                         <p class="text-xs text-ink/50 mt-4 italic">Chọn xong bấm "Lưu thông tin" ở footer — hệ thống lưu lead + chia số ở phase 1 và chuyển sang phase 3 (Booking thăm khám).</p>
                         @endif {{-- close @if ($canDistribute) inner cascade+person section --}}
                     </div>
