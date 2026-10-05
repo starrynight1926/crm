@@ -33,6 +33,10 @@
                 ['label'=>'Người dùng','desc'=>'Thêm/sửa/xóa nhân sự & gán phân quyền theo phòng.','route'=>'org.users','perm'=>'user.manage','icon'=>'users'],
                 ['label'=>'Vai trò','desc'=>'Định nghĩa vai trò & tích quyền chức năng (RBAC).','route'=>'org.roles','perm'=>'role.manage','icon'=>'shield'],
                 ['label'=>'Bác sĩ & Cơ sở','desc'=>'Danh mục nhân sự chuyên môn theo cơ sở; import/export Excel.','route'=>'settings.staff','perm'=>'staff.manage','icon'=>'users'],
+                // 2026-10-05: Quick Sheets — chỉnh nhanh nhiều entity như Google Sheets. Super admin only.
+                ...(\App\Support\AdminScope::isSuperAdmin() ? [
+                    ['label'=>'⚡ Chỉnh nhanh (Quick Sheets)','desc'=>'Nhân sự / Dịch vụ / Dịch vụ LS / Tư vấn / Cơ sở — inline edit kiểu Google Sheets.','route'=>'settings.quick-sheets','perm'=>null,'icon'=>'box'],
+                ] : []),
             ],
         ],
         'data' => [

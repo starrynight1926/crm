@@ -59,6 +59,8 @@ Route::middleware('auth')->group(function () {
     Route::view('/settings/sessions', 'settings.sessions')->name('sessions.index');
     Route::view('/settings/password', 'settings.password')->name('settings.password');
     Route::view('/settings', 'settings.index')->name('settings.index');
+    // 2026-10-05: Quick Sheets — chỉnh nhanh nhiều entity (super admin only, guard trong Livewire mount()).
+    Route::view('/settings/quick-sheets', 'settings.quick-sheets')->name('settings.quick-sheets');
 
     // Thông báo (in-app)
     Route::view('/thong-bao', 'notifications.index')->name('notifications.index');

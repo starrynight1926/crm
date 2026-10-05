@@ -2,7 +2,14 @@
 
 Format: mỗi lần chốt tạo 1 block `## vX.Y.Z — YYYY-MM-DD` + bullets. Mới nhất ở trên cùng.
 
-## v0.16.2 — 2026-10-05
+## v0.16.3 — 2026-10-05
+
+- **Quick Sheets** (`/settings/quick-sheets`) — Super admin only, chỉnh nhanh 5 entity cùng chỗ, UI Google-Sheets:
+  - 5 tab footer: 👤 Nhân sự · 💆 Dịch vụ · 🩺 Dịch vụ lâm sàng · 💬 Tư vấn · 🏢 Cơ sở & Phòng ban.
+  - 3 tab service là chung bảng `services` filter theo `service_type` (dich_vu / tham_kham / tu_van). Thêm/sửa/xóa đầy đủ, draft row xanh dương + inline edit.
+  - Tab Nhân sự: name/email/phone/job_title/username/status. Thêm user tự sinh password random (admin reset sau).
+  - Tab Cơ sở & Phòng ban (OrgUnit): parent dropdown với indent theo depth, auto cập nhật path khi đổi parent, chặn cycle (parent là chính nó hoặc đơn vị con).
+  - Search per-tab + pagination 30 (org 50) · Card vào từ `/settings` > Tổ chức.
 
 - **Simple Booking redesign kiểu Google Sheets** (`/simple-booking`):
   - Full-width (cancel padding layout gốc), font Arial, cell `border-collapse` sát nhau, input không viền (focus-only), header xám `#f1f3f4`.
