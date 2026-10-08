@@ -2491,9 +2491,11 @@ new class extends Component
         //   làm dropdown rỗng khi user chọn kho công ty / kho chi nhánh.
         $users = $this->assignableUsers();
 
+        // 2026-10-08: bỏ take(15) → hiện HẾT UPS list facility (có khi >15 member).
+        //   Trước đây cắt 15 làm user "Kim Ngân" vần T bị rớt khi UPS list dài, phải gõ search mới thấy.
         $q = trim($this->personSearch);
         $results = ($q === '' ? $users : $users->filter(fn ($u) => str_contains(mb_strtolower($u->name), mb_strtolower($q))))
-            ->take(15)->values();
+            ->values();
 
         // 2026-09-30: dropdown chọn cơ sở booking → loại các phòng nội bộ (VD "Phòng vận hành")
         //   không phải cơ sở khám bệnh. Lọc children theo name (không chứa "vận hành").
