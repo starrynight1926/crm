@@ -29,13 +29,14 @@ class DistributionEngine
     /** Chia 1 lead từ vị trí hiện tại xuống sâu nhất có thể. */
     public function distribute(Lead $lead): void
     {
-        // 2026-08-26 — MKT là logic cứng: chia round-robin theo UPS list của cơ sở người up,
-        // không phụ thuộc distribution_rules (bảng đó dành cho MKT_BR / SA / BA / BDM cần rule config).
-        if ($lead->source_group === Lead::SOURCE_MKT && $lead->owner_id === null) {
-            if ($this->assignMktByUps($lead)) {
-                return; // Đã pick sale + gán owner. Không chạy rule engine nữa.
-            }
-            // pickMkt trả null (UPS list rỗng hoặc chưa chốt UPS) → fallthrough: giữ lead ở pool để CM chia tay.
+        // 2026-10-08 — Chia tự động dùng chung UPS check-in hôm nay cho MỌI source
+        //   (trước chỉ MKT). Facility = facility của imported_by. Bucket phân theo UPS list:
+        //     - MKT (is_mkt=true) → telesale/booking → pickMkt round-robin
+        //     - A/B/C (sale tiếp đón) → pickGreet (cross-bucket A→B→C) round-robin
+        //   Pick thất bại (UPS list rỗng / chưa check-in / không suy được facility) →
+        //   fallthrough rule engine cũ (fallback cho source có config distribution_rules).
+        if ($lead->owner_id === null && $this->assignByUps($lead)) {
+            return;
         }
 
         // Phase 6.20 — eager load customValues để accessor page/camp không N+1 khi match rule
@@ -51,10 +52,12 @@ class DistributionEngine
     }
 
     /**
-     * MKT auto-assign: suy facility từ user Trực Page (imported_by) → UpsDispatcher::pickMkt round-robin.
-     * Trả true nếu đã gán owner, false nếu không pick được (list rỗng / UPS chưa chốt / không suy được facility).
+     * 2026-10-08 — Chia tự động theo UPS check-in hôm nay. Thay thế assignMktByUps cũ,
+     * dùng chung cho mọi source: MKT → pickMkt (bucket telesale/booking),
+     * còn lại → pickGreet (bucket sale tiếp đón A→B→C).
+     * Facility suy từ imported_by. Trả true nếu đã gán owner, false nếu không pick được.
      */
-    private function assignMktByUps(Lead $lead): bool
+    private function assignByUps(Lead $lead): bool
     {
         $importerId = $lead->imported_by;
         if (! $importerId) {
@@ -64,7 +67,10 @@ class DistributionEngine
         if (! $facilityPoolUnitId) {
             return false;
         }
-        $sale = app(\App\Services\Ups\UpsDispatcher::class)->pickMkt($facilityPoolUnitId);
+        $dispatcher = app(\App\Services\Ups\UpsDispatcher::class);
+        $sale = $lead->source_group === Lead::SOURCE_MKT
+            ? $dispatcher->pickMkt($facilityPoolUnitId)
+            : $dispatcher->pickGreet($facilityPoolUnitId);
         if (! $sale) {
             return false;
         }
@@ -92,6 +98,7 @@ class DistributionEngine
         }
         // Fallback: first assignment (giữ hành vi cũ nếu không tìm được match).
         $saleOrgId ??= $sale->assignments()->first()?->org_unit_id;
+        $prevPoolLevel = $lead->pool_level;
         $lead->update([
             'owner_id'        => $sale->id,
             'org_unit_id'     => $saleOrgId,
@@ -102,12 +109,14 @@ class DistributionEngine
         LeadDistributionLog::create([
             'lead_id'         => $lead->id,
             'action'          => LeadDistributionLog::ACTION_DISTRIBUTE,
-            'from_pool_level' => Lead::POOL_COMMON,
+            'from_pool_level' => $prevPoolLevel,
             'to_pool_level'   => Lead::POOL_PERSONAL,
             'to_owner_id'     => $sale->id,
             'org_unit_id'     => $saleOrgId,
             'actor_id'        => null,        // system (UPS auto)
-            'reason'          => 'MKT auto UPS round-robin',
+            'reason'          => $lead->source_group === Lead::SOURCE_MKT
+                ? 'MKT auto UPS round-robin'
+                : 'Auto UPS round-robin (bucket A/B/C)',
             'created_at'      => now(),
         ]);
         try {
