@@ -2363,63 +2363,55 @@ new class extends Component
     /** Nhân sự có thể chia trực tiếp: trong phạm vi của người thao tác + chính mình. */
     private function assignableUsers()
     {
-        $visibleOrgIds = auth()->user()->visibleOrgUnitIds();
+        // 2026-10-08: dropdown "Nhân viên phụ trách" dùng chung nguồn với UPS list.
+        //   Admin tick ai vào /settings/ups-list của 1 cơ sở là người đó hiện ở đây —
+        //   bỏ hẳn whitelist role (Sale/Tele/CM/TL) + scope visibleOrgIds cũ.
+        //   Facility scope xác định theo cascade "Chia số" của form (ưu tiên phòng ban → cơ sở →
+        //   pool_unit của lead đã lưu). Chưa chọn gì → union toàn bộ UPS list.
+        //   Luôn merge: owner cũ của lead (giữ khi bị gỡ khỏi UPS list) + auth()->id() (self-tag).
+        $facilityId = $this->resolveFormUpsFacilityId();
 
-        // 2026-08-17: super admin chọn cơ sở trên navbar (AdminScope) → thu hẹp
-        // danh sách nhân sự theo subtree của cơ sở đó. Trước bug: admin chuyển
-        // sang 59NTN vẫn thấy full sale các cơ sở khác. Chỉ áp dụng cho super
-        // admin — user thường đã tự scope qua visibleOrgUnitIds() rồi.
-        if (\App\Support\AdminScope::isSuperAdmin()) {
-            $scopeOrgIds = \App\Support\AdminScope::orgUnitIds();
-            if ($scopeOrgIds !== null) {
-                $visibleOrgIds = $scopeOrgIds;
-            }
+        $memberQ = \App\Models\UpsListMember::query();
+        if ($facilityId !== null) {
+            $memberQ->where('facility_pool_unit_id', $facilityId);
         }
+        $userIds = $memberQ->distinct()->pluck('user_id')->all();
 
-        // Fix 2026-08-01: filter theo phase của lead — không được chia lead phase
-        // Booking cho Sale hoặc phase Sale cho Tele. Cũng KHÔNG show CM (Tele/Sale),
-        // vì CM là quản lý chia, không phải nhân viên nhận lead trực tiếp.
-        //   Booking → whitelist role name "Team Tele"
-        //   Sale    → whitelist role name "Sale" | "Team sale" | "Team sale ĐN"
-        //     (mở rộng khi có role sale mới — bổ sung vào mảng $allowRoles).
-        // 2026-08-05 fix: cả tạo mới lẫn update — chia số chỉ cho sale/tele.
-        // Không được chia cho Admin / CM / TL (họ quản lý chia, không nhận lead).
-        // 2026-08-19: exception cho ĐN — Kim Phấn (CM sale) + Bông (Team Leader kiêm CM sale)
-        //   trực tiếp nhận khách, cần xuất hiện trong dropdown như 1 sale bình thường.
-        //   Thêm 'CM sale' + 'Team Leader' vào allowRoles → mọi user có role này (kể cả HN/HCM)
-        //   đều tag được. Nếu cần lọc riêng theo cơ sở thì đã có visibleOrgIds ở trên.
-        $saleRoles = ['Sale', 'Team sale', 'Team sale ĐN', 'Team Tele', 'CM sale', 'Team Leader'];
-        if ($this->lead?->exists) {
-            // 2026-08-19: lead còn trong kho (owner=null) → cho CM chọn cả Tele lẫn Sale
-            //   để linh hoạt theo nguồn (BDM/BOD/MKT_BR → chia tele trước; SA/BA → chia sale).
-            //   Đã chia rồi (owner != null) → giữ ràng buộc theo pipeline_phase như cũ.
-            if ($this->lead->owner_id === null) {
-                $allowRoles = $saleRoles;
-            } else {
-                // 2026-08-19: cùng lý do — CM sale + Team Leader (Bông/Phấn) cũng nhận lead trực tiếp.
-                $allowRoles = $this->lead->pipeline_phase === Lead::PHASE_BOOKING
-                    ? ['Team Tele', 'CM sale', 'Team Leader']
-                    : ['Sale', 'Team sale', 'Team sale ĐN', 'CM sale', 'Team Leader'];
-            }
-        } else {
-            $allowRoles = $saleRoles;
+        // Giữ owner cũ của lead + user hiện tại trong dropdown dù không có UPS list.
+        if ($this->lead?->exists && $this->lead->owner_id) {
+            $userIds[] = (int) $this->lead->owner_id;
         }
+        $userIds[] = (int) auth()->id();
+        $userIds = array_values(array_unique(array_filter($userIds)));
 
-        // 2026-08-19: cho phép user (kể cả CM/TL/DM) tự tag chính mình dù role không nằm
-        //   trong $allowRoles. Kim Phấn / Bông là CM/TL nên trước đây bị lọc — giờ tự tạo
-        //   lead phase 1 có thể chọn chính họ. Các user khác vẫn phải khớp role.
-        return User::where('status', User::STATUS_ACTIVE)
-            ->where(fn ($q) => $q
-                ->where(fn ($sub) => $sub
-                    ->whereHas('assignments', fn ($qq) => $qq->effective()->when(
-                        $visibleOrgIds !== [],
-                        fn ($qqq) => $qqq->whereIn('org_unit_id', $visibleOrgIds)
-                    ))
-                    ->when($allowRoles, fn ($rq) => $rq->whereHas('assignments.role', fn ($qq) => $qq->whereIn('name', $allowRoles)))
-                )
-                ->orWhere('id', auth()->id()))
+        if (! $userIds) return collect();
+
+        return User::whereIn('id', $userIds)
+            ->where('status', User::STATUS_ACTIVE)
             ->orderBy('name')
             ->get();
+    }
+
+    /** 2026-10-08: facility_pool_unit_id để lọc UPS list members cho dropdown. */
+    private function resolveFormUpsFacilityId(): ?int
+    {
+        // Ưu tiên cascade "Chia số" đang chọn trong form.
+        if ($this->poolDepartmentId !== '') {
+            $pu = \App\Models\PoolUnit::find($this->poolDepartmentId);
+            if ($pu && $pu->kind === 'department') return (int) $pu->parent_id;
+        }
+        if ($this->poolFacilityId !== '') {
+            return (int) $this->poolFacilityId;
+        }
+        // Lead đã lưu → leo pool_unit_id lên facility.
+        if ($this->lead?->exists && $this->lead->pool_unit_id) {
+            $pu = \App\Models\PoolUnit::find($this->lead->pool_unit_id);
+            if ($pu) {
+                if ($pu->kind === 'facility') return (int) $pu->id;
+                if ($pu->kind === 'department') return (int) $pu->parent_id;
+            }
+        }
+        return null; // union toàn bộ UPS list
     }
 
     private function assignableUserIds()
@@ -2494,29 +2486,10 @@ new class extends Component
             for ($p = 1; $p <= 7; $p++) $phaseLocked[$p] = true;
         }
 
+        // 2026-10-08: bỏ filter poolTarget subtree — assignableUsers() đã scope đúng theo
+        //   UPS list của cơ sở (poolFacilityId/poolDepartmentId trong form). Giữ filter cũ
+        //   làm dropdown rỗng khi user chọn kho công ty / kho chi nhánh.
         $users = $this->assignableUsers();
-
-        // Phase 6.24 — poolTarget mang pool_unit_id (cây Kho số). Filter user thuộc org
-        // đã map với pool đó (org_pool_map) + subtree.
-        if ($this->poolTarget && str_starts_with($this->poolTarget, 'org:')) {
-            $poolId = (int) substr($this->poolTarget, 4);
-            $mappedOrgIds = \Illuminate\Support\Facades\DB::table('org_pool_map')
-                ->where('pool_unit_id', $poolId)->pluck('org_unit_id')->all();
-            if ($mappedOrgIds) {
-                $subtreeIds = [];
-                foreach (OrgUnit::whereIn('id', $mappedOrgIds)->get() as $root) {
-                    $subtreeIds = array_merge($subtreeIds, $root->subtreeIds());
-                }
-                $subtreeIds = array_unique($subtreeIds);
-                $users = $users->filter(fn ($u) => $u->assignments
-                    ->pluck('org_unit_id')
-                    ->intersect($subtreeIds)
-                    ->isNotEmpty());
-            } else {
-                // Pool chưa có mapping → không sale nào thấy được
-                $users = collect();
-            }
-        }
 
         $q = trim($this->personSearch);
         $results = ($q === '' ? $users : $users->filter(fn ($u) => str_contains(mb_strtolower($u->name), mb_strtolower($q))))

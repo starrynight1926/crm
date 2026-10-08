@@ -3183,3 +3183,23 @@ Nguồn: gom `lead_status_logs` (user_id) + `lead_distribution_logs` (actor_id),
 - Login `admin` / `59ntn` → tab Kho cá nhân → bấm "Chuyển người" lead #32 (pool_unit=8 "CS Lô 2 & 3 Trần Đăng Ninh").
 - Dropdown "— chọn sale —" hiển thị đúng 9 user. Verify bằng tinker: `UpsListMember::where('facility_pool_unit_id', 8)->pluck('user_id')` trả về đúng 9 user id khớp 100% với dropdown.
 - Trước fix: dropdown filter theo role name + scope → loại nhầm DM/CM nếu admin muốn cho họ nhận lead. Sau fix: tick DM vào `/settings/ups-list` facility đó là DM hiện ngay.
+
+## 2026-10-08 — Dropdown "Nhân viên phụ trách" ở form lead cũng dùng UPS list 🟢
+
+**Bối cảnh**: tiếp tục pattern của ngày 02/10. Dropdown "Nhân viên phụ trách" trong `⚡lead-form.blade.php` (form tạo/sửa lead, section Chia số phase 1) đang filter theo role whitelist (Sale/Team sale/Team Tele/CM sale/Team Leader) + scope `visibleOrgIds` + poolTarget subtree. User muốn thống nhất nguồn với UPS list — admin tick ai ở `/settings/ups-list` cơ sở nào thì người đó hiện trong dropdown chia của lead cơ sở đó.
+
+**Chốt với user**:
+1. Facility scope lấy từ cascade "Chia số" đang chọn trong form (ưu tiên `poolDepartmentId` → leo parent facility; rồi `poolFacilityId`; rồi `lead.pool_unit_id` của lead đã lưu). Chưa chọn gì → union toàn bộ UPS list.
+2. Bỏ hẳn phân biệt phase Booking/Sale — lead chia có thể cách thao tác thực tế vài ngày, chưa chốt phase.
+3. Không validate khi lưu — list đã hiện ra thì chọn được.
+4. Lead cũ có owner nằm NGOÀI UPS list (admin gỡ sau) → vẫn merge owner cũ vào dropdown, user tự quyết đổi hay giữ.
+
+**Đã làm**:
+- Rewrite `assignableUsers()` trong [⚡lead-form.blade.php](resources/views/components/leads/⚡lead-form.blade.php:2364) — bỏ `visibleOrgIds` + `allowRoles` + `AdminScope` scope, truy vấn thẳng `UpsListMember` theo `resolveFormUpsFacilityId()`. Luôn merge thêm `lead->owner_id` cũ + `auth()->id()` để không mất assignment.
+- Thêm helper `resolveFormUpsFacilityId()`: resolve facility từ form cascade (department → facility → lead.pool_unit_id → null).
+- Bỏ filter `poolTarget` subtree ở `with()` (line 2497) — thừa vì UPS list đã scope theo facility.
+
+**QA (browser lara-scrm.test:81)**:
+- Login admin/59ntn → tạo lead test #33 (pool_unit=3 = CS1 59NTN) qua tinker → mở `/leads/33/edit`.
+- Click vào ô "Gõ tên để tìm nhân sự..." → dropdown hiện 15 user. 14 user khớp 100% với `UpsListMember::where('facility_pool_unit_id',3)` (DB có 15 members); 1 slot cho "Quản trị viên" (admin self-tag). Trước đây dropdown bị filter theo role Sale/Team sale → loại nhầm nhiều CM/TL.
+- Dọn lead test ngay sau verify.
