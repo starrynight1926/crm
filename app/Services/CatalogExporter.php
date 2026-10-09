@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\CustomField;
 use App\Models\Facility;
+use App\Models\Lead;
 use App\Models\OrgUnit;
 use App\Models\Permission;
 use App\Models\PoolUnit;
@@ -13,6 +14,8 @@ use App\Models\SbRoom;
 use App\Models\SbService;
 use App\Models\SbUser;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
@@ -84,26 +87,61 @@ class CatalogExporter
             SbRoom::orderBy('ten')->get()
                 ->map(fn ($r) => [$r->sbooking_id, $r->ten, $r->loai, $r->kieu_phong, $r->so_slot_toi_da, $r->phut_moi_khach, $r->trang_thai, $r->sbooking_co_so_id])->all());
 
-        // Thăm khám (la_dich_vu=false) — distinct theo tên (khỏi lặp N cơ sở).
-        $thamKham = SbService::where('la_dich_vu', false)->orderBy('ten')->get()->groupBy('ten')
-            ->map(fn ($g) => [
+        // 2026-10-09: load map DV → phòng + DV → bác sĩ 1 lần, append vào sheet thăm khám + dịch vụ.
+        $phongMap = DB::table('sb_dich_vu_phong')
+            ->join('sb_rooms', 'sb_rooms.sbooking_id', '=', 'sb_dich_vu_phong.sbooking_phong_id')
+            ->select('sb_dich_vu_phong.sbooking_dich_vu_id as dv_id', 'sb_rooms.ten as phong_ten')
+            ->orderBy('sb_rooms.ten')->get()->groupBy('dv_id')
+            ->map(fn ($g) => $g->pluck('phong_ten')->unique()->implode(', '));
+        $bacSiMap = Schema::hasTable('sb_dich_vu_bac_si')
+            ? DB::table('sb_dich_vu_bac_si')
+                ->join('sb_bac_si', 'sb_bac_si.sbooking_id', '=', 'sb_dich_vu_bac_si.sbooking_bac_si_id')
+                ->select('sb_dich_vu_bac_si.sbooking_dich_vu_id as dv_id', 'sb_bac_si.ten as bs_ten')
+                ->orderBy('sb_bac_si.ten')->get()->groupBy('dv_id')
+                ->map(fn ($g) => $g->pluck('bs_ten')->unique()->implode(', '))
+            : collect();
+
+        $buildSvcRow = function ($g) use ($phongMap, $bacSiMap) {
+            $dvId = (int) $g->first()->sbooking_id;
+            return [
                 $g->first()->ten,
                 $g->first()->thoi_gian_phut,
                 number_format((float) $g->first()->gia, 0, ',', '.'),
                 $g->pluck('sbooking_co_so_id')->unique()->sort()->implode(', '),
+                $phongMap[$dvId] ?? '—',
+                $bacSiMap[$dvId] ?? '—',
                 $g->first()->active ? '✅' : '⛔',
-            ])->values()->all();
-        $this->addSheet($spreadsheet, 'Thăm khám', ['Tên', 'Thời gian (phút)', 'Giá', 'Cơ sở áp dụng', 'Active'], $thamKham);
+            ];
+        };
+        $svcHeader = ['Tên', 'Thời gian (phút)', 'Giá', 'Cơ sở áp dụng', 'Phòng thực hiện', 'Bác sĩ thực hiện', 'Active'];
+
+        $thamKham = SbService::where('la_dich_vu', false)->orderBy('ten')->get()->groupBy('ten')
+            ->map($buildSvcRow)->values()->all();
+        $this->addSheet($spreadsheet, 'Thăm khám', $svcHeader, $thamKham);
 
         $dichVu = SbService::where('la_dich_vu', true)->orderBy('ten')->get()->groupBy('ten')
-            ->map(fn ($g) => [
-                $g->first()->ten,
-                $g->first()->thoi_gian_phut,
-                number_format((float) $g->first()->gia, 0, ',', '.'),
-                $g->pluck('sbooking_co_so_id')->unique()->sort()->implode(', '),
-                $g->first()->active ? '✅' : '⛔',
-            ])->values()->all();
-        $this->addSheet($spreadsheet, 'Dịch vụ', ['Tên', 'Thời gian (phút)', 'Giá', 'Cơ sở áp dụng', 'Active'], $dichVu);
+            ->map($buildSvcRow)->values()->all();
+        $this->addSheet($spreadsheet, 'Dịch vụ', $svcHeader, $dichVu);
+
+        // 2026-10-09: Nguồn — bảng cố định từ Lead::SOURCE_GROUPS.
+        $nguonRows = [];
+        foreach (Lead::SOURCE_GROUPS as $key => $label) {
+            $flow = match (true) {
+                in_array($key, Lead::SOURCES_UPS_BASED, true) => 'UPS-based',
+                in_array($key, Lead::SOURCES_CM_ASSIGNED, true) => 'CM-assigned',
+                in_array($key, Lead::SOURCES_SELF_OWNED, true) => 'Self-owned',
+                default => 'Direct',
+            };
+            $nguonRows[] = [
+                Lead::SOURCE_GROUP_CODES[$key] ?? strtoupper($key),
+                $key,
+                $label,
+                Lead::SOURCE_PERMISSIONS[$key] ?? '—',
+                $flow,
+                Lead::isRecallableSource($key) ? '✅' : '❌',
+            ];
+        }
+        $this->addSheet($spreadsheet, 'Nguồn', ['Mã', 'Key', 'Tên hiển thị', 'Permission', 'Luồng xử lý', 'Recall tự động'], $nguonRows);
 
         $this->addSheet($spreadsheet, 'Trường tùy biến', ['Key', 'Label', 'Loại', 'Options', 'Phòng ban', 'Bắt buộc', 'Active'],
             CustomField::with('orgUnit')->orderBy('org_unit_id')->orderBy('position')->get()

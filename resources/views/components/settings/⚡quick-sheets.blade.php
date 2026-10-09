@@ -260,14 +260,19 @@ new class extends Component
 
     public function exportCsv()
     {
+        // UTF-8 BOM để Excel nhận charset đúng, không hiển thị "âœ…" cho ký tự có dấu / emoji.
+        $bom = "\xEF\xBB\xBF";
+
         if ($this->tab === 'nguon') {
             $cols = ['code', 'key', 'label', 'perm', 'flow', 'recall'];
             $csv = implode(',', $cols) . "\n";
             foreach ($this->sourceRows() as $r) {
+                // Export dùng text "Co"/"Khong" thay emoji — tránh lệ thuộc font Excel.
+                $r['recall'] = $r['recall'] === '✅' ? 'Co' : 'Khong';
                 $csv .= implode(',', array_map(fn ($c) => '"' . str_replace('"', '""', (string) ($r[$c] ?? '')) . '"', $cols)) . "\n";
             }
             $filename = 'quick-sheets-nguon-' . now()->format('Ymd-His') . '.csv';
-            return response()->streamDownload(fn () => print($csv), $filename, ['Content-Type' => 'text/csv; charset=utf-8']);
+            return response()->streamDownload(fn () => print($bom . $csv), $filename, ['Content-Type' => 'text/csv; charset=utf-8']);
         }
 
         $cols = $this->exportColumns();
@@ -277,7 +282,7 @@ new class extends Component
             $csv .= implode(',', array_map(fn ($c) => '"' . str_replace('"', '""', (string) ($r->$c ?? '')) . '"', $cols)) . "\n";
         }
         $filename = "quick-sheets-{$this->tab}-" . now()->format('Ymd-His') . '.csv';
-        return response()->streamDownload(fn () => print($csv), $filename, ['Content-Type' => 'text/csv; charset=utf-8']);
+        return response()->streamDownload(fn () => print($bom . $csv), $filename, ['Content-Type' => 'text/csv; charset=utf-8']);
     }
 
     public function importCsv(): void
@@ -500,7 +505,11 @@ new class extends Component
         <div class="flex items-center gap-3 text-[12px]">
             <input type="search" wire:model.live.debounce.300ms="search" placeholder="🔍 Tìm trong tab này"
                    class="border border-gray-300 rounded px-2 py-0.5 text-[12px] w-56">
-            <button wire:click="exportCsv" class="text-[12px] font-semibold text-sky-700 border border-sky-300 hover:bg-sky-50 px-2 py-1 rounded">⬇ Export CSV</button>
+            <button wire:click="exportCsv" class="text-[12px] font-semibold text-sky-700 border border-sky-300 hover:bg-sky-50 px-2 py-1 rounded"
+                    title="Xuất tab hiện tại thành 1 file CSV">⬇ Tab này (CSV)</button>
+            <a href="{{ route('admin.catalog.export-all') }}" target="_blank"
+                    class="text-[12px] font-semibold text-indigo-700 border border-indigo-300 hover:bg-indigo-50 px-2 py-1 rounded"
+                    title="Xuất tất cả danh mục (tổ chức, nhân sự, cơ sở, dịch vụ, nguồn...) ra 1 file XLSX nhiều sheet">⬇ Tất cả (XLSX)</a>
             @if (in_array($tab, ['users','org'], true))
                 <label class="text-[12px] font-semibold text-amber-700 border border-amber-300 hover:bg-amber-50 px-2 py-1 rounded cursor-pointer">
                     ⬆ Import CSV
