@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\CallLog;
 use App\Models\CustomField;
 use App\Models\Facility;
 use App\Models\Lead;
@@ -178,35 +179,46 @@ class CatalogExporter
                     return [$f->key, $f->label, $f->field_type, $opts, $f->orgUnit?->name ?? '(công ty)', $f->required ? '⚠' : '', $f->active ? '✅' : '⛔'];
                 })->all());
 
-        // 2026-10-09 rev2: Trường form 6 phase — render dạng OUTLINE hierarchical,
-        //   mỗi cấp indent 1 cột (phase → group → field → option) để scan nhanh như tài liệu spec.
-        //   Diễn giải option lấy từ 'value = label' trong config, không có → bỏ trống (user bổ sung sau).
+        // 2026-10-09 rev3: Trường form 6 phase — outline hierarchical, options resolve runtime
+        //   từ constants/CustomField thay vì chỉ dùng string trong config (vốn bị lệch).
         $phaseRows = [];
         foreach (config('lead_form_fields', []) as $pIdx => $phase) {
-            // Phase heading row.
             $phaseRows[] = ['PHASE ' . $pIdx, $phase['title'], '', '', ''];
             foreach ($phase['groups'] as $groupName => $fields) {
                 $phaseRows[] = ['', $groupName, '', '', ''];
                 foreach ($fields as $f) {
                     $req = ! empty($f['required']) ? ' (bắt buộc)' : '';
                     $typeNote = ($f['type'] ?? '') . $req;
+                    $fieldKey = $f['field'] ?? '';
                     $phaseRows[] = [
                         '',
                         '',
-                        ($f['label'] ?? '') . ($f['field'] ? " [{$f['field']}]" : ''),
+                        ($f['label'] ?? '') . ($fieldKey ? " [{$fieldKey}]" : ''),
                         $typeNote,
                         $f['note'] ?? '',
                     ];
-                    $opts = trim((string) ($f['options'] ?? ''));
-                    if ($opts === '') continue;
-                    foreach (explode('|', $opts) as $part) {
-                        $part = trim($part);
-                        if ($part === '') continue;
-                        if (str_contains($part, '=')) {
-                            [$val, $lbl] = array_map('trim', explode('=', $part, 2));
-                        } else {
-                            $val = $part; $lbl = '';
+
+                    // Dynamic custom fields: render từ CustomField DB applicable cho mọi org (per_field).
+                    if ($fieldKey === 'custom.*') {
+                        $cfs = CustomField::where('active', true)
+                            ->where('status', CustomField::STATUS_ACTIVE)
+                            ->orderBy('org_unit_id')->orderBy('position')->orderBy('id')->get();
+                        foreach ($cfs as $cf) {
+                            $scope = $cf->orgUnit?->name ?? 'Công ty';
+                            $phaseRows[] = ['', '', '', $cf->key, $cf->label . " — scope: {$scope}" . ($cf->required ? ' (bắt buộc)' : '')];
+                            if (! empty($cf->options)) {
+                                foreach ($cf->options as $opt) {
+                                    $lbl = $cf->optionLabel($opt);
+                                    $phaseRows[] = ['', '', '', '  · ' . $opt, ($lbl !== '' && $lbl !== $opt) ? $lbl : ''];
+                                }
+                            }
                         }
+                        continue;
+                    }
+
+                    // Resolve options theo field key — ưu tiên constants thật trong code.
+                    $resolved = $this->resolveFieldOptions($fieldKey, (string) ($f['options'] ?? ''));
+                    foreach ($resolved as [$val, $lbl]) {
                         $phaseRows[] = ['', '', '', $val, $lbl];
                     }
                 }
@@ -230,6 +242,42 @@ class CatalogExporter
 
         $spreadsheet->setActiveSheetIndex(0);
         return $spreadsheet;
+    }
+
+    /**
+     * 2026-10-09 — Resolve options cho 1 field theo constants/enum thật trong code.
+     * Trả về array [[value, label], ...]. Nếu không map được → parse chuỗi config (fallback).
+     */
+    private function resolveFieldOptions(string $fieldKey, string $configOptions): array
+    {
+        $map = match ($fieldKey) {
+            'sourceGroup'      => Lead::SOURCE_GROUPS,
+            'newCallStatus'    => CallLog::STATUSES,
+            'bookingStatus'    => Lead::BOOKING_STATUSES,
+            'newBookingType'   => ['tham_kham' => 'Thăm khám', 'dich_vu' => 'Dịch vụ'],
+            default            => null,
+        };
+        if (is_array($map)) {
+            return array_map(fn ($k, $v) => [(string) $k, (string) $v], array_keys($map), array_values($map));
+        }
+
+        // Fallback: parse chuỗi config (có thể lệch với runtime — snapshot thủ công).
+        $opts = trim($configOptions);
+        if ($opts === '') return [];
+        $sep = str_contains($opts, '|') ? '|' : (str_contains($opts, '/') ? '/' : null);
+        if (! $sep) return [[$opts, '']];
+        $out = [];
+        foreach (explode($sep, $opts) as $part) {
+            $part = trim($part);
+            if ($part === '' || $part === '...') continue;
+            if (str_contains($part, '=')) {
+                [$val, $lbl] = array_map('trim', explode('=', $part, 2));
+                $out[] = [$val, $lbl];
+            } else {
+                $out[] = [$part, ''];
+            }
+        }
+        return $out;
     }
 
     /**
