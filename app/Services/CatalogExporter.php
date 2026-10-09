@@ -52,9 +52,24 @@ class CatalogExporter
                     $u->assignments->map(fn ($a) => ($a->role?->name ?? '?') . ' @ ' . ($a->orgUnit?->name ?? '?'))->implode('; '),
                 ])->all());
 
-        $this->addSheet($spreadsheet, 'Vai trò & Quyền', ['Vai trò', 'Permission keys'],
-            Role::with('permissions')->orderBy('name')->get()
-                ->map(fn ($r) => [$r->name, $r->permissions->pluck('key')->sort()->implode(', ')])->all());
+        // 2026-10-09: Matrix hàng=Quyền (tiếng Việt), cột=Vai trò, cell=✓.
+        $roles = Role::with('permissions')->orderBy('name')->get();
+        $permissions = Permission::orderBy('key')->get();
+        $roleHasPerm = []; // [role_id][perm_key] = true
+        foreach ($roles as $rl) {
+            foreach ($rl->permissions as $p) { $roleHasPerm[$rl->id][$p->key] = true; }
+        }
+        $permHeader = ['STT', 'Nhóm', 'Mã quyền', 'Mô tả (tiếng Việt)'];
+        foreach ($roles as $rl) { $permHeader[] = $rl->name; }
+        $permRows = [];
+        $stt = 0;
+        foreach ($permissions as $p) {
+            $stt++;
+            $row = [$stt, strtok($p->key, '.'), $p->key, $p->description ?: $p->key];
+            foreach ($roles as $rl) { $row[] = isset($roleHasPerm[$rl->id][$p->key]) ? '✓' : ''; }
+            $permRows[] = $row;
+        }
+        $this->addSheet($spreadsheet, 'Vai trò & Quyền', $permHeader, $permRows);
 
         // Cơ sở: cây (Facility có parent_id). Duyệt DFS từ root để liền mạch.
         $facilityRows = [];
@@ -87,13 +102,13 @@ class CatalogExporter
             SbRoom::orderBy('ten')->get()
                 ->map(fn ($r) => [$r->sbooking_id, $r->ten, $r->loai, $r->kieu_phong, $r->so_slot_toi_da, $r->phut_moi_khach, $r->trang_thai, $r->sbooking_co_so_id])->all());
 
-        // 2026-10-09: load map DV → phòng + DV → bác sĩ 1 lần, append vào sheet thăm khám + dịch vụ.
-        $phongMap = DB::table('sb_dich_vu_phong')
-            ->join('sb_rooms', 'sb_rooms.sbooking_id', '=', 'sb_dich_vu_phong.sbooking_phong_id')
-            ->select('sb_dich_vu_phong.sbooking_dich_vu_id as dv_id', 'sb_rooms.ten as phong_ten')
-            ->orderBy('sb_rooms.ten')->get()->groupBy('dv_id')
-            ->map(fn ($g) => $g->pluck('phong_ten')->unique()->implode(', '));
-        $bacSiMap = Schema::hasTable('sb_dich_vu_bac_si')
+        // 2026-10-09: Dịch vụ + Thăm khám render matrix: hàng=dịch vụ, cột=phòng, cell=✓.
+        //   Cột cuối = Bác sĩ thực hiện (comma-list). Điều dưỡng CHƯA có mapping bên sbooking.
+        $allRooms = SbRoom::where('trang_thai', 'hoat_dong')->orderBy('ten')->get();
+        $dvPhong = DB::table('sb_dich_vu_phong')->get()
+            ->groupBy('sbooking_dich_vu_id')
+            ->map(fn ($g) => $g->pluck('sbooking_phong_id')->map(fn ($v) => (int) $v)->flip());
+        $dvBacSi = Schema::hasTable('sb_dich_vu_bac_si')
             ? DB::table('sb_dich_vu_bac_si')
                 ->join('sb_bac_si', 'sb_bac_si.sbooking_id', '=', 'sb_dich_vu_bac_si.sbooking_bac_si_id')
                 ->select('sb_dich_vu_bac_si.sbooking_dich_vu_id as dv_id', 'sb_bac_si.ten as bs_ten')
@@ -101,19 +116,24 @@ class CatalogExporter
                 ->map(fn ($g) => $g->pluck('bs_ten')->unique()->implode(', '))
             : collect();
 
-        $buildSvcRow = function ($g) use ($phongMap, $bacSiMap) {
+        $svcHeader = ['Tên dịch vụ', 'Thời gian (phút)', 'Cơ sở áp dụng'];
+        foreach ($allRooms as $rm) { $svcHeader[] = $rm->ten; }
+        $svcHeader[] = 'Bác sĩ thực hiện (chưa có mapping điều dưỡng/KTV bên sbooking)';
+
+        $buildSvcRow = function ($g) use ($allRooms, $dvPhong, $dvBacSi) {
             $dvId = (int) $g->first()->sbooking_id;
-            return [
+            $phongFlip = $dvPhong[$dvId] ?? collect();
+            $row = [
                 $g->first()->ten,
                 $g->first()->thoi_gian_phut,
-                number_format((float) $g->first()->gia, 0, ',', '.'),
                 $g->pluck('sbooking_co_so_id')->unique()->sort()->implode(', '),
-                $phongMap[$dvId] ?? '—',
-                $bacSiMap[$dvId] ?? '—',
-                $g->first()->active ? '✅' : '⛔',
             ];
+            foreach ($allRooms as $rm) {
+                $row[] = $phongFlip->has((int) $rm->sbooking_id) ? '✓' : '';
+            }
+            $row[] = $dvBacSi[$dvId] ?? '—';
+            return $row;
         };
-        $svcHeader = ['Tên', 'Thời gian (phút)', 'Giá', 'Cơ sở áp dụng', 'Phòng thực hiện', 'Bác sĩ thực hiện', 'Active'];
 
         $thamKham = SbService::where('la_dich_vu', false)->orderBy('ten')->get()->groupBy('ten')
             ->map($buildSvcRow)->values()->all();
