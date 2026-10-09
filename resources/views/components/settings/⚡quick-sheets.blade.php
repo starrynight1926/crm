@@ -1,10 +1,14 @@
 <?php
 
 use App\Models\Facility;
+use App\Models\Lead;
 use App\Models\OrgUnit;
+use App\Models\SbBacSi;
+use App\Models\SbRoom;
 use App\Models\SbService;
 use App\Models\User;
 use App\Support\AdminScope;
+use Illuminate\Support\Facades\DB;
 use Livewire\Component;
 use Livewire\WithFileUploads;
 use Livewire\WithPagination;
@@ -58,7 +62,7 @@ new class extends Component
     {
         abort_unless(AdminScope::isSuperAdmin(), 403);
         $results = [];
-        foreach (['sb:sync-services', 'sb:sync-bac-si', 'sb:sync-dich-vu-phong', 'sb:sync-rooms'] as $cmd) {
+        foreach (['sb:sync-services', 'sb:sync-bac-si', 'sb:sync-dich-vu-phong', 'sb:sync-dich-vu-bac-si', 'sb:sync-rooms'] as $cmd) {
             try {
                 \Artisan::call($cmd);
                 $out = trim(\Artisan::output());
@@ -256,6 +260,16 @@ new class extends Component
 
     public function exportCsv()
     {
+        if ($this->tab === 'nguon') {
+            $cols = ['code', 'key', 'label', 'perm', 'flow', 'recall'];
+            $csv = implode(',', $cols) . "\n";
+            foreach ($this->sourceRows() as $r) {
+                $csv .= implode(',', array_map(fn ($c) => '"' . str_replace('"', '""', (string) ($r[$c] ?? '')) . '"', $cols)) . "\n";
+            }
+            $filename = 'quick-sheets-nguon-' . now()->format('Ymd-His') . '.csv';
+            return response()->streamDownload(fn () => print($csv), $filename, ['Content-Type' => 'text/csv; charset=utf-8']);
+        }
+
         $cols = $this->exportColumns();
         $rows = $this->exportQuery()->get();
         $csv = implode(',', $cols) . "\n";
@@ -344,19 +358,70 @@ new class extends Component
             'users'    => $this->userQuery(),
             'dich_vu', 'lam_sang', 'tu_van' => $this->serviceQuery(),
             'org'      => $this->orgQuery(),
+            'nguon'    => null, // bảng cố định từ Lead::SOURCE_GROUPS
             default    => null,
         };
+
+        // 2026-10-09: Khi ở tab dịch vụ, load map DV → phòng + DV → bác sĩ cho hiển thị cột.
+        $dvRoomMap = [];
+        $dvBacSiMap = [];
+        if (in_array($this->tab, ['dich_vu', 'lam_sang', 'tu_van'], true) && $rows) {
+            $dvIds = collect($rows->items())->pluck('sbooking_id')->filter()->all();
+            if ($dvIds) {
+                $phongRows = DB::table('sb_dich_vu_phong')
+                    ->whereIn('sbooking_dich_vu_id', $dvIds)
+                    ->join('sb_rooms', 'sb_rooms.sbooking_id', '=', 'sb_dich_vu_phong.sbooking_phong_id')
+                    ->select('sb_dich_vu_phong.sbooking_dich_vu_id as dv_id', 'sb_rooms.ten as phong_ten')
+                    ->orderBy('sb_rooms.ten')->get();
+                foreach ($phongRows as $r) { $dvRoomMap[$r->dv_id][] = $r->phong_ten; }
+
+                if (\Schema::hasTable('sb_dich_vu_bac_si')) {
+                    $bsRows = DB::table('sb_dich_vu_bac_si')
+                        ->whereIn('sbooking_dich_vu_id', $dvIds)
+                        ->join('sb_bac_si', 'sb_bac_si.sbooking_id', '=', 'sb_dich_vu_bac_si.sbooking_bac_si_id')
+                        ->select('sb_dich_vu_bac_si.sbooking_dich_vu_id as dv_id', 'sb_bac_si.ten as bs_ten')
+                        ->orderBy('sb_bac_si.ten')->get();
+                    foreach ($bsRows as $r) { $dvBacSiMap[$r->dv_id][] = $r->bs_ten; }
+                }
+            }
+        }
 
         return [
             'rows'           => $rows,
             'orgOptions'     => $this->tab === 'org' ? OrgUnit::orderBy('path')->get(['id','name','depth','path']) : collect(),
             'statusOptions'  => ['active' => '🟢 Active', 'inactive' => '⚪ Inactive', 'banned' => '🔴 Banned'],
             'pricingOptions' => ['package' => 'Trọn gói', 'phase' => 'Theo buổi'],
-            // 2026-10-05: scope hiện tại + label để template biết có cột "Cơ sở" hay không.
             'currentSbCoSoId' => $this->currentSbCoSoId(),
             'sbCoSoLabels'    => self::SB_COSO_LABELS,
             'currentBranchName' => AdminScope::currentBranchName(),
+            'dvRoomMap'  => $dvRoomMap,
+            'dvBacSiMap' => $dvBacSiMap,
+            // Nguồn tab: bảng cố định.
+            'sourceRows' => $this->tab === 'nguon' ? $this->sourceRows() : [],
         ];
+    }
+
+    /** 2026-10-09: Bảng cố định danh sách nguồn cho tab "Nguồn". */
+    protected function sourceRows(): array
+    {
+        $rows = [];
+        foreach (Lead::SOURCE_GROUPS as $key => $label) {
+            $flow = match (true) {
+                in_array($key, Lead::SOURCES_UPS_BASED, true) => 'UPS-based',
+                in_array($key, Lead::SOURCES_CM_ASSIGNED, true) => 'CM-assigned',
+                in_array($key, Lead::SOURCES_SELF_OWNED, true) => 'Self-owned',
+                default => 'Direct',
+            };
+            $rows[] = [
+                'code' => Lead::SOURCE_GROUP_CODES[$key] ?? strtoupper($key),
+                'key' => $key,
+                'label' => $label,
+                'perm' => Lead::SOURCE_PERMISSIONS[$key] ?? '—',
+                'flow' => $flow,
+                'recall' => Lead::isRecallableSource($key) ? '✅' : '❌',
+            ];
+        }
+        return $rows;
     }
 
     protected function userQuery()
@@ -419,6 +484,7 @@ new class extends Component
             'lam_sang' => '🩺 Dịch vụ lâm sàng',
             'tu_van'   => '💬 Tư vấn',
             'org'      => '🏢 Cơ sở & Phòng ban',
+            'nguon'    => '🏷️ Nguồn',
         ];
         $thCls  = 'border border-gray-300 px-2 py-1 font-semibold text-left whitespace-nowrap';
         $tdCls  = 'border border-gray-300 px-2 py-0.5 whitespace-nowrap';
@@ -542,7 +608,7 @@ new class extends Component
             @case('dich_vu')
             @case('lam_sang')
             @case('tu_van')
-                @php $showCoSoCol = $currentSbCoSoId === null; $colCount = $showCoSoCol ? 7 : 6; @endphp
+                @php $showCoSoCol = $currentSbCoSoId === null; $colCount = $showCoSoCol ? 9 : 8; @endphp
                 <thead class="sticky top-0 z-10"><tr class="bg-[#f1f3f4] text-gray-700">
                     <th class="{{ $thCls }} w-14 text-center">ID</th>
                     @if ($showCoSoCol)
@@ -552,6 +618,8 @@ new class extends Component
                     <th class="{{ $thCls }} w-24 text-center">Thời lượng</th>
                     <th class="{{ $thCls }} w-28">Thuộc nhóm</th>
                     <th class="{{ $thCls }} w-20 text-center">Loại</th>
+                    <th class="{{ $thCls }}">Phòng thực hiện</th>
+                    <th class="{{ $thCls }}">Bác sĩ thực hiện</th>
                     <th class="{{ $thCls }} w-20 text-center">Hoạt động</th>
                 </tr></thead>
                 <tbody>
@@ -577,6 +645,8 @@ new class extends Component
                             <td class="{{ $tdCls }} text-center tabular-nums">{{ $s->thoi_gian_phut }}'</td>
                             <td class="{{ $tdCls }} text-[11px] uppercase">{{ $s->thuoc_nhom }}</td>
                             <td class="{{ $tdCls }} text-center">{{ $s->la_dich_vu ? '💆 DV' : '🩺 TK' }}</td>
+                            <td class="{{ $tdCls }} text-[11px]">{{ isset($dvRoomMap[$s->sbooking_id]) ? implode(', ', $dvRoomMap[$s->sbooking_id]) : '—' }}</td>
+                            <td class="{{ $tdCls }} text-[11px]">{{ isset($dvBacSiMap[$s->sbooking_id]) ? implode(', ', $dvBacSiMap[$s->sbooking_id]) : '—' }}</td>
                             <td class="{{ $tdCls }} text-center">{{ $s->active ? '✓' : '—' }}</td>
                         </tr>
                     @empty
@@ -656,6 +726,35 @@ new class extends Component
                     @empty
                         <tr><td colspan="8" class="border border-gray-300 p-6 text-center text-gray-400 italic">Chưa có đơn vị nào.</td></tr>
                     @endforelse
+                </tbody>
+                @break
+
+            {{-- ========== TAB: NGUỒN (read-only, cố định từ Lead::SOURCE_GROUPS) ========== --}}
+            @case('nguon')
+                <thead class="sticky top-0 z-10"><tr class="bg-[#f1f3f4] text-gray-700">
+                    <th class="{{ $thCls }} w-16 text-center">Mã</th>
+                    <th class="{{ $thCls }} w-24">Key</th>
+                    <th class="{{ $thCls }}">Tên hiển thị</th>
+                    <th class="{{ $thCls }}">Permission gate</th>
+                    <th class="{{ $thCls }} w-32">Luồng xử lý</th>
+                    <th class="{{ $thCls }} w-24 text-center">Recall tự động</th>
+                </tr></thead>
+                <tbody>
+                    <tr>
+                        <td colspan="6" class="bg-amber-50 border border-amber-200 text-amber-800 text-[11px] px-3 py-1.5">
+                            ⚠ Bảng cố định từ <code class="bg-white px-1 rounded">Lead::SOURCE_GROUPS</code> — không sửa qua UI. Thêm/xoá nguồn phải code + migrate.
+                        </td>
+                    </tr>
+                    @foreach ($sourceRows as $sr)
+                        <tr wire:key="src-{{ $sr['key'] }}" class="hover:bg-[#f8f9fa]">
+                            <td class="{{ $tdCls }} text-center font-semibold">{{ $sr['code'] }}</td>
+                            <td class="{{ $tdCls }} text-[11px] text-gray-500">{{ $sr['key'] }}</td>
+                            <td class="{{ $tdCls }}">{{ $sr['label'] }}</td>
+                            <td class="{{ $tdCls }} text-[11px]"><code class="bg-gray-100 px-1 rounded">{{ $sr['perm'] }}</code></td>
+                            <td class="{{ $tdCls }} text-[11px]">{{ $sr['flow'] }}</td>
+                            <td class="{{ $tdCls }} text-center">{{ $sr['recall'] }}</td>
+                        </tr>
+                    @endforeach
                 </tbody>
                 @break
             @endswitch
