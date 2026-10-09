@@ -261,6 +261,21 @@ class CatalogExporter
             return array_map(fn ($k, $v) => [(string) $k, (string) $v], array_keys($map), array_values($map));
         }
 
+        // Pool unit cascade: resolve từ bảng pool_units DB thật.
+        $poolKind = match ($fieldKey) {
+            'poolBranchId'     => 'branch',
+            'poolFacilityId'   => 'facility',
+            'poolDepartmentId' => 'department',
+            default            => null,
+        };
+        if ($poolKind) {
+            $out = [];
+            foreach (PoolUnit::where('kind', $poolKind)->where('is_active', true)->orderBy('sort')->orderBy('name')->get() as $pu) {
+                $out[] = [(string) $pu->id, $pu->name];
+            }
+            return $out;
+        }
+
         // Fallback: parse chuỗi config (có thể lệch với runtime — snapshot thủ công).
         $opts = trim($configOptions);
         if ($opts === '') return [];

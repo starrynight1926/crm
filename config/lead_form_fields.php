@@ -24,9 +24,9 @@ return [
             ],
             'Chia số (Phân phối) — CM/Admin' => [
                 ['field' => 'poolCompanyMode', 'label' => 'Kho chung công ty', 'type' => 'checkbox', 'required' => false, 'note' => 'Tick = toàn công ty thấy'],
-                ['field' => 'poolBranchId',    'label' => 'Chi nhánh',         'type' => 'select',  'required' => false, 'options' => 'PoolUnit kind=branch'],
-                ['field' => 'poolFacilityId',  'label' => 'Địa điểm',          'type' => 'select',  'required' => false, 'options' => 'PoolUnit kind=facility (con của Chi nhánh)'],
-                ['field' => 'poolDepartmentId','label' => 'Cơ sở',             'type' => 'select',  'required' => false, 'options' => 'PoolUnit kind=department (con của Địa điểm)'],
+                ['field' => 'poolBranchId',    'label' => 'Địa điểm',          'type' => 'select',  'required' => false, 'note' => 'PoolUnit kind=branch (Hà Nội / Hồ Chí Minh / Đà Nẵng)'],
+                ['field' => 'poolFacilityId',  'label' => 'Cơ sở',             'type' => 'select',  'required' => false, 'note' => 'PoolUnit kind=facility (con của Địa điểm)'],
+                ['field' => 'poolDepartmentId','label' => 'Phòng ban',         'type' => 'select',  'required' => false, 'note' => 'PoolUnit kind=department (con của Cơ sở, có thể trống nếu không chia nhỏ)'],
                 ['field' => 'personId',        'label' => 'Nhân viên phụ trách', 'type' => 'search', 'required' => false, 'note' => 'Autocomplete user'],
                 ['field' => 'skipRecall', 'label' => 'Không áp dụng luật thu hồi', 'type' => 'checkbox', 'required' => false, 'note' => 'mặc định áp: 1 ngày cần ghi nhận cuộc gọi, 3 ngày cần đủ phân loại + kết quả + đóng phase 2'],
             ],
