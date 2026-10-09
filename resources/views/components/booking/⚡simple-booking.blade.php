@@ -3,7 +3,12 @@
 use App\Models\BookingDraft;
 use App\Models\Facility;
 use App\Models\Lead;
+use App\Models\SbBacSi;
+use App\Models\SbRoom;
+use App\Models\SbService;
+use App\Services\SbookingClient;
 use App\Support\AdminScope;
+use Illuminate\Support\Facades\DB;
 use Livewire\Component;
 use Livewire\WithPagination;
 
@@ -13,18 +18,21 @@ new class extends Component
 
     /** @var array<string,mixed> Row đang nhập inline */
     public array $draft = [
-        'facility_id'   => null,
-        'ngay_dat_lich' => null,
-        'gio'           => null,
-        'nguon'         => null,
-        'ho_ten'        => null,
-        'sdt'           => null,
-        'sale'          => null,
-        'lieu_phap'     => null,
-        'so_lo'         => null,
-        'dieu_duong'    => null,
-        'bac_si'        => null,
-        'ghi_chu'       => null,
+        'facility_id'    => null,
+        'ngay_dat_lich'  => null,
+        'gio'            => null,
+        'nguon'          => null,
+        'ho_ten'         => null,
+        'sdt'            => null,
+        'sale'           => null,
+        'lieu_phap'      => null,
+        'sb_dich_vu_id'  => null,
+        'sb_phong_id'    => null,
+        'so_lo'          => null,
+        'dieu_duong'     => null,
+        'bac_si'         => null,
+        'sb_bac_si_id'   => null,
+        'ghi_chu'        => null,
     ];
 
     /** Filter facility (null = tất cả trong scope) */
@@ -47,26 +55,26 @@ new class extends Component
     /** Row đang được edit inline (id => field array) */
     public array $editing = [];
 
+    /** 2026-10-09: cảnh báo preflight phòng/bác sĩ theo key ('draft' hoặc 'edit-<id>'). */
+    public array $warnings = [];
+    /** Lần "Vẫn lưu" — bỏ qua preflight cho key đó 1 lần. */
+    public array $overrides = [];
+
     public function mount(): void
     {
         // 2026-09-30: tạm ẩn feature — chỉ super admin thấy.
         abort_unless(AdminScope::isSuperAdmin(), 403);
         $facilities = $this->visibleFacilities();
-        // Mặc định facility_id draft = facility đầu tiên user thấy (1 cơ sở → chọn luôn).
         if ($facilities->count() >= 1) {
             $this->draft['facility_id'] = $facilities->first()->id;
         }
-        // 2026-10-05: default khoảng ngày = hôm nay.
         $today = now()->toDateString();
         $this->fromDate = $today;
         $this->toDate = $today;
     }
 
-    /** Facilities user được thấy. Super admin: 3 cơ sở có slug sbooking (CS1/CS2/CS3);
-     *  user thường: các facility_id đã từng có lead visible. */
     public function visibleFacilities()
     {
-        // Chỉ hiển thị các cơ sở gốc (parent_id=null) có `booking_co_so_slug` — loại cơ sở dummy chưa map sbooking.
         $q = Facility::whereNull('parent_id')
             ->where('active', true)
             ->whereNotNull('booking_co_so_slug');
@@ -76,7 +84,6 @@ new class extends Component
         $u = auth()->user();
         $leafIds = Lead::visibleTo($u)->whereNotNull('facility_id')->distinct()->pluck('facility_id')->all();
         if (! $leafIds) return collect();
-        // Đi lên tới root facility cho mỗi facility user thấy được.
         $rootIds = [];
         foreach (Facility::whereIn('id', $leafIds)->get() as $f) {
             $n = $f;
@@ -87,7 +94,6 @@ new class extends Component
         return $q->whereIn('id', array_keys($rootIds))->orderBy('booking_co_so_slug')->get();
     }
 
-    /** 2026-10-05: label tab footer — ưu tiên map theo slug sbooking, fallback name. */
     public function facilityShortLabel(Facility $f): string
     {
         return self::SHORT_NAMES[$f->booking_co_so_slug] ?? $f->name;
@@ -98,10 +104,88 @@ new class extends Component
         return $this->visibleFacilities()->pluck('id')->all();
     }
 
-    public function save(): void
+    /** 2026-10-09: catalog dịch vụ scope theo sbooking_co_so_id (null = dùng chung). */
+    protected function servicesFor(?int $facilityId): \Illuminate\Support\Collection
     {
-        // 2026-10-05: UI mới dùng tab footer thay cho dropdown cơ sở trong draft row.
-        //   Tab đang chọn → auto gán facility_id cho draft. "Tất cả" (null) + >1 facility → bắt chọn tab trước.
+        if (! $facilityId) return collect();
+        $cs = (int) (Facility::find($facilityId)?->sbooking_co_so_id ?? 0);
+        if (! $cs) return collect();
+        return SbService::query()->where('active', true)
+            ->where(fn ($q) => $q->whereNull('sbooking_co_so_id')->orWhere('sbooking_co_so_id', $cs))
+            ->orderBy('ten')->get();
+    }
+
+    protected function roomsFor(?int $facilityId): \Illuminate\Support\Collection
+    {
+        if (! $facilityId) return collect();
+        $cs = (int) (Facility::find($facilityId)?->sbooking_co_so_id ?? 0);
+        if (! $cs) return collect();
+        return SbRoom::query()->where('trang_thai', 'hoat_dong')
+            ->where('sbooking_co_so_id', $cs)->orderBy('ten')->get();
+    }
+
+    protected function doctorsFor(?int $facilityId): \Illuminate\Support\Collection
+    {
+        if (! $facilityId) return collect();
+        $cs = (int) (Facility::find($facilityId)?->sbooking_co_so_id ?? 0);
+        if (! $cs) return collect();
+        return SbBacSi::query()->where('active', true)
+            ->where(fn ($q) => $q->where('xuat_hien_moi_co_so', true)->orWhere('sbooking_co_so_id', $cs))
+            ->orderBy('ten')->get();
+    }
+
+    /** Phòng được map cho 1 dịch vụ (gợi ý highlight ★). */
+    protected function suggestedRoomIds(?int $sbDvId): array
+    {
+        if (! $sbDvId) return [];
+        return DB::table('sb_dich_vu_phong')
+            ->where('sbooking_dich_vu_id', $sbDvId)
+            ->pluck('sbooking_phong_id')->map(fn ($v) => (int) $v)->all();
+    }
+
+    /** Tính giờ kết thúc từ gio + thoi_gian_phut của dịch vụ. */
+    protected function computeEndTime(?string $gio, ?int $sbDvId): ?string
+    {
+        if (! $gio || ! $sbDvId) return null;
+        $phut = (int) (SbService::where('sbooking_id', $sbDvId)->value('thoi_gian_phut') ?? 0);
+        if ($phut <= 0) return null;
+        try {
+            return \Carbon\Carbon::parse($gio)->addMinutes($phut)->format('H:i:s');
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * Preflight phòng bên sbooking. Trả null nếu ok, reason nếu bận.
+     * Chỉ chạy khi đủ facility+ngay+gio+dv+phong.
+     */
+    protected function preflightOrReason(array $data): ?string
+    {
+        $facilityId = (int) ($data['facility_id'] ?? 0);
+        $ngay = $data['ngay_dat_lich'] ?? null;
+        $gio = $data['gio'] ?? null;
+        $dvId = (int) ($data['sb_dich_vu_id'] ?? 0);
+        $phongId = (int) ($data['sb_phong_id'] ?? 0);
+        if (! $facilityId || ! $ngay || ! $gio || ! $dvId || ! $phongId) return null;
+
+        $cs = (int) (Facility::find($facilityId)?->sbooking_co_so_id ?? 0);
+        if (! $cs) return null;
+
+        $end = $this->computeEndTime($gio, $dvId);
+        if (! $end) return null;
+        $start = strlen($gio) === 5 ? ($gio . ':00') : $gio;
+
+        $pf = app(SbookingClient::class)->preflightRoom([
+            'co_so_id' => $cs, 'ngay_dat' => (string) $ngay,
+            'gio_thuc_hien' => $start, 'gio_ket_thuc' => $end,
+            'dich_vu_id' => $dvId, 'phong_id' => $phongId,
+        ]);
+        return $pf['ok'] ? null : ('Phòng bận: ' . ($pf['reason'] ?? 'không rõ'));
+    }
+
+    public function save(bool $force = false): void
+    {
         if (! $this->draft['facility_id']) {
             if ($this->filterFacilityId) {
                 $this->draft['facility_id'] = (int) $this->filterFacilityId;
@@ -123,20 +207,34 @@ new class extends Component
             return;
         }
 
-        BookingDraft::create(array_merge($this->normalize($this->draft), [
+        $data = $this->normalize($this->draft);
+        // Auto tính giờ kết thúc.
+        $data['gio_ket_thuc'] = $this->computeEndTime($data['gio'] ?? null, $data['sb_dich_vu_id'] ?? null);
+
+        if (! $force) {
+            $reason = $this->preflightOrReason($data);
+            if ($reason) {
+                $this->warnings['draft'] = $reason;
+                return;
+            }
+        }
+
+        BookingDraft::create(array_merge($data, [
             'created_by' => auth()->id(),
             'updated_by' => auth()->id(),
         ]));
 
-        // Reset input, giữ facility_id + nguồn cho lần nhập kế tiếp (giống Excel nhập liên tục).
         $keepFacility = $this->draft['facility_id'];
         $keepNguon    = $this->draft['nguon'];
         $this->draft = array_fill_keys(array_keys($this->draft), null);
         $this->draft['facility_id'] = $keepFacility;
         $this->draft['nguon']       = $keepNguon;
+        unset($this->warnings['draft']);
 
         $this->dispatch('draft-saved');
     }
+
+    public function saveForce(): void { $this->save(true); }
 
     public function startEdit(int $id): void
     {
@@ -147,18 +245,30 @@ new class extends Component
 
     public function cancelEdit(int $id): void
     {
-        unset($this->editing[$id]);
+        unset($this->editing[$id], $this->warnings['edit-' . $id]);
     }
 
-    public function saveEdit(int $id): void
+    public function saveEdit(int $id, bool $force = false): void
     {
         $row = BookingDraft::find($id);
         if (! $row || ! $this->canTouch($row)) return;
         $data = $this->normalize($this->editing[$id] ?? []);
+        $data['gio_ket_thuc'] = $this->computeEndTime($data['gio'] ?? null, $data['sb_dich_vu_id'] ?? null);
+
+        if (! $force) {
+            $reason = $this->preflightOrReason($data);
+            if ($reason) {
+                $this->warnings['edit-' . $id] = $reason;
+                return;
+            }
+        }
+
         $data['updated_by'] = auth()->id();
         $row->update($data);
-        unset($this->editing[$id]);
+        unset($this->editing[$id], $this->warnings['edit-' . $id]);
     }
+
+    public function saveEditForce(int $id): void { $this->saveEdit($id, true); }
 
     public function deleteRow(int $id): void
     {
@@ -167,7 +277,6 @@ new class extends Component
         $row->delete();
     }
 
-    /** Đổi '' → null để cột DATE/TIME không bị lưu 0000-00-00 / 00:00:00. */
     protected function normalize(array $data): array
     {
         return array_map(fn ($v) => is_string($v) && trim($v) === '' ? null : $v, $data);
@@ -181,7 +290,6 @@ new class extends Component
 
     public function updatedFilterFacilityId(): void
     {
-        // 2026-10-05: tab footer đổi → draft row gắn luôn vào tab đó (không bắt user chọn 2 lần).
         if ($this->filterFacilityId) $this->draft['facility_id'] = (int) $this->filterFacilityId;
         $this->resetPage();
     }
@@ -206,7 +314,6 @@ new class extends Component
             $q->where('facility_id', $this->filterFacilityId);
         }
 
-        // 2026-10-05: filter khoảng ngày đặt lịch. Tick "Tất cả" → bỏ qua, mới → cũ.
         if (! $this->allDates) {
             if ($this->fromDate !== '') $q->whereDate('ngay_dat_lich', '>=', $this->fromDate);
             if ($this->toDate !== '')   $q->whereDate('ngay_dat_lich', '<=', $this->toDate);
@@ -215,33 +322,45 @@ new class extends Component
         $rows = $q->paginate(30);
 
         if ($this->onlyWarning) {
-            // Filter sau paginate: chỉ giữ row có warning (đỏ/vàng). Đơn giản, ổn với 30 rows/page.
             $items = $rows->getCollection()->filter(fn ($r) => $r->statusColor() !== 'green')->values();
             $rows->setCollection($items);
+        }
+
+        // Catalog cho facility của tab đang chọn (hoặc facility đầu tiên nếu "Tất cả").
+        $catalogFid = $this->filterFacilityId ?: ($facilities->first()->id ?? null);
+        $services = $this->servicesFor($catalogFid);
+        $rooms = $this->roomsFor($catalogFid);
+        $doctors = $this->doctorsFor($catalogFid);
+
+        $draftSuggestedRooms = $this->suggestedRoomIds($this->draft['sb_dich_vu_id'] ?? null);
+        $editingSuggestedRooms = [];
+        foreach ($this->editing as $rid => $ed) {
+            $editingSuggestedRooms[$rid] = $this->suggestedRoomIds($ed['sb_dich_vu_id'] ?? null);
         }
 
         return [
             'rows' => $rows,
             'facilities' => $facilities,
-            // 2026-10-05: dropdown nguồn — tái dùng SOURCE_GROUPS của Lead cho đồng bộ.
             'sourceOptions' => Lead::SOURCE_GROUPS,
             'sourceCodes'   => Lead::SOURCE_GROUP_CODES,
+            'services' => $services,
+            'rooms' => $rooms,
+            'doctors' => $doctors,
+            'draftSuggestedRooms' => $draftSuggestedRooms,
+            'editingSuggestedRooms' => $editingSuggestedRooms,
         ];
     }
 }; ?>
 
-{{-- 2026-10-05: redesign UI giống Google Sheets — full width, cell sát nhau, font Arial-ish,
-     dropdown "Cơ sở" đổi thành tab ở footer. --}}
+{{-- 2026-10-05: UI giống Google Sheets. 2026-10-09: thêm cột Phòng + preflight. --}}
 <div class="-mx-4 md:-mx-6 -my-6 md:-my-8 bg-[#f8f9fa] min-h-[calc(100vh-5rem)] flex flex-col" x-data style="font-family: Arial, Roboto, 'Helvetica Neue', sans-serif;">
 
-    {{-- Header gọn — kiểu toolbar sheet --}}
     <div class="flex items-center justify-between gap-3 px-3 py-1.5 border-b border-gray-300 bg-white">
         <div class="flex items-center gap-3">
             <span class="text-sm font-semibold text-gray-800">⚡ Simple Booking</span>
             <span class="text-[11px] text-gray-500">Nháp lịch — Enter là chuyển ô, dòng xanh dương trên cùng để nhập mới.</span>
         </div>
         <div class="flex items-center gap-3 text-[12px]">
-            {{-- 2026-10-05: khoảng ngày lọc theo ngày_đặt_lịch --}}
             <label class="flex items-center gap-1.5 text-gray-700">
                 <span>Từ</span>
                 <input type="date" wire:model.live="fromDate" @disabled($allDates)
@@ -265,7 +384,6 @@ new class extends Component
         </div>
     </div>
 
-    {{-- Khối sheet (scrollable). Chiếm hết chiều cao còn lại, tabs cơ sở nằm dưới. --}}
     <div class="flex-1 overflow-auto bg-white">
         <table class="w-full border-collapse" style="font-size: 12px;">
             <thead class="sticky top-0 z-10">
@@ -282,11 +400,12 @@ new class extends Component
                     <th class="{{ $thCls }}">SĐT</th>
                     <th class="{{ $thCls }}">Sale</th>
                     <th class="{{ $thCls }}">Liệu pháp</th>
+                    <th class="{{ $thCls }}">Phòng</th>
                     <th class="{{ $thCls }} w-14 text-center">Số lọ</th>
                     <th class="{{ $thCls }}">Điều dưỡng</th>
                     <th class="{{ $thCls }}">Bác sĩ</th>
                     <th class="{{ $thCls }}">Khách tặng & ghi chú</th>
-                    <th class="{{ $thCls }} w-24 text-center">Thao tác</th>
+                    <th class="{{ $thCls }} w-28 text-center">Thao tác</th>
                 </tr>
             </thead>
             <tbody>
@@ -295,7 +414,7 @@ new class extends Component
                     $inpCls = 'w-full px-1 py-0 border-0 bg-transparent focus:outline-none focus:ring-1 focus:ring-blue-500 focus:bg-white';
                 @endphp
 
-                {{-- Row nhập mới — xanh dương nhạt --}}
+                {{-- Row nhập mới --}}
                 <tr class="bg-[#e8f0fe]" wire:key="draft-input">
                     <td class="{{ $tdCls }} text-center text-blue-600">+</td>
                     <td class="{{ $tdCls }} text-gray-400 italic">(tự động)</td>
@@ -312,28 +431,65 @@ new class extends Component
                     <td class="{{ $tdCls }}"><input type="text" wire:model="draft.ho_ten" class="{{ $inpCls }}"></td>
                     <td class="{{ $tdCls }}"><input type="text" wire:model="draft.sdt" class="{{ $inpCls }}"></td>
                     <td class="{{ $tdCls }}"><input type="text" wire:model="draft.sale" class="{{ $inpCls }}"></td>
-                    <td class="{{ $tdCls }}"><input type="text" wire:model="draft.lieu_phap" class="{{ $inpCls }}"></td>
+                    <td class="{{ $tdCls }}">
+                        <select wire:model.live="draft.sb_dich_vu_id" class="{{ $inpCls }}">
+                            <option value="">—</option>
+                            @foreach ($services as $sv)
+                                <option value="{{ $sv->sbooking_id }}">{{ $sv->ten }}</option>
+                            @endforeach
+                        </select>
+                    </td>
+                    <td class="{{ $tdCls }}">
+                        <select wire:model="draft.sb_phong_id" class="{{ $inpCls }}">
+                            <option value="">—</option>
+                            @foreach ($rooms as $rm)
+                                @php $sg = in_array((int) $rm->sbooking_id, $draftSuggestedRooms, true); @endphp
+                                <option value="{{ $rm->sbooking_id }}" {{ $sg ? 'style=background:#fff2cc' : '' }}>
+                                    {{ $sg ? '★ ' : '' }}{{ $rm->ten }}
+                                </option>
+                            @endforeach
+                        </select>
+                    </td>
                     <td class="{{ $tdCls }}"><input type="text" wire:model="draft.so_lo" class="{{ $inpCls }} text-center"></td>
                     <td class="{{ $tdCls }}"><input type="text" wire:model="draft.dieu_duong" class="{{ $inpCls }}"></td>
-                    <td class="{{ $tdCls }}"><input type="text" wire:model="draft.bac_si" class="{{ $inpCls }}"></td>
+                    <td class="{{ $tdCls }}">
+                        <select wire:model="draft.sb_bac_si_id" class="{{ $inpCls }}">
+                            <option value="">—</option>
+                            @foreach ($doctors as $d)
+                                <option value="{{ $d->sbooking_id }}">{{ $d->ten }}</option>
+                            @endforeach
+                        </select>
+                    </td>
                     <td class="{{ $tdCls }}"><input type="text" wire:model="draft.ghi_chu" class="{{ $inpCls }}"></td>
                     <td class="{{ $tdCls }} text-center">
                         <button wire:click="save" class="text-[11px] font-semibold text-white bg-blue-600 hover:bg-blue-700 px-2 py-0.5 rounded">+ Lưu</button>
                     </td>
                 </tr>
 
+                {{-- Warning banner cho row draft --}}
+                @if (!empty($warnings['draft']))
+                    <tr wire:key="warn-draft" class="bg-[#fff2cc]">
+                        <td colspan="15" class="border border-amber-400 px-3 py-1.5 text-[12px] text-amber-900">
+                            ⚠️ {{ $warnings['draft'] }} —
+                            <button wire:click="saveForce" class="font-semibold underline text-amber-900 hover:text-amber-700">Vẫn lưu</button>
+                            <button wire:click="$set('warnings.draft', null)" class="ml-2 underline text-gray-700">Sửa lại</button>
+                        </td>
+                    </tr>
+                @endif
+
                 {{-- Rows đã lưu --}}
                 @forelse ($rows as $r)
                     @php
                         $color = $r->statusColor();
-                        // Row bg theo trạng thái — khớp screenshot sheet Google.
                         $rowBg = match ($color) {
-                            'red'    => 'bg-[#f4c7c3]',   // đỏ nhạt — thiếu bắt buộc (ho_ten/sdt/ngay)
-                            'yellow' => 'bg-[#fff2cc]',   // vàng — thiếu phụ (gio/sale/liệu pháp)
-                            default  => 'bg-[#b7e1cd]',   // xanh — đủ
+                            'red'    => 'bg-[#f4c7c3]',
+                            'yellow' => 'bg-[#fff2cc]',
+                            default  => 'bg-[#b7e1cd]',
                         };
                         $reasons = $r->warningReasons();
                         $isEdit = isset($editing[$r->id]);
+                        $editKey = 'edit-' . $r->id;
+                        $sugRoomsEdit = $editingSuggestedRooms[$r->id] ?? [];
                     @endphp
                     <tr wire:key="row-{{ $r->id }}" class="{{ $rowBg }}" title="{{ implode(' · ', $reasons) ?: 'Đủ điều kiện' }}">
                         <td class="{{ $tdCls }} text-center">{{ ['red'=>'🔴','yellow'=>'🟡','green'=>'🟢'][$color] }}</td>
@@ -355,14 +511,39 @@ new class extends Component
                             <td class="{{ $tdCls }}"><input type="text" wire:model="editing.{{ $r->id }}.ho_ten" class="{{ $inpCls }}"></td>
                             <td class="{{ $tdCls }}"><input type="text" wire:model="editing.{{ $r->id }}.sdt" class="{{ $inpCls }}"></td>
                             <td class="{{ $tdCls }}"><input type="text" wire:model="editing.{{ $r->id }}.sale" class="{{ $inpCls }}"></td>
-                            <td class="{{ $tdCls }}"><input type="text" wire:model="editing.{{ $r->id }}.lieu_phap" class="{{ $inpCls }}"></td>
+                            <td class="{{ $tdCls }}">
+                                <select wire:model.live="editing.{{ $r->id }}.sb_dich_vu_id" class="{{ $inpCls }}">
+                                    <option value="">—</option>
+                                    @foreach ($services as $sv)
+                                        <option value="{{ $sv->sbooking_id }}">{{ $sv->ten }}</option>
+                                    @endforeach
+                                </select>
+                            </td>
+                            <td class="{{ $tdCls }}">
+                                <select wire:model="editing.{{ $r->id }}.sb_phong_id" class="{{ $inpCls }}">
+                                    <option value="">—</option>
+                                    @foreach ($rooms as $rm)
+                                        @php $sg = in_array((int) $rm->sbooking_id, $sugRoomsEdit, true); @endphp
+                                        <option value="{{ $rm->sbooking_id }}" {{ $sg ? 'style=background:#fff2cc' : '' }}>
+                                            {{ $sg ? '★ ' : '' }}{{ $rm->ten }}
+                                        </option>
+                                    @endforeach
+                                </select>
+                            </td>
                             <td class="{{ $tdCls }}"><input type="text" wire:model="editing.{{ $r->id }}.so_lo" class="{{ $inpCls }} text-center"></td>
                             <td class="{{ $tdCls }}"><input type="text" wire:model="editing.{{ $r->id }}.dieu_duong" class="{{ $inpCls }}"></td>
-                            <td class="{{ $tdCls }}"><input type="text" wire:model="editing.{{ $r->id }}.bac_si" class="{{ $inpCls }}"></td>
+                            <td class="{{ $tdCls }}">
+                                <select wire:model="editing.{{ $r->id }}.sb_bac_si_id" class="{{ $inpCls }}">
+                                    <option value="">—</option>
+                                    @foreach ($doctors as $d)
+                                        <option value="{{ $d->sbooking_id }}">{{ $d->ten }}</option>
+                                    @endforeach
+                                </select>
+                            </td>
                             <td class="{{ $tdCls }}"><input type="text" wire:model="editing.{{ $r->id }}.ghi_chu" class="{{ $inpCls }}"></td>
                             <td class="{{ $tdCls }} text-center">
                                 <button wire:click="saveEdit({{ $r->id }})" class="text-[11px] text-green-700 hover:underline">💾 Lưu</button>
-                                <button wire:click="cancelEdit({{ $r->id }})" class="text-[11px] text-gray-600 hover:underline ml-1">✕</button>
+                                <button wire:click="cancelEdit({{ $r->id }})" class="text-[11px] text-gray-600 hover:underline ml-1">↩ Thoát sửa</button>
                             </td>
                         @else
                             <td class="{{ $tdCls }} text-center">{{ $r->ngay_dat_lich?->format('d/m/Y') }}</td>
@@ -371,10 +552,20 @@ new class extends Component
                             <td class="{{ $tdCls }}">{{ $r->ho_ten }}</td>
                             <td class="{{ $tdCls }}">{{ $r->sdt }}</td>
                             <td class="{{ $tdCls }}">{{ $r->sale }}</td>
-                            <td class="{{ $tdCls }}">{{ $r->lieu_phap }}</td>
+                            <td class="{{ $tdCls }}">
+                                @php $svName = $r->sb_dich_vu_id ? ($services->firstWhere('sbooking_id', $r->sb_dich_vu_id)?->ten) : null; @endphp
+                                {{ $svName ?: $r->lieu_phap }}
+                            </td>
+                            <td class="{{ $tdCls }}">
+                                @php $rmName = $r->sb_phong_id ? ($rooms->firstWhere('sbooking_id', $r->sb_phong_id)?->ten) : null; @endphp
+                                {{ $rmName ?: '—' }}
+                            </td>
                             <td class="{{ $tdCls }} text-center">{{ $r->so_lo }}</td>
                             <td class="{{ $tdCls }}">{{ $r->dieu_duong }}</td>
-                            <td class="{{ $tdCls }}">{{ $r->bac_si }}</td>
+                            <td class="{{ $tdCls }}">
+                                @php $bsName = $r->sb_bac_si_id ? ($doctors->firstWhere('sbooking_id', $r->sb_bac_si_id)?->ten) : null; @endphp
+                                {{ $bsName ?: $r->bac_si }}
+                            </td>
                             <td class="{{ $tdCls }}">{{ $r->ghi_chu }}</td>
                             <td class="{{ $tdCls }} text-center">
                                 <button wire:click="startEdit({{ $r->id }})" class="text-[11px] text-blue-700 hover:underline">Sửa</button>
@@ -382,8 +573,17 @@ new class extends Component
                             </td>
                         @endif
                     </tr>
+                    @if (!empty($warnings[$editKey]))
+                        <tr wire:key="warn-{{ $r->id }}" class="bg-[#fff2cc]">
+                            <td colspan="15" class="border border-amber-400 px-3 py-1.5 text-[12px] text-amber-900">
+                                ⚠️ {{ $warnings[$editKey] }} —
+                                <button wire:click="saveEditForce({{ $r->id }})" class="font-semibold underline text-amber-900 hover:text-amber-700">Vẫn lưu</button>
+                                <button wire:click="$set('warnings.{{ $editKey }}', null)" class="ml-2 underline text-gray-700">Sửa lại</button>
+                            </td>
+                        </tr>
+                    @endif
                 @empty
-                    <tr><td colspan="14" class="border border-gray-300 p-6 text-center text-gray-400 italic">Chưa có row nào — nhập ở dòng xanh dương phía trên.</td></tr>
+                    <tr><td colspan="15" class="border border-gray-300 p-6 text-center text-gray-400 italic">Chưa có row nào — nhập ở dòng xanh dương phía trên.</td></tr>
                 @endforelse
             </tbody>
         </table>
@@ -391,10 +591,9 @@ new class extends Component
         <div class="px-3 py-2 bg-white border-t border-gray-200">{{ $rows->links() }}</div>
     </div>
 
-    {{-- Tab footer theo cơ sở — kiểu Google Sheets --}}
+    {{-- Tab footer theo cơ sở --}}
     <div class="flex items-center gap-0.5 border-t border-gray-300 bg-[#f8f9fa] px-2 py-1 overflow-x-auto">
         <span class="text-[11px] text-gray-500 mr-2 shrink-0">Cơ sở:</span>
-        {{-- Tab "Tất cả" khi super admin có nhiều hơn 1 cơ sở --}}
         @if ($facilities->count() > 1)
             <button type="button" wire:click="$set('filterFacilityId', null)"
                     class="text-[12px] px-3 py-1 rounded-t border-x border-t border-gray-300 shrink-0
@@ -411,7 +610,7 @@ new class extends Component
             </button>
         @endforeach
         <span class="ml-auto text-[11px] text-gray-500 shrink-0">
-            {{ $rows->total() ?? $rows->count() }} dòng · 🔴 thiếu KH/SĐT/ngày · 🟡 thiếu giờ/sale/liệu pháp · 🟢 đủ
+            {{ $rows->total() ?? $rows->count() }} dòng · 🔴 thiếu KH/SĐT/ngày · 🟡 thiếu giờ/sale/liệu pháp · 🟢 đủ · ★ phòng gợi ý theo dịch vụ
         </span>
     </div>
 </div>
