@@ -430,6 +430,30 @@ class SbookingClient
     }
 
     /**
+     * 2026-10-09 — Check bác sĩ còn khả dụng (soft). Payload:
+     *   bac_si_id, ngay_dat, gio_thuc_hien, gio_ket_thuc, except_booking_id?
+     * Trả ['ok'=>bool,'reason'=>string].
+     */
+    public function preflightDoctor(array $payload): array
+    {
+        $token = config('services.booking.api_token');
+        $baseUrl = rtrim(config('services.booking.api_url') ?: '', '/');
+        if (! $token || ! $baseUrl) return ['ok' => false, 'reason' => 'Chưa cấu hình sbooking API.'];
+        try {
+            $resp = Http::withToken($token)->connectTimeout(3)->timeout(20)->acceptJson()->post($baseUrl . '/bookings/preflight-doctor', $payload);
+        } catch (Throwable $e) {
+            return ['ok' => false, 'reason' => 'Preflight-doctor HTTP fail: ' . $e->getMessage()];
+        }
+        if (! $resp->successful()) {
+            $body = $resp->json();
+            $reason = is_array($body) && ! empty($body['message']) ? $body['message'] : 'Preflight-doctor HTTP ' . $resp->status();
+            return ['ok' => false, 'reason' => $reason];
+        }
+        $json = $resp->json();
+        return ['ok' => (bool) ($json['ok'] ?? false), 'reason' => (string) ($json['reason'] ?? '')];
+    }
+
+    /**
      * Push 1 booking raw sang sbooking. Trả ['ok'=>bool, 'id'=>?int, 'ma'=>?string, 'reason'=>string].
      * KHÔNG ghi vào BookingLog — caller tự lưu.
      */

@@ -157,8 +157,8 @@ new class extends Component
     }
 
     /**
-     * Preflight phòng bên sbooking. Trả null nếu ok, reason nếu bận.
-     * Chỉ chạy khi đủ facility+ngay+gio+dv+phong.
+     * Preflight phòng + bác sĩ bên sbooking. Trả null nếu cả 2 ok, hoặc reason nếu 1 trong 2 bận.
+     * Phòng chỉ check khi đủ facility+ngay+gio+dv+phong. Bác sĩ chỉ check khi đủ bac_si+ngay+gio+dv (để tính end time).
      */
     protected function preflightOrReason(array $data): ?string
     {
@@ -167,7 +167,8 @@ new class extends Component
         $gio = $data['gio'] ?? null;
         $dvId = (int) ($data['sb_dich_vu_id'] ?? 0);
         $phongId = (int) ($data['sb_phong_id'] ?? 0);
-        if (! $facilityId || ! $ngay || ! $gio || ! $dvId || ! $phongId) return null;
+        $bacSiId = (int) ($data['sb_bac_si_id'] ?? 0);
+        if (! $facilityId || ! $ngay || ! $gio || ! $dvId) return null;
 
         $cs = (int) (Facility::find($facilityId)?->sbooking_co_so_id ?? 0);
         if (! $cs) return null;
@@ -176,12 +177,26 @@ new class extends Component
         if (! $end) return null;
         $start = strlen($gio) === 5 ? ($gio . ':00') : $gio;
 
-        $pf = app(SbookingClient::class)->preflightRoom([
-            'co_so_id' => $cs, 'ngay_dat' => (string) $ngay,
-            'gio_thuc_hien' => $start, 'gio_ket_thuc' => $end,
-            'dich_vu_id' => $dvId, 'phong_id' => $phongId,
-        ]);
-        return $pf['ok'] ? null : ('Phòng bận: ' . ($pf['reason'] ?? 'không rõ'));
+        $client = app(SbookingClient::class);
+
+        if ($phongId) {
+            $pf = $client->preflightRoom([
+                'co_so_id' => $cs, 'ngay_dat' => (string) $ngay,
+                'gio_thuc_hien' => $start, 'gio_ket_thuc' => $end,
+                'dich_vu_id' => $dvId, 'phong_id' => $phongId,
+            ]);
+            if (! $pf['ok']) return 'Phòng bận: ' . ($pf['reason'] ?? 'không rõ');
+        }
+
+        if ($bacSiId) {
+            $pf = $client->preflightDoctor([
+                'bac_si_id' => $bacSiId, 'ngay_dat' => (string) $ngay,
+                'gio_thuc_hien' => $start, 'gio_ket_thuc' => $end,
+            ]);
+            if (! $pf['ok']) return 'Bác sĩ bận: ' . ($pf['reason'] ?? 'không rõ');
+        }
+
+        return null;
     }
 
     public function save(bool $force = false): void
