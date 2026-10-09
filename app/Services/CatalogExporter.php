@@ -65,7 +65,7 @@ class CatalogExporter
         $stt = 0;
         foreach ($permissions as $p) {
             $stt++;
-            $row = [$stt, strtok($p->key, '.'), $p->key, $p->description ?: $p->key];
+            $row = [$stt, $p->group ?: strtok($p->key, '.'), $p->key, $p->label ?: $p->key];
             foreach ($roles as $rl) { $row[] = isset($roleHasPerm[$rl->id][$p->key]) ? '✓' : ''; }
             $permRows[] = $row;
         }
