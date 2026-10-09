@@ -23,10 +23,20 @@
                 <div class="text-xs text-ink/40">
                     {{ $node->code }} · cấp {{ $node->depth }} · {{ $memberCounts[$node->id] ?? 0 }} nhân sự
                 </div>
+                @php $unitMgrs = $managersByUnit[$node->id] ?? collect(); @endphp
+                @if ($unitMgrs->isNotEmpty())
+                    <div class="text-xs text-gold-700 mt-0.5">
+                        <span class="font-semibold">Quản lý:</span>
+                        {{ $unitMgrs->map(fn ($m) => $m->name . ($m->job_title ? ' ('.$m->job_title.')' : ''))->join(', ') }}
+                    </div>
+                @endif
             </div>
             <div class="flex items-center gap-1 shrink-0">
                 <button wire:click="startAdd({{ $node->id }})" class="p-1.5 rounded text-gold-600 hover:bg-gold-50" title="Thêm đơn vị con">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
+                </button>
+                <button wire:click="startManagers({{ $node->id }})" class="p-1.5 rounded text-blue-600 hover:bg-blue-50" title="Người quản lý">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z"/></svg>
                 </button>
                 <button wire:click="startEdit({{ $node->id }})" class="p-1.5 rounded text-ink/50 hover:bg-gold-50" title="Đổi tên">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487z"/></svg>
@@ -41,6 +51,35 @@
         @endif
     </div>
 
+    @if ($managingUnitId === $node->id)
+        <div class="ml-8 mt-2 bg-white border border-blue-300 rounded-lg p-4 max-w-2xl">
+            <div class="flex items-center justify-between mb-3">
+                <div class="text-sm font-semibold text-blue-800">Người quản lý — {{ $node->name }}</div>
+                <div class="flex items-center gap-2">
+                    <button wire:click="saveManagers" class="bg-blue-600 text-white text-sm font-semibold px-4 py-1.5 rounded-md">Lưu</button>
+                    <button wire:click="cancelManagers" class="text-sm text-ink/50 px-1">Hủy</button>
+                </div>
+            </div>
+            <input type="text" wire:model.live.debounce.300ms="managerSearch" placeholder="Tìm theo tên/email…"
+                   class="w-full border border-gold-200 rounded-md px-3 py-1.5 text-sm mb-3 focus:outline-none focus:border-blue-500">
+            <div class="max-h-64 overflow-y-auto divide-y divide-gold-100 border border-gold-100 rounded-md">
+                @forelse ($managerUsers as $u)
+                    <label class="flex items-center gap-3 px-3 py-2 hover:bg-gold-50 cursor-pointer text-sm">
+                        <input type="checkbox" wire:click="toggleManager({{ $u->id }})" @checked(in_array($u->id, $managerIds))
+                               class="rounded border-gold-300 text-blue-600 focus:ring-blue-500">
+                        <div class="flex-1 min-w-0">
+                            <div class="font-medium truncate">{{ $u->name }}</div>
+                            <div class="text-xs text-ink/50 truncate">{{ $u->job_title ?: $u->email }}</div>
+                        </div>
+                    </label>
+                @empty
+                    <div class="px-3 py-4 text-center text-sm text-ink/50">Không có user nào khớp.</div>
+                @endforelse
+            </div>
+            <div class="text-xs text-ink/50 mt-2">Đã chọn: {{ count($managerIds) }} người</div>
+        </div>
+    @endif
+
     @if ($addingParentId === $node->id)
         <div class="ml-8 mt-2 bg-white border border-gold-300 rounded-lg p-3 flex items-center gap-3 max-w-xl">
             <input type="text" wire:model="newName" wire:keydown.enter="saveAdd" placeholder="Tên đơn vị con của {{ $node->name }}"
@@ -54,7 +93,7 @@
     @if ($node->children->isNotEmpty())
         <div class="mt-2 space-y-2">
             @foreach ($node->children as $child)
-                @include('partials.org-node', ['node' => $child, 'memberCounts' => $memberCounts])
+                @include('partials.org-node', ['node' => $child, 'memberCounts' => $memberCounts, 'managersByUnit' => $managersByUnit, 'managerUsers' => $managerUsers])
             @endforeach
         </div>
     @endif

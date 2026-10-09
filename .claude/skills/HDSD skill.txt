@@ -1,0 +1,1 @@
+Dán folder này vào /public_html/ten_thu_muc_du_an/.claude/skills

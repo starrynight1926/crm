@@ -26,6 +26,10 @@ trait HasAccessControl
 
     private ?array $visibleOrgUnitIdsCache = null;
 
+    private ?array $memberOrgUnitIdsCache = null;
+
+    private ?array $visiblePoolUnitIdsCache = null;
+
     /** @return Collection<int, Assignment> */
     public function effectiveAssignments(): Collection
     {
@@ -42,12 +46,41 @@ trait HasAccessControl
 
     public function hasPermission(string $key): bool
     {
+        // Super admin (email admin@longevity.com.vn — khớp AdminScope::isSuperAdmin) bypass mọi perm.
+        // Trước đây thiếu bypass này → admin@ không vào được /ups-*, không confirm được UPS, v.v.
+        if ($this->email === 'admin@longevity.com.vn') {
+            return true;
+        }
+
         $this->permissionKeysCache ??= $this->effectiveAssignments()
             ->flatMap(fn (Assignment $a) => $a->role->permissions->pluck('key'))
             ->unique()
             ->all();
 
         return in_array($key, $this->permissionKeysCache, true);
+    }
+
+    /**
+     * 2026-08-05 — Check user có 1 role theo tên (không tính assignment inactive).
+     * Dùng khi cần khóa/mở UI theo role cụ thể (VD "Trực Page" chỉ điền custom fields phase 2).
+     */
+    public function hasRole(string $roleName): bool
+    {
+        return $this->effectiveAssignments()
+            ->pluck('role.name')
+            ->contains($roleName);
+    }
+
+    /** Có ít nhất một trong các quyền. */
+    public function hasAnyPermission(array $keys): bool
+    {
+        foreach ($keys as $key) {
+            if ($this->hasPermission($key)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -84,6 +117,71 @@ trait HasAccessControl
         return $this->visibleOrgUnitIdsCache = $query->pluck('id')->all();
     }
 
+    /**
+     * Id các org_unit trên CÙNG NHÁNH với org của user (kho chung phòng/team nhìn được dù scope=self):
+     * org của assignment + toàn bộ cấp cha (đi lên) + toàn bộ cấp con/subtree (đi xuống).
+     * ⇒ kho team A hiện cho: team A, phòng cha (KD), công ty; nhưng team B anh em thì không.
+     */
+    public function memberOrgUnitIds(): array
+    {
+        if ($this->memberOrgUnitIdsCache !== null) {
+            return $this->memberOrgUnitIdsCache;
+        }
+
+        $ids = [];
+        $prefixes = [];
+        foreach ($this->effectiveAssignments() as $assignment) {
+            // Cấp cha + chính nó (tách từ path)
+            foreach (array_filter(explode('/', trim((string) $assignment->orgUnit->path, '/'))) as $seg) {
+                $ids[(int) $seg] = true;
+            }
+            // Cấp con / subtree
+            $prefixes[] = $assignment->orgUnit->path;
+        }
+
+        if ($prefixes !== []) {
+            $query = OrgUnit::query();
+            foreach (array_unique($prefixes) as $i => $prefix) {
+                $query->{$i === 0 ? 'where' : 'orWhere'}('path', 'like', $prefix . '%');
+            }
+            foreach ($query->pluck('id') as $id) {
+                $ids[(int) $id] = true;
+            }
+        }
+
+        return $this->memberOrgUnitIdsCache = array_keys($ids);
+    }
+
+    /**
+     * Id các pool_unit (cây Kho số) user được thấy — resolve qua org_pool_map từ
+     * visibleOrgUnitIds ∪ memberOrgUnitIds. Fix 2026-08-08: Phase 6.24 tách pool_unit_id
+     * khỏi org_unit_id, nhưng Lead::scopeVisibleTo trước đó chỉ check org → lead nằm trong
+     * kho (pool_level=team, org_unit_id=null) bị vô hình với mọi user trừ imported_by.
+     */
+    public function visiblePoolUnitIds(): array
+    {
+        if ($this->visiblePoolUnitIdsCache !== null) {
+            return $this->visiblePoolUnitIdsCache;
+        }
+
+        $orgIds = array_values(array_unique(array_merge(
+            $this->visibleOrgUnitIds(),
+            $this->memberOrgUnitIds(),
+        )));
+
+        if ($orgIds === []) {
+            return $this->visiblePoolUnitIdsCache = [];
+        }
+
+        return $this->visiblePoolUnitIdsCache = \DB::table('org_pool_map')
+            ->whereIn('org_unit_id', $orgIds)
+            ->pluck('pool_unit_id')
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
     /** User có ít nhất một assignment còn hiệu lực → được thấy dữ liệu bản thân. */
     public function hasSelfScope(): bool
     {
@@ -100,5 +198,7 @@ trait HasAccessControl
         $this->effectiveAssignmentsCache = null;
         $this->permissionKeysCache = null;
         $this->visibleOrgUnitIdsCache = null;
+        $this->memberOrgUnitIdsCache = null;
+        $this->visiblePoolUnitIdsCache = null;
     }
 }
