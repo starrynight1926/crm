@@ -688,6 +688,60 @@ new class extends Component
     public array $editingBookingNotes = []; // booking_log_id => note text
     public ?int $editingBookingId = null;
 
+    // 2026-10-09: Sale "Hẹn lại" booking (đã đặt → booking cũ status huy_doi_lich, tạo booking mới cho_duyet).
+    public ?int $reschedBlId = null;
+    public string $reschedDate = '';
+    public string $reschedTime = '';
+    public string $reschedReason = '';
+
+    public function openReschedule(int $id): void
+    {
+        $bl = BookingLog::find($id);
+        if (! $bl || $bl->lead_id !== $this->lead?->id) return;
+        if (! in_array($bl->status, [BookingLog::STATUS_CHO_XAC_NHAN, BookingLog::STATUS_DA_XAC_NHAN], true)) {
+            session()->flash('cf_error', 'Chỉ hẹn lại được booking Chờ xác nhận / Đã xác nhận.');
+            return;
+        }
+        $this->reschedBlId = $id;
+        $this->reschedDate = $bl->scheduled_at?->format('Y-m-d') ?: now()->toDateString();
+        $this->reschedTime = $bl->scheduled_at?->format('H:i') ?: '09:00';
+        $this->reschedReason = '';
+        $this->resetErrorBag(['reschedDate', 'reschedTime', 'reschedReason']);
+    }
+
+    public function cancelReschedule(): void
+    {
+        $this->reschedBlId = null;
+        $this->reschedDate = $this->reschedTime = $this->reschedReason = '';
+    }
+
+    public function confirmReschedule(\App\Services\BookingRescheduler $svc): void
+    {
+        $this->guardNotCvOnly();
+        $this->validate([
+            'reschedBlId'   => 'required|integer|exists:booking_logs,id',
+            'reschedDate'   => 'required|date|after_or_equal:today',
+            'reschedTime'   => 'required|regex:/^\d{2}:\d{2}$/',
+            'reschedReason' => 'required|string|min:5|max:500',
+        ], [
+            'reschedDate.after_or_equal' => 'Ngày hẹn lại phải từ hôm nay trở đi.',
+            'reschedReason.min'          => 'Nhập lý do (tối thiểu 5 ký tự) để push sang sbooking.',
+        ]);
+        $bl = BookingLog::find($this->reschedBlId);
+        if (! $bl || $bl->lead_id !== $this->lead?->id) {
+            session()->flash('cf_error', 'Booking không tồn tại.');
+            return;
+        }
+        $newAt = \Carbon\Carbon::parse($this->reschedDate . ' ' . $this->reschedTime);
+        $res = $svc->reschedule($bl, $newAt, trim($this->reschedReason), auth()->user());
+        if (! ($res['ok'] ?? false)) {
+            $this->addError('reschedReason', $res['reason'] ?? 'Hẹn lại thất bại.');
+            return;
+        }
+        $this->cancelReschedule();
+        session()->flash('cf_ok', "Đã hẹn lại — booking mới #{$res['new_id']} đã push sbooking, chờ admin duyệt.");
+    }
+
     public function startEditBookingNote(int $bookingLogId): void
     {
         $bl = BookingLog::find($bookingLogId);
@@ -3889,6 +3943,13 @@ new class extends Component
                                 @else
                                     <div class="text-ink/80 text-xs italic flex items-start gap-1.5">
                                         <span class="flex-1">📝 {{ $bl->note ?: '(chưa có ghi chú)' }}</span>
+                                        @if (in_array($bl->status, [\App\Models\BookingLog::STATUS_CHO_XAC_NHAN, \App\Models\BookingLog::STATUS_DA_XAC_NHAN], true))
+                                            <button type="button" wire:click="openReschedule({{ $bl->id }})"
+                                                    class="text-[10px] text-amber-700 hover:text-amber-900 font-semibold shrink-0"
+                                                    title="Hủy booking này + tạo booking mới với ngày/giờ khác (push sbooking chờ duyệt lại)">
+                                                🔄 Hẹn lại
+                                            </button>
+                                        @endif
                                         <button type="button" wire:click="startEditBookingNote({{ $bl->id }})"
                                                 class="text-[10px] text-blue-600 hover:text-blue-800 shrink-0"
                                                 title="{{ $bl->sbooking_booking_id ? 'Sửa + tự đồng bộ sbooking' : 'Sửa (chưa sync sbooking)' }}">
@@ -4924,5 +4985,51 @@ new class extends Component
     </div>
 
     {{-- Sidebar comment fixed cũ đã move lên header 50/50 — 2026-08-02. --}}
+
+    {{-- 2026-10-09: Modal "Hẹn lại" — overlay full screen khi reschedBlId != null. --}}
+    @if ($reschedBlId)
+        <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" wire:key="reschedule-modal">
+            <div class="bg-white rounded-lg shadow-2xl w-full max-w-md p-5 space-y-4">
+                <div class="flex items-center justify-between">
+                    <h3 class="text-base font-bold text-amber-800">🔄 Hẹn lại booking #{{ $reschedBlId }}</h3>
+                    <button type="button" wire:click="cancelReschedule" class="text-ink/50 hover:text-ink/80">✕</button>
+                </div>
+                <p class="text-xs text-ink/60">
+                    Booking cũ sẽ chuyển sang <b>"Hủy - Đổi lịch"</b>. Booking mới clone y hệt với giờ mới,
+                    push sbooking để <b>Admin duyệt lại</b>.
+                </p>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-semibold text-ink/70 mb-1">Ngày mới</label>
+                        <input type="date" wire:model="reschedDate" min="{{ now()->toDateString() }}"
+                               class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm">
+                        @error('reschedDate') <span class="text-[11px] text-red-600">{{ $message }}</span> @enderror
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-ink/70 mb-1">Giờ mới</label>
+                        <input type="time" wire:model="reschedTime"
+                               class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm">
+                        @error('reschedTime') <span class="text-[11px] text-red-600">{{ $message }}</span> @enderror
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-ink/70 mb-1">Lý do hẹn lại <span class="text-red-500">*</span></label>
+                    <textarea wire:model="reschedReason" rows="3" placeholder="VD: Khách báo bận, xin đổi sang ngày khác..."
+                              class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-amber-500"></textarea>
+                    @error('reschedReason') <span class="text-[11px] text-red-600">{{ $message }}</span> @enderror
+                </div>
+                <div class="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                    <button type="button" wire:click="cancelReschedule"
+                            class="text-sm border border-slate-300 text-ink/70 hover:bg-slate-50 px-4 py-1.5 rounded">Hủy bỏ</button>
+                    <button type="button" wire:click="confirmReschedule"
+                            wire:loading.attr="disabled" wire:target="confirmReschedule"
+                            class="text-sm bg-amber-600 hover:bg-amber-700 disabled:opacity-60 text-white font-semibold px-4 py-1.5 rounded">
+                        <span wire:loading.remove wire:target="confirmReschedule">🔄 Xác nhận hẹn lại</span>
+                        <span wire:loading wire:target="confirmReschedule">Đang xử lý…</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    @endif
 </div>
 

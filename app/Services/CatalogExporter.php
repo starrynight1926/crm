@@ -253,12 +253,31 @@ class CatalogExporter
         $map = match ($fieldKey) {
             'sourceGroup'      => Lead::SOURCE_GROUPS,
             'newCallStatus'    => CallLog::STATUSES,
-            'bookingStatus'    => Lead::BOOKING_STATUSES,
             'newBookingType'   => ['tham_kham' => 'Thăm khám', 'dich_vu' => 'Dịch vụ'],
             default            => null,
         };
         if (is_array($map)) {
             return array_map(fn ($k, $v) => [(string) $k, (string) $v], array_keys($map), array_values($map));
+        }
+
+        // bookingStatus: label kèm diễn giải chi tiết — ai set, khi nào.
+        if ($fieldKey === 'bookingStatus') {
+            $desc = [
+                'not_booked'    => 'Chưa đặt (mặc định)',
+                'cho_duyet'     => 'Chờ duyệt — Trạng thái cuối của Tele Sale, chờ Admin duyệt',
+                'booked'        => 'Đã đặt — Admin duyệt xong sẽ chuyển sang đã đặt',
+                'tu_choi'       => 'Bị từ chối — Admin từ chối sẽ chuyển sang bị từ chối',
+                'rescheduled'   => 'Hẹn lại — Đã đặt được duyệt nhưng Sale đổi lịch, booking cũ sẽ thành "hẹn lại"',
+                'khach_da_toi'  => 'Khách đã tới — Do Sale tiếp đón đánh dấu',
+                'khach_toi_tre' => 'Khách tới trễ — Do Admin đánh dấu',
+                'khach_huy'     => 'Khách hủy — Do Sale tiếp đón đánh dấu',
+                'da_xong'       => 'Đã hoàn thành — Do Sale tiếp đón đánh dấu',
+            ];
+            $out = [];
+            foreach (Lead::BOOKING_STATUSES as $k => $v) {
+                $out[] = [(string) $k, $desc[$k] ?? (string) $v];
+            }
+            return $out;
         }
 
         // Pool unit cascade: resolve từ bảng pool_units DB thật.
