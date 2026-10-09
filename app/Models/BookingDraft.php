@@ -7,8 +7,9 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 #[Fillable([
-    'facility_id', 'ngay_dat_lich', 'gio', 'nguon', 'ho_ten', 'sdt',
-    'sale', 'lieu_phap', 'so_lo', 'dieu_duong', 'bac_si', 'ghi_chu',
+    'facility_id', 'ngay_dat_lich', 'gio', 'gio_ket_thuc', 'nguon', 'ho_ten', 'sdt',
+    'sale', 'lieu_phap', 'sb_dich_vu_id', 'sb_phong_id', 'so_lo', 'dieu_duong',
+    'bac_si', 'sb_bac_si_id', 'ghi_chu',
     'created_by', 'updated_by', 'promoted_booking_log_id',
 ])]
 class BookingDraft extends Model
