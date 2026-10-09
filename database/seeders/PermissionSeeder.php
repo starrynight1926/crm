@@ -78,8 +78,8 @@ class PermissionSeeder extends Seeder
             // 2026-08-09: refactor 1-1 với 7 nguồn.
             'source.up.mkt'    => 'Đăng nguồn: MKT (Marketing)',
             'source.up.mkt_br' => 'Đăng nguồn: MKT BR (Marketing BR)',
-            'source.up.sa'     => 'Đăng nguồn: SA (Sale hẹn lại)',
-            'source.up.ba'     => 'Đăng nguồn: BA (Bạn giới thiệu)',
+            'source.up.sa'     => 'Đăng nguồn: SA (Sale Tele nhập)',
+            'source.up.ba'     => 'Đăng nguồn: BA (Sale Booking nhập)',
             'source.up.bdm'    => 'Đăng nguồn: BDM',
             'source.up.bod'    => 'Đăng nguồn: BOD',
             'source.up.wi'     => 'Đăng nguồn: WI (Walk-in)',
