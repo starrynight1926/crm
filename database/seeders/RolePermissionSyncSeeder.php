@@ -116,6 +116,8 @@ class RolePermissionSyncSeeder extends Seeder
             'lead.view_phone', 'lead.view_pool', 'lead.view_team_pool', 'payment.record',
             'phase.close.booking', 'phase.close.call',
             'phase.close.new', 'report.view', 'source.up.sa', 'source.up.mkt_br', 'source.up.ba',
+            // 2026-10-09: TL được up nguồn BOD (khách công ty cấp cao giới thiệu, trước chỉ Admin up).
+            'source.up.bod',
             'recall.view', 'recall.assign',
             // 2026-08-19: TL thấy lead self-owned (MKT_BR/SA/BA/HL) của team mình.
             'lead.view_self_owned',
