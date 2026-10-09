@@ -178,12 +178,14 @@ class CatalogExporter
                     return [$f->key, $f->label, $f->field_type, $opts, $f->orgUnit?->name ?? '(công ty)', $f->required ? '⚠' : '', $f->active ? '✅' : '⛔'];
                 })->all());
 
-        // Trường form 6 phase từ config (snapshot cứng).
+        // 2026-10-09: Trường form 6 phase — EXPAND mỗi option thành row riêng.
+        //   Field không có options → 1 row (option trống). Field có options → N row.
+        //   Options string parser: split ' | ' → mỗi item có thể 'value = label' hoặc chỉ 'value'.
         $phaseRows = [];
         foreach (config('lead_form_fields', []) as $pIdx => $phase) {
             foreach ($phase['groups'] as $groupName => $fields) {
                 foreach ($fields as $f) {
-                    $phaseRows[] = [
+                    $base = [
                         $pIdx,
                         $phase['title'],
                         $groupName,
@@ -191,13 +193,28 @@ class CatalogExporter
                         $f['label'] ?? '',
                         $f['type'] ?? '',
                         is_bool($f['required'] ?? null) ? ($f['required'] ? '⚠' : '') : ($f['required'] ?? ''),
-                        $f['options'] ?? '',
-                        $f['note'] ?? '',
                     ];
+                    $opts = trim((string) ($f['options'] ?? ''));
+                    if ($opts === '') {
+                        $phaseRows[] = array_merge($base, ['', '', $f['note'] ?? '']);
+                        continue;
+                    }
+                    foreach (explode('|', $opts) as $part) {
+                        $part = trim($part);
+                        if ($part === '') continue;
+                        if (str_contains($part, '=')) {
+                            [$val, $lbl] = array_map('trim', explode('=', $part, 2));
+                        } else {
+                            $val = $part; $lbl = '';
+                        }
+                        $phaseRows[] = array_merge($base, [$val, $lbl, $f['note'] ?? '']);
+                    }
                 }
             }
         }
-        $this->addSheet($spreadsheet, 'Trường form 6 phase', ['Phase', 'Phase title', 'Nhóm', 'Field', 'Nhãn', 'Type', 'Bắt buộc', 'Options', 'Ghi chú'], $phaseRows);
+        $this->addSheet($spreadsheet, 'Trường form 6 phase',
+            ['Phase', 'Phase title', 'Nhóm', 'Field', 'Nhãn', 'Type', 'Bắt buộc', 'Option value', 'Option label', 'Ghi chú'],
+            $phaseRows);
 
         // Kho lead: cây liền mạch, Chi nhánh HN → HCM → ĐN theo convention.
         $this->addSheet($spreadsheet, 'Kho lead (PoolUnit)', ['Cấp', 'Kind', 'Tên', 'Code', 'Path', 'Active'],
