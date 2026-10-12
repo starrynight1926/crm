@@ -249,7 +249,8 @@ class OrgStaffSeeder extends Seeder
             ['email' => 'tbt@longevity.com.vn',  'name' => 'Trần Thị Bích Trâm',   'job_title' => 'Clinic Manager'],
             ['email' => 'nmt@longevity.com.vn',  'name' => 'Nguyễn Thị Minh Thư',  'job_title' => 'Trợ lý kinh doanh Clinic Manager (Assistant CM HCM)'],
             ['email' => 'hbtl@longevity.com.vn', 'name' => 'Huỳnh Bùi Thanh Lan',  'job_title' => 'Clinic Manager'],
-            ['email' => 'lpt@longevity.com.vn',  'name' => 'Lê Thị Phương Tự',     'job_title' => 'Trợ lý kinh doanh'],
+            // 2026-09-18: LPT đã chuyển sang HC Team Sale Ashley (HCM) từ 2026-08-13 — xem RealCmStaffSeeder.
+            ['email' => 'lpt@longevity.com.vn',  'name' => 'Lê Thị Phương Tự',     'job_title' => 'HC'],
 
             // Team Hợi HN (SHC = Senior HC, HC = Health Consultant)
             ['email' => 'thk@longevity.com.vn', 'name' => 'Trần Huy Kiên',         'job_title' => 'HC'],
