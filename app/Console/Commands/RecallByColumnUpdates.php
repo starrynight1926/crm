@@ -34,7 +34,7 @@ class RecallByColumnUpdates extends Command
 {
     protected $signature = 'leads:recall-by-columns {--dry-run} {--day1-minutes=1440 : Ngưỡng day 1 tính bằng phút (mặc định 1440 = 24h)} {--day3-minutes=4320 : Ngưỡng day 3 tính bằng phút (mặc định 4320 = 72h)}';
 
-    protected $description = 'Thu hồi lead cá nhân theo quy tắc PKD (day1: có ghi nhận cuộc gọi; day3: đủ phân loại + kết quả). Ngưỡng cấu hình qua --day1-minutes / --day3-minutes.';
+    protected $description = 'Thu hồi lead cá nhân theo quy tắc PKD (day1: có cuộc gọi; day3: đủ phân loại + kết quả). Ngưỡng cấu hình qua --day1-minutes / --day3-minutes.';
 
     public function handle(DistributionEngine $engine): int
     {
@@ -65,9 +65,9 @@ class RecallByColumnUpdates extends Command
                     $minutesSinceAssigned = $lead->assigned_at->diffInMinutes($now, false);
                     $hasBooking = in_array($lead->booking_status, $activeBookingStatuses, true);
 
-                    // Day 1 — chưa có call_log nào có ghi nhận VÀ chưa có booking.
-                    if ($minutesSinceAssigned >= $day1Minutes && ! $this->hasCallWithNote($lead) && ! $hasBooking) {
-                        $this->recallLead($lead, $engine, "Thu hồi tự động (day1 ≥ {$day1Minutes}p): chưa có ghi nhận cuộc gọi + chưa có booking.");
+                    // Day 1 — chưa có call_log nào VÀ chưa có booking.
+                    if ($minutesSinceAssigned >= $day1Minutes && ! $this->hasCall($lead) && ! $hasBooking) {
+                        $this->recallLead($lead, $engine, "Thu hồi tự động (day1 ≥ {$day1Minutes}p): chưa có cuộc gọi + chưa có booking.");
                         $recalled['day1']++;
                         continue;
                     }
@@ -88,11 +88,9 @@ class RecallByColumnUpdates extends Command
         return self::SUCCESS;
     }
 
-    private function hasCallWithNote(Lead $lead): bool
+    private function hasCall(Lead $lead): bool
     {
-        return CallLog::where('lead_id', $lead->id)
-            ->whereNotNull('note')->where('note', '!=', '')
-            ->exists();
+        return CallLog::where('lead_id', $lead->id)->exists();
     }
 
     /**
@@ -103,8 +101,8 @@ class RecallByColumnUpdates extends Command
     {
         $missing = [];
 
-        if (! $this->hasCallWithNote($lead)) {
-            $missing[] = 'ghi nhận cuộc gọi';
+        if (! $this->hasCall($lead)) {
+            $missing[] = 'cuộc gọi';
         }
 
         $fields = CustomField::applicableTo($lead->orgUnit);
