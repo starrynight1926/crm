@@ -118,6 +118,7 @@ Route::middleware('auth')->group(function () {
         Route::view('/failed', 'leads.failed')->middleware('permission:lead.import')->name('leads.failed');
         Route::view('/trash', 'leads.trash')->middleware('permission:phase.rollback')->name('leads.trash');
         Route::view('/approvals', 'leads.approvals')->middleware('permission:lead.approve_source')->name('leads.approvals');
+        Route::view('/missing-info', 'leads.missing-info')->middleware('permission:lead.access_no_phone_pool')->name('leads.missing-info');
         // 2026-08-09: shortcut cho sbooking link về SCRM theo lead code (VD KH-014-MKT).
         Route::get('/by-code/{code}', function (string $code) {
             $lead = \App\Models\Lead::where('code', $code)->firstOrFail();

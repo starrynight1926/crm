@@ -3203,3 +3203,68 @@ Nguồn: gom `lead_status_logs` (user_id) + `lead_distribution_logs` (actor_id),
 - Login admin/59ntn → tạo lead test #33 (pool_unit=3 = CS1 59NTN) qua tinker → mở `/leads/33/edit`.
 - Click vào ô "Gõ tên để tìm nhân sự..." → dropdown hiện 15 user. 14 user khớp 100% với `UpsListMember::where('facility_pool_unit_id',3)` (DB có 15 members); 1 slot cho "Quản trị viên" (admin self-tag). Trước đây dropdown bị filter theo role Sale/Team sale → loại nhầm nhiều CM/TL.
 - Dọn lead test ngay sau verify.
+
+## 2026-10-15 — Phase 6.27.c: Form lead cho phép null SĐT (nguồn SA/BA/WI) 🟢
+
+**Bối cảnh**: tiếp 6.27.a+b. Form nhập tay — khi nguồn ∈ {SA, BA, WI} và "cơ sở đích" đã bật toggle `allow_lead_without_phone` → cho phép bỏ trống SĐT. Lead được đánh dấu `no_phone=true`, **không chia số** (skip DistributionEngine), chờ trong "Kho lead thiếu info" ở 6.27.d.
+
+**Chốt với user**:
+1. "Cơ sở đích" resolve theo `personId` (nếu đã chọn người phụ trách) → fallback về auth user → lấy branch (depth=1, code=`branch-*`) duy nhất từ assignments. Không map được 1 branch → fallback bắt SĐT như cũ.
+2. Chỉ 3 nguồn SA/BA/WI, không áp cho MKT/MKT_BR/HL (MKT vẫn phải chia số qua UPS).
+3. Trùng SĐT (khi có nhập) → vẫn chặn save như hiện tại, không bypass.
+4. Logic owner/pool giữ nguyên — chỉ khác: skip MKT auto-distribute nếu `no_phone=true`.
+5. Webhook/API/Import Excel không đụng (giữ required SĐT).
+
+**Đã làm** ([⚡lead-form.blade.php](resources/views/components/leads/⚡lead-form.blade.php)):
+- Helper `resolveTargetBranchOrgUnit()` + `canCreateNoPhoneLead()`.
+- Validate rule `phone` → `nullable|string` khi `canCreateNoPhoneLead()` true.
+- Skip `Lead::normalizePhone()` + duplicate check khi no-phone mode → set `phone=null, no_phone=true`.
+- Skip `DistributionEngine::distribute()` khi lead `no_phone=true` (line createLead MKT auto).
+- UI label SĐT dynamic: bỏ asterisk + hiện "(có thể bỏ trống)" khi điều kiện đạt.
+
+**Chờ test**: cần user QA tay — toggle `/admin/system-catalog` → bật "Lead không SĐT" cho 1 cơ sở → tạo lead SA/BA/WI để trống SĐT → verify `leads.no_phone=1`, không có distribution_logs mới. Case tắt toggle → vẫn bắt required.
+
+**Dời sang 6.27.d**: menu "Kho lead thiếu info", action claim, chặn tạo booking khi `no_phone=true`.
+
+## 2026-10-15 — Phase 6.27.d (lát 1): Menu "Lead thiếu info" + action claim/điền SĐT 🟢
+
+**Bối cảnh**: tiếp 6.27.c. Mở menu "Lead thiếu info" dưới "Khách hàng" (sau "Duyệt Lead") cho user có perm `lead.access_no_phone_pool`. Hỗ trợ 2 action: **Claim** (gán owner cho lead chưa có) và **Điền SĐT** (xóa `no_phone`, chặn save nếu SĐT trùng).
+
+**Đã làm**:
+- Route `GET /leads/missing-info` → view `leads/missing-info.blade.php` → livewire `leads.lead-missing-info`.
+- Nav item "Lead thiếu info" trong `app.blade.php` dưới "Duyệt Lead", perm-gated.
+- Component [⚡lead-missing-info.blade.php](resources/views/components/leads/⚡lead-missing-info.blade.php): list lead `no_phone=true` trong scope `visibleTo(user)`, 20/trang; cột tên/nguồn/cơ sở/người up/owner/ngày; action Claim + Điền SĐT (inline input).
+- Validate điền SĐT: `normalizePhone` → check `withTrashed()->where('phone', ...)` → trùng → báo lỗi + link mở lead cũ, không ghi đè.
+- Guard booking: [⚡lead-form.blade.php](resources/views/components/leads/⚡lead-form.blade.php:280) `addBookingLog` chặn khi `$lead->no_phone=true`, hiện `cf_error`: "Lead chưa có SĐT — vào 'Lead thiếu info' điền SĐT trước khi tạo booking."
+- Log: `LeadStatusLog::record` + `AuditLog::record` cho mỗi action.
+
+**Chưa làm (dời sang 6.27.f)**:
+- Tab "Gộp lead" (autocomplete lead gốc, preview booking/log/note, confirm).
+- Service `LeadMerger` (dồn booking/call_log/note/status_log/custom_values/treatments/contributions/payments/distribution_logs sang root + hard delete clone + audit).
+
+**Chờ test**: QA tay — login user có `lead.access_no_phone_pool`, mở `/leads/missing-info`, test flow Claim → Điền SĐT (case trùng/không trùng/sai format). Thử tạo booking trên lead `no_phone=true` → phải bị chặn.
+
+## 2026-10-15 — Phase 6.27.c revert + 6.27.d form riêng ở "Lead thiếu info" 🟡
+
+**Thay đổi hướng** (user chốt): KHÔNG đụng form lead chính nữa — giữ nguyên validate SĐT required như cũ. Thay vào đó, form "Thêm lead thiếu info" nằm riêng trong màn `/leads/missing-info` → không phá luồng tạo lead thường.
+
+**Đã làm**:
+- Revert toàn bộ 6.27.c trong [⚡lead-form.blade.php](resources/views/components/leads/⚡lead-form.blade.php): bỏ helper `resolveTargetBranchOrgUnit`/`canCreateNoPhoneLead`, bỏ `no_phone` trong attributes, khôi phục rule `phone => required`, bỏ dynamic label.
+- Thêm nút "+ Thêm lead thiếu info" + form inline trong [⚡lead-missing-info.blade.php](resources/views/components/leads/⚡lead-missing-info.blade.php): fields Tên / Nguồn (SA|BA|WI) / Cơ sở (chỉ branch bật toggle, scope theo assignment user) / Ngày / Note.
+- Action `createNoPhoneLead()`: tạo lead `no_phone=true, phone=null, owner_id=null, pool_level=team, org_unit_id=branch chọn`, auto-close phase 1, ghi `LeadStatusLog` + `AuditLog`.
+- Validate: branch phải có `allow_lead_without_phone=true` và nằm trong `effectiveAssignments` của user (admin bypass).
+
+**Luồng giờ**:
+1. Form thường (`/leads/create`, nhập nhanh, import) → **luôn bắt SĐT**.
+2. "Lead thiếu info" (`/leads/missing-info`) → chỉ user có `lead.access_no_phone_pool` → tạo lead null SĐT ở đây.
+3. Lead trong kho → claim → điền SĐT → vào pipeline (hoặc chờ Admin gộp nếu trùng).
+
+**Chờ test**: QA tay — mở `/leads/missing-info` → nút "+ Thêm lead thiếu info" → tạo lead → verify list → claim → điền SĐT (trùng/không trùng) → tạo booking trên lead chưa điền SĐT phải bị chặn.
+
+## 2026-10-15 — Dọn facility rác (id 7-12) 🧹
+
+**Phát hiện**: khi test 6.27.d, dropdown "Cơ sở" trong booking section (lead edit) hiện 5 cơ sở — 3 thật (id 1/3/5 — CS1 59NTN / CS2 207NVT / CS3 11-15TĐN, seed 2026-08-09) + 2 rác (id 7 "Cơ sở 1 — Quận 1", id 10 "Cơ sở 2 — Quận 7") với 4 phòng con (id 8/9/11/12 — Da liễu / Thẩm mỹ / Nha khoa) + 7 staff fake ("BS. Nguyễn Văn A", "CV. Lê Văn C"...). Tất cả cùng timestamp 2026-08-28 03:12:13 — seeder/test cũ.
+
+**Verify trước xoá**: `BookingLog::whereIn('facility_id',[7..12])->count()` = 0, `Lead::whereIn('facility_id',[7..12])->count()` = 0, chỉ 7 staff_members liên quan (toàn tên fake).
+
+**Đã làm**: xoá 7 staff + 6 facility rác trong transaction. Còn đúng 6 facility (3 cơ sở + 3 khối chuyên môn).

@@ -15,6 +15,7 @@
             ['label' => '⚡ Nhập nhanh (Simple)', 'route' => ($u->is_admin || $u->email === 'admin@longevity.com.vn') ? 'simple-booking' : null, 'match' => 'simple-booking'],
             ['label' => 'Kho lead', 'route' => $u->hasPermission('lead.view') ? 'distribution.pools' : null, 'match' => 'distribution.pools'],
             ['label' => 'Duyệt Lead', 'route' => $u->hasPermission('lead.approve_source') ? 'leads.approvals' : null, 'match' => 'leads.approvals'],
+            ['label' => 'Lead thiếu info', 'route' => $u->hasPermission('lead.access_no_phone_pool') ? 'leads.missing-info' : null, 'match' => 'leads.missing-info'],
         ], fn ($i) => $i['route']));
 
         // KHU 1 — UPS list (2026-08-08: đổi tên từ "Chia số" — kho lead đã move về Khách hàng)
