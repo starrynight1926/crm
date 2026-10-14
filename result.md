@@ -3268,3 +3268,18 @@ Nguồn: gom `lead_status_logs` (user_id) + `lead_distribution_logs` (actor_id),
 **Verify trước xoá**: `BookingLog::whereIn('facility_id',[7..12])->count()` = 0, `Lead::whereIn('facility_id',[7..12])->count()` = 0, chỉ 7 staff_members liên quan (toàn tên fake).
 
 **Đã làm**: xoá 7 staff + 6 facility rác trong transaction. Còn đúng 6 facility (3 cơ sở + 3 khối chuyên môn).
+
+## 2026-10-15 — Sbooking: hỗ trợ lead no_phone + fix text UPS 🟢
+
+**Context**: tiếp 6.27.c+d, chuyển sang repo `lara-sbooking` (session riêng [sbooking-no-phone]). Bên sbooking nhận booking từ CRM với `so_dien_thoai=null` nên cần sửa validate + UI.
+
+**Đã làm bên sbooking** (nhánh `nineteenth`, commit `84f897b` + `1caa5a2`):
+- Migration `khach_hang`: `so_dien_thoai` nullable + thêm `missing_info` boolean + `crm_khach_ma` varchar(40) index.
+- API `POST /api/bookings`: SĐT nullable; match khách 3 nhánh (có SĐT → tìm theo SĐT, có `crm_khach_ma` → tìm theo mã, fallback → tạo mới). Không gộp nhầm khách null.
+- Icon ⚠️ "Khách thiếu SĐT" chèn ở 10+ view (danh sách lịch hẹn, chi tiết, timeline, doctors, dashboard, search, báo cáo, lich-hen/*).
+- Form tạo booking tay bên sbooking: **giữ require SĐT** (chỉ update được nullable), và **ẩn nút tạo booking tay cho non-admin** (bookings/doctors/rooms/lich-hen list+manage).
+- Modal duyệt lịch hẹn: sửa text cảnh báo UPS gợi `/settings/ups-list` bên CRM.
+
+**Bug "chưa chốt UPS 14/10" → root cause**: không phải lỗi code sbooking. Thực tế CRM đợt đó chưa có row `ups_daily_confirm` cho ngày 14/10. User chốt tay UPS bên CRM → sbooking modal duyệt chuyển từ amber "chưa chốt" sang info xanh "Lead do team chia" + tự gợi ý sale (Ashley — CM). Hoạt động đúng.
+
+**Chờ test end-to-end**: tạo lead `no_phone=true` ở CRM → đặt booking → push sang sbooking → verify icon ⚠️ hiện + `crm_khach_ma` lưu đúng.
