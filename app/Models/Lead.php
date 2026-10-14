@@ -11,7 +11,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 #[Fillable([
     'raw_lead_id', 'code', 'received_date',
-    'insight', 'link', 'name', 'phone', 'region', 'classification',
+    'insight', 'link', 'name', 'phone', 'no_phone', 'region', 'classification',
     'status_1', 'status_2', 'note',
     'pool_level', 'owner_id', 'receiver_id', 'imported_by', 'org_unit_id', 'pool_unit_id',
     'past_org_unit_ids',
@@ -44,6 +44,7 @@ class Lead extends Model
     protected $casts = [
         'phase' => 'integer',
         'is_first_visit' => 'boolean',
+        'no_phone' => 'boolean',
     ];
 
     // Phân loại kết quả — thứ tự theo funnel trong scope.md mục 4

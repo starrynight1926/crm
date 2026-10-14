@@ -36,6 +36,8 @@ class RolePermissionSyncSeeder extends Seeder
             'user.manage',
             'recall.import', 'recall.view', 'recall.assign',
             'lead.view_self_owned',
+            // Phase 6.27 — Admin thấy kho Lead thiếu info toàn hệ thống.
+            'lead.access_no_phone_pool',
         ],
         'DM HCM' => [
             'contribution.set', 'field.approve', 'field.manage', 'lead.approve_source',
@@ -51,6 +53,8 @@ class RolePermissionSyncSeeder extends Seeder
             'source.up.mkt_br', 'source.up.ba', 'source.up.mkt', 'user.manage',
             'recall.import', 'recall.view', 'recall.assign',
             'lead.view_self_owned',
+            // Phase 6.27 — DM cơ sở duyệt kho Lead thiếu info của chi nhánh.
+            'lead.access_no_phone_pool',
         ],
         'Manager' => [
             'lead.approve_source', 'lead.assign_direct',
@@ -73,6 +77,8 @@ class RolePermissionSyncSeeder extends Seeder
             'ups.view', 'ups.checkin', 'ups.override', 'ups.confirm_daily',
             // 2026-08-11: Admin cơ sở xem + chia kho re-call (không import).
             'recall.view', 'recall.assign',
+            // Phase 6.27 — Admin cơ sở duyệt kho Lead thiếu info.
+            'lead.access_no_phone_pool',
             // 2026-09-16: Admin cơ sở cần thấy lead nguồn self-owned (SA/BA/HL/MKT_BR) của cơ sở.
             //   User báo: đăng nhập admin.hcm không thấy lead SA do chính mình đặt. Nguyên nhân:
             //   Lead::scopeVisibleTo() gate SOURCES_SELF_OWNED bằng perm này; trước đây role

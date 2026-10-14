@@ -246,6 +246,49 @@ Bổ sung nối tiếp 6.21. Không đụng phase đã done. Chốt thiết kế
 - [ ] Manual: sale login sbooking không thấy 3 nút; admin vẫn thấy.
 - [ ] Ghi `result.md`.
 
+## Phase 6.27 — Lead thiếu SĐT & Kho gộp
+
+**Bối cảnh**: cho phép upload lead không SĐT theo cơ sở (HN/ĐN/HCM) qua form nhập tay. Lead thiếu SĐT **không vào pipeline chia số**, rơi vào "Kho lead thiếu info" dưới menu Duyệt lead. Sale claim → gọi → điền SĐT → vào pipeline. Nếu trùng SĐT → cảnh báo 2 bên (data + booking). Admin gộp manual vào lead gốc, hard delete clone.
+
+### 6.27.a — Migration & Model
+- [ ] Migration `org_units`: thêm cột `allow_lead_without_phone` boolean default false.
+- [ ] Migration `leads`: thêm cột `no_phone` boolean default false, index.
+- [ ] Seed permission `lead.access_no_phone_pool` (nhóm `lead`).
+- [ ] Cập nhật `OrgUnit`, `Lead` model (fillable + cast).
+
+### 6.27.b — Settings UI (toggle org_unit)
+- [ ] Trong `admin/⚡system-catalog.blade.php` tab "Cơ cấu tổ chức": thêm cột/toggle "Cho phép lead không SĐT" cho từng org_unit cấp cơ sở (HN/ĐN/HCM).
+- [ ] Permission check `user.manage` (đã có).
+
+### 6.27.c — Luồng nhập tay (form lead)
+- [ ] `leads/⚡lead-form.blade.php`: validate SĐT **bỏ bắt buộc** khi org_unit đích đã bật toggle. SĐT trống → set `no_phone=true`, **không chia số** (bỏ qua DistributionEngine), gắn org_unit = cơ sở đã chọn.
+- [ ] Webhook/API/Import Excel **giữ nguyên bắt buộc SĐT** (không đổi — tránh data rác hàng loạt).
+- [ ] Nếu điền SĐT trùng lead đang có → warning "SĐT đã tồn tại ở lead X" + chặn save (hoặc redirect vào lead cũ).
+
+### 6.27.d — Kho lead thiếu info (menu Duyệt lead)
+- [ ] Thêm route + nav item "Lead thiếu info" dưới menu "Duyệt lead" (chỉ hiện khi user có `lead.access_no_phone_pool`).
+- [ ] Component mới `leads/⚡lead-missing-info.blade.php`:
+  - Tab "Danh sách" — list lead `no_phone=true`, scope org_unit user, hiện tên/nguồn/ngày/claim status.
+  - Tab "Gộp lead" — click lead → form gộp: input autocomplete tên khách gốc → dropdown hiện "Tên - SĐT" → chọn → preview booking/log/note sẽ chuyển → confirm.
+- [ ] Action claim (gắn owner).
+- [ ] Action điền SĐT: không trùng → chuyển thành lead chính thức (bỏ `no_phone`, chạy chia số nếu cần); trùng → cảnh báo 2 bên.
+- [ ] **Chặn tạo booking** khi lead còn `no_phone=true`.
+
+### 6.27.e — Warning trùng SĐT
+- [ ] `leads/⚡lead-list.blade.php`: badge/icon ⚠️ cạnh tên khách nếu phát hiện trùng SĐT (query runtime, không cần cột DB).
+- [ ] `booking/⚡simple-booking.blade.php` (và các màn booking): tương tự badge cạnh tên khách.
+
+### 6.27.f — Merge job (hard delete clone)
+- [ ] `App\Services\LeadMerger` service: nhận clone_id + root_id → dồn booking/call_log/note/status_log/custom_values/treatments/contributions/payments/distribution_logs sang root → ghi `audit_logs` action `merge_leads` → **hard delete clone**.
+- [ ] Chạy trong transaction.
+
+### 6.27.g — Test & QA (chỉ flow null SĐT)
+- [ ] Feature test: tạo lead null SĐT khi org_unit bật/tắt toggle (bật → OK, tắt → fail validate).
+- [ ] Feature test: điền SĐT trùng → warning + chặn.
+- [ ] Feature test: merge dồn booking + hard delete clone.
+- [ ] Manual: toggle UI, kho lead thiếu info, flow claim → điền SĐT → merge.
+- [ ] Ghi `result.md`.
+
 ## Phase 7 — Ads API + hoàn thiện
 - [ ] Màn 14 đầy đủ: kết nối Facebook Lead Form / TikTok / Google Ads, sync định kỳ
 - [ ] Seed ~200–300k lead giả, test index/pagination/aggregate ở quy mô thật, tune query

@@ -25,6 +25,7 @@ class PermissionSeeder extends Seeder
             'lead.import'         => 'L11. [Thao tác] Import lead (Excel/CSV)',
             'lead.export'         => 'L12. [Thao tác] Export lead (mặc định tắt, ghi audit)',
             'lead.source_all'     => 'L13. [Thao tác] Up data mọi nguồn — bypass gate SOURCE_PERMISSIONS',
+            'lead.access_no_phone_pool' => 'L14. [Thao tác] Truy cập kho "Lead thiếu info" (lead upload không SĐT)',
         ],
         'distribution' => [
             // [XEM]

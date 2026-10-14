@@ -90,12 +90,28 @@ new class extends Component
     {
         return OrgUnit::orderBy('depth')->orderBy('position')->limit(500)->get()
             ->map(fn ($o) => [
+                'id' => $o->id,
                 'code' => $o->code,
                 'name' => $o->name,
                 'depth' => $o->depth,
                 'path' => $o->path,
                 'active' => $o->active,
+                'allow_lead_without_phone' => (bool) $o->allow_lead_without_phone,
+                // Toggle chỉ áp cho cấp chi nhánh HN/ĐN/HCM (code `branch-*`) — Phase 6.27.
+                'can_toggle_no_phone' => $o->depth === 1 && str_starts_with((string) $o->code, 'branch-'),
             ])->all();
+    }
+
+    /** Phase 6.27 — toggle "Cho phép lead không SĐT" cho 1 chi nhánh (depth=1). */
+    public function toggleAllowNoPhone(int $orgUnitId): void
+    {
+        abort_unless(auth()->user()?->hasPermission('user.manage'), 403);
+
+        $org = OrgUnit::find($orgUnitId);
+        if (! $org || $org->depth !== 1 || ! str_starts_with((string) $org->code, 'branch-')) return;
+
+        $org->allow_lead_without_phone = ! $org->allow_lead_without_phone;
+        $org->save();
     }
 
     private function staffRows(): array
@@ -344,6 +360,7 @@ new class extends Component
                         <th class="px-3 py-2 text-left">Depth</th>
                         <th class="px-3 py-2 text-left">Path</th>
                         <th class="px-3 py-2 text-left">Active</th>
+                        <th class="px-3 py-2 text-center" title="Phase 6.27 — cho phép upload lead không có SĐT (chỉ cấp chi nhánh HN/ĐN/HCM)">Cho phép lead ⌀ SĐT</th>
                     @elseif ($activeTab === 'staff')
                         <th class="px-3 py-2 text-left">Username</th>
                         <th class="px-3 py-2 text-left">Tên</th>
@@ -385,6 +402,18 @@ new class extends Component
                             <td class="px-3 py-1.5 text-xs text-ink/60">{{ $r['depth'] }}</td>
                             <td class="px-3 py-1.5 font-mono text-xs text-ink/50">{{ $r['path'] }}</td>
                             <td class="px-3 py-1.5">{!! $r['active'] ? '✅' : '⛔' !!}</td>
+                            <td class="px-3 py-1.5 text-center">
+                                @if ($r['can_toggle_no_phone'])
+                                    <button type="button"
+                                            wire:click="toggleAllowNoPhone({{ $r['id'] }})"
+                                            class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs border {{ $r['allow_lead_without_phone'] ? 'bg-emerald-50 border-emerald-300 text-emerald-700' : 'bg-slate-50 border-slate-300 text-ink/50' }}"
+                                            title="Click để {{ $r['allow_lead_without_phone'] ? 'TẮT' : 'BẬT' }}">
+                                        {{ $r['allow_lead_without_phone'] ? '✅ Bật' : '⛔ Tắt' }}
+                                    </button>
+                                @else
+                                    <span class="text-ink/20 text-xs">—</span>
+                                @endif
+                            </td>
                         @elseif ($activeTab === 'staff')
                             <td class="px-3 py-1.5 font-mono text-xs">{{ $r['username'] }}</td>
                             <td class="px-3 py-1.5">{{ $r['name'] }}</td>

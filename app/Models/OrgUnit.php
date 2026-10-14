@@ -8,12 +8,15 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['parent_id', 'name', 'code', 'path', 'depth', 'position', 'active'])]
+#[Fillable(['parent_id', 'name', 'code', 'path', 'depth', 'position', 'active', 'allow_lead_without_phone'])]
 class OrgUnit extends Model
 {
     protected function casts(): array
     {
-        return ['active' => 'boolean'];
+        return [
+            'active' => 'boolean',
+            'allow_lead_without_phone' => 'boolean',
+        ];
     }
 
     public function parent(): BelongsTo
