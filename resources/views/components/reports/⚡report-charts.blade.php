@@ -333,10 +333,19 @@ new class extends Component
         @endif
         <div class="flex-1"></div>
         <label class="text-xs text-ink/60">Cơ sở:</label>
-        <select wire:model.live="facilityId" class="border border-gold-200 rounded-md px-3 py-1.5 text-sm bg-white">
-            <option value="">Toàn công ty</option>
+        <select wire:model.live="facilityId" class="w-40 border border-gold-200 rounded-md px-2 py-1 text-xs bg-white">
+            <option value="">— Toàn công ty —</option>
             @foreach ($facilities as $f)
-                <option value="{{ $f->id }}">{{ $f->name }}</option>
+                @php
+                    $__fname = $f->name;
+                    $__short = match (true) {
+                        str_contains(mb_strtolower($__fname), 'hà nội') => 'CS1: 59NTN',
+                        str_contains(mb_strtolower($__fname), 'hồ chí minh') => 'CS2: 207NVT',
+                        str_contains(mb_strtolower($__fname), 'đà nẵng') => 'CS3: 11-15TĐN',
+                        default => $__fname,
+                    };
+                @endphp
+                <option value="{{ $f->id }}">{{ $__short }}</option>
             @endforeach
         </select>
     </div>
