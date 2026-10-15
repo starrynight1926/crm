@@ -178,23 +178,9 @@ new class extends Component
         unset($f);
 
         return [
-            // Chỉ hiện root facility active + có ít nhất 1 lead trong subtree (root + con)
-            //   để ẩn seed/test data lạ như 'Cơ sở X: Quận Y'.
-            'facilities'      => (function () {
-                $roots = Facility::whereNull('parent_id')->where('active', true)->orderBy('name')->get();
-                $childrenByParent = Facility::whereIn('parent_id', $roots->pluck('id'))
-                    ->get(['id', 'parent_id'])->groupBy('parent_id');
-                $leadFacilityIds = Lead::query()->whereNotNull('facility_id')
-                    ->select('facility_id')->distinct()->pluck('facility_id')->all();
-                $has = array_flip($leadFacilityIds);
-                return $roots->filter(function ($r) use ($childrenByParent, $has) {
-                    if (isset($has[$r->id])) return true;
-                    foreach ($childrenByParent[$r->id] ?? [] as $c) {
-                        if (isset($has[$c->id])) return true;
-                    }
-                    return false;
-                })->values();
-            })(),
+            // Tất cả cơ sở root active. (Trước đây filter theo "có lead" để ẩn seed rác id 7-12 —
+            // rác đã dọn 2026-10-15, bỏ filter để dropdown luôn hiện đủ 3 cơ sở.)
+            'facilities' => Facility::whereNull('parent_id')->where('active', true)->orderBy('name')->get(),
             'kpi' => [
                 'total_month'      => $totalMonth,
                 'total_prev'       => $totalPrev,
