@@ -145,6 +145,22 @@ new class extends Component
             ];
         }
 
+        // ---- Chart: KH theo nguồn (trong tháng này)
+        $sourceCounts = (clone $this->scopedLeads())
+            ->whereBetween('created_at', [$monthFrom, $monthTo])
+            ->whereNotNull('source_group')
+            ->selectRaw('source_group, COUNT(*) as c')
+            ->groupBy('source_group')
+            ->pluck('c', 'source_group')->all();
+        $sourceData = [];
+        foreach (Lead::SOURCE_GROUPS as $key => $label) {
+            $c = (int) ($sourceCounts[$key] ?? 0);
+            if ($c > 0) {
+                $sourceData[] = ['label' => $label, 'code' => Lead::SOURCE_GROUP_CODES[$key] ?? $key, 'count' => $c];
+            }
+        }
+        usort($sourceData, fn ($a, $b) => $b['count'] <=> $a['count']);
+
         // ---- Chart 3: funnel phase (snapshot toàn bộ leads visible, không giới hạn tháng)
         $phaseCounts = (clone $this->scopedLeads())
             ->selectRaw('phase, COUNT(*) as c')->groupBy('phase')->pluck('c', 'phase')->all();
@@ -194,6 +210,7 @@ new class extends Component
             'trend' => $trend,
             'funnel' => $funnel,
             'funnel_total' => $funnelTotal,
+            'source_data' => $sourceData,
         ];
     }
 }; ?>
@@ -203,9 +220,10 @@ new class extends Component
         'trend' => $trend,
         'type_data' => $type_data,
         'funnel' => $funnel,
+        'source_data' => $source_data,
      ]))"
      x-init="init()"
-     @charts-refreshed.window="refresh(@js(['trend' => $trend, 'type_data' => $type_data, 'funnel' => $funnel]))">
+     @charts-refreshed.window="refresh(@js(['trend' => $trend, 'type_data' => $type_data, 'funnel' => $funnel, 'source_data' => $source_data]))">
 
     {{-- Filter bar --}}
     <div class="flex items-center gap-3 mb-4">
@@ -297,16 +315,28 @@ new class extends Component
         </div>
     </div>
 
+    {{-- Chart: Số lượng khách theo nguồn (tháng này) --}}
+    <div class="bg-white border border-gold-200 rounded-xl p-4 shadow-card mb-6">
+        <div class="text-sm font-semibold text-ink mb-2">Số lượng khách theo nguồn (tháng {{ now()->format('m/Y') }})</div>
+        @if (empty($source_data))
+            <div class="text-xs text-ink/50 py-10 text-center">Chưa có khách nào trong tháng.</div>
+        @else
+            <div class="relative h-64"><canvas id="rc-source"></canvas></div>
+        @endif
+    </div>
+
     @once
         <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
         <script>
         window.reportCharts = function (data) {
             let charts = {};
             const palette = ['#059669', '#f59e0b', '#3b82f6', '#a3a3a3'];
+            const sourcePalette = ['#2563eb','#059669','#f59e0b','#8b5cf6','#ec4899','#14b8a6','#f43f5e','#6366f1','#64748b'];
             const build = (d) => {
                 if (charts.trend)  charts.trend.destroy();
                 if (charts.type)   charts.type.destroy();
                 if (charts.funnel) charts.funnel.destroy();
+                if (charts.source) charts.source.destroy();
                 const wait = () => (window.Chart ? go() : setTimeout(wait, 50));
                 const go = () => {
                     charts.trend = new Chart(document.getElementById('rc-trend'), {
@@ -324,6 +354,28 @@ new class extends Component
                         data: { labels: d.funnel.map(x=>x.label), datasets:[{ label:'Số KH', data:d.funnel.map(x=>x.count), backgroundColor:'#3b82f6' }] },
                         options: { indexAxis:'y', plugins:{legend:{display:false}, tooltip:{callbacks:{label:(c)=>` ${c.parsed.x} khách (${d.funnel[c.dataIndex].pct}%)`}}}, scales:{x:{beginAtZero:true}}, maintainAspectRatio:false }
                     });
+                    const srcEl = document.getElementById('rc-source');
+                    if (srcEl && d.source_data && d.source_data.length) {
+                        charts.source = new Chart(srcEl, {
+                            type: 'bar',
+                            data: {
+                                labels: d.source_data.map(x=>x.code),
+                                datasets: [{
+                                    label: 'Số khách',
+                                    data: d.source_data.map(x=>x.count),
+                                    backgroundColor: d.source_data.map((_,i)=>sourcePalette[i % sourcePalette.length]),
+                                }]
+                            },
+                            options: {
+                                plugins: {
+                                    legend: { display:false },
+                                    tooltip: { callbacks: { title:(items)=>d.source_data[items[0].dataIndex].label, label:(c)=>` ${c.parsed.y} khách` } }
+                                },
+                                scales: { y: { beginAtZero:true, ticks:{ precision:0 } } },
+                                maintainAspectRatio: false
+                            }
+                        });
+                    }
                 };
                 wait();
             };
