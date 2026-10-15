@@ -34,8 +34,19 @@ new class extends Component
 
     public function updatedFacilityId(): void
     {
-        // Payload emit sau khi render — JS listener dùng data mới redraw chart.
-        // (Trước đây dispatch rỗng + Alpine đọc @js() cũ → stale data khi morph.)
+        // Charts bọc wire:ignore → không re-render DOM. Dispatch payload để JS update data in-place.
+        $this->dispatch('rc-chart-data', data: $this->chartPayload());
+    }
+
+    public function chartPayload(): array
+    {
+        $withData = $this->with();
+        return [
+            'trend' => $withData['trend'],
+            'type_data' => $withData['type_data'],
+            'funnel' => $withData['funnel'],
+            'source_data' => $withData['source_data'],
+        ];
     }
 
     private function scopedLeads()
@@ -225,8 +236,8 @@ new class extends Component
     }
 }; ?>
 
-<div class="mb-6" wire:key="report-charts-{{ $facilityId ?? 0 }}">
-    {{-- Chart data embedded; JS reads from this script tag on each render. --}}
+<div class="mb-6">
+    {{-- Initial payload cho JS khi mount; sau đó update qua event dispatch. --}}
     @php
         $__rcPayload = json_encode([
             'trend' => $trend,
@@ -310,8 +321,8 @@ new class extends Component
         </div>
     </div>
 
-    {{-- Charts --}}
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-3 mb-6">
+    {{-- Charts (wire:ignore để Livewire không clear canvas; data update via event). --}}
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-3 mb-6" wire:ignore>
         <div class="bg-white border border-gold-200 rounded-xl p-4 shadow-card">
             <div class="text-sm font-semibold text-ink mb-2">KH mới theo tháng (6 tháng)</div>
             <div class="relative h-56"><canvas id="rc-trend"></canvas></div>
@@ -323,62 +334,94 @@ new class extends Component
         <div class="bg-white border border-gold-200 rounded-xl p-4 shadow-card">
             <div class="text-sm font-semibold text-ink mb-2">Funnel Phase (snapshot)</div>
             <div class="relative h-56"><canvas id="rc-funnel"></canvas></div>
-            <div class="text-xs text-ink/50 mt-1">Tổng: {{ number_format($funnel_total) }} khách</div>
+            <div class="text-xs text-ink/50 mt-1" id="rc-funnel-total">Tổng: {{ number_format($funnel_total) }} khách</div>
         </div>
     </div>
 
     {{-- Chart: Số lượng khách theo nguồn (tháng này) --}}
-    <div class="bg-white border border-gold-200 rounded-xl p-4 shadow-card mb-6">
+    <div class="bg-white border border-gold-200 rounded-xl p-4 shadow-card mb-6" wire:ignore>
         <div class="text-sm font-semibold text-ink mb-2">Số lượng khách theo nguồn (tháng {{ now()->format('m/Y') }})</div>
-        @if (empty($source_data))
-            <div class="text-xs text-ink/50 py-10 text-center">Chưa có khách nào trong tháng.</div>
-        @else
-            <div class="relative h-64"><canvas id="rc-source"></canvas></div>
-        @endif
+        <div class="relative h-64"><canvas id="rc-source"></canvas></div>
+        <div id="rc-source-empty" class="text-xs text-ink/50 py-10 text-center" style="display:none">Chưa có khách nào trong tháng.</div>
     </div>
 
     @once
         <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+        <script>
+        (function(){
+            const palette = ['#059669', '#f59e0b', '#3b82f6', '#a3a3a3'];
+            const sourcePalette = ['#2563eb','#059669','#f59e0b','#8b5cf6','#ec4899','#14b8a6','#f43f5e','#6366f1','#64748b'];
+            const S = window.__rcCharts = {};
+
+            function buildAll(d){
+                if (!window.Chart) { setTimeout(() => buildAll(d), 50); return; }
+                const trendEl = document.getElementById('rc-trend');
+                if (trendEl && !S.trend) S.trend = new Chart(trendEl, {
+                    type: 'line',
+                    data: { labels: [], datasets: [{ label:'KH mới', data:[], borderColor:'#b58b3a', backgroundColor:'rgba(181,139,58,.15)', tension:.3, fill:true }] },
+                    options: { plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true}}, maintainAspectRatio:false }
+                });
+                const typeEl = document.getElementById('rc-type');
+                if (typeEl && !S.type) S.type = new Chart(typeEl, {
+                    type: 'doughnut',
+                    data: { labels: [], datasets:[{ data:[], backgroundColor:palette }] },
+                    options: { plugins:{legend:{position:'bottom',labels:{boxWidth:12,font:{size:11}}}}, maintainAspectRatio:false }
+                });
+                const funnelEl = document.getElementById('rc-funnel');
+                if (funnelEl && !S.funnel) S.funnel = new Chart(funnelEl, {
+                    type: 'bar',
+                    data: { labels: [], datasets:[{ label:'Số KH', data:[], backgroundColor:'#3b82f6' }] },
+                    options: { indexAxis:'y', plugins:{legend:{display:false}, tooltip:{callbacks:{label:(c)=>{ const p = (S._funnelMeta||[])[c.dataIndex]?.pct; return ` ${c.parsed.x} khách${p!=null?' ('+p+'%)':''}`; }}}}, scales:{x:{beginAtZero:true}}, maintainAspectRatio:false }
+                });
+                const srcEl = document.getElementById('rc-source');
+                if (srcEl && !S.source) S.source = new Chart(srcEl, {
+                    type: 'bar',
+                    data: { labels: [], datasets: [{ label:'Số khách', data:[], backgroundColor:[] }] },
+                    options: { plugins: { legend: { display:false }, tooltip: { callbacks: { title:(items)=>(S._sourceMeta||[])[items[0].dataIndex]?.label, label:(c)=>` ${c.parsed.y} khách` } } }, scales: { y: { beginAtZero:true, ticks:{ precision:0 } } }, maintainAspectRatio: false }
+                });
+                update(d);
+            }
+
+            function update(d){
+                if (S.trend) { S.trend.data.labels = d.trend.map(x=>x.label); S.trend.data.datasets[0].data = d.trend.map(x=>x.count); S.trend.update(); }
+                if (S.type)  { S.type.data.labels = d.type_data.map(x=>x.label); S.type.data.datasets[0].data = d.type_data.map(x=>x.count); S.type.update(); }
+                if (S.funnel){ S.funnel.data.labels = d.funnel.map(x=>x.label); S.funnel.data.datasets[0].data = d.funnel.map(x=>x.count); S._funnelMeta = d.funnel; S.funnel.update(); }
+                if (S.source){
+                    const hasData = d.source_data && d.source_data.length;
+                    const emptyEl = document.getElementById('rc-source-empty');
+                    const srcCvs = document.getElementById('rc-source');
+                    if (hasData){
+                        if (emptyEl) emptyEl.style.display = 'none';
+                        if (srcCvs) srcCvs.style.display = '';
+                        S.source.data.labels = d.source_data.map(x=>x.code);
+                        S.source.data.datasets[0].data = d.source_data.map(x=>x.count);
+                        S.source.data.datasets[0].backgroundColor = d.source_data.map((_,i)=>sourcePalette[i % sourcePalette.length]);
+                        S._sourceMeta = d.source_data;
+                        S.source.update();
+                    } else {
+                        if (emptyEl) emptyEl.style.display = '';
+                        if (srcCvs) srcCvs.style.display = 'none';
+                    }
+                }
+            }
+
+            // Initial load: read embedded script tag.
+            function kick(){
+                const el = document.getElementById('rc-chart-data');
+                if (!el) { setTimeout(kick, 50); return; }
+                try { buildAll(JSON.parse(el.textContent)); } catch(e){ console.error('rc-chart-data parse fail', e); }
+            }
+            if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', kick); else kick();
+
+            // Livewire event listener — payload từ server dispatch khi filter đổi.
+            document.addEventListener('livewire:init', () => {
+                Livewire.on('rc-chart-data', (payload) => {
+                    // Livewire v3+ wraps payload: event args = [{data: {...}}].
+                    const d = Array.isArray(payload) ? payload[0]?.data : payload?.data;
+                    if (d) update(d);
+                });
+            });
+        })();
+        </script>
     @endonce
-    @script
-    <script>
-    (function(){
-        const palette = ['#059669', '#f59e0b', '#3b82f6', '#a3a3a3'];
-        const sourcePalette = ['#2563eb','#059669','#f59e0b','#8b5cf6','#ec4899','#14b8a6','#f43f5e','#6366f1','#64748b'];
-        window.__rcCharts = window.__rcCharts || {};
-        const render = () => {
-            if (!window.Chart) { setTimeout(render, 50); return; }
-            const dataEl = document.getElementById('rc-chart-data');
-            if (!dataEl) return;
-            let d; try { d = JSON.parse(dataEl.textContent); } catch(e){ return; }
-            ['trend','type','funnel','source'].forEach(k => { if (window.__rcCharts[k]) { try{ window.__rcCharts[k].destroy(); }catch(e){} window.__rcCharts[k] = null; } });
-            const trendEl = document.getElementById('rc-trend');
-            if (trendEl) window.__rcCharts.trend = new Chart(trendEl, {
-                type: 'line',
-                data: { labels: d.trend.map(x=>x.label), datasets: [{ label:'KH mới', data:d.trend.map(x=>x.count), borderColor:'#b58b3a', backgroundColor:'rgba(181,139,58,.15)', tension:.3, fill:true }] },
-                options: { plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true}}, maintainAspectRatio:false }
-            });
-            const typeEl = document.getElementById('rc-type');
-            if (typeEl) window.__rcCharts.type = new Chart(typeEl, {
-                type: 'doughnut',
-                data: { labels: d.type_data.map(x=>x.label), datasets:[{ data:d.type_data.map(x=>x.count), backgroundColor:palette }] },
-                options: { plugins:{legend:{position:'bottom',labels:{boxWidth:12,font:{size:11}}}}, maintainAspectRatio:false }
-            });
-            const funnelEl = document.getElementById('rc-funnel');
-            if (funnelEl) window.__rcCharts.funnel = new Chart(funnelEl, {
-                type: 'bar',
-                data: { labels: d.funnel.map(x=>x.label), datasets:[{ label:'Số KH', data:d.funnel.map(x=>x.count), backgroundColor:'#3b82f6' }] },
-                options: { indexAxis:'y', plugins:{legend:{display:false}, tooltip:{callbacks:{label:(c)=>` ${c.parsed.x} khách (${d.funnel[c.dataIndex].pct}%)`}}}, scales:{x:{beginAtZero:true}}, maintainAspectRatio:false }
-            });
-            const srcEl = document.getElementById('rc-source');
-            if (srcEl && d.source_data && d.source_data.length) window.__rcCharts.source = new Chart(srcEl, {
-                type: 'bar',
-                data: { labels: d.source_data.map(x=>x.code), datasets: [{ label:'Số khách', data: d.source_data.map(x=>x.count), backgroundColor: d.source_data.map((_,i)=>sourcePalette[i % sourcePalette.length]) }] },
-                options: { plugins: { legend: { display:false }, tooltip: { callbacks: { title:(items)=>d.source_data[items[0].dataIndex].label, label:(c)=>` ${c.parsed.y} khách` } } }, scales: { y: { beginAtZero:true, ticks:{ precision:0 } } }, maintainAspectRatio: false }
-            });
-        };
-        render();
-    })();
-    </script>
-    @endscript
 </div>
