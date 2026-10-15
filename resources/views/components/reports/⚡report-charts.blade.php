@@ -340,6 +340,7 @@ new class extends Component
     @once
         <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
     @endonce
+    @script
     <script>
     (function(){
         const palette = ['#059669', '#f59e0b', '#3b82f6', '#a3a3a3'];
@@ -379,4 +380,5 @@ new class extends Component
         render();
     })();
     </script>
+    @endscript
 </div>
