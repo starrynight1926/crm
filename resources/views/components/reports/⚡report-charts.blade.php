@@ -33,14 +33,14 @@ new class extends Component
     public bool $scoped = false;
 
     /** Chart "Khách theo nguồn": today | week | month | quarter | custom */
-    public string $sourceRange = 'month';
-    public string $sourceFrom = '';
-    public string $sourceTo = '';
+    public string $periodRange = 'month';
+    public string $periodFrom = '';
+    public string $periodTo = '';
 
     public function mount(): void
     {
-        $this->sourceFrom = now()->startOfMonth()->format('Y-m-d');
-        $this->sourceTo = now()->endOfMonth()->format('Y-m-d');
+        $this->periodFrom = now()->startOfMonth()->format('Y-m-d');
+        $this->periodTo = now()->endOfMonth()->format('Y-m-d');
     }
 
     public function updatedFacilityId(): void
@@ -48,7 +48,7 @@ new class extends Component
         $this->pushChartUpdate();
     }
 
-    public function updatedSourceRange(string $v): void
+    public function updatedPeriodRange(string $v): void
     {
         if ($v === 'custom') {
             // giữ nguyên from/to user đã nhập (hoặc default tháng).
@@ -56,8 +56,8 @@ new class extends Component
         $this->pushChartUpdate();
     }
 
-    public function updatedSourceFrom(): void { if ($this->sourceRange === 'custom') $this->pushChartUpdate(); }
-    public function updatedSourceTo(): void { if ($this->sourceRange === 'custom') $this->pushChartUpdate(); }
+    public function updatedPeriodFrom(): void { if ($this->periodRange === 'custom') $this->pushChartUpdate(); }
+    public function updatedPeriodTo(): void { if ($this->periodRange === 'custom') $this->pushChartUpdate(); }
 
     private function pushChartUpdate(): void
     {
@@ -66,25 +66,25 @@ new class extends Component
     }
 
     /** Trả [$from, $to] (Carbon) cho range chart nguồn. */
-    private function sourcePeriod(): array
+    private function currentPeriod(): array
     {
         $now = now();
-        return match ($this->sourceRange) {
+        return match ($this->periodRange) {
             'today' => [$now->copy()->startOfDay(), $now->copy()->endOfDay()],
             'week' => [$now->copy()->startOfWeek(), $now->copy()->endOfWeek()],
             'quarter' => [$now->copy()->startOfQuarter(), $now->copy()->endOfQuarter()],
             'custom' => [
-                \Illuminate\Support\Carbon::parse($this->sourceFrom ?: $now->copy()->startOfMonth())->startOfDay(),
-                \Illuminate\Support\Carbon::parse($this->sourceTo ?: $now->copy()->endOfMonth())->endOfDay(),
+                \Illuminate\Support\Carbon::parse($this->periodFrom ?: $now->copy()->startOfMonth())->startOfDay(),
+                \Illuminate\Support\Carbon::parse($this->periodTo ?: $now->copy()->endOfMonth())->endOfDay(),
             ],
             default => [$now->copy()->startOfMonth(), $now->copy()->endOfMonth()],
         };
     }
 
-    public function sourceRangeLabel(): string
+    public function periodRangeLabel(): string
     {
-        [$f, $t] = $this->sourcePeriod();
-        return match ($this->sourceRange) {
+        [$f, $t] = $this->currentPeriod();
+        return match ($this->periodRange) {
             'today' => 'hôm nay ' . $f->format('d/m/Y'),
             'week' => 'tuần ' . $f->format('d/m') . '–' . $t->format('d/m/Y'),
             'quarter' => 'quý ' . ceil($f->month / 3) . '/' . $f->year,
@@ -167,10 +167,11 @@ new class extends Component
     public function with(): array
     {
         $now       = now();
-        $monthFrom = $now->copy()->startOfMonth();
-        $monthTo   = $now->copy()->endOfMonth();
-        $prevFrom  = $now->copy()->subMonth()->startOfMonth();
-        $prevTo    = $now->copy()->subMonth()->endOfMonth();
+        [$monthFrom, $monthTo] = $this->currentPeriod();
+        // Prev period = cùng độ dài, lùi lại.
+        $durationDays = max(1, $monthFrom->diffInDays($monthTo) + 1);
+        $prevTo   = $monthFrom->copy()->subDay()->endOfDay();
+        $prevFrom = $prevTo->copy()->subDays($durationDays - 1)->startOfDay();
 
         // ---- KPI 1: tổng KH tháng
         $totalMonth = (clone $this->scopedLeads())
@@ -236,7 +237,7 @@ new class extends Component
         }
 
         // ---- Chart: KH theo nguồn (trong khoảng user chọn — Hôm nay/Tuần/Tháng/Quý/Custom)
-        [$srcFrom, $srcTo] = $this->sourcePeriod();
+        [$srcFrom, $srcTo] = $this->currentPeriod();
         $sourceCounts = (clone $this->scopedLeads())
             ->whereBetween('created_at', [$srcFrom, $srcTo])
             ->whereNotNull('source_group')
@@ -304,10 +305,32 @@ new class extends Component
     @endphp
     <script type="application/json" id="rc-chart-data">{!! $__rcPayload !!}</script>
 
-    {{-- Filter bar --}}
-    <div class="flex items-center gap-3 mb-4">
+    {{-- Filter bar: Range + Facility (áp cho TOÀN BỘ KPI + chart). --}}
+    <div class="flex flex-wrap items-center gap-3 mb-4">
         <h2 class="text-lg font-semibold text-ink">Tổng quan</h2>
-        <span class="text-xs text-ink/50">— {{ now()->format('m/Y') }}</span>
+        <span class="text-xs text-ink/50">— {{ $this->periodRangeLabel() }}</span>
+        <div class="inline-flex rounded-md border border-gold-200 overflow-hidden text-xs">
+            @foreach ([
+                'today' => 'Hôm nay',
+                'week' => 'Tuần',
+                'month' => 'Tháng',
+                'quarter' => 'Quý',
+                'custom' => 'Chọn khoảng',
+            ] as $k => $label)
+                <button type="button" wire:click="$set('periodRange', '{{ $k }}')"
+                        class="px-3 py-1.5 border-r border-gold-200 last:border-r-0 {{ $periodRange === $k ? 'bg-gold-600 text-white font-semibold' : 'bg-white text-ink/70 hover:bg-gold-50' }}">
+                    {{ $label }}
+                </button>
+            @endforeach
+        </div>
+        @if ($periodRange === 'custom')
+            <div class="inline-flex items-center gap-2 text-xs">
+                <label class="text-ink/60">Từ</label>
+                <input type="date" wire:model.live="periodFrom" class="border border-gold-200 rounded-md px-2 py-1 bg-white">
+                <label class="text-ink/60">Tới</label>
+                <input type="date" wire:model.live="periodTo" class="border border-gold-200 rounded-md px-2 py-1 bg-white">
+            </div>
+        @endif
         <div class="flex-1"></div>
         <label class="text-xs text-ink/60">Cơ sở:</label>
         <select wire:model.live="facilityId" class="border border-gold-200 rounded-md px-3 py-1.5 text-sm bg-white">
@@ -331,7 +354,7 @@ new class extends Component
                 @if ($kpi['total_delta'] === null)
                     (không có dữ liệu tháng trước)
                 @else
-                    {{ $kpi['total_delta'] >= 0 ? '▲' : '▼' }} {{ abs($kpi['total_delta']) }}% so tháng trước ({{ number_format($kpi['total_prev']) }})
+                    {{ $kpi['total_delta'] >= 0 ? '▲' : '▼' }} {{ abs($kpi['total_delta']) }}% so kỳ trước ({{ number_format($kpi['total_prev']) }})
                 @endif
             </div>
         </div>
@@ -394,37 +417,9 @@ new class extends Component
         </div>
     </div>
 
-    {{-- Chart: Số lượng khách theo nguồn (range chọn) --}}
+    {{-- Chart: Số lượng khách theo nguồn --}}
     <div class="bg-white border border-gold-200 rounded-xl p-4 shadow-card mb-6">
-        <div class="flex flex-wrap items-center gap-3 mb-3">
-            <div class="text-sm font-semibold text-ink">Số lượng khách theo nguồn</div>
-            <span class="text-xs text-ink/50">({{ $this->sourceRangeLabel() }})</span>
-            <div class="flex-1"></div>
-            <div class="inline-flex rounded-md border border-gold-200 overflow-hidden text-xs">
-                @foreach ([
-                    'today' => 'Hôm nay',
-                    'week' => 'Tuần',
-                    'month' => 'Tháng',
-                    'quarter' => 'Quý',
-                    'custom' => 'Chọn khoảng',
-                ] as $k => $label)
-                    <button type="button" wire:click="$set('sourceRange', '{{ $k }}')"
-                            class="px-3 py-1.5 border-r border-gold-200 last:border-r-0 {{ $sourceRange === $k ? 'bg-gold-600 text-white font-semibold' : 'bg-white text-ink/70 hover:bg-gold-50' }}">
-                        {{ $label }}
-                    </button>
-                @endforeach
-            </div>
-            @if ($sourceRange === 'custom')
-                <div class="inline-flex items-center gap-2 text-xs">
-                    <label class="text-ink/60">Từ</label>
-                    <input type="date" wire:model.live="sourceFrom"
-                           class="border border-gold-200 rounded-md px-2 py-1 bg-white">
-                    <label class="text-ink/60">Tới</label>
-                    <input type="date" wire:model.live="sourceTo"
-                           class="border border-gold-200 rounded-md px-2 py-1 bg-white">
-                </div>
-            @endif
-        </div>
+        <div class="text-sm font-semibold text-ink mb-2">Số lượng khách theo nguồn</div>
         <div wire:ignore>
             <div class="relative h-64"><canvas id="rc-source"></canvas></div>
             <div id="rc-source-empty" class="text-xs text-ink/50 py-10 text-center" style="display:none">Chưa có khách nào trong khoảng này.</div>
