@@ -278,11 +278,6 @@ new class extends Component
             session()->flash('cf_error', 'Lead chưa được tạo. Bấm "Lưu thông tin khách hàng" trước.');
             return;
         }
-        // Phase 6.27.d — chặn tạo booking khi lead còn no_phone (chờ điền SĐT ở Kho lead thiếu info).
-        if ($this->lead->no_phone) {
-            session()->flash('cf_error', 'Lead chưa có SĐT — vào "Lead thiếu info" điền SĐT trước khi tạo booking.');
-            return;
-        }
         $user = auth()->user();
         if (! $this->lead->canLogBooking($user)) {
             session()->flash('cf_error', 'Bạn không có quyền ghi log booking.');

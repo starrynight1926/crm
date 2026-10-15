@@ -102,6 +102,8 @@ class RolePermissionSyncSeeder extends Seeder
             'lead.view_self_owned',
             // 2026-08-19: CM sale (Kim Phấn ĐN) trực tiếp tạo booking cho khách.
             'lead.book_action',
+            // Phase 6.27 — xem/thao tác kho Lead thiếu info.
+            'lead.access_no_phone_pool',
         ],
         'CM Tele' => [
             'lead.assign_direct',
@@ -116,6 +118,8 @@ class RolePermissionSyncSeeder extends Seeder
             'source.up.hl',
             'recall.view', 'recall.assign',
             'lead.view_self_owned',
+            // Phase 6.27 — xem/thao tác kho Lead thiếu info.
+            'lead.access_no_phone_pool',
         ],
         'Team Leader' => [
             'lead.approve_source', 'lead.create', 'lead.distribute',
@@ -133,6 +137,8 @@ class RolePermissionSyncSeeder extends Seeder
             'lead.view_self_owned',
             // 2026-08-19: TL (Bông ĐN) trực tiếp tạo booking cho khách.
             'lead.book_action', 'lead.update_booking',
+            // Phase 6.27 — xem/thao tác kho Lead thiếu info.
+            'lead.access_no_phone_pool',
         ],
         'Sale' => [
             'lead.consult', 'lead.create', 'lead.update',
@@ -147,6 +153,8 @@ class RolePermissionSyncSeeder extends Seeder
             // 2026-08-19: Sale thấy lead self-owned của chính mình (creator/owner đã có nhánh riêng,
             // perm này cho phép thấy trong scope org nếu là cùng team).
             'lead.view_self_owned',
+            // Phase 6.27 — xem/thao tác kho Lead thiếu info.
+            'lead.access_no_phone_pool',
         ],
         'Team sale' => [
             'lead.consult', 'lead.update', 'lead.update_sale',
@@ -156,6 +164,8 @@ class RolePermissionSyncSeeder extends Seeder
             'phase.close.call', 'phase.close.new',
             // 2026-08-09: thêm source.up.tele — Sale bucket MKT hôm nay được up BA (gate bởi UPS bucket).
             'report.view', 'source.up.sa', 'source.up.mkt_br', 'source.up.ba', 'source.up.hl',
+            // Phase 6.27 — xem/thao tác kho Lead thiếu info.
+            'lead.access_no_phone_pool',
         ],
         'Team sale ĐN' => [
             // 2026-08-07: Team Linda ĐN — xuyên suốt tele+booking+sale. Thêm book_action để tự
@@ -167,11 +177,15 @@ class RolePermissionSyncSeeder extends Seeder
             'phase.close.call', 'phase.close.new',
             // 2026-08-09: thêm source.up.tele — Sale bucket MKT hôm nay được up BA (gate bởi UPS bucket).
             'report.view', 'source.up.sa', 'source.up.mkt_br', 'source.up.ba', 'source.up.hl',
+            // Phase 6.27 — xem/thao tác kho Lead thiếu info.
+            'lead.access_no_phone_pool',
         ],
         'Team Tele' => [
             'lead.create', 'lead.read_booking', 'lead.update',
             'lead.update_booking', 'lead.view', 'lead.view_phone', 'phase.close.call',
             'phase.close.new', 'source.up.ba',
+            // Phase 6.27 — xem/thao tác kho Lead thiếu info.
+            'lead.access_no_phone_pool',
         ],
         'Trực Page' => [
             'lead.create', 'lead.import', 'lead.view', 'phase.close.new',
