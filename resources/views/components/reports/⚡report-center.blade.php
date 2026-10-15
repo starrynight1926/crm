@@ -928,9 +928,9 @@ new class extends Component
     {{-- Bộ lọc kỳ (dùng chung 2 tab) --}}
     <div class="bg-white border border-gold-200 rounded-xl shadow-card px-5 py-4 mb-5 flex flex-wrap items-center gap-3">
         <label class="text-xs font-semibold text-ink/50">Từ</label>
-        <x-date-input field="from" class="px-2.5 py-1.5" />
+        <div class="w-36"><x-date-input field="from" class="px-2 py-1.5 text-xs" /></div>
         <label class="text-xs font-semibold text-ink/50">Đến</label>
-        <x-date-input field="to" class="px-2.5 py-1.5" />
+        <div class="w-36"><x-date-input field="to" class="px-2 py-1.5 text-xs" /></div>
         @if ($section === 'team')
             <label class="text-xs font-semibold text-ink/50 ml-2">Team</label>
             <select wire:model.live="teamId" class="border border-gold-200 rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:border-gold-500">
@@ -950,7 +950,13 @@ new class extends Component
             </select>
             @if ($teamId)
                 <button wire:click="$dispatch('open-template-manager', { teamId: {{ $teamId }} })"
-                        class="text-sm font-semibold text-gold-700 border border-gold-300 rounded-md px-3 py-1.5 hover:bg-gold-50">Quản lý mẫu</button>
+                        title="Quản lý mẫu"
+                        class="inline-flex items-center justify-center w-9 h-9 text-gold-700 border border-gold-300 rounded-md hover:bg-gold-50">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.28z"/>
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                    </svg>
+                </button>
             @endif
         @endif
         @if ($section === 'overall' && in_array($tab, ['funnel', 'performance'], true))
@@ -1006,7 +1012,12 @@ new class extends Component
                 <span class="text-xs text-ink/40">— {{ $tr['team']->name }}</span>
                 @if (! empty($tr['list_mode']))
                     <span class="ml-auto text-xs text-ink/50">{{ $tr['date_field_label'] }}: {{ $tr['date_from']->format('d/m/Y') }} → {{ $tr['date_to']->format('d/m/Y') }}</span>
-                    <button wire:click="exportListTemplate" class="bg-green-600 hover:bg-green-700 text-white text-sm font-semibold px-4 py-2 rounded-md">📥 Export Excel</button>
+                    <button wire:click="exportListTemplate" title="Xuất Excel"
+                            class="inline-flex items-center justify-center w-9 h-9 bg-green-600 hover:bg-green-700 text-white rounded-md">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/>
+                        </svg>
+                    </button>
                 @endif
             </div>
 
