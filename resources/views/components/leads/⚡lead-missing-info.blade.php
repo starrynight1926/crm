@@ -518,7 +518,4 @@ class extends Component {
     </div>
     <div class="mt-4">{{ $leads->links() }}</div>
 
-    <div class="mt-6 text-xs text-ink/50">
-        <b>Gộp lead</b> (Phase 6.27.f): bấm nút <span class="inline-block px-2 py-0.5 bg-purple-100 text-purple-700 rounded">Gộp</span> trên hàng lead thiếu info → tìm lead gốc theo tên/SĐT/mã → confirm. Clone sẽ bị <b>xóa cứng</b>, mọi booking/log/custom values/payment chuyển sang lead gốc.
-    </div>
 </div>
