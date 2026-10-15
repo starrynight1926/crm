@@ -4,6 +4,7 @@ use App\Models\BookingLateLog;
 use App\Models\BookingLog;
 use App\Models\Facility;
 use App\Models\Lead;
+use App\Models\OrgUnit;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Livewire\Component;
@@ -41,10 +42,9 @@ new class extends Component
     {
         $u = auth()->user();
         $q = $this->scoped && $u ? Lead::visibleTo($u) : Lead::query();
-        $q->when($this->facilityId, function ($qq) {
-            $ids = $this->facilitySubtreeIds($this->facilityId);
-            $qq->whereIn('facility_id', $ids);
-        });
+        if ($branchOrgIds = $this->selectedBranchOrgUnitIds()) {
+            $q->whereIn('org_unit_id', $branchOrgIds);
+        }
         return $q;
     }
 
@@ -55,10 +55,11 @@ new class extends Component
         if ($this->scoped && $u) {
             $q->whereIn('lead_id', Lead::visibleTo($u)->select('id'));
         }
-        $q->when($this->facilityId, function ($qq) {
-            $ids = $this->facilitySubtreeIds($this->facilityId);
-            $qq->whereIn('facility_id', $ids);
-        });
+        // Booking log có facility_id (chuẩn sbooking), nhưng để nhất quán với leads scope
+        // (lọc theo cơ sở của lead, không phải cơ sở booking) → filter qua lead_id.
+        if ($branchOrgIds = $this->selectedBranchOrgUnitIds()) {
+            $q->whereIn('lead_id', Lead::whereIn('org_unit_id', $branchOrgIds)->select('id'));
+        }
         return $q;
     }
 
@@ -67,6 +68,29 @@ new class extends Component
         $ids = [$rootId];
         $children = Facility::where('parent_id', $rootId)->pluck('id')->all();
         return array_merge($ids, $children);
+    }
+
+    /**
+     * Map facility được chọn → OrgUnit branch (subtree ids) để filter leads.
+     * Leads bên CRM gần như không set facility_id (field này hướng sbooking), nhưng luôn có
+     * org_unit_id. Match theo keyword tên facility ↔ OrgUnit branch code.
+     * Return [] khi chưa chọn hoặc không map được (query không filter).
+     */
+    private function selectedBranchOrgUnitIds(): array
+    {
+        if (! $this->facilityId) return [];
+        $fac = Facility::find($this->facilityId);
+        if (! $fac) return [];
+        $name = mb_strtolower((string) $fac->name);
+        $branchCode = match (true) {
+            str_contains($name, 'hà nội') || str_contains($name, 'ha noi') => 'branch-hn',
+            str_contains($name, 'hồ chí minh') || str_contains($name, 'ho chi minh') => 'branch-hcm',
+            str_contains($name, 'đà nẵng') || str_contains($name, 'da nang') => 'branch-dn',
+            default => null,
+        };
+        if (! $branchCode) return [];
+        $branch = OrgUnit::where('code', $branchCode)->first();
+        return $branch ? $branch->subtreeIds() : [];
     }
 
     private function pct(int $part, int $total): float
