@@ -1065,6 +1065,9 @@ class Lead extends Model
      */
     public function phoneFor(User $user): string
     {
+        if ($this->phone === null) {
+            return '';
+        }
         if ($this->canViewFullPhone($user)) {
             return $this->phone;
         }
@@ -1077,8 +1080,9 @@ class Lead extends Model
         return $this->isVisibleTo($user) || $user->hasPermission('lead.view_phone');
     }
 
-    public static function maskPhone(string $phone): string
+    public static function maskPhone(?string $phone): string
     {
+        $phone = (string) $phone;
         $len = strlen($phone);
         if ($len <= 7) {
             return str_repeat('*', $len);
