@@ -32,10 +32,65 @@ new class extends Component
     /** Nếu true → áp Lead::visibleTo($user) + scope BookingLog theo lead visible. */
     public bool $scoped = false;
 
+    /** Chart "Khách theo nguồn": today | week | month | quarter | custom */
+    public string $sourceRange = 'month';
+    public string $sourceFrom = '';
+    public string $sourceTo = '';
+
+    public function mount(): void
+    {
+        $this->sourceFrom = now()->startOfMonth()->format('Y-m-d');
+        $this->sourceTo = now()->endOfMonth()->format('Y-m-d');
+    }
+
     public function updatedFacilityId(): void
+    {
+        $this->pushChartUpdate();
+    }
+
+    public function updatedSourceRange(string $v): void
+    {
+        if ($v === 'custom') {
+            // giữ nguyên from/to user đã nhập (hoặc default tháng).
+        }
+        $this->pushChartUpdate();
+    }
+
+    public function updatedSourceFrom(): void { if ($this->sourceRange === 'custom') $this->pushChartUpdate(); }
+    public function updatedSourceTo(): void { if ($this->sourceRange === 'custom') $this->pushChartUpdate(); }
+
+    private function pushChartUpdate(): void
     {
         // Charts bọc wire:ignore → không re-render DOM. Dispatch payload để JS update data in-place.
         $this->dispatch('rc-chart-data', data: $this->chartPayload());
+    }
+
+    /** Trả [$from, $to] (Carbon) cho range chart nguồn. */
+    private function sourcePeriod(): array
+    {
+        $now = now();
+        return match ($this->sourceRange) {
+            'today' => [$now->copy()->startOfDay(), $now->copy()->endOfDay()],
+            'week' => [$now->copy()->startOfWeek(), $now->copy()->endOfWeek()],
+            'quarter' => [$now->copy()->startOfQuarter(), $now->copy()->endOfQuarter()],
+            'custom' => [
+                \Illuminate\Support\Carbon::parse($this->sourceFrom ?: $now->copy()->startOfMonth())->startOfDay(),
+                \Illuminate\Support\Carbon::parse($this->sourceTo ?: $now->copy()->endOfMonth())->endOfDay(),
+            ],
+            default => [$now->copy()->startOfMonth(), $now->copy()->endOfMonth()],
+        };
+    }
+
+    public function sourceRangeLabel(): string
+    {
+        [$f, $t] = $this->sourcePeriod();
+        return match ($this->sourceRange) {
+            'today' => 'hôm nay ' . $f->format('d/m/Y'),
+            'week' => 'tuần ' . $f->format('d/m') . '–' . $t->format('d/m/Y'),
+            'quarter' => 'quý ' . ceil($f->month / 3) . '/' . $f->year,
+            'custom' => $f->format('d/m/Y') . ' → ' . $t->format('d/m/Y'),
+            default => 'tháng ' . $f->format('m/Y'),
+        };
     }
 
     public function chartPayload(): array
@@ -180,21 +235,22 @@ new class extends Component
             ];
         }
 
-        // ---- Chart: KH theo nguồn (trong tháng này)
+        // ---- Chart: KH theo nguồn (trong khoảng user chọn — Hôm nay/Tuần/Tháng/Quý/Custom)
+        [$srcFrom, $srcTo] = $this->sourcePeriod();
         $sourceCounts = (clone $this->scopedLeads())
-            ->whereBetween('created_at', [$monthFrom, $monthTo])
+            ->whereBetween('created_at', [$srcFrom, $srcTo])
             ->whereNotNull('source_group')
             ->selectRaw('source_group, COUNT(*) as c')
             ->groupBy('source_group')
             ->pluck('c', 'source_group')->all();
         $sourceData = [];
         foreach (Lead::SOURCE_GROUPS as $key => $label) {
-            $c = (int) ($sourceCounts[$key] ?? 0);
-            if ($c > 0) {
-                $sourceData[] = ['label' => $label, 'code' => Lead::SOURCE_GROUP_CODES[$key] ?? $key, 'count' => $c];
-            }
+            $sourceData[] = [
+                'label' => $label,
+                'code' => Lead::SOURCE_GROUP_CODES[$key] ?? $key,
+                'count' => (int) ($sourceCounts[$key] ?? 0),
+            ];
         }
-        usort($sourceData, fn ($a, $b) => $b['count'] <=> $a['count']);
 
         // ---- Chart 3: funnel phase (snapshot toàn bộ leads visible, không giới hạn tháng)
         $phaseCounts = (clone $this->scopedLeads())
@@ -338,11 +394,41 @@ new class extends Component
         </div>
     </div>
 
-    {{-- Chart: Số lượng khách theo nguồn (tháng này) --}}
-    <div class="bg-white border border-gold-200 rounded-xl p-4 shadow-card mb-6" wire:ignore>
-        <div class="text-sm font-semibold text-ink mb-2">Số lượng khách theo nguồn (tháng {{ now()->format('m/Y') }})</div>
-        <div class="relative h-64"><canvas id="rc-source"></canvas></div>
-        <div id="rc-source-empty" class="text-xs text-ink/50 py-10 text-center" style="display:none">Chưa có khách nào trong tháng.</div>
+    {{-- Chart: Số lượng khách theo nguồn (range chọn) --}}
+    <div class="bg-white border border-gold-200 rounded-xl p-4 shadow-card mb-6">
+        <div class="flex flex-wrap items-center gap-3 mb-3">
+            <div class="text-sm font-semibold text-ink">Số lượng khách theo nguồn</div>
+            <span class="text-xs text-ink/50">({{ $this->sourceRangeLabel() }})</span>
+            <div class="flex-1"></div>
+            <div class="inline-flex rounded-md border border-gold-200 overflow-hidden text-xs">
+                @foreach ([
+                    'today' => 'Hôm nay',
+                    'week' => 'Tuần',
+                    'month' => 'Tháng',
+                    'quarter' => 'Quý',
+                    'custom' => 'Chọn khoảng',
+                ] as $k => $label)
+                    <button type="button" wire:click="$set('sourceRange', '{{ $k }}')"
+                            class="px-3 py-1.5 border-r border-gold-200 last:border-r-0 {{ $sourceRange === $k ? 'bg-gold-600 text-white font-semibold' : 'bg-white text-ink/70 hover:bg-gold-50' }}">
+                        {{ $label }}
+                    </button>
+                @endforeach
+            </div>
+            @if ($sourceRange === 'custom')
+                <div class="inline-flex items-center gap-2 text-xs">
+                    <label class="text-ink/60">Từ</label>
+                    <input type="date" wire:model.live="sourceFrom"
+                           class="border border-gold-200 rounded-md px-2 py-1 bg-white">
+                    <label class="text-ink/60">Tới</label>
+                    <input type="date" wire:model.live="sourceTo"
+                           class="border border-gold-200 rounded-md px-2 py-1 bg-white">
+                </div>
+            @endif
+        </div>
+        <div wire:ignore>
+            <div class="relative h-64"><canvas id="rc-source"></canvas></div>
+            <div id="rc-source-empty" class="text-xs text-ink/50 py-10 text-center" style="display:none">Chưa có khách nào trong khoảng này.</div>
+        </div>
     </div>
 
     @once
@@ -387,7 +473,7 @@ new class extends Component
                 if (S.type)  { S.type.data.labels = d.type_data.map(x=>x.label); S.type.data.datasets[0].data = d.type_data.map(x=>x.count); S.type.update(); }
                 if (S.funnel){ S.funnel.data.labels = d.funnel.map(x=>x.label); S.funnel.data.datasets[0].data = d.funnel.map(x=>x.count); S._funnelMeta = d.funnel; S.funnel.update(); }
                 if (S.source){
-                    const hasData = d.source_data && d.source_data.length;
+                    const hasData = d.source_data && d.source_data.some(x => x.count > 0);
                     const emptyEl = document.getElementById('rc-source-empty');
                     const srcCvs = document.getElementById('rc-source');
                     if (hasData){
