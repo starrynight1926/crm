@@ -875,6 +875,10 @@ class Lead extends Model
         foreach (CustomField::codeSegmentsFor($this) as $segment) {
             $code .= '-' . $segment;
         }
+        // Phase 6.27 — Lead "missing info" đánh dấu đuôi -MI để nhận biết nhanh ở mọi màn.
+        if ($this->no_phone) {
+            $code .= '-MI';
+        }
 
         if ($this->code !== $code) {
             $this->forceFill(['code' => $code])->save();

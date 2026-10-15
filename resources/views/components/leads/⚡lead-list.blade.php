@@ -1070,7 +1070,12 @@ new class extends Component
                             <td class="px-4 py-3 text-ink/60">{{ $lead->page ?: '—' }}</td>
                         @endif
                         @if ($this->colVisible('name'))
-                            <td class="px-4 py-3 font-semibold text-gold-700">{{ $lead->name }}</td>
+                            <td class="px-4 py-3 font-semibold text-gold-700">
+                                {{ $lead->name }}
+                                @if ($lead->no_phone)
+                                    <span title="Khách thiếu SĐT (Missing Info)" class="ml-1 text-amber-600">⚠️</span>
+                                @endif
+                            </td>
                         @endif
                         @if ($this->colVisible('phone'))
                             <td class="px-4 py-3 font-mono">{{ $lead->phoneFor(auth()->user()) }}</td>

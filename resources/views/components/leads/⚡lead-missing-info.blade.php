@@ -117,7 +117,8 @@ class extends Component {
         }
 
         $user = auth()->user();
-        [$pphase, $pstatus] = Lead::initialPipelineFor($this->cSource, null);
+        // Ai up = của người đấy — owner gán creator luôn, không treo kho.
+        [$pphase, $pstatus] = Lead::initialPipelineFor($this->cSource, $user->id);
         $lead = Lead::create([
             'name' => $this->cName,
             'phone' => null,
@@ -126,8 +127,9 @@ class extends Component {
             'note' => $this->cNote ?: null,
             'source_group' => $this->cSource,
             'org_unit_id' => $branch->id,
-            'pool_level' => Lead::POOL_TEAM,
-            'owner_id' => null,
+            'pool_level' => Lead::POOL_PERSONAL,
+            'owner_id' => $user->id,
+            'assigned_at' => now(),
             'imported_by' => $user->id,
             'approval_status' => Lead::APPROVAL_NONE,
             'booking_status' => Lead::BOOKING_NOT_BOOKED,
@@ -147,27 +149,6 @@ class extends Component {
         $this->reset(['cName', 'cSource', 'cBranchId', 'cNote']);
         $this->cReceivedDate = now()->format('Y-m-d');
         session()->flash('status', "Đã tạo lead thiếu info: {$lead->name}.");
-    }
-
-    public function claim(int $leadId): void
-    {
-        abort_unless(auth()->user()->hasPermission('lead.access_no_phone_pool'), 403);
-        $lead = Lead::findOrFail($leadId);
-        abort_unless($lead->isVisibleTo(auth()->user()) && $lead->no_phone, 403);
-
-        if ($lead->owner_id) {
-            session()->flash('status', 'Lead đã có người phụ trách.');
-            return;
-        }
-
-        $lead->update([
-            'owner_id' => auth()->id(),
-            'assigned_at' => now(),
-            'pool_level' => Lead::POOL_PERSONAL,
-        ]);
-        LeadStatusLog::record($lead, 'claim_no_phone', null, 'Claim từ kho thiếu info', auth()->id());
-        AuditLog::record('claim_no_phone', $lead);
-        session()->flash('status', "Đã claim lead {$lead->name}.");
     }
 
     public function startFillPhone(int $leadId): void
@@ -223,7 +204,7 @@ class extends Component {
     // ───── Merge actions ─────
     public function startMerge(int $leadId): void
     {
-        abort_unless(auth()->user()->hasPermission('lead.access_no_phone_pool'), 403);
+        abort_unless(auth()->user()->hasPermission('user.manage'), 403);
         $lead = Lead::findOrFail($leadId);
         abort_unless($lead->isVisibleTo(auth()->user()) && $lead->no_phone, 403);
         $this->mergingLeadId = $leadId;
@@ -242,7 +223,7 @@ class extends Component {
 
     public function selectMergeRoot(int $rootId): void
     {
-        abort_unless(auth()->user()->hasPermission('lead.access_no_phone_pool'), 403);
+        abort_unless(auth()->user()->hasPermission('user.manage'), 403);
         $root = Lead::findOrFail($rootId);
         abort_unless($root->isVisibleTo(auth()->user()), 403);
         if ($root->no_phone) {
@@ -257,7 +238,7 @@ class extends Component {
 
     public function confirmMerge(): void
     {
-        abort_unless(auth()->user()->hasPermission('lead.access_no_phone_pool'), 403);
+        abort_unless(auth()->user()->hasPermission('user.manage'), 403);
         if (! $this->mergingLeadId || ! $this->mergeRootId) {
             session()->flash('status', 'Chưa chọn lead gốc để gộp.');
             return;
@@ -405,7 +386,10 @@ class extends Component {
                 @forelse ($leads as $lead)
                     <tr class="align-top">
                         <td class="px-4 py-3">
-                            <div class="font-semibold">{{ $lead->name }}</div>
+                            <div class="font-semibold">
+                                {{ $lead->name }}
+                                <span title="Khách thiếu SĐT (Missing Info)" class="ml-1 text-amber-600">⚠️</span>
+                            </div>
                             <div class="text-xs text-ink/50">{{ $lead->code }}</div>
                         </td>
                         <td class="px-4 py-3">
@@ -440,14 +424,12 @@ class extends Component {
                                     @enderror
                                 </div>
                             @else
-                                @if (! $lead->owner_id)
-                                    <button wire:click="claim({{ $lead->id }})"
-                                            class="text-xs font-semibold bg-gold-600 text-white px-3 py-1.5 rounded-md">Claim</button>
-                                @endif
                                 <button wire:click="startFillPhone({{ $lead->id }})"
-                                        class="text-xs font-semibold bg-emerald-600 text-white px-3 py-1.5 rounded-md">Điền SĐT</button>
-                                <button wire:click="startMerge({{ $lead->id }})"
-                                        class="text-xs font-semibold bg-purple-600 text-white px-3 py-1.5 rounded-md">Gộp</button>
+                                        class="text-xs font-semibold bg-emerald-600 text-white px-3 py-1.5 rounded-md">Bổ sung info</button>
+                                @if (auth()->user()->hasPermission('user.manage'))
+                                    <button wire:click="startMerge({{ $lead->id }})"
+                                            class="text-xs font-semibold bg-purple-600 text-white px-3 py-1.5 rounded-md">Gộp</button>
+                                @endif
                                 <a href="{{ route('leads.edit', $lead) }}"
                                    class="text-xs font-semibold border border-gold-200 text-ink/70 px-3 py-1.5 rounded-md">Mở</a>
                             @endif

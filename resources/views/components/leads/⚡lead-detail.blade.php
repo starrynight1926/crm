@@ -441,7 +441,12 @@ new class extends Component
                 <span class="mx-1">›</span>
                 <span class="text-gold-700 font-medium">Chi tiết khách hàng</span>
             </div>
-            <h1 class="text-3xl font-bold">{{ $lead->name }}</h1>
+            <h1 class="text-3xl font-bold">
+                {{ $lead->name }}
+                @if ($lead->no_phone)
+                    <span title="Khách thiếu SĐT (Missing Info)" class="ml-1 text-amber-600 align-middle">⚠️</span>
+                @endif
+            </h1>
             @if ($lead->code)
                 <div class="font-mono text-sm text-gold-700 mt-1">{{ $lead->code }}</div>
             @endif

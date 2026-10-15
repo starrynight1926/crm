@@ -2715,7 +2715,12 @@ new class extends Component
                     <span class="text-gold-700 font-medium">Thêm mới</span>
                 @endif
             </div>
-            <h1 class="text-3xl font-bold mb-1">{{ $lead ? 'Cập nhật - ' . ($lead->name ?: 'Khách hàng') : 'Thêm Mới Khách Hàng' }}</h1>
+            <h1 class="text-3xl font-bold mb-1">
+                {{ $lead ? 'Cập nhật - ' . ($lead->name ?: 'Khách hàng') : 'Thêm Mới Khách Hàng' }}
+                @if ($lead && $lead->no_phone)
+                    <span title="Khách thiếu SĐT (Missing Info)" class="ml-1 text-amber-600 text-2xl align-middle">⚠️</span>
+                @endif
+            </h1>
             @if ($lead)
                 @php
                     $isBooking = $lead->pipeline_phase === \App\Models\Lead::PHASE_BOOKING;
