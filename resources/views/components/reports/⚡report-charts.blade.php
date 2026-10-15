@@ -34,8 +34,8 @@ new class extends Component
 
     public function updatedFacilityId(): void
     {
-        // trigger re-render + JS re-init charts
-        $this->dispatch('charts-refreshed');
+        // Payload emit sau khi render — JS listener dùng data mới redraw chart.
+        // (Trước đây dispatch rỗng + Alpine đọc @js() cũ → stale data khi morph.)
     }
 
     private function scopedLeads()
@@ -225,15 +225,9 @@ new class extends Component
     }
 }; ?>
 
-<div class="mb-6" wire:key="report-charts-{{ $facilityId ?? 0 }}"
-     x-data="reportCharts(@js([
-        'trend' => $trend,
-        'type_data' => $type_data,
-        'funnel' => $funnel,
-        'source_data' => $source_data,
-     ]))"
-     x-init="init()"
-     @charts-refreshed.window="refresh(@js(['trend' => $trend, 'type_data' => $type_data, 'funnel' => $funnel, 'source_data' => $source_data]))">
+<div class="mb-6" wire:key="report-charts-{{ $facilityId ?? 0 }}">
+    {{-- Chart data embedded; JS reads from this script tag on each render. --}}
+    <script type="application/json" id="rc-chart-data">@json(['trend' => $trend, 'type_data' => $type_data, 'funnel' => $funnel, 'source_data' => $source_data])</script>
 
     {{-- Filter bar --}}
     <div class="flex items-center gap-3 mb-4">
@@ -337,60 +331,44 @@ new class extends Component
 
     @once
         <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-        <script>
-        window.reportCharts = function (data) {
-            let charts = {};
-            const palette = ['#059669', '#f59e0b', '#3b82f6', '#a3a3a3'];
-            const sourcePalette = ['#2563eb','#059669','#f59e0b','#8b5cf6','#ec4899','#14b8a6','#f43f5e','#6366f1','#64748b'];
-            const build = (d) => {
-                if (charts.trend)  charts.trend.destroy();
-                if (charts.type)   charts.type.destroy();
-                if (charts.funnel) charts.funnel.destroy();
-                if (charts.source) charts.source.destroy();
-                const wait = () => (window.Chart ? go() : setTimeout(wait, 50));
-                const go = () => {
-                    charts.trend = new Chart(document.getElementById('rc-trend'), {
-                        type: 'line',
-                        data: { labels: d.trend.map(x=>x.label), datasets: [{ label:'KH mới', data:d.trend.map(x=>x.count), borderColor:'#b58b3a', backgroundColor:'rgba(181,139,58,.15)', tension:.3, fill:true }] },
-                        options: { plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true}}, maintainAspectRatio:false }
-                    });
-                    charts.type = new Chart(document.getElementById('rc-type'), {
-                        type: 'doughnut',
-                        data: { labels: d.type_data.map(x=>x.label), datasets:[{ data:d.type_data.map(x=>x.count), backgroundColor:palette }] },
-                        options: { plugins:{legend:{position:'bottom',labels:{boxWidth:12,font:{size:11}}}}, maintainAspectRatio:false }
-                    });
-                    charts.funnel = new Chart(document.getElementById('rc-funnel'), {
-                        type: 'bar',
-                        data: { labels: d.funnel.map(x=>x.label), datasets:[{ label:'Số KH', data:d.funnel.map(x=>x.count), backgroundColor:'#3b82f6' }] },
-                        options: { indexAxis:'y', plugins:{legend:{display:false}, tooltip:{callbacks:{label:(c)=>` ${c.parsed.x} khách (${d.funnel[c.dataIndex].pct}%)`}}}, scales:{x:{beginAtZero:true}}, maintainAspectRatio:false }
-                    });
-                    const srcEl = document.getElementById('rc-source');
-                    if (srcEl && d.source_data && d.source_data.length) {
-                        charts.source = new Chart(srcEl, {
-                            type: 'bar',
-                            data: {
-                                labels: d.source_data.map(x=>x.code),
-                                datasets: [{
-                                    label: 'Số khách',
-                                    data: d.source_data.map(x=>x.count),
-                                    backgroundColor: d.source_data.map((_,i)=>sourcePalette[i % sourcePalette.length]),
-                                }]
-                            },
-                            options: {
-                                plugins: {
-                                    legend: { display:false },
-                                    tooltip: { callbacks: { title:(items)=>d.source_data[items[0].dataIndex].label, label:(c)=>` ${c.parsed.y} khách` } }
-                                },
-                                scales: { y: { beginAtZero:true, ticks:{ precision:0 } } },
-                                maintainAspectRatio: false
-                            }
-                        });
-                    }
-                };
-                wait();
-            };
-            return { init(){ build(data); }, refresh(nd){ build(nd); } };
-        };
-        </script>
     @endonce
+    <script>
+    (function(){
+        const palette = ['#059669', '#f59e0b', '#3b82f6', '#a3a3a3'];
+        const sourcePalette = ['#2563eb','#059669','#f59e0b','#8b5cf6','#ec4899','#14b8a6','#f43f5e','#6366f1','#64748b'];
+        window.__rcCharts = window.__rcCharts || {};
+        const render = () => {
+            if (!window.Chart) { setTimeout(render, 50); return; }
+            const dataEl = document.getElementById('rc-chart-data');
+            if (!dataEl) return;
+            let d; try { d = JSON.parse(dataEl.textContent); } catch(e){ return; }
+            ['trend','type','funnel','source'].forEach(k => { if (window.__rcCharts[k]) { try{ window.__rcCharts[k].destroy(); }catch(e){} window.__rcCharts[k] = null; } });
+            const trendEl = document.getElementById('rc-trend');
+            if (trendEl) window.__rcCharts.trend = new Chart(trendEl, {
+                type: 'line',
+                data: { labels: d.trend.map(x=>x.label), datasets: [{ label:'KH mới', data:d.trend.map(x=>x.count), borderColor:'#b58b3a', backgroundColor:'rgba(181,139,58,.15)', tension:.3, fill:true }] },
+                options: { plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true}}, maintainAspectRatio:false }
+            });
+            const typeEl = document.getElementById('rc-type');
+            if (typeEl) window.__rcCharts.type = new Chart(typeEl, {
+                type: 'doughnut',
+                data: { labels: d.type_data.map(x=>x.label), datasets:[{ data:d.type_data.map(x=>x.count), backgroundColor:palette }] },
+                options: { plugins:{legend:{position:'bottom',labels:{boxWidth:12,font:{size:11}}}}, maintainAspectRatio:false }
+            });
+            const funnelEl = document.getElementById('rc-funnel');
+            if (funnelEl) window.__rcCharts.funnel = new Chart(funnelEl, {
+                type: 'bar',
+                data: { labels: d.funnel.map(x=>x.label), datasets:[{ label:'Số KH', data:d.funnel.map(x=>x.count), backgroundColor:'#3b82f6' }] },
+                options: { indexAxis:'y', plugins:{legend:{display:false}, tooltip:{callbacks:{label:(c)=>` ${c.parsed.x} khách (${d.funnel[c.dataIndex].pct}%)`}}}, scales:{x:{beginAtZero:true}}, maintainAspectRatio:false }
+            });
+            const srcEl = document.getElementById('rc-source');
+            if (srcEl && d.source_data && d.source_data.length) window.__rcCharts.source = new Chart(srcEl, {
+                type: 'bar',
+                data: { labels: d.source_data.map(x=>x.code), datasets: [{ label:'Số khách', data: d.source_data.map(x=>x.count), backgroundColor: d.source_data.map((_,i)=>sourcePalette[i % sourcePalette.length]) }] },
+                options: { plugins: { legend: { display:false }, tooltip: { callbacks: { title:(items)=>d.source_data[items[0].dataIndex].label, label:(c)=>` ${c.parsed.y} khách` } } }, scales: { y: { beginAtZero:true, ticks:{ precision:0 } } }, maintainAspectRatio: false }
+            });
+        };
+        render();
+    })();
+    </script>
 </div>
