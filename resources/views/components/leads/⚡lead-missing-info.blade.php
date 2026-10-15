@@ -6,6 +6,7 @@ use App\Models\LeadPhaseClosure;
 use App\Models\LeadStatusLog;
 use App\Models\OrgUnit;
 use App\Models\User;
+use App\Services\LeadMerger;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Title;
 use Livewire\Component;
@@ -35,6 +36,12 @@ class extends Component {
     public ?int $fillingLeadId = null;
     public string $fillingPhone = '';
     public ?int $duplicateLeadId = null;
+
+    // Merge state
+    public ?int $mergingLeadId = null;
+    public string $mergeQuery = '';
+    public ?int $mergeRootId = null;
+    public array $mergePreview = [];
 
     public function mount(): void
     {
@@ -213,9 +220,83 @@ class extends Component {
         session()->flash('status', "Đã điền SĐT cho lead {$lead->name}.");
     }
 
+    // ───── Merge actions ─────
+    public function startMerge(int $leadId): void
+    {
+        abort_unless(auth()->user()->hasPermission('lead.access_no_phone_pool'), 403);
+        $lead = Lead::findOrFail($leadId);
+        abort_unless($lead->isVisibleTo(auth()->user()) && $lead->no_phone, 403);
+        $this->mergingLeadId = $leadId;
+        $this->mergeQuery = '';
+        $this->mergeRootId = null;
+        $this->mergePreview = [];
+    }
+
+    public function cancelMerge(): void
+    {
+        $this->mergingLeadId = null;
+        $this->mergeQuery = '';
+        $this->mergeRootId = null;
+        $this->mergePreview = [];
+    }
+
+    public function selectMergeRoot(int $rootId): void
+    {
+        abort_unless(auth()->user()->hasPermission('lead.access_no_phone_pool'), 403);
+        $root = Lead::findOrFail($rootId);
+        abort_unless($root->isVisibleTo(auth()->user()), 403);
+        if ($root->no_phone) {
+            session()->flash('status', 'Không chọn lead thiếu info làm gốc. Chọn lead đã có SĐT.');
+            return;
+        }
+        if ($this->mergingLeadId === null) return;
+        $clone = Lead::findOrFail($this->mergingLeadId);
+        $this->mergeRootId = $rootId;
+        $this->mergePreview = app(LeadMerger::class)->preview($clone);
+    }
+
+    public function confirmMerge(): void
+    {
+        abort_unless(auth()->user()->hasPermission('lead.access_no_phone_pool'), 403);
+        if (! $this->mergingLeadId || ! $this->mergeRootId) {
+            session()->flash('status', 'Chưa chọn lead gốc để gộp.');
+            return;
+        }
+        $clone = Lead::findOrFail($this->mergingLeadId);
+        $root = Lead::findOrFail($this->mergeRootId);
+        abort_unless($clone->isVisibleTo(auth()->user()) && $root->isVisibleTo(auth()->user()), 403);
+
+        $res = app(LeadMerger::class)->merge($clone, $root);
+        if (! $res['ok']) {
+            session()->flash('status', '❌ ' . $res['error']);
+            return;
+        }
+        $this->cancelMerge();
+        $sumStr = implode(', ', array_map(fn ($k, $v) => "{$k}={$v}", array_keys($res['summary']), $res['summary'])) ?: 'không có data con';
+        session()->flash('status', "✅ Đã gộp vào lead #{$root->id} ({$root->code}). Dồn: {$sumStr}. Clone đã xóa cứng.");
+    }
+
     public function with(): array
     {
         $user = auth()->user();
+
+        $candidates = [];
+        if ($this->mergingLeadId && trim($this->mergeQuery) !== '') {
+            $q = trim($this->mergeQuery);
+            $candidates = Lead::query()
+                ->visibleTo($user)
+                ->where('no_phone', false)
+                ->where('id', '!=', $this->mergingLeadId)
+                ->where(function ($w) use ($q) {
+                    $w->where('name', 'like', "%{$q}%")
+                        ->orWhere('phone', 'like', "%{$q}%")
+                        ->orWhere('code', 'like', "%{$q}%");
+                })
+                ->orderByDesc('id')
+                ->limit(10)
+                ->get(['id', 'code', 'name', 'phone', 'source_group']);
+        }
+
         return [
             'leads' => Lead::query()
                 ->where('no_phone', true)
@@ -224,6 +305,8 @@ class extends Component {
                 ->latest()
                 ->paginate(20),
             'branches' => $this->availableBranches(),
+            'mergeCandidates' => $candidates,
+            'mergeRoot' => $this->mergeRootId ? Lead::find($this->mergeRootId) : null,
         ];
     }
 }; ?>
@@ -363,11 +446,70 @@ class extends Component {
                                 @endif
                                 <button wire:click="startFillPhone({{ $lead->id }})"
                                         class="text-xs font-semibold bg-emerald-600 text-white px-3 py-1.5 rounded-md">Điền SĐT</button>
+                                <button wire:click="startMerge({{ $lead->id }})"
+                                        class="text-xs font-semibold bg-purple-600 text-white px-3 py-1.5 rounded-md">Gộp</button>
                                 <a href="{{ route('leads.edit', $lead) }}"
                                    class="text-xs font-semibold border border-gold-200 text-ink/70 px-3 py-1.5 rounded-md">Mở</a>
                             @endif
                         </td>
                     </tr>
+                    @if ($mergingLeadId === $lead->id)
+                        <tr>
+                            <td colspan="7" class="px-4 py-4 bg-purple-50 border-y-2 border-purple-200">
+                                <div class="flex items-center justify-between mb-3">
+                                    <h3 class="text-sm font-bold text-purple-800">🔀 Gộp lead <span class="font-mono">{{ $lead->code }}</span> ({{ $lead->name }}) vào lead gốc</h3>
+                                    <button wire:click="cancelMerge" class="text-xs text-ink/50 hover:text-ink/80">✕ Hủy</button>
+                                </div>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                        <label class="block text-xs font-medium mb-1 text-ink/70">1. Tìm lead gốc (tên / SĐT / mã KH)</label>
+                                        <input wire:model.live.debounce.300ms="mergeQuery" placeholder="Nhập để tìm..."
+                                               class="w-full border border-purple-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-purple-500">
+                                        @if (count($mergeCandidates) > 0)
+                                            <div class="mt-2 border border-purple-200 rounded-md max-h-48 overflow-y-auto bg-white">
+                                                @foreach ($mergeCandidates as $cand)
+                                                    <button wire:click="selectMergeRoot({{ $cand->id }})"
+                                                            class="w-full text-left px-3 py-2 text-sm border-b border-purple-100 hover:bg-purple-50 last:border-b-0 {{ $mergeRootId === $cand->id ? 'bg-purple-100 font-semibold' : '' }}">
+                                                        <div class="font-semibold">{{ $cand->name }} <span class="text-xs font-mono text-ink/60">({{ $cand->code }})</span></div>
+                                                        <div class="text-xs text-ink/60">{{ $cand->phone ?? '—' }} · {{ \App\Models\Lead::SOURCE_GROUP_CODES[$cand->source_group] ?? $cand->source_group }}</div>
+                                                    </button>
+                                                @endforeach
+                                            </div>
+                                        @elseif (trim($mergeQuery) !== '')
+                                            <p class="text-xs text-ink/50 mt-2">Không tìm thấy lead khớp trong phạm vi của bạn.</p>
+                                        @endif
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-medium mb-1 text-ink/70">2. Preview dồn data</label>
+                                        @if ($mergeRoot)
+                                            <div class="bg-white border border-purple-200 rounded-md p-3 text-sm">
+                                                <div class="mb-2">
+                                                    <b>Lead gốc:</b> {{ $mergeRoot->name }} <span class="font-mono text-xs text-ink/60">({{ $mergeRoot->code }})</span>
+                                                    <div class="text-xs text-ink/60">SĐT: <b class="font-mono">{{ $mergeRoot->phone ?? '—' }}</b></div>
+                                                </div>
+                                                @if (empty($mergePreview))
+                                                    <p class="text-xs text-ink/50 italic">Clone không có data con nào — chỉ dồn note + xóa clone.</p>
+                                                @else
+                                                    <p class="text-xs mb-1 text-ink/70">Sẽ dồn các bảng:</p>
+                                                    <ul class="text-xs space-y-0.5">
+                                                        @foreach ($mergePreview as $table => $count)
+                                                            <li><span class="font-mono text-ink/80">{{ $table }}</span>: <b>{{ $count }}</b></li>
+                                                        @endforeach
+                                                    </ul>
+                                                @endif
+                                                <button wire:click="confirmMerge" wire:confirm="Gộp lead {{ $lead->code }} vào {{ $mergeRoot->code }}? Clone sẽ bị XÓA CỨNG."
+                                                        class="mt-3 w-full px-4 py-2 bg-purple-600 text-white rounded-md text-sm font-semibold hover:bg-purple-700">
+                                                    ✓ Xác nhận gộp (xóa clone)
+                                                </button>
+                                            </div>
+                                        @else
+                                            <p class="text-xs text-ink/50 italic">Chọn lead gốc bên trái để xem preview.</p>
+                                        @endif
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+                    @endif
                 @empty
                     <tr><td colspan="7" class="px-4 py-6 text-center text-ink/50">Không có lead nào trong kho thiếu info.</td></tr>
                 @endforelse
@@ -377,6 +519,6 @@ class extends Component {
     <div class="mt-4">{{ $leads->links() }}</div>
 
     <div class="mt-6 text-xs text-ink/50">
-        <b>Gộp lead:</b> khi phát hiện trùng SĐT, chức năng gộp manual (dồn booking/log/note sang lead gốc + xóa clone) đang được chuẩn bị ở Phase 6.27.f — tạm thời cần Admin gộp tay.
+        <b>Gộp lead</b> (Phase 6.27.f): bấm nút <span class="inline-block px-2 py-0.5 bg-purple-100 text-purple-700 rounded">Gộp</span> trên hàng lead thiếu info → tìm lead gốc theo tên/SĐT/mã → confirm. Clone sẽ bị <b>xóa cứng</b>, mọi booking/log/custom values/payment chuyển sang lead gốc.
     </div>
 </div>

@@ -3283,3 +3283,28 @@ Nguồn: gom `lead_status_logs` (user_id) + `lead_distribution_logs` (actor_id),
 **Bug "chưa chốt UPS 14/10" → root cause**: không phải lỗi code sbooking. Thực tế CRM đợt đó chưa có row `ups_daily_confirm` cho ngày 14/10. User chốt tay UPS bên CRM → sbooking modal duyệt chuyển từ amber "chưa chốt" sang info xanh "Lead do team chia" + tự gợi ý sale (Ashley — CM). Hoạt động đúng.
 
 **Chờ test end-to-end**: tạo lead `no_phone=true` ở CRM → đặt booking → push sang sbooking → verify icon ⚠️ hiện + `crm_khach_ma` lưu đúng.
+
+## 2026-10-15 — Phase 6.27.f: LeadMerger service + UI "Gộp lead" 🟢
+
+**Scope**: khi lead thiếu info trùng SĐT với lead cũ (hoặc admin muốn dồn), gộp manual vào lead gốc rồi xóa cứng clone.
+
+**Đã làm**:
+- Service [LeadMerger](app/Services/LeadMerger.php):
+  - `merge(Lead $clone, Lead $root): array` chạy trong transaction.
+  - Guard: clone != root, clone phải no_phone=true, root không trashed.
+  - Dồn 12 bảng simple (`audit_logs`, `booking_logs`, `booking_late_logs`, `call_logs`, `contributions`, `customer_services`, `lead_distribution_logs`, `lead_ownership_history`, `lead_status_logs`, `lead_treatments`, `lead_upsells`, `payments`) bằng update `lead_id`.
+  - Dồn `lead_custom_values` + `lead_phase_closures` có xử lý collision unique: trùng field/phase → giữ root, drop clone row.
+  - Note clone → append vào root.note dưới format `[Gộp từ {code}]: {note}`.
+  - Audit `merge_leads` + status log trên root; `forceDelete` clone.
+  - `preview(Lead $clone)` trả counts cho UI confirm.
+- UI trong [⚡lead-missing-info.blade.php](resources/views/components/leads/⚡lead-missing-info.blade.php):
+  - Thêm nút "Gộp" (tím) trên mỗi row.
+  - Click → mở panel inline dưới row: autocomplete search theo tên/SĐT/mã (debounce 300ms) → chọn root → preview counts → `wire:confirm` xác nhận → gọi service.
+  - Candidate filter: trong scope `visibleTo(user)`, exclude lead no_phone (không gộp vào lead missing info khác), exclude chính nó.
+  - Flash status với summary chi tiết.
+
+**Chờ test** (user QA tay):
+- Case A: tạo lead missing info có booking + custom values + call log → chọn gộp vào lead cũ → verify data chuyển + clone biến mất.
+- Case B: gộp vào lead có cùng custom_field_id → verify root giữ value cũ, clone row bị drop (không ghi đè).
+- Case C: thử gộp vào chính nó / vào lead trashed / vào lead no_phone khác → phải báo lỗi.
+- Verify `audit_logs` + `lead_status_logs` ghi đúng.
