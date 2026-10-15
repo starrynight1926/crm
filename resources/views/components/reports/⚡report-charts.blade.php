@@ -225,7 +225,7 @@ new class extends Component
     }
 }; ?>
 
-<div class="mb-6" wire:key="report-charts"
+<div class="mb-6" wire:key="report-charts-{{ $facilityId ?? 0 }}"
      x-data="reportCharts(@js([
         'trend' => $trend,
         'type_data' => $type_data,
