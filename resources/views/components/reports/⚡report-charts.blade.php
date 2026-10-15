@@ -227,7 +227,15 @@ new class extends Component
 
 <div class="mb-6" wire:key="report-charts-{{ $facilityId ?? 0 }}">
     {{-- Chart data embedded; JS reads from this script tag on each render. --}}
-    <script type="application/json" id="rc-chart-data">@json(['trend' => $trend, 'type_data' => $type_data, 'funnel' => $funnel, 'source_data' => $source_data])</script>
+    @php
+        $__rcPayload = json_encode([
+            'trend' => $trend,
+            'type_data' => $type_data,
+            'funnel' => $funnel,
+            'source_data' => $source_data,
+        ], JSON_UNESCAPED_UNICODE);
+    @endphp
+    <script type="application/json" id="rc-chart-data">{!! $__rcPayload !!}</script>
 
     {{-- Filter bar --}}
     <div class="flex items-center gap-3 mb-4">
