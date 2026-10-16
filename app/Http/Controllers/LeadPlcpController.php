@@ -76,12 +76,20 @@ class LeadPlcpController extends Controller
      */
     private function resolveBacSi(BookingLog $log): string
     {
+        $raw = '';
         if ($log->sb_bac_si_id) {
             $bs = SbBacSi::find($log->sb_bac_si_id);
             if ($bs) {
-                return trim(($bs->chuc_danh ? $bs->chuc_danh . ' ' : '') . $bs->ten);
+                $raw = trim(($bs->chuc_danh ? $bs->chuc_danh . ' ' : '') . $bs->ten);
             }
         }
-        return (string) ($log->doctor?->name ?? '');
+        if ($raw === '') {
+            $raw = (string) ($log->doctor?->name ?? '');
+        }
+        // Chuẩn hoá "BS. Bác sĩ Nguyễn ..." / "Bác sĩ BS. Nguyễn ..." → "BS. Nguyễn ..."
+        // (chuc_danh và ten đôi khi cùng chứa prefix, ghép lại thành dài loằng ngoằng)
+        $name = preg_replace('/^(BS\.?\s*)?(Bác\s*sĩ\s*)?(BS\.?\s*)?/iu', '', $raw);
+        $name = trim($name);
+        return $name === '' ? $raw : 'BS. ' . $name;
     }
 }
