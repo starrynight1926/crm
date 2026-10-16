@@ -4821,7 +4821,17 @@ new class extends Component
                         $__isCV1 = $__cv1 && (int) $__cv1->id === (int) auth()->id();
                         $__hasSbooking = (bool) $__latestBl->sbooking_booking_id;
                         $__canAct = $__isCV1 && $__hasSbooking;
+                        // 2026-10-16: Admin (user.manage) tải PLCP được dù không phải CV1 — để QC/hỗ trợ in lại hồ sơ.
+                        $__canDlPlcp = $__canAct || auth()->user()?->hasPermission('user.manage');
                     @endphp
+                    @if (! $__canAct && $__canDlPlcp)
+                        <div class="mt-3 pt-3 border-t border-emerald-100">
+                            <a href="{{ route('leads.booking.plcp', ['lead' => $lead->id, 'log' => $__latestBl->id]) }}"
+                               class="px-3 py-1.5 rounded bg-emerald-600 text-white text-xs font-semibold hover:opacity-90 inline-flex items-center gap-1">
+                                ⬇ Tải PLCP (Admin)
+                            </a>
+                        </div>
+                    @endif
                     @if ($__isCV1 && ! $__hasSbooking)
                         {{-- Phase 6.26.b (2026-09-04): booking chưa sync sbooking (admin chưa duyệt hoặc
                              push fail) — hiển thị placeholder thay vì ẩn hoàn toàn để sale biết nút sẽ mở sau. --}}

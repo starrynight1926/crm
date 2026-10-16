@@ -21,8 +21,10 @@ class LeadPlcpController extends Controller
         }
         $u = auth()->user();
         $cv1 = $log->consultants()->orderBy('booking_log_consultants.position')->first();
-        if (! $cv1 || (int) $cv1->id !== (int) $u->id) {
-            abort(403, 'Chỉ Sale tiếp đón (CV#1) của booking mới tải được PLCP.');
+        $isCv1 = $cv1 && (int) $cv1->id === (int) $u->id;
+        // 2026-10-16: Admin (user.manage) tải PLCP được dù không phải CV1 — QC/in lại hồ sơ.
+        if (! $isCv1 && ! $u->hasPermission('user.manage')) {
+            abort(403, 'Chỉ Sale tiếp đón (CV#1) của booking hoặc Admin mới tải được PLCP.');
         }
 
         $ngay = $log->first_tiep_don_at ?: now();
