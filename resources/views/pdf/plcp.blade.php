@@ -24,10 +24,9 @@
   /* ===== Logo + Clinic header (logo trái, địa chỉ phải) ===== */
   table.header { width: 100%; border-collapse: collapse; margin: 0 0 5mm 0; }
   table.header td { vertical-align: middle; padding: 0; }
-  table.header td.logo { width: 28mm; }
-  table.header td.logo img { width: 24mm; height: auto; }
-  table.header td.clinic { width: 150mm; text-align: right; font-size: 12.5pt; color: #333; line-height: 1.5; white-space: nowrap; }
-  table.header td.clinic .clinic-name { font-weight: bold; font-size: 14pt; color: #111; }
+  table.header td.logo { padding-right: 4mm; }
+  table.header td.clinic { text-align: right; font-size: 10.5pt; color: #333; line-height: 1.5; white-space: nowrap; }
+  table.header td.clinic .clinic-name { font-weight: bold; font-size: 11.5pt; color: #111; }
 
   /* ===== Title ===== */
   .title-lg { font-size: 15pt; font-weight: bold; color: #5c4d46; margin: 0; letter-spacing: 0.3px; }
@@ -69,7 +68,7 @@
 {{-- ========== HEADER: logo trái, địa chỉ phòng khám phải ========== --}}
 <table class="header" width="100%">
   <tr>
-    <td class="logo" width="28mm"><img src="{{ public_path('images/logo-plcp.png') }}" width="90" alt="Longevity Medical Center"></td>
+    <td class="logo" width="50mm"><img src="{{ public_path('images/logo-plcp.png') }}" style="width: 45mm;" alt="Longevity Medical Center"></td>
     <td class="clinic">
       <div class="clinic-name">Phòng khám Đa khoa Longevity Medical Center</div>
       <div>Địa chỉ: 57-59 Ngô Thì Nhậm, P. Hai Bà Trưng, TP. Hà Nội</div>
