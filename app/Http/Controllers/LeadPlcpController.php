@@ -65,7 +65,7 @@ class LeadPlcpController extends Controller
         $filename = 'PLCP_' . ($lead->code ?: $lead->id) . '.pdf';
         return response($mpdf->Output($filename, 'S'), 200, [
             'Content-Type' => 'application/pdf',
-            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+            'Content-Disposition' => 'inline; filename="' . $filename . '"',
         ]);
     }
 

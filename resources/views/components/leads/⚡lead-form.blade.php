@@ -4827,8 +4827,9 @@ new class extends Component
                     @if (! $__canAct && $__canDlPlcp)
                         <div class="mt-3 pt-3 border-t border-emerald-100">
                             <a href="{{ route('leads.booking.plcp', ['lead' => $lead->id, 'log' => $__latestBl->id]) }}"
+                               target="_blank" rel="noopener"
                                class="px-3 py-1.5 rounded bg-emerald-600 text-white text-xs font-semibold hover:opacity-90 inline-flex items-center gap-1">
-                                ⬇ Tải PLCP (Admin)
+                                ⬇ Xem/Tải PLCP (Admin)
                             </a>
                         </div>
                     @endif
@@ -4866,8 +4867,9 @@ new class extends Component
                                 </form>
                                 {{-- 2026-09-11: Tải PLCP đã fill mã KH / họ tên / ngày lập / cơ sở. --}}
                                 <a href="{{ route('leads.booking.plcp', ['lead' => $lead->id, 'log' => $__latestBl->id]) }}"
+                                   target="_blank" rel="noopener"
                                    class="px-3 py-1.5 rounded bg-emerald-600 text-white text-xs font-semibold hover:opacity-90 inline-flex items-center gap-1">
-                                    ⬇ Tải PLCP
+                                    ⬇ Xem/Tải PLCP
                                 </a>
                             </div>
                             {{-- Ô comment nhanh, đẩy sang sbooking. --}}
