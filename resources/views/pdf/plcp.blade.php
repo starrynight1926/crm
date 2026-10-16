@@ -21,9 +21,13 @@
     letter-spacing: 0.3px;
   }
 
-  /* ===== Logo header ===== */
-  .logo-wrap { text-align: center; margin: 0 0 3mm 0; }
-  .logo-wrap img { height: 18mm; }
+  /* ===== Logo + Clinic header (logo trái, địa chỉ phải) ===== */
+  table.header { width: 100%; border-collapse: collapse; margin: 0 0 5mm 0; }
+  table.header td { vertical-align: middle; padding: 0; }
+  table.header td.logo { width: 55mm; }
+  table.header td.logo img { height: 20mm; }
+  table.header td.clinic { text-align: right; font-size: 9.5pt; color: #333; line-height: 1.5; }
+  table.header td.clinic .clinic-name { font-weight: bold; font-size: 10.5pt; color: #111; }
 
   /* ===== Title ===== */
   .title-lg { font-size: 15pt; font-weight: bold; color: #5c4d46; margin: 0; letter-spacing: 0.3px; }
@@ -63,8 +67,17 @@
 <div class="brown-strip"></div>
 <div class="pg-footer">HỒ SƠ CHĂM SÓC SỨC KHỎE CÁ NHÂN HÓA - 1</div>
 
-{{-- ========== LOGO ========== --}}
-<div class="logo-wrap"><img src="{{ public_path('images/logo-plcp.png') }}" alt="Longevity Medical Center"></div>
+{{-- ========== HEADER: logo trái, địa chỉ phòng khám phải ========== --}}
+<table class="header">
+  <tr>
+    <td class="logo"><img src="{{ public_path('images/logo-plcp.png') }}" alt="Longevity Medical Center"></td>
+    <td class="clinic">
+      <div class="clinic-name">Phòng khám Đa khoa Longevity Medical Center</div>
+      <div>Địa chỉ: 57-59 Ngô Thì Nhậm, P. Hai Bà Trưng, TP. Hà Nội</div>
+      <div>Điện thoại: 0559188888 &nbsp;&nbsp;-&nbsp; Website: Longevity.com.vn</div>
+    </td>
+  </tr>
+</table>
 
 {{-- ========== TITLE ========== --}}
 <p class="title-lg">PERSONALIZED LONGEVITY CARE PROFILE (PLCP)</p>
