@@ -1,5 +1,5 @@
 {{-- Tab điều hướng khu Tổ chức. Cần: $active (users|roles|chart) --}}
-<div class="border-b border-gold-200 mb-7 flex gap-1 text-sm font-semibold uppercase tracking-wide overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
+<div class="border-b border-gold-200 mb-7 flex flex-wrap gap-1 text-sm font-semibold uppercase tracking-wide">
     @foreach ([
         'users' => ['label' => 'Danh sách nhân viên', 'route' => 'org.users', 'permission' => 'user.manage'],
         'roles' => ['label' => 'Thiết lập vai trò', 'route' => 'org.roles', 'permission' => 'role.manage'],

@@ -60,7 +60,7 @@ new class extends Component
         ]);
         $cs->initPhases();
 
-        LeadStatusLog::record($this->lead, 'note', null, 'Gắn dịch vụ: ' . $cs->service->name . ' (giá chốt ' . number_format($cs->agreed_price) . '₫)', auth()->id());
+        LeadStatusLog::record($this->lead, 'note', null, 'Gắn dịch vụ: ' . $cs->service->name . ' (giá chốt ' . number_format($cs->agreed_price, 0, ',', '.') . '₫)', auth()->id());
 
         $this->showAttach = false;
         $this->reset('serviceId', 'agreedPrice');
@@ -132,7 +132,7 @@ new class extends Component
             'collected_by' => auth()->id(),
         ]);
 
-        LeadStatusLog::record($this->lead, 'note', null, 'Thu tiền ' . number_format((int) $this->payAmount) . '₫ cho dịch vụ ' . $cs->service->name, auth()->id());
+        LeadStatusLog::record($this->lead, 'note', null, 'Thu tiền ' . number_format((int) $this->payAmount, 0, ',', '.') . '₫ cho dịch vụ ' . $cs->service->name, auth()->id());
         $this->payingServiceId = null;
     }
 
@@ -170,7 +170,7 @@ new class extends Component
                 <select wire:model.live="serviceId" class="w-full border border-gold-200 rounded-md px-3 py-2 text-sm bg-white focus:outline-none focus:border-gold-500">
                     <option value="">— chọn dịch vụ —</option>
                     @foreach ($availableServices as $service)
-                        <option value="{{ $service->id }}">{{ $service->name }} ({{ number_format($service->listPrice()) }}₫)</option>
+                        <option value="{{ $service->id }}">{{ $service->name }} ({{ number_format($service->listPrice(), 0, ',', '.') }}₫)</option>
                     @endforeach
                 </select>
                 @error('serviceId')<p class="text-xs text-red-600 mt-1">{{ $message }}</p>@enderror
@@ -196,10 +196,10 @@ new class extends Component
                         <span class="text-xs text-ink/50 ml-2">{{ $cs->doneCount() }}/{{ $cs->phases->count() }} phase</span>
                     </div>
                     <div class="text-right text-sm">
-                        <div>Giá chốt: <strong class="font-mono">{{ number_format($cs->agreed_price) }}₫</strong></div>
+                        <div>Giá chốt: <strong class="font-mono">{{ number_format($cs->agreed_price, 0, ',', '.') }}₫</strong></div>
                         <div class="text-xs">
-                            Đã thu: <span class="font-mono text-green-700">{{ number_format($cs->totalPaid()) }}₫</span>
-                            · Công nợ: <span class="font-mono {{ $cs->outstanding() > 0 ? 'text-red-600 font-bold' : 'text-ink/40' }}">{{ number_format($cs->outstanding()) }}₫</span>
+                            Đã thu: <span class="font-mono text-green-700">{{ number_format($cs->totalPaid(), 0, ',', '.') }}₫</span>
+                            · Công nợ: <span class="font-mono {{ $cs->outstanding() > 0 ? 'text-red-600 font-bold' : 'text-ink/40' }}">{{ number_format($cs->outstanding(), 0, ',', '.') }}₫</span>
                         </div>
                     </div>
                     @if ($canPay && $cs->outstanding() > 0)
@@ -255,7 +255,7 @@ new class extends Component
                                 @endif
                             </div>
                             @if ($csp->phase->phase_price)
-                                <span class="text-xs font-mono text-ink/40">{{ number_format($csp->phase->phase_price) }}₫</span>
+                                <span class="text-xs font-mono text-ink/40">{{ number_format($csp->phase->phase_price, 0, ',', '.') }}₫</span>
                             @endif
                             @if ($canEdit)
                                 @if ($csp->status === 'pending')
@@ -285,7 +285,7 @@ new class extends Component
                         <div class="text-xs font-semibold uppercase tracking-wider text-ink/40 mb-2">Lịch sử thu tiền</div>
                         @foreach ($cs->payments->sortByDesc('paid_at') as $payment)
                             <div class="text-xs text-ink/60 flex items-center gap-2 py-0.5">
-                                <span class="font-mono text-green-700 font-semibold">{{ number_format($payment->amount) }}₫</span>
+                                <span class="font-mono text-green-700 font-semibold">{{ number_format($payment->amount, 0, ',', '.') }}₫</span>
                                 <span>{{ \App\Models\Payment::METHODS[$payment->method] }}</span>
                                 <span>· {{ $payment->paid_at->format('d/m/Y') }}</span>
                                 <span>· thu bởi {{ $payment->collector->name }}</span>

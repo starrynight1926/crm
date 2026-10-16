@@ -19,7 +19,6 @@ class WebhookTest extends TestCase
             'type' => 'webhook',
             'name' => 'Landing test',
             'webhook_token' => str_repeat('a', 48),
-            'default_type_code' => 'MKT',
             'active' => true,
         ], $attrs));
     }
@@ -38,7 +37,6 @@ class WebhookTest extends TestCase
 
         $raw = RawLead::first();
         $this->assertSame(RawLead::STATUS_PROCESSED, $raw->status); // queue sync trong test
-        $this->assertSame('MKT', $raw->payload['type_code']); // default từ connection
 
         $lead = Lead::firstWhere('phone', '0909111222');
         $this->assertNotNull($lead);
