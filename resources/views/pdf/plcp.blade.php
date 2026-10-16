@@ -67,9 +67,9 @@
 <div class="pg-footer">HỒ SƠ CHĂM SÓC SỨC KHỎE CÁ NHÂN HÓA - 1</div>
 
 {{-- ========== HEADER: logo trái, địa chỉ phòng khám phải ========== --}}
-<table class="header">
+<table class="header" width="100%">
   <tr>
-    <td class="logo"><img src="{{ public_path('images/logo-plcp.png') }}" alt="Longevity Medical Center"></td>
+    <td class="logo" width="28mm"><img src="{{ public_path('images/logo-plcp.png') }}" width="90" alt="Longevity Medical Center"></td>
     <td class="clinic">
       <div class="clinic-name">Phòng khám Đa khoa Longevity Medical Center</div>
       <div>Địa chỉ: 57-59 Ngô Thì Nhậm, P. Hai Bà Trưng, TP. Hà Nội</div>
