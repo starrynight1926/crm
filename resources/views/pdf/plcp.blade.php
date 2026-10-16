@@ -25,7 +25,7 @@
   table.header { width: 100%; border-collapse: collapse; margin: 0 0 5mm 0; }
   table.header td { vertical-align: middle; padding: 0; }
   table.header td.logo { padding-right: 4mm; }
-  table.header td.clinic { text-align: left; font-size: 9pt; color: #333; line-height: 1.5; white-space: nowrap; }
+  table.header td.clinic { text-align: left; padding-left: 50mm; font-size: 9pt; color: #333; line-height: 1.5; white-space: nowrap; }
   table.header td.clinic .clinic-name { font-weight: bold; font-size: 10pt; color: #111; }
 
   /* ===== Title ===== */
