@@ -25,8 +25,8 @@
   table.header { width: 100%; border-collapse: collapse; margin: 0 0 5mm 0; }
   table.header td { vertical-align: middle; padding: 0; }
   table.header td.logo { padding-right: 4mm; }
-  table.header td.clinic { text-align: right; font-size: 10.5pt; color: #333; line-height: 1.5; white-space: nowrap; }
-  table.header td.clinic .clinic-name { font-weight: bold; font-size: 11.5pt; color: #111; }
+  table.header td.clinic { text-align: left; font-size: 9pt; color: #333; line-height: 1.5; white-space: nowrap; }
+  table.header td.clinic .clinic-name { font-weight: bold; font-size: 10pt; color: #111; }
 
   /* ===== Title ===== */
   .title-lg { font-size: 15pt; font-weight: bold; color: #5c4d46; margin: 0; letter-spacing: 0.3px; }
