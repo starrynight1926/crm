@@ -4,49 +4,26 @@
 <meta charset="UTF-8">
 <title>PLCP - {{ $ma_kh }}</title>
 <style>
-  @page { margin: 10mm 14mm 12mm 14mm; }
-  body { font-family: dejavusans, sans-serif; font-size: 9.5pt; color: #111; line-height: 1.35; }
+  @page { margin: 10mm 14mm 14mm 20mm; }
+  body { font-family: dejavusans, sans-serif; font-size: 9.5pt; color: #111; line-height: 1.4; }
 
-  /* ===== Header ===== */
-  table.header { width: 100%; border-collapse: collapse; margin-bottom: 4mm; }
-  table.header td { vertical-align: top; padding: 0; }
-  .brand-logo {
-    width: 15mm; height: 15mm;
-    background: #c7ad51;
-    color: #fff;
-    font-family: Georgia, serif;
-    font-size: 13pt;
-    font-weight: bold;
-    text-align: center;
-    line-height: 15mm;
-    border-radius: 2mm;
+  /* ===== Decor (viền trái nâu + footer) absolute theo page ===== */
+  .brown-strip {
+    position: absolute;
+    left: 0; top: 0;
+    width: 5mm; height: 297mm;
+    background: #a0763a;
   }
-  .brand-text {
-    font-family: Georgia, serif;
-    font-size: 15pt;
-    font-weight: bold;
-    color: #786b58;
-    letter-spacing: 1px;
-    line-height: 1;
+  .pg-footer {
+    position: absolute;
+    right: 14mm; bottom: 9mm;
+    font-size: 9pt; font-weight: bold; color: #484848;
+    letter-spacing: 0.3px;
   }
-  .brand-sub {
-    font-family: dejavusans, sans-serif;
-    font-size: 6.5pt;
-    color: #786b58;
-    letter-spacing: 1px;
-    margin-top: 1mm;
-  }
-  .clinic {
-    font-family: Georgia, serif;
-    font-size: 9.5pt;
-    line-height: 1.55;
-    color: #222;
-  }
-  .clinic b { display: block; margin-bottom: 1mm; }
 
   /* ===== Title ===== */
   .title-lg { font-size: 15pt; font-weight: bold; color: #5c4d46; margin: 0; letter-spacing: 0.3px; }
-  .title-sm { font-size: 12pt; font-weight: bold; color: #5c4d46; margin: 1mm 0 5mm 0; letter-spacing: 0.3px; }
+  .title-sm { font-size: 12.5pt; font-weight: bold; color: #5c4d46; margin: 1mm 0 5mm 0; letter-spacing: 0.3px; }
 
   /* ===== Info grid ===== */
   table.grid { width: 100%; border-collapse: collapse; margin-bottom: 2.5mm; }
@@ -60,9 +37,9 @@
   }
   .val.empty { font-weight: normal; }
 
-  /* ===== Section ===== */
+  /* ===== Section header ===== */
   .section-title { font-size: 10pt; font-weight: bold; margin: 4mm 0 2mm 0; }
-  .section-title.part { font-size: 11pt; color: #5c4d46; margin-top: 5mm; text-transform: uppercase; }
+  .section-title.part { font-size: 11.5pt; color: #5c4d46; margin-top: 5mm; text-transform: uppercase; }
 
   /* ===== Checkboxes ===== */
   table.checks { width: 100%; border-collapse: collapse; margin-bottom: 3mm; }
@@ -78,31 +55,15 @@
 </head>
 <body>
 
-{{-- ==================== HEADER (logo + clinic) ==================== --}}
-<table class="header">
-  <tr>
-    <td width="45%">
-      <table style="border-collapse:collapse"><tr>
-        <td width="17mm"><div class="brand-logo">LMC</div></td>
-        <td style="padding-left:2mm;vertical-align:middle">
-          <div class="brand-text">LONGEVITY</div>
-          <div class="brand-sub">MEDICAL SYSTEM</div>
-        </td>
-      </tr></table>
-    </td>
-    <td width="55%" class="clinic">
-      <b>Phòng khám Đa khoa Longevity Medical Center</b>
-      Địa chỉ: 57-59 Ngô Thì Nhậm. P. Hai Bà Trưng, TP. Hà Nội<br>
-      Điện thoại: 0559188888 &nbsp;-&nbsp; Website: Longevity.com.vn
-    </td>
-  </tr>
-</table>
+{{-- ========== Decor trang 1 ========== --}}
+<div class="brown-strip"></div>
+<div class="pg-footer">HỒ SƠ CHĂM SÓC SỨC KHỎE CÁ NHÂN HÓA - 1</div>
 
-{{-- ==================== TITLE ==================== --}}
+{{-- ========== TITLE ========== --}}
 <p class="title-lg">PERSONALIZED LONGEVITY CARE PROFILE (PLCP)</p>
 <p class="title-sm">HỒ SƠ CHĂM SÓC SỨC KHỎE CÁ NHÂN HÓA</p>
 
-{{-- ==================== INFO (2 cột) ==================== --}}
+{{-- ========== INFO (Mã KH / Ngày / Cơ sở / PHA / Bác sĩ) ========== --}}
 <table class="grid">
   <tr>
     <td class="lbl" width="30mm">Mã khách hàng:</td>
@@ -113,12 +74,7 @@
   </tr>
 </table>
 
-<table class="grid">
-  <tr>
-    <td class="lbl" width="14mm">Cơ sở:</td>
-    <td class="val">{{ $co_so }}</td>
-  </tr>
-</table>
+<table class="grid"><tr><td class="lbl" width="14mm">Cơ sở:</td><td class="val">{{ $co_so }}</td></tr></table>
 
 <table class="grid">
   <tr>
@@ -147,13 +103,13 @@
   </tr>
 </table>
 
-{{-- ==================== PHẦN 1 ==================== --}}
+{{-- ========== PHẦN 1 ========== --}}
 <p class="section-title part">PHẦN 1: THÔNG TIN CÁ NHÂN / PERSONAL INFORMATION</p>
 
 <table class="grid">
   <tr>
     <td class="lbl" width="22mm">Họ và tên:</td>
-    <td class="val" width="88mm">{{ $ho_ten }}</td>
+    <td class="val" width="78mm">{{ $ho_ten }}</td>
     <td width="6mm"></td>
     <td class="lbl" width="22mm">Ngày sinh:</td>
     <td class="val empty">&nbsp;</td>
@@ -163,7 +119,7 @@
 <table class="grid">
   <tr>
     <td class="lbl" width="18mm">Giới tính:</td>
-    <td width="92mm">
+    <td width="82mm">
       <span class="cb"></span>Nam &nbsp;&nbsp;
       <span class="cb"></span>Nữ &nbsp;&nbsp;
       <span class="cb"></span>Khác
@@ -182,8 +138,8 @@
   <tr>
     <td class="lbl" width="38mm">Tình trạng hôn nhân:</td>
     <td>
-      <span class="cb"></span>Độc thân &nbsp;&nbsp;
-      <span class="cb"></span>Kết hôn &nbsp;&nbsp;
+      <span class="cb"></span>Độc thân &nbsp;&nbsp;&nbsp;
+      <span class="cb"></span>Kết hôn &nbsp;&nbsp;&nbsp;
       <span class="cb"></span>Khác
     </td>
   </tr>
@@ -193,7 +149,7 @@
   <tr>
     <td class="lbl" width="58mm">Có dự định sinh con sắp tới không:</td>
     <td>
-      <span class="cb"></span>Có &nbsp;&nbsp;
+      <span class="cb"></span>Có &nbsp;&nbsp;&nbsp;
       <span class="cb"></span>Không
     </td>
   </tr>
@@ -209,7 +165,85 @@
   </tr>
 </table>
 
-{{-- ==================== TRANG 2-4: giữ PNG tạm (chưa có fill) ==================== --}}
+{{-- ========== PHẦN 2 (nửa đầu — nửa sau nằm ở trang 2 PNG) ========== --}}
+<p class="section-title part">PHẦN 2: THÔNG TIN SỨC KHỎE &amp; LỐI SỐNG</p>
+
+<table class="grid">
+  <tr>
+    <td class="lbl" width="30mm">Chỉ số cơ bản:</td>
+    <td>
+      Chiều cao:<span style="display:inline-block;border-bottom:1px dotted #333;width:14mm;">&nbsp;</span>&nbsp;&nbsp;
+      Cân nặng:<span style="display:inline-block;border-bottom:1px dotted #333;width:14mm;">&nbsp;</span>&nbsp;&nbsp;
+      BMI:<span style="display:inline-block;border-bottom:1px dotted #333;width:14mm;">&nbsp;</span>&nbsp;&nbsp;
+      Huyết áp:<span style="display:inline-block;border-bottom:1px dotted #333;width:14mm;">&nbsp;</span>&nbsp;&nbsp;
+      Mạch:<span style="display:inline-block;border-bottom:1px dotted #333;width:14mm;">&nbsp;</span>
+    </td>
+  </tr>
+</table>
+
+<table class="grid">
+  <tr>
+    <td class="lbl" width="30mm">Hút thuốc:</td>
+    <td>
+      <span class="cb"></span>Không &nbsp;&nbsp;&nbsp;
+      <span class="cb"></span>Đã từng &nbsp;&nbsp;&nbsp;
+      <span class="cb"></span>Hiện tại
+    </td>
+  </tr>
+</table>
+
+<table class="grid">
+  <tr>
+    <td class="lbl" width="30mm">Rượu bia:</td>
+    <td>
+      <span class="cb"></span>Không &nbsp;&nbsp;&nbsp;
+      <span class="cb"></span>Thỉnh thoảng &nbsp;&nbsp;&nbsp;
+      <span class="cb"></span>Hàng tuần &nbsp;&nbsp;&nbsp;
+      <span class="cb"></span>Thường xuyên
+    </td>
+  </tr>
+</table>
+
+<table class="grid">
+  <tr>
+    <td class="lbl" width="30mm">Mức độ căng thẳng:</td>
+    <td>
+      <span class="cb"></span>Thấp &nbsp;&nbsp;&nbsp;
+      <span class="cb"></span>Trung bình &nbsp;&nbsp;&nbsp;
+      <span class="cb"></span>Cao &nbsp;&nbsp;&nbsp;
+      <span class="cb"></span>Rất cao
+    </td>
+  </tr>
+</table>
+
+<table class="grid">
+  <tr>
+    <td class="lbl" width="30mm">Mức độ bận rộn:</td>
+    <td>
+      <span class="cb"></span>Thấp &nbsp;&nbsp;&nbsp;
+      <span class="cb"></span>Trung bình &nbsp;&nbsp;&nbsp;
+      <span class="cb"></span>Cao &nbsp;&nbsp;&nbsp;
+      <span class="cb"></span>Rất cao
+    </td>
+  </tr>
+</table>
+
+<table class="grid">
+  <tr>
+    <td class="lbl" width="40mm">Thời gian ngồi mỗi ngày:</td>
+    <td>
+      <span class="cb"></span>&lt;4 giờ &nbsp;&nbsp;&nbsp;
+      <span class="cb"></span>4-8 giờ &nbsp;&nbsp;&nbsp;
+      <span class="cb"></span>&gt;8 giờ
+    </td>
+  </tr>
+</table>
+
+<table class="grid"><tr><td class="lbl" width="35mm">Chất lượng giấc ngủ:</td><td class="val empty">&nbsp;</td></tr></table>
+<table class="grid"><tr><td class="lbl" width="40mm">Tần suất khám sức khỏe:</td><td class="val empty">&nbsp;</td></tr></table>
+<table class="grid"><tr><td class="lbl" width="35mm">Nơi khám sức khỏe:</td><td class="val empty">&nbsp;</td></tr></table>
+
+{{-- ==================== TRANG 2-4: giữ PNG ==================== --}}
 <pagebreak margin-left="0" margin-right="0" margin-top="0" margin-bottom="0"/>
 <img src="{{ public_path('downloads/plcp-pages/page-02.png') }}" style="position:absolute;left:0;top:0;width:210mm;height:297mm;">
 
