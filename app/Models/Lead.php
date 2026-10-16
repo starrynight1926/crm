@@ -266,6 +266,9 @@ class Lead extends Model
     {
         if (! $this->isVisibleTo($user)) return false;
         if ($this->canEditPersonalInfo($user)) return true;
+        // 2026-10-16: Observer / Giám sát (có report.view_all) → mở form readonly để xem nội dung
+        // Cập nhật. Form tự readonly các field do thiếu perm sửa; save/booking actions đã có guard.
+        if ($user->hasPermission('report.view_all')) return true;
         // 2026-08-05: owner đang giữ lead luôn mở được form (ghi call log ở phase 2,
         // booking log ở phase 4). Trước đó chỉ Team booking có read_booking mới mở được
         // → Sale bị đá về /leads/{id} show không ghi được cuộc gọi.
