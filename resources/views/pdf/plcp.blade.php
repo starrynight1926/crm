@@ -53,11 +53,10 @@
   table.checks { width: 100%; border-collapse: collapse; margin-bottom: 3mm; }
   table.checks td { padding: 1.2mm 0; font-size: 9.5pt; }
   .cb {
-    display: inline-block;
-    width: 3mm; height: 3mm;
-    border: 0.3mm solid #333;
+    font-size: 13pt;
     margin-right: 1.5mm;
     vertical-align: middle;
+    color: #333;
   }
 </style>
 </head>
@@ -110,16 +109,16 @@
 <p class="section-title">NGUỒN KHÁCH HÀNG:</p>
 <table class="checks">
   <tr>
-    <td width="25%"><span class="cb"></span>Giới thiệu</td>
-    <td width="25%"><span class="cb"></span>Khách hàng hiện hữu</td>
-    <td width="25%"><span class="cb"></span>Đối tác</td>
-    <td width="25%"><span class="cb"></span>Sự kiện</td>
+    <td width="25%"><span class="cb">☐</span>Giới thiệu</td>
+    <td width="25%"><span class="cb">☐</span>Khách hàng hiện hữu</td>
+    <td width="25%"><span class="cb">☐</span>Đối tác</td>
+    <td width="25%"><span class="cb">☐</span>Sự kiện</td>
   </tr>
   <tr>
-    <td><span class="cb"></span>Facebook</td>
-    <td><span class="cb"></span>Website</td>
-    <td><span class="cb"></span>Cuộc hẹn</td>
-    <td><span class="cb"></span>Khác</td>
+    <td><span class="cb">☐</span>Facebook</td>
+    <td><span class="cb">☐</span>Website</td>
+    <td><span class="cb">☐</span>Cuộc hẹn</td>
+    <td><span class="cb">☐</span>Khác</td>
   </tr>
 </table>
 
@@ -140,9 +139,9 @@
   <tr>
     <td class="lbl" width="18mm">Giới tính:</td>
     <td width="82mm">
-      <span class="cb"></span>Nam &nbsp;&nbsp;
-      <span class="cb"></span>Nữ &nbsp;&nbsp;
-      <span class="cb"></span>Khác
+      <span class="cb">☐</span>Nam &nbsp;&nbsp;
+      <span class="cb">☐</span>Nữ &nbsp;&nbsp;
+      <span class="cb">☐</span>Khác
     </td>
     <td width="6mm"></td>
     <td class="lbl" width="28mm">Số điện thoại:</td>
@@ -158,9 +157,9 @@
   <tr>
     <td class="lbl" width="38mm">Tình trạng hôn nhân:</td>
     <td>
-      <span class="cb"></span>Độc thân &nbsp;&nbsp;&nbsp;
-      <span class="cb"></span>Kết hôn &nbsp;&nbsp;&nbsp;
-      <span class="cb"></span>Khác
+      <span class="cb">☐</span>Độc thân &nbsp;&nbsp;&nbsp;
+      <span class="cb">☐</span>Kết hôn &nbsp;&nbsp;&nbsp;
+      <span class="cb">☐</span>Khác
     </td>
   </tr>
 </table>
@@ -169,8 +168,8 @@
   <tr>
     <td class="lbl" width="58mm">Có dự định sinh con sắp tới không:</td>
     <td>
-      <span class="cb"></span>Có &nbsp;&nbsp;&nbsp;
-      <span class="cb"></span>Không
+      <span class="cb">☐</span>Có &nbsp;&nbsp;&nbsp;
+      <span class="cb">☐</span>Không
     </td>
   </tr>
 </table>
@@ -205,9 +204,9 @@
   <tr>
     <td class="lbl" width="30mm">Hút thuốc:</td>
     <td>
-      <span class="cb"></span>Không &nbsp;&nbsp;&nbsp;
-      <span class="cb"></span>Đã từng &nbsp;&nbsp;&nbsp;
-      <span class="cb"></span>Hiện tại
+      <span class="cb">☐</span>Không &nbsp;&nbsp;&nbsp;
+      <span class="cb">☐</span>Đã từng &nbsp;&nbsp;&nbsp;
+      <span class="cb">☐</span>Hiện tại
     </td>
   </tr>
 </table>
@@ -216,10 +215,10 @@
   <tr>
     <td class="lbl" width="30mm">Rượu bia:</td>
     <td>
-      <span class="cb"></span>Không &nbsp;&nbsp;&nbsp;
-      <span class="cb"></span>Thỉnh thoảng &nbsp;&nbsp;&nbsp;
-      <span class="cb"></span>Hàng tuần &nbsp;&nbsp;&nbsp;
-      <span class="cb"></span>Thường xuyên
+      <span class="cb">☐</span>Không &nbsp;&nbsp;&nbsp;
+      <span class="cb">☐</span>Thỉnh thoảng &nbsp;&nbsp;&nbsp;
+      <span class="cb">☐</span>Hàng tuần &nbsp;&nbsp;&nbsp;
+      <span class="cb">☐</span>Thường xuyên
     </td>
   </tr>
 </table>
@@ -228,10 +227,10 @@
   <tr>
     <td class="lbl" width="30mm">Mức độ căng thẳng:</td>
     <td>
-      <span class="cb"></span>Thấp &nbsp;&nbsp;&nbsp;
-      <span class="cb"></span>Trung bình &nbsp;&nbsp;&nbsp;
-      <span class="cb"></span>Cao &nbsp;&nbsp;&nbsp;
-      <span class="cb"></span>Rất cao
+      <span class="cb">☐</span>Thấp &nbsp;&nbsp;&nbsp;
+      <span class="cb">☐</span>Trung bình &nbsp;&nbsp;&nbsp;
+      <span class="cb">☐</span>Cao &nbsp;&nbsp;&nbsp;
+      <span class="cb">☐</span>Rất cao
     </td>
   </tr>
 </table>
@@ -240,10 +239,10 @@
   <tr>
     <td class="lbl" width="30mm">Mức độ bận rộn:</td>
     <td>
-      <span class="cb"></span>Thấp &nbsp;&nbsp;&nbsp;
-      <span class="cb"></span>Trung bình &nbsp;&nbsp;&nbsp;
-      <span class="cb"></span>Cao &nbsp;&nbsp;&nbsp;
-      <span class="cb"></span>Rất cao
+      <span class="cb">☐</span>Thấp &nbsp;&nbsp;&nbsp;
+      <span class="cb">☐</span>Trung bình &nbsp;&nbsp;&nbsp;
+      <span class="cb">☐</span>Cao &nbsp;&nbsp;&nbsp;
+      <span class="cb">☐</span>Rất cao
     </td>
   </tr>
 </table>
@@ -252,9 +251,9 @@
   <tr>
     <td class="lbl" width="40mm">Thời gian ngồi mỗi ngày:</td>
     <td>
-      <span class="cb"></span>&lt;4 giờ &nbsp;&nbsp;&nbsp;
-      <span class="cb"></span>4-8 giờ &nbsp;&nbsp;&nbsp;
-      <span class="cb"></span>&gt;8 giờ
+      <span class="cb">☐</span>&lt;4 giờ &nbsp;&nbsp;&nbsp;
+      <span class="cb">☐</span>4-8 giờ &nbsp;&nbsp;&nbsp;
+      <span class="cb">☐</span>&gt;8 giờ
     </td>
   </tr>
 </table>
