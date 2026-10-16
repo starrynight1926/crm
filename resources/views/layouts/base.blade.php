@@ -6,6 +6,15 @@
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>@yield('title', 'Longevity Data Source') — {{ config('app.name') }}</title>
 
+    {{-- Social share (Facebook / Zalo) — tiêu đề chuẩn khi dán link vào chat/post --}}
+    @php $__shareTitle = 'Hệ thống đặt lịch - Longevity Medical Center'; @endphp
+    <meta property="og:title" content="{{ $__shareTitle }}">
+    <meta property="og:site_name" content="{{ $__shareTitle }}">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="{{ url()->current() }}">
+    <meta name="twitter:title" content="{{ $__shareTitle }}">
+    <meta name="zalo:title" content="{{ $__shareTitle }}">
+
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap" rel="stylesheet">

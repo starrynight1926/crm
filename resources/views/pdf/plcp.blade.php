@@ -21,6 +21,10 @@
     letter-spacing: 0.3px;
   }
 
+  /* ===== Logo header ===== */
+  .logo-wrap { text-align: center; margin: 0 0 3mm 0; }
+  .logo-wrap img { height: 18mm; }
+
   /* ===== Title ===== */
   .title-lg { font-size: 15pt; font-weight: bold; color: #5c4d46; margin: 0; letter-spacing: 0.3px; }
   .title-sm { font-size: 12.5pt; font-weight: bold; color: #5c4d46; margin: 1mm 0 5mm 0; letter-spacing: 0.3px; }
@@ -58,6 +62,9 @@
 {{-- ========== Decor trang 1 ========== --}}
 <div class="brown-strip"></div>
 <div class="pg-footer">HỒ SƠ CHĂM SÓC SỨC KHỎE CÁ NHÂN HÓA - 1</div>
+
+{{-- ========== LOGO ========== --}}
+<div class="logo-wrap"><img src="{{ public_path('images/logo-plcp.png') }}" alt="Longevity Medical Center"></div>
 
 {{-- ========== TITLE ========== --}}
 <p class="title-lg">PERSONALIZED LONGEVITY CARE PROFILE (PLCP)</p>
