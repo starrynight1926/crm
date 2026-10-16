@@ -97,10 +97,10 @@
 <table class="grid">
   <tr>
     <td class="lbl" width="60mm">Personalized Health Advisor (PHA):</td>
-    <td class="val empty" width="40mm">&nbsp;</td>
+    <td class="val empty" width="18mm">&nbsp;</td>
     <td width="6mm"></td>
     <td class="lbl" width="32mm">Bác sĩ phụ trách:</td>
-    <td class="val">{{ $bac_si }}</td>
+    <td class="val" style="white-space: nowrap;">{{ $bac_si }}</td>
   </tr>
 </table>
 
