@@ -7,13 +7,26 @@
     <title>@yield('title', 'Longevity Data Source') — {{ config('app.name') }}</title>
 
     {{-- Social share (Facebook / Zalo) — tiêu đề chuẩn khi dán link vào chat/post --}}
-    @php $__shareTitle = 'Hệ thống đặt lịch - Longevity Medical Center'; @endphp
+    @php
+        $__shareTitle = 'Hệ thống đặt lịch - Longevity Medical Center';
+        $__shareDesc  = 'Longevity Medical Center — Hệ thống quản lý khách hàng & đặt lịch.';
+        $__shareImg   = asset('images/logo-plcp.png');
+    @endphp
+    <meta name="title" content="{{ $__shareTitle }}">
+    <meta name="description" content="{{ $__shareDesc }}">
     <meta property="og:title" content="{{ $__shareTitle }}">
     <meta property="og:site_name" content="{{ $__shareTitle }}">
+    <meta property="og:description" content="{{ $__shareDesc }}">
+    <meta property="og:image" content="{{ $__shareImg }}">
     <meta property="og:type" content="website">
     <meta property="og:url" content="{{ url()->current() }}">
+    <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="{{ $__shareTitle }}">
+    <meta name="twitter:description" content="{{ $__shareDesc }}">
+    <meta name="twitter:image" content="{{ $__shareImg }}">
     <meta name="zalo:title" content="{{ $__shareTitle }}">
+    <meta name="zalo:description" content="{{ $__shareDesc }}">
+    <meta name="zalo:image" content="{{ $__shareImg }}">
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
