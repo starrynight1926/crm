@@ -3308,3 +3308,22 @@ Nguồn: gom `lead_status_logs` (user_id) + `lead_distribution_logs` (actor_id),
 - Case B: gộp vào lead có cùng custom_field_id → verify root giữ value cũ, clone row bị drop (không ghi đè).
 - Case C: thử gộp vào chính nó / vào lead trashed / vào lead no_phone khác → phải báo lỗi.
 - Verify `audit_logs` + `lead_status_logs` ghi đúng.
+
+## 2026-10-19 — PLCP: logo + layout header + fix tên BS + mở tab mới + meta share FB/Zalo 🟢
+
+**Scope**: tinh chỉnh mẫu PLCP (hồ sơ chăm sóc) + meta share social cho data app.
+
+**Đã làm** (branch `nineteenth`, 10 commit từ `7ea7671` → `ce0b114`):
+- `pdf/plcp.blade.php`:
+  - Header 2 cột: logo (`public/images/logo-plcp.png`, 54mm) **trái**, cục text clinic (`Phòng khám Đa khoa Longevity Medical Center / địa chỉ 57-59 Ngô Thì Nhậm / Điện thoại-Website`) **phải** (padding-left 50mm, text-align left bên trong), font 9/10pt bold tên.
+  - Checkbox đổi từ `<span>` border → ký tự `☐` (U+2610) — mPDF render span-border không ổn định.
+  - Row "Bác sĩ phụ trách": empty val PHA 40→18mm, dồn chiều rộng sang val BS + `nowrap`.
+- `LeadPlcpController`:
+  - `resolveBacSi()`: strip prefix "BS."/"Bác sĩ" trùng ở `chuc_danh` lẫn `ten`, chuẩn hoá lại thành "BS. {Tên}" duy nhất.
+  - `Content-Disposition: attachment` → `inline` (preview trong tab thay vì ép tải).
+- `components/leads/⚡lead-form.blade.php`: 2 nút Tải PLCP (user + admin) thêm `target="_blank" rel="noopener"`, đổi label "Tải PLCP" → "Xem/Tải PLCP".
+- `layouts/base.blade.php`: thêm meta `og:title/description/image` + `twitter:*` + `zalo:*` = "Hệ thống đặt lịch - Longevity Medical Center" + logo-plcp.png cho thumbnail share FB/Zalo.
+
+**Bài học ghi memory** ([mPDF bỏ qua CSS width](../../.claude/.../memory/feedback_mpdf_width_attribute.md)): mPDF không áp CSS `width` lên `<img>` / `<td>`, phải dùng HTML attribute hoặc `style="width:..mm"` inline. Lần tới sửa view PDF **phải render test + screenshot local** (`storage/app/plcp_test.pdf`) trước khi commit — tránh ping-pong tỉ lệ nhiều round như lần này.
+
+**Chờ user confirm**: FB/Zalo đã scrape lại (Zalo cache 24-48h, FB qua debugger `developers.facebook.com/tools/debug`).
