@@ -196,11 +196,18 @@
   <tr>
     <td class="lbl" width="30mm">Chỉ số cơ bản:</td>
     <td>
-      Chiều cao:<span style="display:inline-block;border-bottom:1px dotted #333;width:14mm;">&nbsp;</span>&nbsp;&nbsp;
-      Cân nặng:<span style="display:inline-block;border-bottom:1px dotted #333;width:14mm;">&nbsp;</span>&nbsp;&nbsp;
-      BMI:<span style="display:inline-block;border-bottom:1px dotted #333;width:14mm;">&nbsp;</span>&nbsp;&nbsp;
-      Huyết áp:<span style="display:inline-block;border-bottom:1px dotted #333;width:14mm;">&nbsp;</span>&nbsp;&nbsp;
-      Mạch:<span style="display:inline-block;border-bottom:1px dotted #333;width:14mm;">&nbsp;</span>
+      <table style="border-collapse:collapse;width:100%;"><tr>
+        <td style="white-space:nowrap;padding-right:1mm;">Chiều cao:</td>
+        <td style="border-bottom:1px dotted #333;width:18mm;">&nbsp;</td>
+        <td style="white-space:nowrap;padding:0 1mm 0 3mm;">Cân nặng:</td>
+        <td style="border-bottom:1px dotted #333;width:18mm;">&nbsp;</td>
+        <td style="white-space:nowrap;padding:0 1mm 0 3mm;">BMI:</td>
+        <td style="border-bottom:1px dotted #333;width:18mm;">&nbsp;</td>
+        <td style="white-space:nowrap;padding:0 1mm 0 3mm;">Huyết áp:</td>
+        <td style="border-bottom:1px dotted #333;width:18mm;">&nbsp;</td>
+        <td style="white-space:nowrap;padding:0 1mm 0 3mm;">Mạch:</td>
+        <td style="border-bottom:1px dotted #333;width:18mm;">&nbsp;</td>
+      </tr></table>
     </td>
   </tr>
 </table>
