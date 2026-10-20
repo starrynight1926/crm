@@ -5,6 +5,12 @@
 <title>PLCP - {{ $ma_kh }}</title>
 <style>
   @page { margin: 10mm 14mm 14mm 20mm; }
+  @page p02 { margin: 0; background-image: url('{{ public_path('downloads/plcp-pages/page-02.png') }}'); background-image-resize: 6; background-image-opacity: 1; }
+  @page p03 { margin: 0; background-image: url('{{ public_path('downloads/plcp-pages/page-03.png') }}'); background-image-resize: 6; background-image-opacity: 1; }
+  @page p04 { margin: 0; background-image: url('{{ public_path('downloads/plcp-pages/page-04.png') }}'); background-image-resize: 6; background-image-opacity: 1; }
+  .pg02 { page: p02; page-break-before: always; }
+  .pg03 { page: p03; page-break-before: always; }
+  .pg04 { page: p04; page-break-before: always; }
   body { font-family: dejavusans, sans-serif; font-size: 9.5pt; color: #111; line-height: 1.4; }
 
   /* ===== Decor (viền trái nâu + footer) absolute theo page ===== */
@@ -261,15 +267,10 @@
 <table class="grid"><tr><td class="lbl" width="40mm">Tần suất khám sức khỏe:</td><td class="val empty">&nbsp;</td></tr></table>
 <table class="grid"><tr><td class="lbl" width="35mm">Nơi khám sức khỏe:</td><td class="val empty">&nbsp;</td></tr></table>
 
-{{-- ==================== TRANG 2-4: giữ PNG ==================== --}}
-<pagebreak margin-left="0" margin-right="0" margin-top="0" margin-bottom="0"/>
-<img src="{{ public_path('downloads/plcp-pages/page-02.png') }}" style="position:absolute;left:0;top:0;width:210mm;height:297mm;">
-
-<pagebreak margin-left="0" margin-right="0" margin-top="0" margin-bottom="0"/>
-<img src="{{ public_path('downloads/plcp-pages/page-03.png') }}" style="position:absolute;left:0;top:0;width:210mm;height:297mm;">
-
-<pagebreak margin-left="0" margin-right="0" margin-top="0" margin-bottom="0"/>
-<img src="{{ public_path('downloads/plcp-pages/page-04.png') }}" style="position:absolute;left:0;top:0;width:210mm;height:297mm;">
+{{-- ==================== TRANG 2-4: PNG làm background @page để full-bleed A4 ==================== --}}
+<div class="pg02">&nbsp;</div>
+<div class="pg03">&nbsp;</div>
+<div class="pg04">&nbsp;</div>
 
 </body>
 </html>
