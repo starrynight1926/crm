@@ -2,6 +2,10 @@
 
 @section('title', 'Đăng nhập hệ thống')
 
+@php
+    $bookingUrl = rtrim(\App\Models\AppSetting::get('booking_url', (string) config('services.booking.url')), '/');
+@endphp
+
 @section('content')
     <div class="flex flex-col items-center mb-8">
         <div class="w-14 h-14 rounded-lg border border-gold-300 bg-gold-50 flex items-center justify-center mb-4">
@@ -9,7 +13,7 @@
                 <path stroke-linecap="round" stroke-linejoin="round" d="M12 3l9 5.25v1.5H3v-1.5L12 3zM4.5 11.25h2v7.5h-2v-7.5zm6.5 0h2v7.5h-2v-7.5zm6.5 0h2v7.5h-2v-7.5zM3 20.25h18v1.5H3v-1.5z"/>
             </svg>
         </div>
-        <h1 class="text-2xl font-bold text-gold-700 tracking-wide uppercase">Aureum CRM</h1>
+        <h1 class="text-2xl font-bold text-gold-700 tracking-wide uppercase">Longevity Data Source</h1>
         <p class="text-xs tracking-[0.2em] text-ink/50 uppercase mt-1">Executive Wealth Management Portal</p>
     </div>
 
@@ -20,16 +24,16 @@
         <form method="POST" action="{{ route('login') }}" x-data="{ showPassword: false }">
             @csrf
 
-            <label class="block text-xs font-semibold tracking-widest text-ink/60 uppercase mb-2">Địa chỉ email</label>
-            <div class="flex items-center gap-2 border-b {{ $errors->has('email') ? 'border-red-400' : 'border-gold-200' }} focus-within:border-gold-600 pb-2 mb-1">
+            <label class="block text-xs font-semibold tracking-widest text-ink/60 uppercase mb-2">Tài khoản hoặc email</label>
+            <div class="flex items-center gap-2 border-b {{ $errors->has('login') ? 'border-red-400' : 'border-gold-200' }} focus-within:border-gold-600 pb-2 mb-1">
                 <svg class="w-5 h-5 text-gold-400" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75"/>
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"/>
                 </svg>
-                <input type="email" name="email" value="{{ old('email') }}" required autofocus
-                       placeholder="name@enterprise.com"
+                <input type="text" name="login" value="{{ old('login') }}" required autofocus
+                       placeholder="tenluu hoặc name@longevity.com.vn"
                        class="w-full text-sm bg-transparent focus:outline-none placeholder:text-ink/30">
             </div>
-            @error('email')
+            @error('login')
                 <p class="text-xs text-red-600 mt-1">{{ $message }}</p>
             @enderror
 
@@ -66,12 +70,26 @@
             </button>
         </form>
 
-        <a href="{{ route('demo.login') }}"
+        <a href="{{ route('guide') }}"
            class="mt-6 w-full flex items-center justify-center gap-2 border border-gold-300 text-gold-700 hover:bg-gold-50 font-semibold py-3 rounded-md transition-colors">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.5 20.25a8.25 8.25 0 0115 0"/>
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25"/>
             </svg>
-            Login demo
+            Hướng dẫn sử dụng
+        </a>
+
+        <div class="flex items-center gap-3 my-5 text-[10px] uppercase tracking-widest text-ink/40">
+            <span class="flex-1 h-px bg-gold-100"></span>
+            <span>hoặc</span>
+            <span class="flex-1 h-px bg-gold-100"></span>
+        </div>
+
+        <a href="{{ $bookingUrl }}/login"
+           class="w-full flex items-center justify-center gap-2 border border-gold-300 text-gold-700 hover:bg-gold-50 font-semibold py-3 rounded-md transition-colors">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5"/>
+            </svg>
+            Chuyển sang Booking App
         </a>
 
         <div class="border-t border-gold-100 mt-8 pt-5 text-center text-sm text-ink/60">

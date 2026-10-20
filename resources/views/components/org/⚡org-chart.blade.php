@@ -2,6 +2,7 @@
 
 use App\Models\Assignment;
 use App\Models\OrgUnit;
+use App\Models\User;
 use Illuminate\Support\Str;
 use Livewire\Component;
 
@@ -16,6 +17,12 @@ new class extends Component
     public bool $addingRoot = false;
 
     public string $newName = '';
+
+    public ?int $managingUnitId = null;
+
+    public array $managerIds = [];
+
+    public string $managerSearch = '';
 
     public function startEdit(int $id): void
     {
@@ -72,6 +79,39 @@ new class extends Component
         $this->cancelAdd();
     }
 
+    public function startManagers(int $id): void
+    {
+        $unit = OrgUnit::with('managers:id')->findOrFail($id);
+        $this->managingUnitId = $id;
+        $this->managerIds = $unit->managers->pluck('id')->all();
+        $this->managerSearch = '';
+        $this->cancelEdit();
+        $this->cancelAdd();
+    }
+
+    public function cancelManagers(): void
+    {
+        $this->managingUnitId = null;
+        $this->managerIds = [];
+        $this->managerSearch = '';
+    }
+
+    public function toggleManager(int $userId): void
+    {
+        if (in_array($userId, $this->managerIds, true)) {
+            $this->managerIds = array_values(array_filter($this->managerIds, fn ($i) => $i !== $userId));
+        } else {
+            $this->managerIds[] = $userId;
+        }
+    }
+
+    public function saveManagers(): void
+    {
+        if (! $this->managingUnitId) return;
+        OrgUnit::findOrFail($this->managingUnitId)->managers()->sync($this->managerIds);
+        $this->cancelManagers();
+    }
+
     public function toggleActive(int $id): void
     {
         $unit = OrgUnit::findOrFail($id);
@@ -96,6 +136,19 @@ new class extends Component
 
     public function with(): array
     {
+        $managerUsers = collect();
+        if ($this->managingUnitId) {
+            $managerUsers = User::query()
+                ->where('status', User::STATUS_ACTIVE)
+                ->when($this->managerSearch !== '', fn ($q) => $q->where(function ($qq) {
+                    $qq->where('name', 'like', '%' . $this->managerSearch . '%')
+                       ->orWhere('email', 'like', '%' . $this->managerSearch . '%');
+                }))
+                ->orderBy('name')
+                ->limit(50)
+                ->get(['id', 'name', 'email', 'job_title']);
+        }
+
         return [
             'tree' => OrgUnit::whereNull('parent_id')
                 ->with('children.children.children.children.children') // đủ sâu cho hiển thị, cây thực tế hiếm khi quá 6 cấp
@@ -106,6 +159,13 @@ new class extends Component
                 ->selectRaw('org_unit_id, count(distinct user_id) as c')
                 ->groupBy('org_unit_id')
                 ->pluck('c', 'org_unit_id'),
+            'managersByUnit' => \DB::table('org_unit_managers')
+                ->join('users', 'users.id', '=', 'org_unit_managers.user_id')
+                ->select('org_unit_managers.org_unit_id', 'users.name', 'users.job_title')
+                ->orderBy('users.name')
+                ->get()
+                ->groupBy('org_unit_id'),
+            'managerUsers' => $managerUsers,
         ];
     }
 };
@@ -142,7 +202,7 @@ new class extends Component
 
     <div class="space-y-3">
         @foreach ($tree as $node)
-            @include('partials.org-node', ['node' => $node, 'memberCounts' => $memberCounts])
+            @include('partials.org-node', ['node' => $node, 'memberCounts' => $memberCounts, 'managersByUnit' => $managersByUnit, 'managerUsers' => $managerUsers ?? collect()])
         @endforeach
     </div>
 
