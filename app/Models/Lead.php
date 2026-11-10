@@ -141,9 +141,10 @@ class Lead extends Model
         self::SOURCE_MKT_BR, self::SOURCE_SA, self::SOURCE_BA, self::SOURCE_HL,
     ];
 
-    // Cột "Nguyên tắc chia lại số" trong ma trận — SA & BOD không thu hồi tự động.
+    // Cột "Nguyên tắc chia lại số" trong ma trận — SA, BOD, WI, HL không thu hồi tự động.
+    // 2026-11-10: thêm WI + HL — khách đã đến quầy / đã gọi vào thì không có khái niệm "giật về kho".
     public const SOURCES_NO_RECALL = [
-        self::SOURCE_SA, self::SOURCE_BOD,
+        self::SOURCE_SA, self::SOURCE_BOD, self::SOURCE_WI, self::SOURCE_HL,
     ];
 
     public static function isUpsBasedSource(?string $source): bool
