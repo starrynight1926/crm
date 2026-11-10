@@ -1,10 +1,10 @@
-# Lara-SCRM — Scope & Thiết kế tổng quan
+# Lara Data Source — Scope & Thiết kế tổng quan
 
-> Cập nhật: 2026-07-03 — chốt sau trao đổi ban đầu. File này là nguồn tham chiếu chính của dự án.
+> Cập nhật: 2026-07-15 — bổ sung luồng 6 nhóm nguồn + cơ chế recall/escalate 2 tầng + trang Quy tắc vận hành (xem 6.3, 7.6). File này là nguồn tham chiếu chính của dự án.
 
 ## 1. Mục tiêu
 
-Phần mềm CRM quản lý data khách hàng (lead) + phân bổ data cho nhân viên sale, hỗ trợ tổ chức nhiều phòng ban với vai trò chồng chéo (một người thuộc team A nhưng giữ vai trò ở team B).
+Phần mềm Data Source quản lý data khách hàng (lead) + phân bổ data cho nhân viên sale, hỗ trợ tổ chức nhiều phòng ban với vai trò chồng chéo (một người thuộc team A nhưng giữ vai trò ở team B).
 
 Thiết kế UI tham khảo: Figma "[Longevity] Phần mềm" — 4 màn hình: Dashboard Tổng Quan, Danh Sách Khách Hàng, Thêm Mới/Cập Nhật Khách Hàng, Chi Tiết & Ghi Chú Khách Hàng.
 
@@ -47,7 +47,21 @@ Ngày, PAGE, Tên, SĐT, Camp, Insight, Link, Nguồn quảng cáo, Người nh�
 - Trường mức **công ty** (không gắn phòng nào): mọi bộ phận đều thấy; trường bắt buộc mức công ty thì ai cũng phải điền.
 - Trường **bắt buộc theo rule từng phòng**: phòng MKT cần 5 trường, phòng khác cần 10 trường đều cấu hình được.
 - Bộ trường áp vào lead theo **phòng ban đang giữ lead** (org_unit) + các phòng cha; lead chuyển phòng thì bộ trường đổi theo.
-- Kiểu trường: text, số, ngày, select (danh sách chọn).
+- Kiểu trường: text (giới hạn ký tự), số (min/max), ngày, email, select (danh sách chọn), **mã phân loại** (nối vào mã KH — cố định / chọn / nhập tay).
+
+### 4.2b Mã khách hàng động (cập nhật 2026-07-05)
+
+- Core cố định **chỉ `KH-{id}`** (zero-pad ≥3 số). `type_code`/`source_code` cứng **đã bỏ**.
+- Các đoạn phía sau do **trường "mã phân loại"** (`affects_code`) của công ty→phòng→nhóm sinh ra, theo cây + position. VD `KH-001-2026-MKT-FB`.
+- Định danh bất biến của khách = `leads.id` (bigint); `code` là mã hiển thị, sinh lại được, không FK nào bám vào.
+
+### 4.2c Duyệt trường bắt buộc (cập nhật 2026-07-05)
+
+- Trường bắt buộc **cấp công ty**: admin/giám đốc thêm là áp ngay.
+- Trường bắt buộc **cấp phòng/nhóm**: chờ **cấp trên duyệt** mới áp lên lead (quyền `field.approve` ở node cha). Trưởng nhóm thêm → trưởng phòng duyệt; trưởng phòng thêm → giám đốc duyệt.
+- Trường đang chờ duyệt **ẩn** với người đề xuất (chỉ người duyệt thấy ở khu duyệt). Bị từ chối thì ghi lý do.
+- Màn quản lý + duyệt nằm ở **"Thiết lập"** (dropdown user), chia tab.
+- Báo cáo có toggle **"Hiện đầy đủ trường tùy biến"**: tắt = chỉ trường mặc định + mức công ty; bật = mọi cấp (áp cả Export Excel).
 
 ### 4.3 Backlog sau Phase 8 (chưa làm, cần bàn thêm)
 
@@ -76,10 +90,11 @@ Ngày, PAGE, Tên, SĐT, Camp, Insight, Link, Nguồn quảng cáo, Người nh�
   - Chia theo doanh thu cao nhất
   - Chia theo tỉ lệ thành công (close rate)
   - Mở rộng thêm rule mới sau này
-- **Thu hồi/chia lại lead** — 3 chế độ cấu hình được:
-  - Tự động theo SLA (quá X giờ không chăm → thu hồi, chia lại)
-  - Thủ công (quản lý rút và chia lại bằng tay)
-  - Tắt (lead đã chia là cố định)
+- **Thu hồi/chia lại lead** — cấu hình per lần chia (xem 6.3 + 7.6):
+  - CM có quyền `lead.recall` khi chia sẽ có ô "Thu hồi sau XX ngày" hoặc "Chia vĩnh viễn".
+  - Đến hạn: lead thu hồi về **pool team** để CM team chia lại; quá thời gian escalate tiếp → về **kho CM khu vực (cấp cha)**.
+  - "Chia vĩnh viễn" → admin hệ thống vẫn thu hồi được bất cứ lúc nào.
+  - Cấu hình 2 tham số thời gian (thời gian hoàn số, thời gian escalate) ở trang Quy tắc vận hành, theo cấp **phòng ban → team** (phòng ban set thì team bắt buộc theo).
 
 ### 6.1 Cấu trúc rule (3 phần)
 1. **Điều kiện lọc (matching)**: lead nào áp rule — theo khu vực, camp, nguồn quảng cáo, PAGE... Rule có thứ tự ưu tiên, khớp rule đầu tiên thì dừng; không khớp → nằm lại kho chung chờ chia tay.
@@ -90,7 +105,22 @@ Ngày, PAGE, Tên, SĐT, Camp, Insight, Link, Nguồn quảng cáo, Người nh�
 - **Cửa sổ tính doanh thu / tỉ lệ close**: mặc định theo ngày; cấu hình được theo tuần, tháng, hoặc khoảng thời gian tùy chọn trên từng rule.
 - **3 cấp kho**: kho chung → kho team → kho cá nhân. Lead về là chia ngay, **không phụ thuộc giờ làm việc**.
 - **Trần lead**: setup được ở cả 3 cấp — phòng ban, team, cá nhân. Chạm trần thì nhảy đích kế tiếp.
-- **Tự kéo lead từ kho**: được, nếu role có quyền (quyền "kéo lead từ kho" trong RBAC).
+- **Bỏ cơ chế "nhân viên tự kéo lead"** (2026-07-15): permission `lead.pull_pool` deprecated. Nhân viên **chỉ thấy lead đã được chia cho mình**. Chỉ user có permission `lead.distribute_team` (mới) mới nhìn thấy kho team để chia tay cho nhân viên.
+
+### 6.3 Luồng lead theo 6 nhóm nguồn (bổ sung 2026-07-15)
+
+Mỗi lead có `source_group` (1 trong 6 nhóm) quyết định luồng đi:
+
+| # | Nhóm nguồn | Ai up | Có duyệt? | Đi đâu sau khi vào hệ thống |
+|---|---|---|---|---|
+| 1 | **Marketing** | Team trực page | Không | Kho **booking** → team booking gọi → khách đồng ý → CM sale chia → sale. Từ chối → ở lại kho booking (đánh dấu overdue nếu quá hạn) |
+| 2 | **Data lạnh** | Quản lý team booking | Không | Kho booking → như (1) |
+| 3 | **BDM** | Quản lý team booking | Không | Kho booking → như (1) |
+| 4 | **Bạn giới thiệu** | Bất kỳ nhân viên nào (mọi cấp) | **Không** — người up **tự chọn sale nhận** | Thẳng vào kho cá nhân của sale được chọn |
+| 5 | **Cộng tác viên (CTV)** | Role có permission `lead.distribute_ctv` (mặc định gán cho `CM Hà Nội` / `CM Đà Nẵng` / `CM HCM`) | Không | Người phân bổ tự chia cho sale trực thuộc khu vực |
+| 6 | **Khách tự đến** | Bất kỳ nhân viên nào (kể cả tài khoản CTV) | **Có** — CM cơ sở duyệt | Vào kho **CM cơ sở** chờ duyệt → CM chia cho sale |
+
+**Ghi chú luồng "Bạn giới thiệu" & "Khách tự đến"**: hai luồng này thay thế cơ chế "add lead thủ công không nguồn" — mọi lead tạo tay từ nhân viên đều phải chọn 1 trong 2 nhóm này (nhân viên phổ thông chỉ thấy 2 lựa chọn); các nhóm 1-3 chỉ hiện với người có quyền tương ứng; nhóm 5 chỉ hiện với người có `lead.distribute_ctv`.
 
 ## 7. Tổ chức & phân quyền
 
@@ -99,6 +129,18 @@ Mô hình 2 lớp tách biệt:
 ### 7.1 Quyền chức năng (RBAC — role tự định nghĩa)
 - Admin tự tạo role, tích checkbox từng quyền: xem/tạo/sửa/xóa lead, import, export, chia số, thu hồi, cấu hình rule chia, quản lý user/team, xem báo cáo...
 - Quyền **export** gắn trên role, mặc định tắt. Mọi lần export ghi audit log.
+- **Permission bổ sung (2026-07-15)**:
+  - `lead.distribute_team` — [DEPRECATED 2026-07-19] tách thành `lead.distribute_booking` + `lead.distribute_sale`.
+  - `lead.distribute_ctv` — dành cho nguồn CTV theo khu vực (gán vào role `CM Hà Nội / Đà Nẵng / HCM`).
+  - `lead.recall` — cho phép thu hồi số + hiện ô "Thu hồi sau XX ngày / Chia vĩnh viễn" trong form chia.
+  - `lead.approve_source` — duyệt lead từ luồng "Khách tự đến". CM trực tiếp của người up mới có quyền duyệt.
+  - `ops.manage` — vào trang **Quy tắc vận hành** (mặc định gán Admin hệ thống).
+- **Permission bổ sung (2026-07-19, Phase 6.8)** — tách rõ vai trò booking vs sale:
+  - `lead.distribute_booking` — thấy kho Booking + chia số ở phase Booking (QL team booking).
+  - `lead.distribute_sale` — thấy kho Sale + chia số ở phase Sale (CM team sale).
+  - `lead.update_booking` — sửa info cá nhân (cột trái trang chi tiết) khi lead đang ở phase Booking. Không có perm này thì cột trái **read-only**, chỉ ghi chú/dịch vụ (cột phải) còn thao tác được.
+  - `lead.update_sale` — sửa info cá nhân khi lead đang ở phase Sale.
+  - Case flexible: role CM ôm cả 2 team → tick cả `distribute_booking`+`distribute_sale`+`update_booking`+`update_sale`. Tách người → chỉ tick nhóm phù hợp.
 
 ### 7.2 Phạm vi dữ liệu (data scope)
 - Cấu hình riêng, độc lập với role, 3 mức: **Chỉ dữ liệu bản thân** / **Chỉ dữ liệu team** / **Chọn phòng ban cụ thể**.
@@ -117,14 +159,112 @@ Mô hình 2 lớp tách biệt:
 - Cây đệ quy **sâu tùy ý** (không giới hạn cấp) — mở chi nhánh/nhóm mới không phải sửa cấu trúc.
 - Data scope tích theo node: thấy node đó và toàn bộ node con.
 
-## 8. Luồng lead (lifecycle)
+### 7.6 Trang Quy tắc vận hành (mới, 2026-07-15)
 
-1. Lead về (4 nguồn) → Postgres raw
-2. Pipeline chuẩn hóa → check trùng → vào MySQL, trạng thái `Mới`, nằm trong **kho chung (lead pool)**
-3. Engine chia số: rule cấp 1 chia từ kho chung về team → rule cấp 2 chia cho sale → sale nhận thông báo realtime
-4. Sale gọi → ghi nhận tình trạng lần 1, lần 2 → gắn phân loại (Follow, Nét, Quan tâm, Tài chính yếu, Tham khảo, Tìm hiểu, Gọi lại sau...)
-5. Booking → Show → Close (hoặc rơi vào KLLD / Missed)
-6. Quá SLA không chăm → thu hồi, quay lại bước 3 (nếu bật chế độ auto)
+Màn dành cho **Admin hệ thống** (permission `ops.manage`), quản lý toàn bộ quy tắc phân bổ + thu hồi lead. Gồm:
+
+- **Bảng phân bổ**: hiển thị ai đang có `lead.distribute_team`, `lead.distribute_ctv`, `lead.approve_source`, `lead.recall` — kèm scope. Đây là dashboard giám sát.
+- **Cấu hình thời gian recall & escalate** theo cấp:
+  - `recall_after_days` — sau khi hết hạn "Thu hồi sau XX ngày" thì thu hồi lead về pool team.
+  - `escalate_after_days` — pool team CM không xử lý trong X ngày → escalate lên kho CM cấp cha.
+  - Cấu hình được ở **phòng ban** và **team**. Quy tắc: **phòng ban set → team bắt buộc theo** (override từ trên xuống). Phòng ban không set → team dùng cấu hình riêng. Cả hai không set → dùng mặc định hệ thống.
+- **Danh sách overdue** kho booking (giám sát lead từ chối / quá hạn).
+- **Bật/tắt "Chia vĩnh viễn"** ở cấp phòng ban (mặc định bật; tắt thì form chia không hiện lựa chọn này). Admin hệ thống bypass, luôn thu hồi được kể cả lead chia vĩnh viễn.
+
+**3 role hệ thống seed sẵn (2026-07-15)** — dùng cho nguồn CTV, gắn permission `lead.distribute_ctv`:
+- `CM Hà Nội`, `CM Đà Nẵng`, `CM HCM`. Admin tự tạo thêm cho tỉnh mới, chỉ cần gán permission là chạy.
+
+## 8. Luồng lead (lifecycle) — cập nhật 2026-07-15
+
+1. Lead về hệ thống theo **1 trong 6 nhóm nguồn** (xem 6.3):
+   - Nhóm 1-3 (Marketing/Data lạnh/BDM): vào kho booking → team booking xử lý → khách đồng ý → CM sale chia → sale.
+   - Nhóm 4 (Bạn giới thiệu): người up tự chọn sale nhận → thẳng vào kho cá nhân sale.
+   - Nhóm 5 (CTV): role có `lead.distribute_ctv` chia thẳng cho sale khu vực.
+   - Nhóm 6 (Khách tự đến): vào kho CM cơ sở → CM duyệt → chia sale.
+2. Pipeline raw → clean vẫn giữ nguyên cho lead vào từ Ads/Webhook/Import.
+3. Sale gọi → ghi tình trạng lần 1, lần 2 → gắn phân loại funnel (Follow, Nét...).
+4. Booking → Show → Close (hoặc KLLD / Missed).
+5. Cơ chế **thu hồi 2 tầng** (xem 6 + 7.6):
+   - Hết hạn "Thu hồi sau XX ngày" → về pool team CM.
+   - Quá `escalate_after_days` ở pool team → escalate lên kho CM cấp cha.
+6. Từ chối ở kho booking → ở lại kho booking, đánh dấu overdue nếu quá thời hạn (không auto-delete).
+
+### 8.0.2 Customer Flow 7 phase (Phase 6.21, 2026-07-30) — mô hình lifecycle hiện tại
+
+> Thay thế mô hình 2-phase (8.0.1) ở lớp UI + phân quyền chốt phase. Field cũ (`pipeline_phase`, `pipeline_status`, `booking_status`) **giữ song song** làm compat cho báo cáo + rule chia số. Chi tiết thiết kế: `docs/design/customer_flow_30-07-2026.md`. Mockup: `docs/mockups/customer_flow_30-07-2026.html`.
+
+**7 phase lifecycle của khách (không phải lead riêng)**:
+
+| # | Phase | Ai xử lý (mặc định) | Sub-status |
+|---|-------|---------------------|------------|
+| 1 | Thêm mới khách hàng | Trực Page/Tele/QL Sale/Sale (tùy nguồn) | – |
+| 2 | Chia số | CM cơ sở → CM team | – |
+| 3 | Gọi điện | Tele | Thành công / Thất bại / Không nghe máy (mỗi lần gọi = 1 record `call_logs`) |
+| 4 | Booking thăm khám | Sale | Đã xác nhận / Chờ xác nhận / Hủy - Đổi lịch (mỗi lần booking = 1 record `booking_logs`) |
+| 5 | Check-in | Lễ tân | – |
+| 6 | Bán hàng | *(chưa build)* | – |
+| 7 | Sử dụng dịch vụ | *(chưa build)* | – |
+
+**Mapping `source_group` → `start_phase`** (phase cao nhất được chốt tại lúc tạo lead):
+
+| Source | start_phase | Ghi chú |
+|--------|-------------|---------|
+| MKT | 1 | Trực Page nhập, đi full 5 phase tuần tự |
+| MKT_BR / SA / BA / HL | 3 | Sale/Tele tự tạo + tự làm A→Z tới Booking (phase 1-3 mở thông, lưu 1 phát chốt cả cụm) |
+| BDM / BOD | 1 | QL Sale nhập, CM chia tay cho Tư vấn viên, đi full phase 1→2→3 |
+| Walk-in | 3 | Khách tự đến quầy — lễ tân/admin nhập lead + tạo booking, phase 2 Gọi auto-close rỗng, phase 3 Booking → Admin duyệt gắn sale tiếp đón |
+
+**Luật vận hành**:
+
+- **Mở thông (bulk edit)**: chỉ xảy ra 1 lần khi tạo lead. Mở thông phase `1..start_phase` (khách mới) hoặc `3..start_phase` (khách quay lại). Nút **"Lưu — chốt N phase"** đóng tất cả cùng lúc, đóng dấu `LeadPhaseClosure(closed_by, closed_at)`.
+- **Tuần tự**: sau khi lưu lần đầu, mỗi phase có nút **"Kết thúc phase X"**, phải bấm mới chuyển bước.
+- **Lùi phase**: chỉ role có perm `phase.rollback` (mặc định gán "Admin vận hành") — xóa closure từ phase X trở đi.
+- **Khách quay lại**: field `is_first_visit` bỏ tick → lead reset về phase 3, `call_logs`/`booking_logs` cũ giữ, chỉ append record mới.
+- **Ghi call_log/booking_log**: owner đang giữ lead + QL Sale + Admin vận hành đều ghi hộ được. Mỗi lần gọi/booking = 1 record riêng (không đè).
+
+**Permission mới (Phase 6.21)** — 6 perm tách rời để linh hoạt cấp lẻ:
+- `phase.close.new`, `phase.close.distribute`, `phase.close.call`, `phase.close.booking`, `phase.close.checkin` — chốt từng phase.
+- `phase.rollback` — lùi phase (Admin vận hành only).
+
+**UI trang chi tiết KH**: đổi từ 6 tab dọc (`Trạng thái | Bác sĩ tư vấn | Liệu trình | Tiềm năng | Insight` + Phân phối gộp) thành:
+- **Thanh arrow-breadcrumb 7 phase** trên đầu (style AMIS Data Source) — bấm chuyển tab.
+- **7 tab-phase** thay 6 tab cũ. Mỗi tab hiển thị form của phase đó. Phase bị skip theo nguồn thì ẩn hẳn. Phase đã chốt = readonly (trừ Admin lùi). Phase 6-7 = placeholder "chưa build".
+
+**Phase 4 rework (2026-08-01)** — Booking per-record thay cho cấp lead:
+- Cơ sở / Bác sĩ / Dịch vụ / Chuyên viên tư vấn giờ nằm trong **từng record `booking_logs`**, không còn ở cột lead. Cho phép mỗi khách có nhiều lần booking khác nhau (VD: lần 1 HN với BS A, lần 2 HCM với BS B) — mỗi record độc lập.
+- 2 khung Phase 4:
+  - **"Lịch sử booking"**: list các record — Chờ duyệt lên đầu, rồi `scheduled_at desc`. Mỗi record hiển thị đủ cơ sở/BS/DV/CV[]/trạng thái/người book.
+  - **"Tạo booking"**: form ghi record mới (Loại | Trạng thái lock "Chờ xác nhận" | Datetime | Cơ sở | BS | DV | Multi-CV +/-). Giữ ô "Trạng thái đặt lịch tổng thể" tự sync + nút "Đồng bộ từ bên booking".
+- **Handoff Sale**: khi record chuyển `da_xac_nhan` + có CV pivot position=1 + lead chưa có owner → auto gọi `assignToSale(cv1)` — CV1 của booking được duyệt trở thành Sale phụ trách lead. Perm giữ nguyên `lead.distribute_sale`.
+- Bảng mới: `booking_log_consultants` (pivot n-CV per booking, có `position`). `booking_logs` thêm `facility_id`.
+- Cột lead cũ `facility_id / doctor_id / consultant_1..3_id / service_name` **không dùng nữa** nhưng giữ nguyên trong DB (backward compat, dọn ở lần cleanup sau).
+
+### 8.0.1 Trục lifecycle (Phase 6.8, 2026-07-19) — legacy, giữ song song
+
+Song song với `booking_status` (đã đặt lịch chưa), mỗi lead có 2 trục:
+
+- **`pipeline_phase`** (`booking` / `sale`): đang ở giai đoạn nghiệp vụ nào.
+- **`pipeline_status`** (`waiting_distribute` / `in_care`): trạng thái trong giai đoạn — Chờ chia / Đang chăm sóc.
+
+**4 tổ hợp:**
+
+| phase / status | Ai xử lý | Ai được sửa info cá nhân |
+|---|---|---|
+| Booking · Chờ chia | Kho Booking, QL team booking chia | `lead.update_booking` |
+| Booking · Đang chăm sóc | Team booking đang gọi | `lead.update_booking` |
+| Sale · Chờ chia | CM team sale chia số | `lead.update_sale` |
+| Sale · Đang chăm sóc | Sale nhân viên chăm | `lead.update_sale` |
+
+**Transition mặc định:**
+
+- Nhóm 1-3 (Marketing/Data lạnh/BDM) tạo mới → `booking / waiting_distribute`.
+- Booking gọi lần đầu (add note) → `booking / in_care`.
+- Team booking bấm **"Chuyển sang Sale"** (khách đồng ý gặp) → `sale / waiting_distribute`.
+- CM sale chia cho 1 sale cụ thể → `sale / in_care`.
+- Nhóm 4 (Bạn giới thiệu) & 5 (CTV đã chia): khởi tạo luôn `sale / in_care`.
+- Nhóm 6 (Khách tự đến): khởi tạo `sale / waiting_distribute` (chờ CM sale chia).
+
+**Rule khóa field cột trái**: user không có perm khớp phase → trang chi tiết cột trái read-only (chỉ xem), route `leads.edit` trả 403. Cột phải (ghi chú, dịch vụ, thu tiền, `booking_status`, `classification`) vẫn chạy bằng `lead.update` như cũ.
 
 ## 8.1 Dịch vụ gắn vào khách & theo dõi phase
 

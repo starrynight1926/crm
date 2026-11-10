@@ -57,7 +57,6 @@ class FacebookLeadAdsAdapter implements AdsAdapter
             // Fallback field phổ biến của FB lead form
             $payload['name'] ??= $flat['full_name'] ?? $flat['name'] ?? null;
             $payload['phone'] ??= $flat['phone_number'] ?? $flat['phone'] ?? null;
-            $payload['ad_source'] ??= 'Facebook Ads';
             $payload['received_date'] ??= isset($fbLead['created_time'])
                 ? \Carbon\Carbon::parse($fbLead['created_time'])->toDateString()
                 : null;

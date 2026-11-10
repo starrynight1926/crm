@@ -10,9 +10,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class Payment extends Model
 {
     public const METHODS = [
-        'cash' => 'Tiền mặt',
-        'transfer' => 'Chuyển khoản',
+        'transfer_remote' => 'Chuyển khoản từ xa',
+        'transfer_local' => 'Chuyển khoản tại chỗ',
         'card' => 'Quẹt thẻ',
+        'cash' => 'Tiền mặt',
     ];
 
     protected function casts(): array

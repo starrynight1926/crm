@@ -3,9 +3,13 @@
   "configurations": [
     {
       "name": "lara-scrm",
+      "url": "http://127.0.0.1:1999"
+    },
+    {
+      "name": "lara-scrm-serve",
       "runtimeExecutable": "php",
-      "runtimeArgs": ["artisan", "serve", "--port=8000"],
-      "port": 8000
+      "runtimeArgs": ["artisan", "serve", "--port=8123"],
+      "port": 8123
     }
   ]
 }

@@ -3,7 +3,9 @@
 namespace Tests\Feature;
 
 use App\Jobs\ProcessRawLead;
+use App\Models\CustomField;
 use App\Models\Lead;
+use App\Models\LeadCustomValue;
 use App\Models\LeadStatusLog;
 use App\Models\RawLead;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -36,7 +38,6 @@ class ProcessRawLeadTest extends TestCase
             'name' => 'Nguyễn Văn Pipeline',
             'phone' => '+84 912 345 678',
             'camp' => 'Camp T7',
-            'ad_source' => 'Facebook Ads',
             'received_date' => '01/07/2026',
         ]);
 
@@ -48,8 +49,8 @@ class ProcessRawLeadTest extends TestCase
         $this->assertSame('0912345678', $lead->phone); // đã chuẩn hóa
         $this->assertSame('2026-07-01', $lead->received_date->toDateString()); // parse d/m/Y
         $this->assertSame($raw->id, $lead->raw_lead_id); // truy vết ngược
-        $this->assertSame('MKT', $lead->type_code);
-        $this->assertSame(sprintf('KH-%05d-MKT-FB', $lead->id), $lead->code);
+        // Không có classification field cấu hình → mã core trần KH-{id}
+        $this->assertSame('KH-' . str_pad((string) $lead->id, 3, '0', STR_PAD_LEFT), $lead->code);
         $this->assertSame(Lead::POOL_COMMON, $lead->pool_level); // vào kho chung
         $this->assertTrue(LeadStatusLog::where('lead_id', $lead->id)->where('field', 'created')->exists());
     }
@@ -81,12 +82,16 @@ class ProcessRawLeadTest extends TestCase
 
     public function test_duplicate_phone_merges_into_existing_lead(): void
     {
+        // Phase 6.20 — camp giờ là custom field cấp công ty (được seed trong migration)
+        $campField = CustomField::whereNull('org_unit_id')->where('key', 'camp')->firstOrFail();
         $existing = Lead::create([
             'received_date' => now()->toDateString(),
             'name' => 'Khách cũ',
             'phone' => '0901234567',
-            'camp' => 'Camp cũ',
         ]);
+        LeadCustomValue::create(['lead_id' => $existing->id, 'custom_field_id' => $campField->id, 'value' => 'Camp cũ']);
+        // Reset accessor cache vì test khác có thể đã cache id sai
+        (function () { self::$_coreCustomFieldIds = []; })->call(new Lead);
 
         $raw = $this->process($this->makeRaw([
             'name' => 'Khách trùng',
@@ -118,17 +123,30 @@ class ProcessRawLeadTest extends TestCase
         $this->assertSame(0, Lead::count());
     }
 
-    public function test_type_code_from_payload_respected(): void
+    public function test_pipeline_writes_custom_field_values_and_code(): void
     {
-        $raw = $this->process($this->makeRaw(['name' => 'A', 'phone' => '0901234567', 'type_code' => 'C']));
+        // Trường tùy biến mức công ty: 1 thường + 1 mã phân loại cố định (nối mã)
+        $need = CustomField::create([
+            'org_unit_id' => null, 'key' => 'nhu_cau', 'label' => 'Nhu cầu',
+            'field_type' => 'text', 'required' => false, 'status' => 'active', 'active' => true,
+        ]);
+        $year = CustomField::create([
+            'org_unit_id' => null, 'key' => 'nam', 'label' => 'Năm',
+            'field_type' => 'code', 'affects_code' => true,
+            'rules' => ['code_kind' => 'fixed', 'fixed_value' => '2026'],
+            'required' => false, 'status' => 'active', 'active' => true,
+        ]);
 
-        $this->assertSame('C', Lead::find($raw->clean_lead_id)->type_code);
-    }
+        $raw = $this->process($this->makeRaw([
+            'name' => 'A', 'phone' => '0901234567',
+            'cf_' . $need->id => 'Gói cao cấp',
+        ]));
 
-    public function test_invalid_type_code_falls_back_to_mkt(): void
-    {
-        $raw = $this->process($this->makeRaw(['name' => 'A', 'phone' => '0901234567', 'type_code' => 'XYZ']));
-
-        $this->assertSame('MKT', Lead::find($raw->clean_lead_id)->type_code);
+        $lead = Lead::find($raw->clean_lead_id);
+        $this->assertNotNull($lead);
+        // giá trị custom được ghi
+        $this->assertSame('Gói cao cấp', LeadCustomValue::where('lead_id', $lead->id)->where('custom_field_id', $need->id)->value('value'));
+        // mã nối đoạn cố định mức công ty
+        $this->assertSame('KH-' . str_pad((string) $lead->id, 3, '0', STR_PAD_LEFT) . '-2026', $lead->code);
     }
 }

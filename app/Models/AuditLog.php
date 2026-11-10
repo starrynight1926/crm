@@ -29,5 +29,9 @@ class AuditLog extends Model
             'ip' => request()?->ip(),
             'created_at' => now(),
         ]);
+
+        // Mirror sang file public/logs.md (Apache serve trực tiếp, app sập vẫn đọc được).
+        $detail = $entity ? class_basename($entity) . " #{$entity->getKey()}" : null;
+        \App\Support\PublicLog::write($action, $detail);
     }
 }

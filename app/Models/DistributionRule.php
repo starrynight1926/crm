@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['name', 'active', 'priority', 'level', 'org_unit_id', 'conditions', 'strategy', 'strategy_config'])]
+#[Fillable(['name', 'active', 'priority', 'level', 'org_unit_id', 'pool_unit_id', 'conditions', 'strategy', 'strategy_config'])]
 class DistributionRule extends Model
 {
     public const LEVEL_POOL_TO_TEAM = 'pool_to_team';
@@ -37,6 +37,12 @@ class DistributionRule extends Model
     public function orgUnit(): BelongsTo
     {
         return $this->belongsTo(OrgUnit::class);
+    }
+
+    /** Phase 6.24 — Kho số target (thay org_unit ở khía cạnh phân bổ). */
+    public function poolUnit(): BelongsTo
+    {
+        return $this->belongsTo(PoolUnit::class);
     }
 
     /** Lead có khớp điều kiện lọc của rule không. Điều kiện rỗng = khớp tất. */

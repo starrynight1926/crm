@@ -1,0 +1,1797 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Project Note — Laravel App</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0f1117;
+    --bg2: #181c27;
+    --bg3: #1e2335;
+    --border: rgba(255,255,255,0.08);
+    --border2: rgba(255,255,255,0.14);
+    --text: #e2e8f0;
+    --text2: #8892a4;
+    --text3: #5a6478;
+    --green: #22d3a0;
+    --green-dim: rgba(34,211,160,0.12);
+    --green-dim2: rgba(34,211,160,0.07);
+    --amber: #f59e0b;
+    --amber-dim: rgba(245,158,11,0.12);
+    --red: #f87171;
+    --red-dim: rgba(248,113,113,0.10);
+    --blue: #60a5fa;
+    --blue-dim: rgba(96,165,250,0.12);
+    --purple: #a78bfa;
+    --purple-dim: rgba(167,139,250,0.12);
+    --mono: 'JetBrains Mono', monospace;
+    --sans: 'Inter', sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    font-size: 14px;
+    line-height: 1.6;
+  }
+
+  /* ── Layout ── */
+  .shell { display: flex; min-height: 100vh; }
+
+  /* ── Sidebar ── */
+  .sidebar {
+    width: 240px;
+    min-width: 240px;
+    background: var(--bg2);
+    border-right: 1px solid var(--border);
+    padding: 0;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+  }
+  .sidebar-logo {
+    padding: 20px 20px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .logo-icon {
+    width: 28px; height: 28px;
+    background: var(--green);
+    border-radius: 7px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; font-weight: 700; color: #0f1117;
+    flex-shrink: 0;
+  }
+  .logo-text { font-weight: 600; font-size: 13px; color: var(--text); letter-spacing: .01em; }
+  .logo-sub  { font-size: 10px; color: var(--text3); margin-top: 1px; }
+
+  .sidebar-section { padding: 16px 12px 4px; }
+  .sidebar-section-label {
+    font-size: 10px; font-weight: 600; letter-spacing: .08em;
+    color: var(--text3); text-transform: uppercase;
+    padding: 0 8px; margin-bottom: 4px;
+  }
+  .nav-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 7px 10px; border-radius: 6px;
+    color: var(--text2); font-size: 13px; cursor: pointer;
+    transition: background .15s, color .15s;
+    user-select: none;
+  }
+  .nav-item:hover { background: var(--bg3); color: var(--text); }
+  .nav-item.active { background: var(--green-dim); color: var(--green); }
+  .nav-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: currentColor; opacity: .5; flex-shrink: 0;
+  }
+  .nav-item.active .nav-dot { opacity: 1; }
+
+  /* ── Main content ── */
+  .main {
+    flex: 1;
+    min-width: 0;
+    padding: 40px 48px 80px;
+    overflow-x: hidden;
+  }
+  /* Sections that need full width */
+  #sec-kanban, #sec-gantt {
+    margin-left: -48px;
+    margin-right: -48px;
+    padding-left: 48px;
+    padding-right: 48px;
+  }
+  /* Constrain text-heavy sections */
+  #sec-overview .card-grid,
+  #sec-stack, #sec-db, #sec-excel, #sec-commands { max-width: 860px; }
+  @media (max-width: 900px) {
+    .shell { flex-direction: column; }
+    .sidebar { width: 100%; height: auto; position: static; }
+    .main { padding: 24px 20px 60px; }
+    #sec-kanban, #sec-gantt { margin-left: -20px; margin-right: -20px; padding-left: 20px; padding-right: 20px; }
+  }
+
+  /* ── Sections ── */
+  .page-section { display: none; }
+  .page-section.active { display: block; }
+
+  /* ── Typography ── */
+  .page-title {
+    font-size: 22px; font-weight: 600; color: var(--text);
+    margin-bottom: 6px; display: flex; align-items: center; gap: 10px;
+  }
+  .page-desc { color: var(--text2); font-size: 13px; margin-bottom: 32px; }
+  h2 {
+    font-size: 14px; font-weight: 600; color: var(--text);
+    margin: 28px 0 12px; padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 8px;
+  }
+  h2:first-of-type { margin-top: 0; }
+
+  /* ── Cards ── */
+  .card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin-bottom: 12px;
+  }
+  .card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+
+  /* ── Badge ── */
+  .badge {
+    display: inline-flex; align-items: center;
+    padding: 2px 9px; border-radius: 20px;
+    font-size: 11px; font-weight: 500; white-space: nowrap;
+  }
+  .badge-green  { background: var(--green-dim);  color: var(--green); }
+  .badge-amber  { background: var(--amber-dim);  color: var(--amber); }
+  .badge-red    { background: var(--red-dim);    color: var(--red); }
+  .badge-blue   { background: var(--blue-dim);   color: var(--blue); }
+  .badge-purple { background: var(--purple-dim); color: var(--purple); }
+
+  /* ── Formula cards (trang Excel) ── */
+  .formula-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 18px;
+    margin-bottom: 10px;
+    transition: border-color .15s;
+  }
+  .formula-card:hover { border-color: var(--border2); }
+  .formula-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .formula-name {
+    font-family: var(--mono);
+    font-size: 15px; font-weight: 500;
+    color: var(--green); letter-spacing: .01em;
+  }
+  .formula-syntax {
+    font-family: var(--mono);
+    font-size: 12px; color: var(--text3);
+    margin: 4px 0 8px;
+    word-break: break-all;
+  }
+  .formula-desc { font-size: 13px; color: var(--text2); line-height: 1.5; }
+  .formula-note {
+    font-size: 12px; color: var(--text3);
+    background: var(--bg3); border-radius: 6px;
+    padding: 8px 12px; margin-top: 10px;
+    border-left: 2px solid var(--border2);
+  }
+  .copy-btn {
+    flex-shrink: 0;
+    background: var(--bg3); border: 1px solid var(--border);
+    color: var(--text2); font-size: 11px; font-family: var(--sans);
+    padding: 4px 10px; border-radius: 5px; cursor: pointer;
+    transition: background .15s, color .15s, border-color .15s;
+    white-space: nowrap;
+  }
+  .copy-btn:hover { background: var(--green-dim); color: var(--green); border-color: var(--green); }
+  .copy-btn.copied { background: var(--green-dim); color: var(--green); border-color: var(--green); }
+
+  /* ── Search ── */
+  .search-wrap { position: relative; margin-bottom: 20px; }
+  .search-input {
+    width: 100%; background: var(--bg2);
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 9px 14px 9px 38px;
+    color: var(--text); font-size: 13px; font-family: var(--sans);
+    outline: none; transition: border-color .15s;
+  }
+  .search-input:focus { border-color: var(--green); }
+  .search-input::placeholder { color: var(--text3); }
+  .search-icon {
+    position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+    color: var(--text3); font-size: 14px; pointer-events: none;
+  }
+  .filter-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 20px; }
+  .filter-btn {
+    background: var(--bg2); border: 1px solid var(--border);
+    color: var(--text2); font-size: 11px; font-family: var(--sans);
+    padding: 4px 12px; border-radius: 20px; cursor: pointer;
+    transition: all .15s;
+  }
+  .filter-btn:hover, .filter-btn.active {
+    background: var(--green-dim); color: var(--green); border-color: var(--green);
+  }
+
+  /* ── Kanban full-width layout ── */
+  #sec-kanban { max-width: none; }
+  .kanban-toolbar {
+    display: flex; align-items: center; gap: 10px;
+    margin-bottom: 20px; flex-wrap: wrap;
+  }
+  .kanban-toolbar-btn {
+    background: var(--bg2); border: 1px solid var(--border);
+    color: var(--text2); font-size: 12px; font-family: var(--sans);
+    padding: 5px 14px; border-radius: 6px; cursor: pointer;
+    transition: all .15s; display: flex; align-items: center; gap: 5px;
+  }
+  .kanban-toolbar-btn:hover { background: var(--bg3); color: var(--text); border-color: var(--border2); }
+  .kanban-board {
+    display: flex; gap: 12px;
+    overflow-x: auto; padding-bottom: 16px;
+    align-items: flex-start;
+  }
+  .kanban-board::-webkit-scrollbar { height: 6px; }
+  .kanban-board::-webkit-scrollbar-track { background: var(--bg2); border-radius: 3px; }
+  .kanban-board::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+  .kanban-col {
+    min-width: 260px; width: 260px; flex-shrink: 0;
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: 12px; display: flex; flex-direction: column;
+    max-height: calc(100vh - 200px);
+  }
+  .kanban-col-head {
+    padding: 12px 14px 10px;
+    display: flex; align-items: center; justify-content: space-between;
+    flex-shrink: 0;
+  }
+  .kanban-col-title {
+    font-size: 12px; font-weight: 600;
+    display: flex; align-items: center; gap: 7px;
+  }
+  .col-dot {
+    width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0;
+  }
+  .col-count {
+    background: var(--bg3); color: var(--text3);
+    font-size: 10px; font-weight: 600;
+    padding: 1px 7px; border-radius: 10px; min-width: 22px; text-align: center;
+  }
+  .col-add-btn {
+    background: none; border: none; color: var(--text3);
+    font-size: 18px; line-height: 1; cursor: pointer;
+    padding: 0 2px; transition: color .15s;
+  }
+  .col-add-btn:hover { color: var(--text); }
+  .kanban-col-body {
+    padding: 4px 10px 10px;
+    display: flex; flex-direction: column; gap: 8px;
+    overflow-y: auto; flex: 1;
+  }
+  .kanban-col-body::-webkit-scrollbar { width: 4px; }
+  .kanban-col-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+  /* Drop zone highlight */
+  .kanban-col-body.drag-over {
+    background: rgba(34,211,160,0.04);
+    border-radius: 8px;
+    outline: 1.5px dashed rgba(34,211,160,0.3);
+    outline-offset: -4px;
+  }
+  /* Task cards */
+  .task-card {
+    background: var(--bg3); border: 1px solid var(--border);
+    border-radius: 9px; padding: 11px 13px;
+    cursor: grab; user-select: none;
+    transition: border-color .15s, box-shadow .15s, opacity .15s;
+    position: relative;
+  }
+  .task-card:hover { border-color: var(--border2); box-shadow: 0 2px 12px rgba(0,0,0,.25); }
+  .task-card.dragging { opacity: .45; cursor: grabbing; }
+  .task-card.drag-placeholder {
+    border: 1.5px dashed rgba(34,211,160,0.35);
+    background: rgba(34,211,160,0.04);
+    opacity: 1; cursor: default;
+  }
+  .task-cover {
+    height: 5px; border-radius: 3px 3px 0 0;
+    margin: -11px -13px 10px; border-radius: 8px 8px 0 0;
+  }
+  .task-title {
+    font-size: 13px; font-weight: 500; color: var(--text);
+    margin-bottom: 8px; line-height: 1.45;
+  }
+  .task-labels { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+  .task-label {
+    height: 6px; border-radius: 3px; min-width: 36px;
+    cursor: pointer; transition: height .15s;
+  }
+  .task-label:hover { height: 10px; }
+  .task-meta {
+    display: flex; align-items: center;
+    justify-content: space-between; gap: 6px; margin-top: 4px;
+  }
+  .task-tag {
+    font-size: 10px; color: var(--text3);
+    background: var(--bg2); padding: 2px 8px;
+    border-radius: 10px; display: flex; align-items: center; gap: 3px;
+  }
+  .task-avatars { display: flex; gap: -4px; }
+  .avatar {
+    width: 22px; height: 22px; border-radius: 50%;
+    font-size: 9px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; border: 1.5px solid var(--bg3);
+    margin-left: -4px;
+  }
+  .avatar:first-child { margin-left: 0; }
+  .task-due {
+    font-size: 10px; color: var(--text3);
+    display: flex; align-items: center; gap: 3px;
+  }
+  .task-due.overdue { color: var(--red); }
+  .task-checklist {
+    font-size: 10px; color: var(--text3);
+    display: flex; align-items: center; gap: 3px;
+  }
+  .task-checklist.done { color: var(--green); }
+  /* Add card button */
+  .add-card-btn {
+    background: none; border: 1px dashed var(--border);
+    color: var(--text3); font-size: 12px; font-family: var(--sans);
+    padding: 7px 10px; border-radius: 7px; cursor: pointer;
+    text-align: left; width: 100%; transition: all .15s;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .add-card-btn:hover {
+    background: var(--bg3); border-color: var(--border2); color: var(--text2);
+  }
+  /* Add column button */
+  .kanban-add-col {
+    min-width: 220px; width: 220px; flex-shrink: 0;
+    background: rgba(255,255,255,0.03); border: 1.5px dashed var(--border);
+    border-radius: 12px; padding: 16px;
+    cursor: pointer; color: var(--text3); font-size: 13px;
+    display: flex; align-items: center; gap: 8px;
+    transition: all .15s; height: fit-content;
+  }
+  .kanban-add-col:hover { background: var(--bg2); color: var(--text2); border-color: var(--border2); }
+
+  /* ── Gantt full redesign ── */
+  #sec-gantt { max-width: none; }
+  .gantt-container {
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: 12px; overflow: hidden;
+  }
+  .gantt-top-bar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 18px; border-bottom: 1px solid var(--border); gap: 12px; flex-wrap: wrap;
+  }
+  .gantt-title-area { font-size: 14px; font-weight: 600; color: var(--text); }
+  .gantt-legend { display: flex; gap: 14px; flex-wrap: wrap; }
+  .gantt-legend-item { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text3); }
+  .gantt-legend-dot { width: 8px; height: 8px; border-radius: 2px; }
+  .gantt-scroll-wrap { overflow-x: auto; }
+  .gantt-scroll-wrap::-webkit-scrollbar { height: 6px; }
+  .gantt-scroll-wrap::-webkit-scrollbar-track { background: var(--bg3); }
+  .gantt-scroll-wrap::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+  .gantt-inner { min-width: 900px; }
+  /* Header row: label col + month cols */
+  .gantt-header {
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg3);
+  }
+  .gantt-header-label {
+    padding: 10px 16px; font-size: 11px; font-weight: 600;
+    color: var(--text3); text-transform: uppercase; letter-spacing: .06em;
+    border-right: 1px solid var(--border);
+  }
+  .gantt-months-row { display: flex; }
+  .gantt-month-cell {
+    flex: 1; text-align: center;
+    padding: 10px 4px; font-size: 11px; font-weight: 500; color: var(--text3);
+    border-right: 1px solid var(--border);
+  }
+  .gantt-month-cell:last-child { border-right: none; }
+  .gantt-month-cell.current { color: var(--green); }
+  /* Data rows */
+  .gantt-row {
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    border-bottom: 1px solid var(--border);
+    min-height: 52px;
+  }
+  .gantt-row:last-child { border-bottom: none; }
+  .gantt-row:hover { background: rgba(255,255,255,0.02); }
+  .gantt-row-label {
+    padding: 0 16px; border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; justify-content: center; gap: 3px;
+  }
+  .gantt-row-name { font-size: 13px; color: var(--text); font-weight: 500; }
+  .gantt-row-sub { font-size: 11px; color: var(--text3); }
+  .gantt-row-track {
+    position: relative; display: flex; align-items: center; padding: 0 8px;
+  }
+  /* Month grid lines inside track */
+  .gantt-grid-lines {
+    position: absolute; inset: 0;
+    display: flex; pointer-events: none;
+  }
+  .gantt-grid-line {
+    flex: 1; border-right: 1px solid rgba(255,255,255,0.04);
+  }
+  .gantt-grid-line:last-child { border-right: none; }
+  /* The bar itself */
+  .gantt-bar-wrap {
+    position: absolute; top: 50%; transform: translateY(-50%);
+    height: 28px; border-radius: 6px; overflow: hidden;
+    cursor: pointer; transition: filter .15s;
+    display: flex; align-items: stretch;
+  }
+  .gantt-bar-wrap:hover { filter: brightness(1.1); }
+  /* Progress fill inside bar */
+  .gantt-bar-fill {
+    height: 100%; background: rgba(255,255,255,0.18);
+    border-radius: 0; transition: width .4s ease;
+    display: flex; align-items: center; justify-content: flex-end;
+    padding-right: 4px; font-size: 9px; font-weight: 700;
+    color: rgba(255,255,255,0.9); white-space: nowrap; overflow: hidden;
+    min-width: 0;
+  }
+  .gantt-bar-text {
+    position: absolute; left: 8px; top: 50%; transform: translateY(-50%);
+    font-size: 11px; font-weight: 600; white-space: nowrap;
+    pointer-events: none;
+  }
+  /* Status badge in gantt */
+  .gantt-status { display: flex; align-items: center; gap: 6px; }
+  /* ── Shared modal base ── */
+  .progress-modal-overlay {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,.6); z-index: 999;
+    align-items: flex-start; justify-content: center;
+    padding-top: 60px; overflow-y: auto;
+  }
+  .progress-modal-overlay.open { display: flex; }
+  .progress-modal {
+    background: var(--bg2); border: 1px solid var(--border2);
+    border-radius: 14px; width: 500px; max-width: 95vw;
+    margin-bottom: 40px;
+    display: flex; flex-direction: column;
+  }
+  /* Modal header */
+  .pm-header {
+    padding: 20px 24px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+  }
+  .pm-header-left { flex: 1; min-width: 0; }
+  .pm-title { font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+  .pm-meta { font-size: 12px; color: var(--text3); display: flex; gap: 12px; flex-wrap: wrap; }
+  .pm-meta-item { display: flex; align-items: center; gap: 4px; }
+  .pm-close {
+    background: none; border: none; color: var(--text3); font-size: 20px;
+    cursor: pointer; padding: 0 2px; line-height: 1; flex-shrink: 0;
+    transition: color .15s;
+  }
+  .pm-close:hover { color: var(--text); }
+  /* Progress summary bar */
+  .pm-summary {
+    padding: 14px 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 14px;
+  }
+  .pm-pct-big { font-size: 28px; font-weight: 700; min-width: 64px; line-height: 1; }
+  .pm-bar-wrap { flex: 1; }
+  .pm-bar-track {
+    height: 8px; background: var(--bg3); border-radius: 4px; overflow: hidden; margin-bottom: 5px;
+  }
+  .pm-bar-fill {
+    height: 100%; border-radius: 4px;
+    transition: width .3s ease, background .3s;
+  }
+  .pm-bar-label { font-size: 11px; color: var(--text3); }
+  /* Subtask list */
+  .pm-subtasks { padding: 16px 24px; flex: 1; }
+  .pm-subtasks-header {
+    display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;
+  }
+  .pm-subtasks-title { font-size: 11px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--text3); }
+  .pm-add-sub {
+    background: none; border: 1px dashed var(--border);
+    color: var(--text3); font-size: 11px; font-family: var(--sans);
+    padding: 3px 10px; border-radius: 5px; cursor: pointer;
+    display: flex; align-items: center; gap: 4px;
+    transition: all .15s;
+  }
+  .pm-add-sub:hover { border-color: var(--green); color: var(--green); }
+  .subtask-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 12px; border-radius: 8px; margin-bottom: 6px;
+    background: var(--bg3); border: 1px solid var(--border);
+    transition: border-color .15s;
+  }
+  .subtask-item:hover { border-color: var(--border2); }
+  .subtask-item.done { opacity: .65; }
+  /* Custom checkbox */
+  .sub-check {
+    width: 18px; height: 18px; border-radius: 50%;
+    border: 1.5px solid var(--border2); flex-shrink: 0;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    transition: all .15s; background: var(--bg2);
+  }
+  .sub-check.checked { background: var(--green); border-color: var(--green); }
+  .sub-check.checked::after { content:'✓'; font-size: 10px; color: #0a2e24; font-weight: 700; }
+  .subtask-body { flex: 1; min-width: 0; }
+  .subtask-name {
+    font-size: 13px; color: var(--text); font-weight: 500; margin-bottom: 2px;
+    cursor: pointer; outline: none; border: none; background: none;
+    width: 100%; font-family: var(--sans); padding: 0;
+  }
+  .subtask-name:focus { color: var(--green); }
+  .subtask-item.done .subtask-name { text-decoration: line-through; color: var(--text3); }
+  .subtask-note {
+    font-size: 11px; color: var(--text3); cursor: pointer;
+    outline: none; border: none; background: none;
+    width: 100%; font-family: var(--sans); padding: 0;
+    line-height: 1.5;
+  }
+  .subtask-note::placeholder { color: var(--text3); opacity: .5; font-style: italic; }
+  .subtask-weight {
+    font-size: 11px; font-weight: 600; color: var(--text2);
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: 5px; padding: 2px 7px; min-width: 42px; text-align: center;
+    flex-shrink: 0;
+  }
+  .sub-del {
+    background: none; border: none; color: var(--text3); font-size: 14px;
+    cursor: pointer; padding: 0; line-height: 1; flex-shrink: 0;
+    transition: color .15s; opacity: 0;
+  }
+  .subtask-item:hover .sub-del { opacity: 1; }
+  .sub-del:hover { color: var(--red); }
+  /* New subtask input row */
+  .new-sub-row {
+    display: none; align-items: center; gap: 10px;
+    padding: 8px 12px; border-radius: 8px; margin-bottom: 6px;
+    background: var(--bg3); border: 1px dashed var(--border2);
+  }
+  .new-sub-row.open { display: flex; }
+  .new-sub-input {
+    flex: 1; background: none; border: none; outline: none;
+    font-size: 13px; color: var(--text); font-family: var(--sans);
+    padding: 0;
+  }
+  .new-sub-input::placeholder { color: var(--text3); }
+  /* Weight editor tooltip */
+  .weight-editor {
+    position: relative; display: inline-block;
+  }
+  .weight-popup {
+    display: none; position: absolute; right: 0; top: calc(100% + 4px);
+    background: var(--bg2); border: 1px solid var(--border2);
+    border-radius: 8px; padding: 10px 12px; z-index: 10; min-width: 160px;
+    box-shadow: 0 4px 16px rgba(0,0,0,.3);
+  }
+  .weight-popup.open { display: block; }
+  .weight-popup label { font-size: 11px; color: var(--text3); display: block; margin-bottom: 5px; }
+  .weight-popup input[type=range] { width: 100%; accent-color: var(--green); }
+  /* Footer */
+  .pm-footer {
+    padding: 14px 24px;
+    border-top: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  }
+  .pm-footer-note { font-size: 11px; color: var(--text3); }
+  .progress-modal-actions { display: flex; gap: 8px; }
+  .btn-cancel {
+    background: none; border: 1px solid var(--border);
+    color: var(--text2); font-size: 13px; font-family: var(--sans);
+    padding: 7px 18px; border-radius: 7px; cursor: pointer;
+    transition: all .15s;
+  }
+  .btn-cancel:hover { background: var(--bg3); color: var(--text); }
+  .btn-save {
+    background: var(--green); border: none;
+    color: #0f1117; font-size: 13px; font-weight: 600; font-family: var(--sans);
+    padding: 7px 20px; border-radius: 7px; cursor: pointer;
+    transition: opacity .15s;
+  }
+  .btn-save:hover { opacity: .88; }
+  /* Keep old add-card modal compact */
+  #add-card-modal .progress-modal {
+    width: 360px; padding: 24px 28px;
+    display: block;
+  }
+
+  /* ── Stack table ── */
+  .stack-table { width: 100%; border-collapse: collapse; }
+  .stack-table th {
+    font-size: 11px; font-weight: 500; color: var(--text3);
+    padding: 7px 14px; text-align: left;
+    border-bottom: 1px solid var(--border); background: var(--bg2);
+  }
+  .stack-table td { padding: 10px 14px; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .stack-table tr:last-child td { border-bottom: none; }
+  .stack-table tr:hover td { background: var(--bg2); }
+  code {
+    font-family: var(--mono); font-size: 12px;
+    background: var(--bg3); color: var(--green);
+    padding: 1px 6px; border-radius: 4px;
+  }
+  .cmd {
+    font-family: var(--mono); font-size: 12px;
+    background: var(--bg3); color: var(--text);
+    padding: 12px 16px; border-radius: 8px;
+    border: 1px solid var(--border);
+    display: block; margin: 8px 0;
+    white-space: pre-wrap; word-break: break-all;
+  }
+
+  /* ── DB schema ── */
+  .schema-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+  .schema-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  .schema-head {
+    padding: 10px 14px; background: var(--bg3);
+    border-bottom: 1px solid var(--border);
+    font-family: var(--mono); font-size: 13px;
+    color: var(--blue); font-weight: 500;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .schema-rows { padding: 4px 0; }
+  .schema-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 5px 14px; font-size: 12px;
+  }
+  .schema-row:hover { background: var(--bg3); }
+  .field-name { font-family: var(--mono); color: var(--text); min-width: 110px; }
+  .field-type { font-size: 11px; color: var(--text3); }
+  .field-pk   { font-size: 10px; background: var(--amber-dim); color: var(--amber); padding: 1px 5px; border-radius: 3px; }
+  .field-fk   { font-size: 10px; background: var(--blue-dim); color: var(--blue); padding: 1px 5px; border-radius: 3px; }
+
+  /* ── Progress ── */
+  .progress-bar { height: 6px; background: var(--bg3); border-radius: 3px; overflow: hidden; margin-top: 6px; }
+  .progress-fill { height: 100%; border-radius: 3px; background: var(--green); transition: width .4s; }
+
+  /* ── No results ── */
+  .empty { text-align: center; padding: 48px 0; color: var(--text3); font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <!-- ── Sidebar ── -->
+  <nav class="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-icon">L</div>
+      <div>
+        <div class="logo-text">Laravel Project</div>
+        <div class="logo-sub">Ghi chú xây dựng</div>
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-section-label">Tổng quan</div>
+      <div class="nav-item active" onclick="nav('overview', this)"><div class="nav-dot"></div>Tổng quan dự án</div>
+      <div class="nav-item" onclick="nav('stack', this)"><div class="nav-dot"></div>Tech Stack</div>
+      <div class="nav-item" onclick="nav('db', this)"><div class="nav-dot"></div>Database Schema</div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-section-label">Modules</div>
+      <div class="nav-item" onclick="nav('excel', this)"><div class="nav-dot"></div>Ghi chú hàm Excel</div>
+      <div class="nav-item" onclick="nav('kanban', this)"><div class="nav-dot"></div>Kanban Board</div>
+      <div class="nav-item" onclick="nav('gantt', this)"><div class="nav-dot"></div>Gantt Chart</div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-section-label">Tài nguyên</div>
+      <div class="nav-item" onclick="nav('commands', this)"><div class="nav-dot"></div>Lệnh & Cài đặt</div>
+    </div>
+  </nav>
+
+  <!-- ── Main ── -->
+  <main class="main">
+
+    <!-- ══ OVERVIEW ══ -->
+    <section id="sec-overview" class="page-section active">
+      <div class="page-title">🗂 Tổng quan dự án</div>
+      <div class="page-desc">Tất cả tính năng, tiến độ và phân công theo module.</div>
+
+      <h2>📦 Các module chính</h2>
+      <div class="card-grid">
+        <div class="card">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <span style="font-weight:600;font-size:13px">📊 Ghi chú hàm Excel</span>
+            <span class="badge badge-amber">Ưu tiên 1</span>
+          </div>
+          <div style="font-size:12px;color:var(--text2);line-height:1.6">
+            CRUD công thức, tìm kiếm full-text, click-to-copy, import/export .xlsx
+          </div>
+          <div class="progress-bar"><div class="progress-fill" style="width:0%"></div></div>
+          <div style="font-size:10px;color:var(--text3);margin-top:4px">0% hoàn thành</div>
+        </div>
+        <div class="card">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <span style="font-weight:600;font-size:13px">🗂 Quản lý dự án</span>
+            <span class="badge badge-amber">Ưu tiên 2</span>
+          </div>
+          <div style="font-size:12px;color:var(--text2);line-height:1.6">
+            Dự án → Mục tiêu → Đầu việc → Thành viên. KPI tiền & số lượng.
+          </div>
+          <div class="progress-bar"><div class="progress-fill" style="width:0%"></div></div>
+          <div style="font-size:10px;color:var(--text3);margin-top:4px">0% hoàn thành</div>
+        </div>
+        <div class="card">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <span style="font-weight:600;font-size:13px">📋 Kanban Board</span>
+            <span class="badge badge-blue">Ưu tiên 3</span>
+          </div>
+          <div style="font-size:12px;color:var(--text2);line-height:1.6">
+            Kéo thả trạng thái task theo dạng Monday.com. Lọc theo người, dự án.
+          </div>
+          <div class="progress-bar"><div class="progress-fill" style="width:0%"></div></div>
+          <div style="font-size:10px;color:var(--text3);margin-top:4px">0% hoàn thành</div>
+        </div>
+        <div class="card">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <span style="font-weight:600;font-size:13px">📅 Gantt Chart</span>
+            <span class="badge badge-blue">Ưu tiên 4</span>
+          </div>
+          <div style="font-size:12px;color:var(--text2);line-height:1.6">
+            Timeline theo dự án. Thư viện frappe-gantt hoặc dhtmlx-gantt.
+          </div>
+          <div class="progress-bar"><div class="progress-fill" style="width:0%"></div></div>
+          <div style="font-size:10px;color:var(--text3);margin-top:4px">0% hoàn thành</div>
+        </div>
+        <div class="card">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <span style="font-weight:600;font-size:13px">📎 Note kèm file</span>
+            <span class="badge badge-purple">Ưu tiên 5</span>
+          </div>
+          <div style="font-size:12px;color:var(--text2);line-height:1.6">
+            Ghi chú đính kèm Excel, Word, PDF, TXT. Spatie Media Library.
+          </div>
+          <div class="progress-bar"><div class="progress-fill" style="width:0%"></div></div>
+          <div style="font-size:10px;color:var(--text3);margin-top:4px">0% hoàn thành</div>
+        </div>
+        <div class="card">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <span style="font-weight:600;font-size:13px">📈 KPI & Dashboard</span>
+            <span class="badge badge-purple">Ưu tiên 6</span>
+          </div>
+          <div style="font-size:12px;color:var(--text2);line-height:1.6">
+            Thống kê mục tiêu tiền, số lượng sản phẩm theo dự án & thành viên.
+          </div>
+          <div class="progress-bar"><div class="progress-fill" style="width:0%"></div></div>
+          <div style="font-size:10px;color:var(--text3);margin-top:4px">0% hoàn thành</div>
+        </div>
+      </div>
+
+      <h2>🏗 Cấu trúc phân cấp dữ liệu</h2>
+      <div class="card" style="padding:20px 24px">
+        <div style="font-family:var(--mono);font-size:12px;color:var(--text2);line-height:2">
+          <span style="color:var(--green)">Project</span> (Dự án)<br>
+          &nbsp;&nbsp;&nbsp;└─ <span style="color:var(--blue)">Goal</span> (Mục tiêu: tiền | số lượng | %)<br>
+          &nbsp;&nbsp;&nbsp;└─ <span style="color:var(--amber)">Task</span> (Đầu việc)<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├─ <span style="color:var(--text2)">status:</span> <span style="color:var(--text3)">idea → first_draft → beta → edit → published</span><br>
+          &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├─ <span style="color:var(--text2)">assigned_to:</span> <span style="color:var(--text3)">User (nhiều thành viên)</span><br>
+          &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└─ <span style="color:var(--purple)">Attachments</span> (file đính kèm)<br>
+          &nbsp;&nbsp;&nbsp;└─ <span style="color:var(--text2)">members:</span> <span style="color:var(--text3)">User[] (phân quyền: owner, manager, member)</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══ TECH STACK ══ -->
+    <section id="sec-stack" class="page-section">
+      <div class="page-title">⚡ Tech Stack</div>
+      <div class="page-desc">Các thư viện và package sẽ dùng trong dự án.</div>
+
+      <h2>🔧 Backend (Laravel)</h2>
+      <table class="stack-table" style="border:1px solid var(--border);border-radius:10px;overflow:hidden">
+        <thead>
+          <tr><th>Package</th><th>Công dụng</th><th>Cài đặt</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>laravel/laravel</code> <span class="badge badge-green" style="margin-left:6px">v11</span></td>
+            <td style="color:var(--text2)">Framework chính</td>
+            <td><code>composer create-project laravel/laravel app</code></td>
+          </tr>
+          <tr>
+            <td><code>laravel/sanctum</code></td>
+            <td style="color:var(--text2)">Auth API token (SPA)</td>
+            <td><code>composer require laravel/sanctum</code></td>
+          </tr>
+          <tr>
+            <td><code>spatie/laravel-permission</code></td>
+            <td style="color:var(--text2)">Phân quyền role: owner, manager, member</td>
+            <td><code>composer require spatie/laravel-permission</code></td>
+          </tr>
+          <tr>
+            <td><code>spatie/laravel-medialibrary</code></td>
+            <td style="color:var(--text2)">Upload và quản lý file đính kèm</td>
+            <td><code>composer require spatie/laravel-medialibrary</code></td>
+          </tr>
+          <tr>
+            <td><code>maatwebsite/excel</code></td>
+            <td style="color:var(--text2)">Import / Export .xlsx công thức</td>
+            <td><code>composer require maatwebsite/excel</code></td>
+          </tr>
+          <tr>
+            <td><code>filament/filament</code></td>
+            <td style="color:var(--text2)">Admin panel CRUD siêu nhanh</td>
+            <td><code>composer require filament/filament</code></td>
+          </tr>
+          <tr>
+            <td><code>laravel/scout</code> + <code>meilisearch</code></td>
+            <td style="color:var(--text2)">Full-text search hàm Excel</td>
+            <td><code>composer require laravel/scout</code></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>🎨 Frontend</h2>
+      <table class="stack-table" style="border:1px solid var(--border);border-radius:10px;overflow:hidden">
+        <thead>
+          <tr><th>Package</th><th>Công dụng</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>vue@3</code> / <code>react@18</code></td>
+            <td style="color:var(--text2)">SPA frontend (chọn 1)</td>
+          </tr>
+          <tr>
+            <td><code>@hello-pangea/dnd</code></td>
+            <td style="color:var(--text2)">Kéo thả Kanban (React) — fork chính thức của react-beautiful-dnd</td>
+          </tr>
+          <tr>
+            <td><code>vue-draggable-plus</code></td>
+            <td style="color:var(--text2)">Kéo thả Kanban (Vue 3)</td>
+          </tr>
+          <tr>
+            <td><code>frappe-gantt</code></td>
+            <td style="color:var(--text2)">Gantt chart nhẹ, MIT license</td>
+          </tr>
+          <tr>
+            <td><code>chart.js</code></td>
+            <td style="color:var(--text2)">Biểu đồ KPI, dashboard</td>
+          </tr>
+          <tr>
+            <td><code>axios</code></td>
+            <td style="color:var(--text2)">HTTP client gọi Laravel API</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>🗄 Database</h2>
+      <div class="card">
+        <div style="font-size:13px;color:var(--text2);line-height:1.8">
+          <strong style="color:var(--text)">MySQL 8+</strong> — phù hợp cho quan hệ phức tạp (project → task → member)<br>
+          <strong style="color:var(--text)">Redis</strong> — cache search, session, queue jobs (import/export nặng)<br>
+          <strong style="color:var(--text)">Meilisearch</strong> — full-text search hàm Excel (chạy riêng, Docker dễ nhất)
+        </div>
+      </div>
+    </section>
+
+    <!-- ══ DATABASE SCHEMA ══ -->
+    <section id="sec-db" class="page-section">
+      <div class="page-title">🗄 Database Schema</div>
+      <div class="page-desc">Cấu trúc bảng gợi ý cho toàn bộ hệ thống.</div>
+
+      <h2>📐 Sơ đồ bảng</h2>
+      <div class="schema-grid">
+
+        <div class="schema-card">
+          <div class="schema-head">👤 users</div>
+          <div class="schema-rows">
+            <div class="schema-row"><span class="field-name">id</span><span class="field-type">bigint</span><span class="field-pk">PK</span></div>
+            <div class="schema-row"><span class="field-name">name</span><span class="field-type">string</span></div>
+            <div class="schema-row"><span class="field-name">email</span><span class="field-type">string unique</span></div>
+            <div class="schema-row"><span class="field-name">password</span><span class="field-type">string</span></div>
+            <div class="schema-row"><span class="field-name">avatar</span><span class="field-type">string nullable</span></div>
+            <div class="schema-row"><span class="field-name">created_at</span><span class="field-type">timestamp</span></div>
+          </div>
+        </div>
+
+        <div class="schema-card">
+          <div class="schema-head">📦 projects</div>
+          <div class="schema-rows">
+            <div class="schema-row"><span class="field-name">id</span><span class="field-type">bigint</span><span class="field-pk">PK</span></div>
+            <div class="schema-row"><span class="field-name">owner_id</span><span class="field-type">bigint</span><span class="field-fk">FK users</span></div>
+            <div class="schema-row"><span class="field-name">name</span><span class="field-type">string</span></div>
+            <div class="schema-row"><span class="field-name">description</span><span class="field-type">text nullable</span></div>
+            <div class="schema-row"><span class="field-name">status</span><span class="field-type">enum active|done|archive</span></div>
+            <div class="schema-row"><span class="field-name">deadline</span><span class="field-type">date nullable</span></div>
+          </div>
+        </div>
+
+        <div class="schema-card">
+          <div class="schema-head">🎯 goals</div>
+          <div class="schema-rows">
+            <div class="schema-row"><span class="field-name">id</span><span class="field-type">bigint</span><span class="field-pk">PK</span></div>
+            <div class="schema-row"><span class="field-name">project_id</span><span class="field-type">bigint</span><span class="field-fk">FK projects</span></div>
+            <div class="schema-row"><span class="field-name">name</span><span class="field-type">string</span></div>
+            <div class="schema-row"><span class="field-name">type</span><span class="field-type">enum money|quantity|percent</span></div>
+            <div class="schema-row"><span class="field-name">target_value</span><span class="field-type">decimal(15,2)</span></div>
+            <div class="schema-row"><span class="field-name">current_value</span><span class="field-type">decimal(15,2)</span></div>
+          </div>
+        </div>
+
+        <div class="schema-card">
+          <div class="schema-head">✅ tasks</div>
+          <div class="schema-rows">
+            <div class="schema-row"><span class="field-name">id</span><span class="field-type">bigint</span><span class="field-pk">PK</span></div>
+            <div class="schema-row"><span class="field-name">project_id</span><span class="field-type">bigint</span><span class="field-fk">FK projects</span></div>
+            <div class="schema-row"><span class="field-name">goal_id</span><span class="field-type">bigint nullable</span><span class="field-fk">FK goals</span></div>
+            <div class="schema-row"><span class="field-name">title</span><span class="field-type">string</span></div>
+            <div class="schema-row"><span class="field-name">description</span><span class="field-type">text nullable</span></div>
+            <div class="schema-row"><span class="field-name">status</span><span class="field-type">enum idea|draft|beta|edit|done</span></div>
+            <div class="schema-row"><span class="field-name">priority</span><span class="field-type">enum low|medium|high</span></div>
+            <div class="schema-row"><span class="field-name">start_date</span><span class="field-type">date nullable</span></div>
+            <div class="schema-row"><span class="field-name">due_date</span><span class="field-type">date nullable</span></div>
+            <div class="schema-row"><span class="field-name">sort_order</span><span class="field-type">int default 0</span></div>
+          </div>
+        </div>
+
+        <div class="schema-card">
+          <div class="schema-head">👥 project_members</div>
+          <div class="schema-rows">
+            <div class="schema-row"><span class="field-name">id</span><span class="field-type">bigint</span><span class="field-pk">PK</span></div>
+            <div class="schema-row"><span class="field-name">project_id</span><span class="field-type">bigint</span><span class="field-fk">FK projects</span></div>
+            <div class="schema-row"><span class="field-name">user_id</span><span class="field-type">bigint</span><span class="field-fk">FK users</span></div>
+            <div class="schema-row"><span class="field-name">role</span><span class="field-type">enum owner|manager|member</span></div>
+          </div>
+        </div>
+
+        <div class="schema-card">
+          <div class="schema-head">👤 task_assignments</div>
+          <div class="schema-rows">
+            <div class="schema-row"><span class="field-name">task_id</span><span class="field-type">bigint</span><span class="field-fk">FK tasks</span></div>
+            <div class="schema-row"><span class="field-name">user_id</span><span class="field-type">bigint</span><span class="field-fk">FK users</span></div>
+            <div class="schema-row"><span class="field-name">assigned_at</span><span class="field-type">timestamp</span></div>
+          </div>
+        </div>
+
+        <div class="schema-card">
+          <div class="schema-head">📊 excel_formulas</div>
+          <div class="schema-rows">
+            <div class="schema-row"><span class="field-name">id</span><span class="field-type">bigint</span><span class="field-pk">PK</span></div>
+            <div class="schema-row"><span class="field-name">name</span><span class="field-type">string</span></div>
+            <div class="schema-row"><span class="field-name">syntax</span><span class="field-type">string</span></div>
+            <div class="schema-row"><span class="field-name">category</span><span class="field-type">string</span></div>
+            <div class="schema-row"><span class="field-name">description</span><span class="field-type">text</span></div>
+            <div class="schema-row"><span class="field-name">note</span><span class="field-type">text nullable</span></div>
+            <div class="schema-row"><span class="field-name">example</span><span class="field-type">string nullable</span></div>
+            <div class="schema-row"><span class="field-name">tags</span><span class="field-type">json nullable</span></div>
+          </div>
+        </div>
+
+        <div class="schema-card">
+          <div class="schema-head">📎 media (Spatie)</div>
+          <div class="schema-rows">
+            <div class="schema-row"><span class="field-name">id</span><span class="field-type">bigint</span><span class="field-pk">PK</span></div>
+            <div class="schema-row"><span class="field-name">model_type</span><span class="field-type">string (polymorphic)</span></div>
+            <div class="schema-row"><span class="field-name">model_id</span><span class="field-type">bigint</span></div>
+            <div class="schema-row"><span class="field-name">file_name</span><span class="field-type">string</span></div>
+            <div class="schema-row"><span class="field-name">mime_type</span><span class="field-type">string</span></div>
+            <div class="schema-row"><span class="field-name">size</span><span class="field-type">bigint</span></div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ══ EXCEL FORMULAS ══ -->
+    <section id="sec-excel" class="page-section">
+      <div class="page-title">📊 Ghi chú hàm Excel / Google Sheet</div>
+      <div class="page-desc">Click vào nút <strong>Copy</strong> để sao chép cú pháp hàm. Tìm kiếm theo tên hoặc công dụng.</div>
+
+      <div class="search-wrap">
+        <span class="search-icon">🔍</span>
+        <input class="search-input" type="text" placeholder="Tìm theo tên hàm, công dụng... (VD: VLOOKUP, tìm kiếm, tổng)" oninput="filterFormulas(this.value)" id="formula-search">
+      </div>
+      <div class="filter-row" id="cat-filters">
+        <button class="filter-btn active" onclick="filterCat('', this)">Tất cả</button>
+        <button class="filter-btn" onclick="filterCat('Tìm kiếm', this)">Tìm kiếm</button>
+        <button class="filter-btn" onclick="filterCat('Thống kê', this)">Thống kê</button>
+        <button class="filter-btn" onclick="filterCat('Logic', this)">Logic</button>
+        <button class="filter-btn" onclick="filterCat('Văn bản', this)">Văn bản</button>
+        <button class="filter-btn" onclick="filterCat('Ngày giờ', this)">Ngày giờ</button>
+        <button class="filter-btn" onclick="filterCat('Toán học', this)">Toán học</button>
+      </div>
+      <div id="formula-list"></div>
+    </section>
+
+    <!-- ══ KANBAN ══ -->
+    <section id="sec-kanban" class="page-section">
+      <div class="page-title">📋 Kanban Board</div>
+      <div class="page-desc">Kéo thả card giữa các cột. Click <strong>+</strong> để thêm task mới.</div>
+
+      <div class="kanban-toolbar">
+        <span style="font-size:12px;color:var(--text2)">Dự án:</span>
+        <button class="kanban-toolbar-btn" style="background:var(--green-dim);color:var(--green);border-color:var(--green)">Laravel App Build</button>
+        <button class="kanban-toolbar-btn">Tất cả thành viên ▾</button>
+        <button class="kanban-toolbar-btn">Ưu tiên ▾</button>
+        <div style="flex:1"></div>
+        <button class="kanban-toolbar-btn" onclick="addColumnPrompt()">＋ Thêm cột</button>
+      </div>
+
+      <div class="kanban-board" id="kanban-board"></div>
+
+      <!-- Add card modal -->
+      <div class="progress-modal-overlay" id="add-card-modal">
+        <div class="progress-modal">
+          <h3>Thêm task mới</h3>
+          <div class="subtitle" id="add-card-col-name">Cột: —</div>
+          <input type="text" id="add-card-input" placeholder="Tên task..." style="
+            width:100%;background:var(--bg3);border:1px solid var(--border);
+            border-radius:7px;padding:9px 12px;color:var(--text);font-size:13px;
+            font-family:var(--sans);outline:none;margin-bottom:10px;
+          " onkeydown="if(event.key==='Enter')saveNewCard()">
+          <div style="display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap">
+            <select id="add-card-tag" style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:5px 10px;color:var(--text2);font-size:12px;font-family:var(--sans)">
+              <option>Backend</option><option>Frontend</option><option>Database</option><option>DevOps</option><option>Planning</option>
+            </select>
+            <select id="add-card-assignee" style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:5px 10px;color:var(--text2);font-size:12px;font-family:var(--sans)">
+              <option value="T">Tao (T)</option><option value="A">An (A)</option><option value="H">Huy (H)</option>
+            </select>
+          </div>
+          <div class="progress-modal-actions">
+            <button class="btn-cancel" onclick="closeAddCard()">Hủy</button>
+            <button class="btn-save" onclick="saveNewCard()">Thêm task</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══ GANTT ══ -->
+    <section id="sec-gantt" class="page-section">
+      <div class="page-title">📅 Gantt Chart</div>
+      <div class="page-desc">Click vào thanh màu để cập nhật tiến trình. Hover để xem chi tiết.</div>
+
+      <div class="gantt-container">
+        <div class="gantt-top-bar">
+          <div class="gantt-title-area">🗓 Kế hoạch phát triển — 2025</div>
+          <div class="gantt-legend">
+            <div class="gantt-legend-item"><div class="gantt-legend-dot" style="background:#22d3a0"></div>Đang làm</div>
+            <div class="gantt-legend-item"><div class="gantt-legend-dot" style="background:#60a5fa"></div>Sắp tới</div>
+            <div class="gantt-legend-item"><div class="gantt-legend-dot" style="background:#a78bfa"></div>Chờ</div>
+            <div class="gantt-legend-item"><div class="gantt-legend-dot" style="background:#5a6478"></div>Hoàn thành</div>
+          </div>
+          <div style="font-size:11px;color:var(--text3)">Nhấn thanh để cập nhật %</div>
+        </div>
+
+        <div class="gantt-scroll-wrap">
+          <div class="gantt-inner">
+            <!-- Header -->
+            <div class="gantt-header">
+              <div class="gantt-header-label">Module</div>
+              <div class="gantt-months-row" id="gantt-months-row"></div>
+            </div>
+            <!-- Rows -->
+            <div id="gantt-rows"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Progress / Subtask modal -->
+      <div class="progress-modal-overlay" id="progress-modal">
+        <div class="progress-modal">
+
+          <!-- Header -->
+          <div class="pm-header">
+            <div class="pm-header-left">
+              <div class="pm-title" id="modal-task-name">—</div>
+              <div class="pm-meta">
+                <span class="pm-meta-item">📅 <span id="modal-task-range">—</span></span>
+                <span class="pm-meta-item">👤 <span id="modal-task-owner">—</span></span>
+              </div>
+            </div>
+            <button class="pm-close" onclick="closeProgressModal()">×</button>
+          </div>
+
+          <!-- Progress summary -->
+          <div class="pm-summary">
+            <div class="pm-pct-big" id="modal-pct-big">0%</div>
+            <div class="pm-bar-wrap">
+              <div class="pm-bar-track">
+                <div class="pm-bar-fill" id="modal-bar-fill" style="width:0%"></div>
+              </div>
+              <div class="pm-bar-label" id="modal-bar-label">0 / 0 subtask hoàn thành</div>
+            </div>
+          </div>
+
+          <!-- Subtask list -->
+          <div class="pm-subtasks">
+            <div class="pm-subtasks-header">
+              <span class="pm-subtasks-title">Danh sách đầu việc</span>
+              <button class="pm-add-sub" onclick="showNewSubRow()">+ Thêm đầu việc</button>
+            </div>
+            <div id="subtask-list"></div>
+            <!-- New subtask input row -->
+            <div class="new-sub-row" id="new-sub-row">
+              <div class="sub-check"></div>
+              <input class="new-sub-input" id="new-sub-input" placeholder="Tên đầu việc..." onkeydown="onNewSubKey(event)">
+              <button class="btn-save" style="padding:4px 12px;font-size:12px" onclick="commitNewSub()">Thêm</button>
+              <button class="btn-cancel" style="padding:4px 10px;font-size:12px" onclick="hideNewSubRow()">✕</button>
+            </div>
+          </div>
+
+          <!-- Footer -->
+          <div class="pm-footer">
+            <div class="pm-footer-note" id="modal-footer-note">Click vào tên đầu việc để sửa · Click ô tròn để đánh dấu xong</div>
+            <div class="progress-modal-actions">
+              <button class="btn-cancel" onclick="closeProgressModal()">Đóng</button>
+              <button class="btn-save" onclick="saveProgress()">Lưu</button>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+    <!-- ══ COMMANDS ══ -->
+    <section id="sec-commands" class="page-section">
+      <div class="page-title">💻 Lệnh & Cài đặt</div>
+      <div class="page-desc">Copy nhanh các lệnh bash để setup dự án Laravel từ đầu.</div>
+
+      <h2>🚀 Khởi tạo project</h2>
+      <code class="cmd">composer create-project laravel/laravel my-app
+cd my-app
+cp .env.example .env
+php artisan key:generate</code>
+
+      <h2>📦 Cài packages cần thiết</h2>
+      <code class="cmd">composer require laravel/sanctum
+composer require spatie/laravel-permission
+composer require spatie/laravel-medialibrary
+composer require maatwebsite/excel
+composer require laravel/scout
+composer require meilisearch/meilisearch-php http-interop/http-factory-guzzle</code>
+
+      <h2>🏗 Publish & Migrate</h2>
+      <code class="cmd">php artisan vendor:publish --provider="Laravel\Sanctum\SanctumServiceProvider"
+php artisan vendor:publish --provider="Spatie\Permission\PermissionServiceProvider"
+php artisan vendor:publish --provider="Spatie\MediaLibrary\MediaLibraryServiceProvider" --tag="medialibrary-migrations"
+php artisan migrate</code>
+
+      <h2>🔧 Filament Admin Panel</h2>
+      <code class="cmd">composer require filament/filament
+php artisan filament:install --panels
+php artisan make:filament-user</code>
+
+      <h2>📁 Tạo Models & Migrations</h2>
+      <code class="cmd">php artisan make:model Project -mfsc
+php artisan make:model Goal -mfsc
+php artisan make:model Task -mfsc
+php artisan make:model ExcelFormula -mfsc
+php artisan make:model ProjectMember -m</code>
+
+      <h2>🔑 .env quan trọng</h2>
+      <code class="cmd">DB_CONNECTION=mysql
+DB_HOST=127.0.0.1
+DB_DATABASE=laravel_app
+DB_USERNAME=root
+DB_PASSWORD=
+
+SCOUT_DRIVER=meilisearch
+MEILISEARCH_HOST=http://127.0.0.1:7700
+MEILISEARCH_KEY=
+
+FILESYSTEM_DISK=public</code>
+
+      <h2>🐳 Chạy Meilisearch bằng Docker</h2>
+      <code class="cmd">docker run -d \
+  --name meilisearch \
+  -p 7700:7700 \
+  -e MEILI_MASTER_KEY=yourMasterKey \
+  getmeili/meilisearch:latest</code>
+
+      <h2>🔍 Scout search trong ExcelFormula</h2>
+      <code class="cmd"># Trong ExcelFormula model, implement Searchable:
+# use Laravel\Scout\Searchable;
+# toSearchableArray() trả về: name, syntax, description, category, tags
+
+php artisan scout:import "App\Models\ExcelFormula"</code>
+    </section>
+
+  </main>
+</div>
+
+<script>
+// ── Navigation ──
+function nav(section, el) {
+  document.querySelectorAll('.page-section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('sec-' + section).classList.add('active');
+  el.classList.add('active');
+}
+
+// ══════════════════════════════════════════
+// KANBAN ENGINE
+// ══════════════════════════════════════════
+const AVATAR_COLORS = {
+  T: ['#22d3a0','#0f4037'], A: ['#60a5fa','#0c2a4a'],
+  H: ['#a78bfa','#2a1e4a'], M: ['#f59e0b','#3d2800']
+};
+const TAG_COLORS = {
+  Backend:'#60a5fa', Frontend:'#a78bfa', Database:'#f59e0b',
+  DevOps:'#f87171', Planning:'#22d3a0'
+};
+const LABEL_COLORS = ['#22d3a0','#60a5fa','#a78bfa','#f59e0b','#f87171'];
+
+let kanbanState = {
+  cols: [
+    { id:'c1', title:'Idea',        dot:'#5a6478', tasks:[
+      { id:'t1', title:'Thiết kế UI Dashboard KPI',          tag:'Frontend',  assignees:['T'],    labels:[0],   due:'15/07', checklist:[2,1] },
+      { id:'t2', title:'Tích hợp Meilisearch cho hàm Excel', tag:'Backend',   assignees:['A'],    labels:[1],   due:'20/07', checklist:[0,3] },
+    ]},
+    { id:'c2', title:'In Progress',  dot:'#f59e0b', tasks:[
+      { id:'t3', title:'Setup Laravel 11 + Sanctum',         tag:'Backend',   assignees:['T'],    labels:[1],   due:'10/06', checklist:[3,3] },
+      { id:'t4', title:'Migration database schema',          tag:'Database',  assignees:['T','A'],labels:[3],   due:'12/06', checklist:[4,5] },
+      { id:'t5', title:'CRUD Excel Formula API',             tag:'Backend',   assignees:['A'],    labels:[1,2], due:'18/06', checklist:[1,4] },
+    ]},
+    { id:'c3', title:'Review',       dot:'#60a5fa', tasks:[
+      { id:'t6', title:'Thiết lập Spatie Permission roles',  tag:'Backend',   assignees:['T'],    labels:[1],   due:'08/06', checklist:[2,2] },
+    ]},
+    { id:'c4', title:'Done',         dot:'#22d3a0', tasks:[
+      { id:'t7', title:'Chọn tech stack & lên kế hoạch',    tag:'Planning',  assignees:['T','H'],labels:[4],   due:'01/06', checklist:[3,3] },
+    ]},
+  ]
+};
+let nextTaskId = 10;
+let dragSrc = null; // { taskId, fromColId }
+let addCardColId = null;
+
+function renderKanban() {
+  const board = document.getElementById('kanban-board');
+  board.innerHTML = '';
+  kanbanState.cols.forEach(col => {
+    const colEl = document.createElement('div');
+    colEl.className = 'kanban-col';
+    colEl.innerHTML = `
+      <div class="kanban-col-head">
+        <div class="kanban-col-title">
+          <div class="col-dot" style="background:${col.dot}"></div>
+          ${col.title}
+          <span class="col-count">${col.tasks.length}</span>
+        </div>
+        <button class="col-add-btn" title="Thêm task" onclick="openAddCard('${col.id}')">+</button>
+      </div>
+      <div class="kanban-col-body" id="body-${col.id}"
+        ondragover="onDragOver(event,'${col.id}')"
+        ondragleave="onDragLeave(event,'${col.id}')"
+        ondrop="onDrop(event,'${col.id}')">
+        ${col.tasks.map(t => renderCard(t)).join('')}
+        <button class="add-card-btn" onclick="openAddCard('${col.id}')">
+          <span style="font-size:16px;line-height:1">+</span> Thêm task
+        </button>
+      </div>
+    `;
+    board.appendChild(colEl);
+  });
+  // "Add column" button
+  const addCol = document.createElement('div');
+  addCol.className = 'kanban-add-col';
+  addCol.innerHTML = '<span style="font-size:18px">+</span> Thêm cột';
+  addCol.onclick = addColumnPrompt;
+  board.appendChild(addCol);
+  // Bind drag events after render
+  document.querySelectorAll('.task-card[draggable]').forEach(card => {
+    card.addEventListener('dragstart', onDragStart);
+    card.addEventListener('dragend', onDragEnd);
+  });
+}
+
+function renderCard(t) {
+  const tagColor = TAG_COLORS[t.tag] || '#8892a4';
+  const doneChecks = t.checklist[0], totalChecks = t.checklist[1];
+  const checkDone = doneChecks >= totalChecks;
+  const today = new Date();
+  const dueParts = t.due.split('/');
+  const dueDate = new Date(2025, parseInt(dueParts[1])-1, parseInt(dueParts[0]));
+  const isOverdue = dueDate < today && !checkDone;
+  const avatarsHtml = t.assignees.map(a => {
+    const [bg, fg] = AVATAR_COLORS[a] || ['#5a6478','#fff'];
+    return `<div class="avatar" style="background:${bg};color:${fg}">${a}</div>`;
+  }).join('');
+  const labelsHtml = t.labels.map(i =>
+    `<div class="task-label" style="background:${LABEL_COLORS[i]};flex:1;max-width:48px" title="Label"></div>`
+  ).join('');
+  return `
+    <div class="task-card" draggable="true" data-task-id="${t.id}">
+      ${t.labels.length ? `<div style="display:flex;gap:4px;margin:-11px -13px 10px;padding:0 13px;padding-top:8px">${labelsHtml}</div>` : ''}
+      <div class="task-title">${t.title}</div>
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+        <span class="task-tag" style="color:${tagColor};border:1px solid ${tagColor}22;background:${tagColor}14">${t.tag}</span>
+      </div>
+      <div class="task-meta">
+        <div style="display:flex;align-items:center;gap:6px">
+          <span class="task-due ${isOverdue?'overdue':''}" title="Hạn ${t.due}">
+            📅 ${t.due}
+          </span>
+          <span class="task-checklist ${checkDone?'done':''}" title="Checklist">
+            ☑ ${doneChecks}/${totalChecks}
+          </span>
+        </div>
+        <div class="task-avatars">${avatarsHtml}</div>
+      </div>
+    </div>
+  `;
+}
+
+// ── Drag & Drop ──
+function onDragStart(e) {
+  const card = e.currentTarget;
+  dragSrc = { taskId: card.dataset.taskId, fromColId: findColOfTask(card.dataset.taskId) };
+  card.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', card.dataset.taskId);
+}
+function onDragEnd(e) {
+  e.currentTarget.classList.remove('dragging');
+  document.querySelectorAll('.kanban-col-body').forEach(b => b.classList.remove('drag-over'));
+}
+function onDragOver(e, colId) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  document.getElementById('body-' + colId).classList.add('drag-over');
+}
+function onDragLeave(e, colId) {
+  if (!e.currentTarget.contains(e.relatedTarget)) {
+    document.getElementById('body-' + colId).classList.remove('drag-over');
+  }
+}
+function onDrop(e, toColId) {
+  e.preventDefault();
+  document.getElementById('body-' + toColId).classList.remove('drag-over');
+  if (!dragSrc || dragSrc.fromColId === toColId) { dragSrc=null; return; }
+  const fromCol = kanbanState.cols.find(c => c.id === dragSrc.fromColId);
+  const toCol   = kanbanState.cols.find(c => c.id === toColId);
+  const idx = fromCol.tasks.findIndex(t => t.id === dragSrc.taskId);
+  if (idx === -1) { dragSrc=null; return; }
+  const [task] = fromCol.tasks.splice(idx, 1);
+  toCol.tasks.push(task);
+  dragSrc = null;
+  renderKanban();
+}
+function findColOfTask(taskId) {
+  for (const col of kanbanState.cols) {
+    if (col.tasks.find(t => t.id === taskId)) return col.id;
+  }
+  return null;
+}
+
+// ── Add card ──
+function openAddCard(colId) {
+  addCardColId = colId;
+  const col = kanbanState.cols.find(c => c.id === colId);
+  document.getElementById('add-card-col-name').textContent = 'Cột: ' + col.title;
+  document.getElementById('add-card-input').value = '';
+  document.getElementById('add-card-modal').classList.add('open');
+  setTimeout(() => document.getElementById('add-card-input').focus(), 80);
+}
+function closeAddCard() {
+  document.getElementById('add-card-modal').classList.remove('open');
+  addCardColId = null;
+}
+function saveNewCard() {
+  const title = document.getElementById('add-card-input').value.trim();
+  if (!title) return;
+  const tag = document.getElementById('add-card-tag').value;
+  const assignee = document.getElementById('add-card-assignee').value;
+  const col = kanbanState.cols.find(c => c.id === addCardColId);
+  col.tasks.push({
+    id: 't' + (nextTaskId++), title, tag, assignees:[assignee],
+    labels:[Math.floor(Math.random()*5)], due:'30/12', checklist:[0,1]
+  });
+  closeAddCard();
+  renderKanban();
+}
+
+// ── Add column ──
+function addColumnPrompt() {
+  const name = prompt('Tên cột mới:');
+  if (!name) return;
+  const colors = ['#f87171','#a78bfa','#f59e0b','#60a5fa','#22d3a0'];
+  kanbanState.cols.push({ id:'c'+(Date.now()), title:name, dot:colors[kanbanState.cols.length % colors.length], tasks:[] });
+  renderKanban();
+}
+
+// Close modals on overlay click
+document.getElementById('add-card-modal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeAddCard();
+});
+
+
+// ══════════════════════════════════════════
+// GANTT ENGINE — subtask-based progress
+// ══════════════════════════════════════════
+const MONTHS = ['T1','T2','T3','T4','T5','T6','T7','T8','T9','T10','T11','T12'];
+const CURRENT_MONTH = 5;
+const TOTAL_MONTHS = 12;
+
+// Each task has subtasks[]. weight = % điểm đóng góp (tổng = 100).
+// done = true/false. Nếu tổng weight < 100, phần còn lại = "Chưa phân bổ".
+let ganttTasks = [
+  { id:'g1', name:'🏗 Setup & Auth', sub:'Laravel, Sanctum, Roles', start:0, end:1, color:'#22d3a0', textColor:'#0a2e24', status:'Đang làm', owner:'Tao',
+    subtasks:[
+      { id:'s1a', name:'Cài đặt Laravel 11 + cấu hình .env', note:'Bao gồm Docker compose local', weight:20, done:true },
+      { id:'s1b', name:'Tích hợp Laravel Sanctum (API auth)', note:'', weight:20, done:true },
+      { id:'s1c', name:'Thiết lập Spatie Permission (roles)', note:'3 roles: admin, manager, member', weight:25, done:true },
+      { id:'s1d', name:'Migration toàn bộ bảng cơ sở', note:'users, projects, tasks, goals', weight:20, done:false },
+      { id:'s1e', name:'Viết seeder dữ liệu mẫu', note:'', weight:15, done:false },
+    ]
+  },
+  { id:'g2', name:'📊 Hàm Excel', sub:'CRUD, Search, Import/Export', start:1, end:2, color:'#f59e0b', textColor:'#3d2800', status:'Đang làm', owner:'An',
+    subtasks:[
+      { id:'s2a', name:'Model & migration ExcelFormula', note:'', weight:15, done:true },
+      { id:'s2b', name:'API CRUD công thức (Filament resource)', note:'', weight:25, done:false },
+      { id:'s2c', name:'Tích hợp Meilisearch + Scout', note:'Full-text search theo tên, tag', weight:25, done:false },
+      { id:'s2d', name:'Import Excel (.xlsx) hàng loạt', note:'Dùng maatwebsite/excel', weight:20, done:false },
+      { id:'s2e', name:'Export danh sách công thức', note:'', weight:15, done:false },
+    ]
+  },
+  { id:'g3', name:'🗂 Quản lý dự án', sub:'Project, Goal, Task API', start:2, end:4, color:'#60a5fa', textColor:'#0c2a4a', status:'Sắp tới', owner:'Tao',
+    subtasks:[
+      { id:'s3a', name:'API Project CRUD + phân quyền', note:'Owner, manager, member per project', weight:20, done:false },
+      { id:'s3b', name:'API Goal (mục tiêu tiền/số lượng/%)', note:'Có track current_value', weight:20, done:false },
+      { id:'s3c', name:'API Task CRUD + gán thành viên', note:'', weight:20, done:false },
+      { id:'s3d', name:'File đính kèm (Spatie MediaLibrary)', note:'PDF, Excel, Word, ảnh', weight:20, done:false },
+      { id:'s3e', name:'Notification khi task thay đổi', note:'Queue-based, email + in-app', weight:20, done:false },
+    ]
+  },
+  { id:'g4', name:'📋 Kanban Board', sub:'Drag & drop UI, Sort API', start:4, end:6, color:'#a78bfa', textColor:'#2a1e4a', status:'Sắp tới', owner:'An',
+    subtasks:[
+      { id:'s4a', name:'API cập nhật status + sort_order task', note:'PATCH endpoint', weight:25, done:false },
+      { id:'s4b', name:'Kanban UI (Vue / React + kéo thả)', note:'@hello-pangea/dnd hoặc vue-draggable', weight:40, done:false },
+      { id:'s4c', name:'Lọc Kanban theo người, ưu tiên', note:'', weight:20, done:false },
+      { id:'s4d', name:'Realtime cập nhật (WebSocket/Pusher)', note:'Tùy ngân sách', weight:15, done:false },
+    ]
+  },
+  { id:'g5', name:'📅 Gantt Chart', sub:'Timeline, frappe-gantt', start:5, end:7, color:'#34d399', textColor:'#042e1e', status:'Sắp tới', owner:'Tao',
+    subtasks:[
+      { id:'s5a', name:'API tasks trả về start_date, due_date', note:'', weight:20, done:false },
+      { id:'s5b', name:'Tích hợp frappe-gantt hoặc dhtmlx', note:'', weight:35, done:false },
+      { id:'s5c', name:'Click bar → subtask modal này', note:'Đang build!', weight:30, done:false },
+      { id:'s5d', name:'Export Gantt PNG/PDF', note:'', weight:15, done:false },
+    ]
+  },
+  { id:'g6', name:'📎 Note + File đính kèm', sub:'Spatie MediaLibrary', start:6, end:8, color:'#a78bfa', textColor:'#2a1e4a', status:'Chờ', owner:'Huy',
+    subtasks:[
+      { id:'s6a', name:'Note editor (Markdown/Rich text)', note:'TipTap hoặc SimpleMDE', weight:35, done:false },
+      { id:'s6b', name:'Upload đa định dạng (PDF/Excel/Word)', note:'Max 20MB per file', weight:30, done:false },
+      { id:'s6c', name:'Preview file inline', note:'PDF.js cho PDF', weight:20, done:false },
+      { id:'s6d', name:'Tìm kiếm trong note', note:'', weight:15, done:false },
+    ]
+  },
+  { id:'g7', name:'📈 KPI Dashboard', sub:'Aggregate queries, Chart.js', start:8, end:11, color:'#f87171', textColor:'#4a1515', status:'Chờ', owner:'An',
+    subtasks:[
+      { id:'s7a', name:'Query tổng hợp KPI theo project', note:'Eloquent aggregate', weight:25, done:false },
+      { id:'s7b', name:'Dashboard charts (Chart.js)', note:'Line, bar, donut', weight:30, done:false },
+      { id:'s7c', name:'Filter theo khoảng thời gian', note:'', weight:20, done:false },
+      { id:'s7d', name:'Export báo cáo PDF', note:'Laravel DomPDF', weight:25, done:false },
+    ]
+  },
+  { id:'g8', name:'🚀 Deploy & Testing', sub:'CI/CD, staging, production', start:10, end:12, color:'#94a3b8', textColor:'#1a1e28', status:'Chờ', owner:'Tao',
+    subtasks:[
+      { id:'s8a', name:'Viết unit + feature tests', note:'PHPUnit, pest', weight:25, done:false },
+      { id:'s8b', name:'Cấu hình CI/CD (GitHub Actions)', note:'', weight:25, done:false },
+      { id:'s8c', name:'Deploy staging (VPS/Forge)', note:'', weight:25, done:false },
+      { id:'s8d', name:'Deploy production + monitoring', note:'Sentry / Telescope', weight:25, done:false },
+    ]
+  },
+];
+
+// ── Helpers ──
+function calcPct(task) {
+  const total = task.subtasks.reduce((s,t) => s + t.weight, 0);
+  if (!total) return 0;
+  const done  = task.subtasks.filter(t => t.done).reduce((s,t) => s + t.weight, 0);
+  return Math.round((done / total) * 100);
+}
+function pctColor(pct) {
+  if (pct === 100) return '#22d3a0';
+  if (pct >= 60)  return '#60a5fa';
+  if (pct >= 20)  return '#f59e0b';
+  return '#f87171';
+}
+
+let editingGanttId = null;
+let subIdCounter = 100;
+
+function renderGantt() {
+  const monthsRow = document.getElementById('gantt-months-row');
+  monthsRow.innerHTML = MONTHS.map((m, i) =>
+    `<div class="gantt-month-cell ${i===CURRENT_MONTH?'current':''}">${m}${i===CURRENT_MONTH?' ◀':''}</div>`
+  ).join('');
+
+  const rowsEl = document.getElementById('gantt-rows');
+  rowsEl.innerHTML = ganttTasks.map(task => {
+    const leftPct  = (task.start / TOTAL_MONTHS) * 100;
+    const widthPct = ((task.end - task.start) / TOTAL_MONTHS) * 100;
+    const pct = calcPct(task);
+    const doneSubs = task.subtasks.filter(t=>t.done).length;
+    const gridLines = MONTHS.map(() => `<div class="gantt-grid-line"></div>`).join('');
+    return `
+      <div class="gantt-row">
+        <div class="gantt-row-label">
+          <div class="gantt-row-name">${task.name}</div>
+          <div class="gantt-row-sub">${doneSubs}/${task.subtasks.length} việc · ${pct}%</div>
+        </div>
+        <div class="gantt-row-track">
+          <div class="gantt-grid-lines">${gridLines}</div>
+          <div class="gantt-bar-wrap" id="bar-${task.id}"
+            style="left:${leftPct.toFixed(2)}%;width:${widthPct.toFixed(2)}%;background:${task.color};"
+            onclick="openProgressModal('${task.id}')"
+            title="${task.name} — ${pct}% · Click để xem chi tiết">
+            <div class="gantt-bar-fill" id="fill-${task.id}" style="width:${pct}%;background:rgba(255,255,255,.22)"></div>
+            <span class="gantt-bar-text" style="color:${task.textColor}">${task.name.split(' ').slice(1).join(' ')}</span>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// ── Refresh just one gantt bar without full re-render ──
+function refreshGanttBar(taskId) {
+  const task = ganttTasks.find(t => t.id === taskId);
+  if (!task) return;
+  const pct = calcPct(task);
+  const doneSubs = task.subtasks.filter(t=>t.done).length;
+  const fillEl = document.getElementById('fill-' + taskId);
+  const barEl  = document.getElementById('bar-' + taskId);
+  if (fillEl) fillEl.style.width = pct + '%';
+  if (barEl)  barEl.title = `${task.name} — ${pct}% · Click để xem chi tiết`;
+  // update sub-label in row
+  const row = barEl?.closest('.gantt-row');
+  if (row) {
+    const sub = row.querySelector('.gantt-row-sub');
+    if (sub) sub.textContent = `${doneSubs}/${task.subtasks.length} việc · ${pct}%`;
+  }
+}
+
+// ── Modal ──
+function openProgressModal(taskId) {
+  const task = ganttTasks.find(t => t.id === taskId);
+  if (!task) return;
+  editingGanttId = taskId;
+  document.getElementById('modal-task-name').textContent = task.name;
+  document.getElementById('modal-task-range').textContent =
+    `T${task.start+1} → T${task.end}`;
+  document.getElementById('modal-task-owner').textContent = task.owner || '—';
+  renderSubtasks(task);
+  updateModalSummary(task);
+  hideNewSubRow();
+  document.getElementById('progress-modal').classList.add('open');
+}
+function closeProgressModal() {
+  document.getElementById('progress-modal').classList.remove('open');
+  editingGanttId = null;
+}
+function saveProgress() {
+  if (editingGanttId) refreshGanttBar(editingGanttId);
+  closeProgressModal();
+}
+
+function updateModalSummary(task) {
+  const pct = calcPct(task);
+  const doneSubs = task.subtasks.filter(t=>t.done).length;
+  const col = pctColor(pct);
+  document.getElementById('modal-pct-big').textContent = pct + '%';
+  document.getElementById('modal-pct-big').style.color = col;
+  const fill = document.getElementById('modal-bar-fill');
+  fill.style.width = pct + '%';
+  fill.style.background = col;
+  document.getElementById('modal-bar-label').textContent =
+    `${doneSubs} / ${task.subtasks.length} đầu việc hoàn thành · tổng trọng số ${task.subtasks.reduce((s,t)=>s+t.weight,0)}%`;
+}
+
+function renderSubtasks(task) {
+  const list = document.getElementById('subtask-list');
+  list.innerHTML = task.subtasks.map((s, idx) => `
+    <div class="subtask-item ${s.done?'done':''}" id="sub-item-${s.id}">
+      <div class="sub-check ${s.done?'checked':''}" onclick="toggleSub('${task.id}','${s.id}')"></div>
+      <div class="subtask-body">
+        <input class="subtask-name" value="${s.name}"
+          onchange="updateSubName('${task.id}','${s.id}',this.value)"
+          placeholder="Tên đầu việc...">
+        <input class="subtask-note" value="${s.note}"
+          onchange="updateSubNote('${task.id}','${s.id}',this.value)"
+          placeholder="Ghi chú thêm...">
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+        <div class="weight-editor" id="we-${s.id}">
+          <div class="subtask-weight" onclick="toggleWeightPopup('${s.id}')" title="Trọng số % · click để chỉnh">${s.weight}%</div>
+          <div class="weight-popup" id="wp-${s.id}">
+            <label>Trọng số đóng góp: <strong id="wl-${s.id}">${s.weight}%</strong></label>
+            <input type="range" min="5" max="60" step="5" value="${s.weight}"
+              oninput="previewWeight('${s.id}',this.value)"
+              onchange="saveWeight('${task.id}','${s.id}',this.value)">
+          </div>
+        </div>
+        <button class="sub-del" onclick="deleteSub('${task.id}','${s.id}')" title="Xóa">×</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+// ── Subtask operations ──
+function toggleSub(taskId, subId) {
+  const task = ganttTasks.find(t => t.id === taskId);
+  const sub  = task.subtasks.find(s => s.id === subId);
+  sub.done = !sub.done;
+  const item = document.getElementById('sub-item-' + subId);
+  item.classList.toggle('done', sub.done);
+  item.querySelector('.sub-check').classList.toggle('checked', sub.done);
+  updateModalSummary(task);
+  refreshGanttBar(taskId);
+}
+function updateSubName(taskId, subId, val) {
+  const task = ganttTasks.find(t => t.id === taskId);
+  task.subtasks.find(s => s.id === subId).name = val;
+}
+function updateSubNote(taskId, subId, val) {
+  const task = ganttTasks.find(t => t.id === taskId);
+  task.subtasks.find(s => s.id === subId).note = val;
+}
+function deleteSub(taskId, subId) {
+  const task = ganttTasks.find(t => t.id === taskId);
+  task.subtasks = task.subtasks.filter(s => s.id !== subId);
+  renderSubtasks(task);
+  updateModalSummary(task);
+  refreshGanttBar(taskId);
+}
+function toggleWeightPopup(subId) {
+  const popup = document.getElementById('wp-' + subId);
+  const isOpen = popup.classList.contains('open');
+  document.querySelectorAll('.weight-popup.open').forEach(p => p.classList.remove('open'));
+  if (!isOpen) popup.classList.add('open');
+}
+function previewWeight(subId, val) {
+  document.getElementById('wl-' + subId).textContent = val + '%';
+}
+function saveWeight(taskId, subId, val) {
+  const task = ganttTasks.find(t => t.id === taskId);
+  task.subtasks.find(s => s.id === subId).weight = parseInt(val);
+  document.getElementById('wp-' + subId).classList.remove('open');
+  const badge = document.querySelector(`#we-${subId} .subtask-weight`);
+  if (badge) badge.textContent = val + '%';
+  updateModalSummary(task);
+  refreshGanttBar(taskId);
+}
+// Close weight popups when clicking outside
+document.addEventListener('click', e => {
+  if (!e.target.closest('.weight-editor')) {
+    document.querySelectorAll('.weight-popup.open').forEach(p => p.classList.remove('open'));
+  }
+});
+
+// ── New subtask row ──
+function showNewSubRow() {
+  document.getElementById('new-sub-row').classList.add('open');
+  document.getElementById('new-sub-input').focus();
+}
+function hideNewSubRow() {
+  document.getElementById('new-sub-row').classList.remove('open');
+  document.getElementById('new-sub-input').value = '';
+}
+function onNewSubKey(e) {
+  if (e.key === 'Enter') commitNewSub();
+  if (e.key === 'Escape') hideNewSubRow();
+}
+function commitNewSub() {
+  const name = document.getElementById('new-sub-input').value.trim();
+  if (!name || !editingGanttId) return;
+  const task = ganttTasks.find(t => t.id === editingGanttId);
+  task.subtasks.push({ id:'s'+(subIdCounter++), name, note:'', weight:15, done:false });
+  renderSubtasks(task);
+  updateModalSummary(task);
+  refreshGanttBar(editingGanttId);
+  hideNewSubRow();
+  showNewSubRow(); // ready for next
+}
+
+document.getElementById('progress-modal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeProgressModal();
+});
+
+
+// ══════════════════════════════════════════
+// FORMULA ENGINE
+// ══════════════════════════════════════════
+const formulas = [
+  { name:'VLOOKUP', category:'Tìm kiếm', syntax:'=VLOOKUP(lookup_value, table_array, col_index_num, [range_lookup])', desc:'Tìm kiếm giá trị trong cột đầu tiên của bảng và trả về giá trị trong cùng hàng từ cột chỉ định.', note:'range_lookup = FALSE để tìm chính xác, TRUE để tìm gần đúng (cần sắp xếp tăng dần). Chậm hơn INDEX+MATCH với bảng lớn.' },
+  { name:'XLOOKUP', category:'Tìm kiếm', syntax:'=XLOOKUP(lookup_value, lookup_array, return_array, [if_not_found], [match_mode], [search_mode])', desc:'Thay thế hiện đại cho VLOOKUP/HLOOKUP. Tìm kiếm linh hoạt hơn, có thể trả về nhiều cột, hỗ trợ tìm ngược.', note:'Chỉ có trên Excel 365/2021 và Google Sheets. Ưu tiên dùng thay VLOOKUP cho dự án mới.' },
+  { name:'INDEX + MATCH', category:'Tìm kiếm', syntax:'=INDEX(return_range, MATCH(lookup_value, lookup_range, 0))', desc:'Combo mạnh nhất để tìm kiếm 2 chiều. Nhanh hơn VLOOKUP, không bị ảnh hưởng khi chèn/xóa cột.', note:'MATCH trả về vị trí hàng, INDEX trả về giá trị tại vị trí đó. Tham số cuối MATCH = 0 là tìm chính xác.' },
+  { name:'FILTER', category:'Tìm kiếm', syntax:'=FILTER(array, include, [if_empty])', desc:'Lọc dữ liệu theo điều kiện, trả về mảng động. Thay thế cho AutoFilter bằng công thức.', note:'Ví dụ: =FILTER(A2:C100, B2:B100="Hà Nội", "Không có"). Kết hợp nhiều điều kiện bằng * (AND) hoặc + (OR).' },
+  { name:'SUMIF', category:'Thống kê', syntax:'=SUMIF(range, criteria, [sum_range])', desc:'Tính tổng các ô thỏa mãn điều kiện. Nếu bỏ sum_range, tính tổng chính range đó.', note:'criteria có thể là: số, text, wildcard (*,?), biểu thức (">100"). Dùng SUMIFS cho nhiều điều kiện.' },
+  { name:'SUMIFS', category:'Thống kê', syntax:'=SUMIFS(sum_range, criteria_range1, criteria1, [criteria_range2, criteria2], ...)', desc:'Tính tổng với nhiều điều kiện. Thứ tự tham số khác SUMIF: sum_range đứng đầu.', note:'Tối đa 127 cặp criteria. Các criteria_range phải cùng kích thước với sum_range.' },
+  { name:'COUNTIFS', category:'Thống kê', syntax:'=COUNTIFS(criteria_range1, criteria1, [criteria_range2, criteria2], ...)', desc:'Đếm số ô thỏa mãn nhiều điều kiện cùng lúc.', note:'Khác COUNTIF ở chỗ hỗ trợ nhiều điều kiện. Thường dùng với điều kiện ngày: ">="&A1.' },
+  { name:'AVERAGEIFS', category:'Thống kê', syntax:'=AVERAGEIFS(average_range, criteria_range1, criteria1, ...)', desc:'Tính trung bình cộng với nhiều điều kiện.', note:'Bỏ qua các ô text và ô trống trong average_range khi tính.' },
+  { name:'UNIQUE', category:'Thống kê', syntax:'=UNIQUE(array, [by_col], [exactly_once])', desc:'Lọc danh sách loại bỏ giá trị trùng lặp. Trả về mảng động (spill), chỉ cần nhập 1 ô.', note:'Chỉ có Excel 365/2021 và Google Sheets. Kết hợp với SORT: =SORT(UNIQUE(A2:A100))' },
+  { name:'IF', category:'Logic', syntax:'=IF(logical_test, value_if_true, value_if_false)', desc:'Trả về giá trị khác nhau tùy điều kiện đúng hay sai.', note:'Lồng tối đa 64 IF trong nhau (Excel). Với nhiều điều kiện, dùng IFS hoặc SWITCH cho gọn hơn.' },
+  { name:'IFS', category:'Logic', syntax:'=IFS(condition1, value1, condition2, value2, ..., TRUE, default)', desc:'Kiểm tra nhiều điều kiện, trả về giá trị của điều kiện đúng đầu tiên. Thay thế IF lồng nhau.', note:'Luôn thêm TRUE, "Khác" ở cuối để xử lý trường hợp không khớp điều kiện nào.' },
+  { name:'IFERROR', category:'Logic', syntax:'=IFERROR(value, value_if_error)', desc:'Trả về value_if_error nếu công thức trong value bị lỗi (#N/A, #VALUE!, #REF!...). Ngược lại trả về value.', note:'Dùng để bẫy lỗi sạch UI. Ví dụ: =IFERROR(VLOOKUP(...),"Không tìm thấy")' },
+  { name:'CONCATENATE / CONCAT', category:'Văn bản', syntax:'=CONCAT(text1, [text2], ...) hoặc =A1&" "&B1', desc:'Nối nhiều chuỗi văn bản lại với nhau. Dùng & tiện hơn cho trường hợp đơn giản.', note:'CONCATENATE vẫn hoạt động nhưng đã deprecated. CONCAT là phiên bản mới. TEXTJOIN linh hoạt hơn khi có dấu phân cách.' },
+  { name:'TEXTJOIN', category:'Văn bản', syntax:'=TEXTJOIN(delimiter, ignore_empty, text1, [text2], ...)', desc:'Nối nhiều chuỗi với dấu phân cách tùy chọn, có thể bỏ qua ô trống.', note:'ignore_empty = TRUE bỏ qua ô rỗng. Ví dụ: =TEXTJOIN(", ", TRUE, A2:A10) ghép danh sách thành 1 chuỗi.' },
+  { name:'TEXT', category:'Văn bản', syntax:'=TEXT(value, format_text)', desc:'Chuyển đổi số/ngày thành văn bản theo định dạng tùy chỉnh.', note:'Ví dụ: =TEXT(A1,"dd/mm/yyyy") → "01/06/2025". =TEXT(1000000,"#,##0") → "1,000,000".' },
+  { name:'LEFT / RIGHT / MID', category:'Văn bản', syntax:'=LEFT(text, num_chars) | =MID(text, start_num, num_chars)', desc:'Cắt chuỗi từ trái, phải, hoặc giữa. LEFT/RIGHT đơn giản, MID linh hoạt hơn.', note:'Kết hợp với FIND/SEARCH để tách chuỗi động. Ví dụ tách tên: =LEFT(A1, FIND(" ", A1)-1)' },
+  { name:'TODAY / NOW', category:'Ngày giờ', syntax:'=TODAY() | =NOW()', desc:'TODAY() trả về ngày hiện tại, NOW() trả về ngày + giờ hiện tại. Tự cập nhật khi file tính toán lại.', note:'Kết quả là số serial. Dùng TEXT() hoặc format cell để hiển thị dạng ngày đọc được.' },
+  { name:'DATEDIF', category:'Ngày giờ', syntax:'=DATEDIF(start_date, end_date, unit)', desc:'Tính khoảng cách giữa 2 ngày theo đơn vị: "Y" (năm), "M" (tháng), "D" (ngày), "MD", "YM", "YD".', note:'Hàm ẩn, không hiện trong autocomplete nhưng vẫn hoạt động. Ví dụ tuổi: =DATEDIF(B2, TODAY(), "Y")' },
+  { name:'WORKDAY', category:'Ngày giờ', syntax:'=WORKDAY(start_date, days, [holidays])', desc:'Tính ngày kết thúc sau N ngày làm việc (bỏ qua thứ 7, CN). Có thể thêm danh sách ngày nghỉ lễ.', note:'WORKDAY.INTL cho phép tùy chỉnh ngày nghỉ cuối tuần khác (ví dụ: nghỉ thứ 6+7 thay vì CN+T7).' },
+  { name:'ROUND / ROUNDUP / ROUNDDOWN', category:'Toán học', syntax:'=ROUND(number, num_digits)', desc:'Làm tròn số. ROUND làm tròn thông thường, ROUNDUP luôn làm tròn lên, ROUNDDOWN luôn làm tròn xuống.', note:'num_digits âm làm tròn sang phần nguyên. =ROUND(1234,-2) → 1200. Khác TRUNC: TRUNC chỉ cắt không làm tròn.' },
+  { name:'SUMPRODUCT', category:'Toán học', syntax:'=SUMPRODUCT(array1, [array2], ...)', desc:'Nhân từng phần tử tương ứng của các mảng rồi cộng tổng. Cực mạnh để thay thế công thức mảng Ctrl+Shift+Enter.', note:'Dùng được như COUNTIFS/SUMIFS nhưng linh hoạt hơn. Ví dụ: =SUMPRODUCT((A:A="X")*(B:B>100)*C:C)' },
+];
+
+let currentCat = '', currentSearch = '';
+
+function renderFormulas() {
+  const list = document.getElementById('formula-list');
+  const s = currentSearch.toLowerCase();
+  const filtered = formulas.filter(f => {
+    const matchCat  = !currentCat || f.category === currentCat;
+    const matchText = !s || f.name.toLowerCase().includes(s) || f.desc.toLowerCase().includes(s) || f.category.toLowerCase().includes(s) || f.syntax.toLowerCase().includes(s);
+    return matchCat && matchText;
+  });
+  if (!filtered.length) { list.innerHTML = '<div class="empty">Không tìm thấy hàm nào phù hợp</div>'; return; }
+  list.innerHTML = filtered.map(f => `
+    <div class="formula-card">
+      <div class="formula-top">
+        <div>
+          <div class="formula-name">${f.name}</div>
+          <div class="formula-syntax">${f.syntax}</div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
+          <span class="badge badge-green">${f.category}</span>
+          <button class="copy-btn" onclick="copyFormula(this, '${f.syntax.replace(/'/g,"\\'")}')">Copy</button>
+        </div>
+      </div>
+      <div class="formula-desc">${f.desc}</div>
+      ${f.note ? `<div class="formula-note">💡 ${f.note}</div>` : ''}
+    </div>
+  `).join('');
+}
+function filterFormulas(val) { currentSearch = val; renderFormulas(); }
+function filterCat(cat, el) {
+  currentCat = cat;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  el.classList.add('active');
+  renderFormulas();
+}
+function copyFormula(btn, syntax) {
+  navigator.clipboard.writeText(syntax).then(() => {
+    btn.textContent = 'Copied!'; btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 1800);
+  });
+}
+
+// ── Boot ──
+renderKanban();
+renderGantt();
+renderFormulas();
+</script>
+</body>
+</html>

@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<title>Luồng Lead → Booking → Dịch vụ</title>
+<style>
+  body { margin:0; background:#f1f5f9; font-family:-apple-system,'Segoe UI',Roboto,sans-serif; padding:24px; color:#0f172a; }
+  h1 { text-align:center; margin:0 0 4px; font-size:24px; }
+  .sub { text-align:center; color:#64748b; font-size:13px; margin-bottom:20px; }
+
+  .wrap { max-width:1600px; margin:0 auto; }
+
+  table.matrix {
+    width:100%; border-collapse:separate; border-spacing:0;
+    background:white; border-radius:12px; overflow:hidden;
+    box-shadow:0 2px 10px rgba(0,0,0,0.08);
+    font-size:13px;
+  }
+  table.matrix th, table.matrix td {
+    padding:12px 10px; text-align:center; border-bottom:1px solid #e2e8f0;
+    vertical-align:middle;
+  }
+  table.matrix thead th {
+    background:#0f172a; color:white; font-weight:600;
+    font-size:12px; letter-spacing:0.3px;
+    border-bottom:none; padding:14px 10px;
+  }
+  table.matrix thead th .num { display:block; font-size:10px; color:#94a3b8; font-weight:500; margin-bottom:2px; }
+  table.matrix tbody tr:hover { background:#f8fafc; }
+
+  .src-cell {
+    text-align:left; font-weight:700; background:#f8fafc;
+    border-left:5px solid; padding-left:14px !important;
+    min-width:160px;
+  }
+  .src-cell small { display:block; font-weight:400; color:#64748b; font-size:11px; margin-top:2px; }
+
+  .role { display:inline-block; padding:4px 10px; border-radius:14px; font-size:11px; font-weight:600; white-space:nowrap; }
+  .r-trucpage { background:#dbeafe; color:#1e3a8a; }
+  .r-tele     { background:#fecaca; color:#7f1d1d; }
+  .r-tvv      { background:#bbf7d0; color:#14532d; }
+  .r-cm       { background:#fed7aa; color:#7c2d12; }
+  .r-admin    { background:#e9d5ff; color:#581c87; }
+  .r-dd       { background:#fef3c7; color:#78350f; }
+  .r-empty    { color:#cbd5e1; font-size:16px; }
+
+  .recall { font-size:11px; font-weight:600; padding:4px 8px; border-radius:6px; }
+  .recall.yes  { background:#dcfce7; color:#166534; }
+  .recall.no   { background:#fee2e2; color:#991b1b; }
+  .recall.q    { background:#fef3c7; color:#854d0e; }
+
+  .legend {
+    background:white; border-radius:12px; padding:16px 20px;
+    margin-top:20px; box-shadow:0 2px 10px rgba(0,0,0,0.06);
+  }
+  .legend h3 { margin:0 0 10px; font-size:14px; color:#0f172a; }
+  .legend .row { display:flex; flex-wrap:wrap; gap:14px; font-size:12px; align-items:center; margin-bottom:6px; }
+
+  .notes {
+    background:#fff7ed; border-left:4px solid #ea580c;
+    padding:14px 18px; border-radius:8px; margin-top:16px;
+    font-size:13px; line-height:1.7;
+  }
+  .notes h3 { margin:0 0 8px; font-size:14px; color:#7c2d12; }
+  .notes b { color:#9a3412; }
+
+  .group-label {
+    text-align:left; font-weight:700; color:#475569;
+    background:#f1f5f9 !important; font-size:11px;
+    letter-spacing:1px; text-transform:uppercase;
+    padding:10px 14px !important;
+  }
+
+  .s1 { border-left-color:#2563eb; }
+  .s2 { border-left-color:#0ea5e9; }
+  .s3 { border-left-color:#db2777; }
+  .s4 { border-left-color:#f43f5e; }
+  .s5 { border-left-color:#0891b2; }
+  .s6 { border-left-color:#8b5cf6; }
+  .s7 { border-left-color:#dc2626; }
+  .s8 { border-left-color:#d97706; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+<h1>Luồng Lead → Booking → Dịch vụ (Lara-SCRM)</h1>
+<div class="sub">8 nguồn × 7 phase · ai làm bước nào · nguyên tắc chia lại số</div>
+
+<table class="matrix">
+  <thead>
+    <tr>
+      <th style="text-align:left; padding-left:14px;">Nguồn</th>
+      <th><span class="num">P1</span>Thêm mới</th>
+      <th><span class="num">P2</span>Chia số</th>
+      <th><span class="num">P3</span>Gọi điện</th>
+      <th><span class="num">P4</span>Đặt lịch khám</th>
+      <th><span class="num">P5.1</span>Check-in</th>
+      <th><span class="num">P5.2</span>Chia khách</th>
+      <th><span class="num">P6</span>Bán hàng</th>
+      <th><span class="num">P7</span>Thực hiện DV</th>
+      <th>Chia lại số?</th>
+    </tr>
+  </thead>
+  <tbody>
+
+    <tr><td colspan="10" class="group-label">🅰️ Full 7 bước — có Tele gọi lọc trước (MKT · BA · Walk-in)</td></tr>
+
+    <tr>
+      <td class="src-cell s1">📢 MKT <small>Marketing (FB/TikTok/GG)</small></td>
+      <td><span class="role r-trucpage">Trực Page</span></td>
+      <td><span class="role r-trucpage">Trực Page</span></td>
+      <td><span class="role r-tele">Tele</span></td>
+      <td><span class="role r-tele">Tele</span></td>
+      <td><span class="role r-admin">Admin</span></td>
+      <td><span class="role r-admin">Admin</span></td>
+      <td><span class="role r-tvv">Tư vấn viên</span></td>
+      <td><span class="role r-dd">Điều dưỡng</span></td>
+      <td><span class="recall yes">✓ Áp dụng</span></td>
+    </tr>
+
+    <tr>
+      <td class="src-cell s6">📞 BA <small>Booking Appointment — Tele sale tự up + kiêm chăm</small></td>
+      <td><span class="role r-tele">Tele</span></td>
+      <td><span class="role r-tele">Tele</span></td>
+      <td><span class="role r-tele">Tele</span></td>
+      <td><span class="role r-tele">Tele</span></td>
+      <td><span class="role r-admin">Admin</span></td>
+      <td><span class="r-empty">—</span></td>
+      <td><span class="role r-tvv">Tư vấn viên</span></td>
+      <td><span class="role r-dd">Điều dưỡng</span></td>
+      <td><span class="recall yes">✓ Áp dụng</span></td>
+    </tr>
+
+    <tr>
+      <td class="src-cell s7">🚶 Walk-in <small>Khách tự đến quầy</small></td>
+      <td><span class="role r-admin">Admin</span></td>
+      <td><span class="role r-admin">Admin</span></td>
+      <td><span class="role r-tvv">Tư vấn viên</span></td>
+      <td><span class="role r-tvv">Tư vấn viên</span></td>
+      <td><span class="role r-admin">Admin</span></td>
+      <td><span class="role r-admin">Admin</span></td>
+      <td><span class="role r-tvv">Tư vấn viên</span></td>
+      <td><span class="role r-dd">Điều dưỡng</span></td>
+      <td><span class="recall no">✗ Không chia lại</span></td>
+    </tr>
+
+    <tr><td colspan="10" class="group-label">🅱️ CM chia thẳng cho Tư vấn viên — bỏ bước Tele gọi lọc (BDM · BOD)</td></tr>
+
+    <tr>
+      <td class="src-cell s3">🤝 BDM <small>Đối tác doanh nghiệp</small></td>
+      <td><span class="role r-cm">CM</span></td>
+      <td><span class="role r-cm">CM</span></td>
+      <td><span class="role r-tvv">Tư vấn viên</span></td>
+      <td><span class="role r-tvv">Tư vấn viên</span></td>
+      <td><span class="role r-admin">Admin</span></td>
+      <td><span class="r-empty">—</span></td>
+      <td><span class="role r-tvv">Tư vấn viên</span></td>
+      <td><span class="role r-dd">Điều dưỡng</span></td>
+      <td><span class="recall yes">✓ Áp dụng</span></td>
+    </tr>
+
+    <tr>
+      <td class="src-cell s4">👔 BOD <small>Board of Directors giới thiệu</small></td>
+      <td><span class="role r-cm">CM</span></td>
+      <td><span class="role r-cm">CM</span></td>
+      <td><span class="role r-tvv">Tư vấn viên</span></td>
+      <td><span class="role r-tvv">Tư vấn viên</span></td>
+      <td><span class="role r-admin">Admin</span></td>
+      <td><span class="r-empty">—</span></td>
+      <td><span class="role r-tvv">Tư vấn viên</span></td>
+      <td><span class="role r-dd">Điều dưỡng</span></td>
+      <td><span class="recall no">✗ Không chia lại</span></td>
+    </tr>
+
+    <tr><td colspan="10" class="group-label">🅲️ Tư vấn viên tự ôm từ đầu — không qua Tele, không qua CM chia (MKT_BR · SA · HL)</td></tr>
+
+    <tr>
+      <td class="src-cell s2">📣 MKT_BR <small>Marketing chi nhánh</small></td>
+      <td><span class="role r-tvv">Tư vấn viên</span></td>
+      <td><span class="r-empty">—</span></td>
+      <td><span class="role r-tvv">Tư vấn viên</span></td>
+      <td><span class="role r-tvv">Tư vấn viên</span></td>
+      <td><span class="role r-admin">Admin</span></td>
+      <td><span class="r-empty">—</span></td>
+      <td><span class="role r-tvv">Tư vấn viên</span></td>
+      <td><span class="role r-dd">Điều dưỡng</span></td>
+      <td><span class="recall yes">✓ Áp dụng</span></td>
+    </tr>
+
+    <tr>
+      <td class="src-cell s5">💼 SA <small>Sale Appointment — Sale (tư vấn viên) tự up + kiêm cả Tele</small></td>
+      <td><span class="role r-tvv">Tư vấn viên</span></td>
+      <td><span class="r-empty">—</span></td>
+      <td><span class="role r-tvv">Tư vấn viên</span></td>
+      <td><span class="role r-tvv">Tư vấn viên</span></td>
+      <td><span class="role r-admin">Admin</span></td>
+      <td><span class="r-empty">—</span></td>
+      <td><span class="role r-tvv">Tư vấn viên</span></td>
+      <td><span class="role r-dd">Điều dưỡng</span></td>
+      <td><span class="recall no">✗ Không chia lại</span></td>
+    </tr>
+
+    <tr>
+      <td class="src-cell s8">☎️ HL <small>Hotline (khách gọi đến)</small></td>
+      <td><span class="role r-tvv">Tư vấn viên</span></td>
+      <td><span class="r-empty">—</span></td>
+      <td><span class="role r-tvv">Tư vấn viên</span></td>
+      <td><span class="role r-tvv">Tư vấn viên</span></td>
+      <td><span class="role r-admin">Admin</span></td>
+      <td><span class="r-empty">—</span></td>
+      <td><span class="role r-tvv">Tư vấn viên</span></td>
+      <td><span class="role r-dd">Điều dưỡng</span></td>
+      <td><span class="recall no">✗ Không chia lại</span></td>
+    </tr>
+
+  </tbody>
+</table>
+
+<div class="legend">
+  <h3>🧑 Role trong hệ thống (tên trong phân quyền)</h3>
+  <div class="row">
+    <span class="role r-trucpage">Trực Page</span>
+    <span class="role r-tele">Tele</span> <span style="color:#64748b; font-size:11px;">= Tele sale (Booker) — gọi lọc, xác định nhu cầu, chốt lịch sơ bộ</span>
+    <span class="role r-cm">CM</span> <span style="color:#64748b; font-size:11px;">(role: CM sale / Manager — chia số cho tư vấn viên)</span>
+    <span class="role r-tvv">Tư vấn viên</span> <span style="color:#64748b; font-size:11px;">= Sale — tư vấn sâu, chốt deal, chăm sóc khách lâu dài</span>
+    <span class="role r-admin">Admin</span> <span style="color:#64748b; font-size:11px;">(role: Admin cơ sở / BO Lễ Tân)</span>
+    <span class="role r-dd">Điều dưỡng</span> <span style="color:#64748b; font-size:11px;">(role: Điều dưỡng — chưa build vào Phase 7)</span>
+  </div>
+</div>
+
+<div class="notes">
+  <h3>⏰ "Chia lại số" & cơ chế escalate — giải thích</h3>
+  <p>
+    <b>Chia lại số</b>: khi 1 lead đã chia cho tư vấn viên A nhưng A không chăm sóc trong X ngày
+    (hoặc A nghỉ, bị thu hồi quyền) → hệ thống tự thu lead về <b>kho team</b> để CM team chia lại cho người khác.
+  </p>
+  <p>
+    <b>Escalate (leo cấp)</b>: nếu đã về kho team mà <b>cả team</b> vẫn không ai nhận trong Y ngày
+    → lead tự động đẩy lên <b>kho CM khu vực (cấp cha)</b> — CM khu vực sẽ chia tay cho team khác.
+    Đây chính là <code>escalate_after_days</code> trong cấu hình hệ thống.
+  </p>
+  <p style="margin:0;">
+    Setup 2 tham số (X, Y) ở trang <b>Quy tắc vận hành</b>, theo cấp phòng ban → team.
+    Phòng ban set thì team bắt buộc theo.
+  </p>
+</div>
+
+<div class="notes" style="background:#fef2f2; border-left-color:#dc2626;">
+  <h3>⚠️ Cần user xác nhận</h3>
+  <p style="margin:4px 0;">
+    1. Cột <b>5.2 Chia khách</b> chỉ MKT và Walk-in có — là bước admin cơ sở phân khách cho tư vấn viên tiếp đón tại quầy sau check-in đúng không?
+  </p>
+  <p style="margin:4px 0;">
+    2. <b>Phase 6 (Bán hàng) + Phase 7 (Thực hiện dịch vụ)</b> — hiện trong code đang là placeholder "chưa build". Cần thì tao mở Phase mới để làm.
+  </p>
+</div>
+
+</div>
+
+</body>
+</html>
