@@ -3920,7 +3920,12 @@ new class extends Component
                                         }
                                     @endphp
                                     <span class="text-xs text-ink/50">Lịch: <b class="text-ink/80">{{ $__schedText }}</b></span>
-                                    <span class="text-xs text-ink/40 ml-auto">Người book: {{ $bl->user->name ?? 'system' }}</span>
+                                    <span class="text-xs text-ink/40 ml-auto" title="Tạo lúc {{ $bl->created_at?->format('d/m/Y H:i:s') }}">
+                                        Người book: {{ $bl->user->name ?? 'system' }}
+                                        @if ($bl->created_at)
+                                            · <span class="text-ink/50">Tạo: {{ $bl->created_at->format('d/m H:i') }}</span>
+                                        @endif
+                                    </span>
                                 </div>
                                 <div class="text-xs text-ink/70 flex flex-wrap gap-x-4 gap-y-1">
                                     <span>🏥 <b>{{ $facLabel }}</b></span>
